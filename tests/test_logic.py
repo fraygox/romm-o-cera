@@ -329,3 +329,66 @@ def test_palette_cover_does_not_crash(rb):
     assert img.get_bitsize() == 32
     assert rb.smooth_scale(img, (20, 30)).get_size() == (20, 30)
     assert rb.smooth_scale(pal, (20, 30)).get_size() == (20, 30)      # fallback path
+
+
+def test_keyboard_alongside_pad_and_typing(rb):
+    """Keyboard works even after a pad was used; only a pad press's echo
+    (same action within 0.3 s) is dropped; text fields take typed text."""
+    import pygame
+    inp = rb.Input(False)
+    out = []
+    pad = pygame.event.Event(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_DPAD_DOWN,
+                             instance_id=0)
+    inp.handle(pad, out)
+    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DOWN, mod=0), out)   # evmapy echo
+    assert out == ["down"]
+    inp.last["down"] = (0, "pad")                      # later: a real key press counts
+    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DOWN, mod=0), out)
+    assert out == ["down", "down"] and rb.INPUT_MODE["kb"]
+    assert rb.pad_face("A")[1] == "Enter"
+    inp.text_mode = True
+    out = []
+    inp.handle(pygame.event.Event(pygame.TEXTINPUT, text="z"), out)
+    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_x, mod=0), out)      # letter: no action
+    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_BACKSPACE, mod=0), out)
+    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0), out)
+    assert out == ["text:z", "x", "start"]
+    rb.INPUT_MODE["kb"] = False
+
+
+def test_touch_taps_rows_hints_and_dialogs(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    app.push(rb.HomeScreen(app))
+    app.draw()
+    home = app.stack[-1]
+    # tap the Settings tile (index 6) -> opens Settings in one tap
+    rect = next(r for r, fn in app.targets if r.left == 48 and r.top == 84 + 71 * 6)
+    app.tap(rect.center)
+    assert isinstance(app.stack[-1], rb.SettingsScreen)
+    app.draw()
+    # footer hints are tappable: "B Back" leaves Settings
+    back = [r for r, fn in app.targets if r.top == rb.H - 46]
+    assert back
+    app.tap((60, 33))                                    # the logo goes Home
+    assert isinstance(app.stack[-1], rb.HomeScreen)
+    # dialogs: tap outside closes, tap the button runs it
+    hits = []
+    app.modal = rb.Confirm(app, "T", "body", "OK", lambda: hits.append(1))
+    app.draw()
+    app.tap((5, 300))
+    assert app.modal is None and not hits
+    app.modal = rb.Confirm(app, "T", "body", "OK", lambda: hits.append(1))
+    app.draw()
+    okr = next(r for r, fn in app.targets[app.modal_from:] if fn and r.width == 260)
+    app.tap(okr.center)
+    assert hits == [1] and app.modal is None
+    # drag up = scroll down
+    acts = []
+    app.pointer(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(400, 400)), acts)
+    app.pointer(pygame.event.Event(pygame.MOUSEMOTION, buttons=(1, 0, 0), pos=(400, 300), touch=True), acts)
+    app.pointer(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(400, 300)), acts)
+    assert acts == ["down", "down"]

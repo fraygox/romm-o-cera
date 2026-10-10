@@ -1,11 +1,11 @@
-# romm-o-cera — RomM Browser for Batocera
+# RomM-o-Cera — a RomM client for Batocera
 
 A controller-driven app that runs **on a Batocera box**: browse and search a
 [RomM](https://github.com/rommapp/romm) library from the couch and download
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.0).** It works on the author's box every day, but it
+**Early software (v0.6.1).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -18,6 +18,7 @@ issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 | ![List menu: filters, pick, download all](screenshots/menu.png) | ![Search](screenshots/search.png) |
 | ![Manage a game on the box](screenshots/manage.png) | ![On this box](screenshots/on-this-box.png) |
 | ![Downloads](screenshots/downloads.png) | ![Settings](screenshots/settings.png) |
+| ![BIOS files](screenshots/bios.png) | |
 
 <sub>Screenshots come from `tools/mock_romm.py`: freely distributed homebrew /
 open-source games plus invented "lorem ipsum" titles, with generated covers.</sub>
@@ -37,11 +38,13 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   verifies and installs a new release in place, keeping the previous version
   for one-step rollback. A daily check flags new releases (turn off with
   `"check_updates": false`).
-- **On this box**: everything RomM Browser installed, biggest first, with
+- **On this box**: everything RomM-o-Cera installed, biggest first, with
   delete. Any game marked ✓ (including ones you copied over before) can be
   deleted from its list; saves and states are always kept.
-- **BIOS from RomM**: in a platform's list menu, fetch the BIOS files Batocera
-  wants for that system that your RomM has — matched and verified by checksum.
+- **BIOS files** (Settings, or On this box → Y): every system with games on
+  the box, what's complete, what's missing that your RomM has (one press to
+  fetch, or all at once — matched and verified by checksum), what's missing
+  everywhere, and what was fetched when.
 - **Multi-disc games** download as a set: one entry in EmulationStation (an
   `.m3u` playlist, the single discs hidden), and the discs you already have
   are reused. "Only this disc" is there too.
@@ -105,7 +108,7 @@ the install one-liner works too. Your config, queue and logs are never touched.
 ### 3. First launch
 
 On the box: **Main Menu → Game Settings → Update Gamelists**, then open
-**Pygame → RomM Browser → Settings** and enter your RomM address and token.
+**Pygame → RomM-o-Cera → Settings** and enter your RomM address and token.
 **Hotkey + Start** exits.
 
 ### Variables
@@ -161,10 +164,21 @@ environment (they win over `config.json`), and these paths:
 
 ## Controls
 
-Labels follow your controller (Settings → Button labels). South button confirms (switch in Settings) · East back · Y search · X sort
-A–Z / newest · L/R page · L2/R2 previous/next letter · Select downloads · Start home · **Hotkey + Start
-exits**. `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard
-mapping for this app (otherwise every press would arrive twice).
+**Controller:** labels follow your controller (Settings → Button labels). South
+button confirms (switch in Settings) · East back · Y search · X list menu · L/R
+page · L2/R2 previous/next letter · Select downloads · Start home · **Hotkey +
+Start exits**. `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard
+mapping for this app.
+
+**Keyboard:** arrows move · Enter confirm · Esc back · X menu · Y (or S) search ·
+PgUp/PgDn page · `[` `]` letter jump · Tab downloads · Home home. Search and text
+fields take typing directly (Enter runs the search / saves). The hint bar
+switches to key names while you use the keyboard. A keyboard and a pad work
+side by side.
+
+**Touch / mouse (basic):** tap a list row to select it, tap again to open; tap
+menu entries, keys, buttons and the hint bar; tap the logo for Home and the
+breadcrumbs to go back; drag or scroll the wheel to move through lists.
 
 ## Converting an existing library to CHD
 

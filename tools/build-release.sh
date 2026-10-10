@@ -6,6 +6,11 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${OUT:-$HERE/dist}
 VER=$(cd "$HERE" && python3 -c 'import rommlib; print(rommlib.VERSION)')
+REL=$(cd "$HERE" && python3 -c 'import rommlib; print(rommlib.RELEASE_DATE)')
+if [ "$REL" != "$(date +%F)" ] && [ -z "${ALLOW_OLD_DATE:-}" ]; then
+    echo "rommlib.RELEASE_DATE is $REL, not today ($(date +%F)): bump it (or ALLOW_OLD_DATE=1)" >&2
+    exit 1
+fi
 rm -rf "$OUT"; mkdir -p "$OUT/stage/rommbrowser"
 for f in rommbrowser.pygame rommbrowser.pygame.keys rommlib.py rb_finalize.py rb_chd.py \
          rb_chd_plan.py rb_dl.py icon.png LICENSE; do
@@ -14,13 +19,13 @@ done
 mkdir -p "$OUT/stage/rommbrowser/fonts"
 cp "$HERE"/fonts/*.ttf "$HERE"/fonts/OFL-Rubik.txt "$OUT/stage/rommbrowser/fonts/"
 cat > "$OUT/stage/rommbrowser/INSTALL.txt" <<TXT
-romm-o-cera v$VER — RomM Browser for Batocera
+RomM-o-Cera v$VER — a RomM client for Batocera, by fraygox
 
 1. Copy this rommbrowser folder to your Batocera box at
      \\\\BATOCERA\\share\\roms\\pygame\\rommbrowser     (SMB share)
    or  /userdata/roms/pygame/rommbrowser               (SSH / USB)
 2. On the box: Main Menu → Game Settings → Update Gamelists.
-3. Open Pygame → RomM Browser → Settings: enter your RomM URL and a client
+3. Open Pygame → RomM-o-Cera → Settings: enter your RomM URL and a client
    API token (RomM → Profile → Client API tokens; scopes me.read roms.read
    platforms.read assets.read collections.read firmware.read roms.user.read).
 

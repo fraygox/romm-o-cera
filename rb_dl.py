@@ -62,7 +62,7 @@ class Notes:
                                                   names(self.ready)))
         if self.failed:
             parts.append("%d failed: %s" % (len(self.failed), names(self.failed)))
-        return "RomM Browser: " + "; ".join(parts)
+        return "RomM-o-Cera: " + "; ".join(parts)
 
     def flush(self, force=False):
         if not self.on or not (self.ready or self.failed):

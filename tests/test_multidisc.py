@@ -466,7 +466,7 @@ def test_background_notes(monkeypatch):
     monkeypatch.setattr(rommlib, "es_running_game", lambda: "")
     n.collect(D)
     n.flush()
-    assert sent == ["RomM Browser: 2 games ready: G0, G1; 1 failed: G2"]
+    assert sent == ["RomM-o-Cera: 2 games ready: G0, G1; 1 failed: G2"]
     n.flush()
     assert len(sent) == 1
     off = rb_dl.Notes({"notify": False})

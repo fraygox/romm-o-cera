@@ -190,7 +190,8 @@ MULTIDISC_STEPS = (
     "act:select,wait:0.5,act:ok,wait:0.3,act:back,act:x,wait:0.3,act:x,wait:4,act:y,act:back,"
     "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
     "act:back,act:back,act:down,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
-    "act:down,act:ok,shot:end")
+    "act:down,act:ok,wait:0.3,act:back,act:back,act:start,act:down,act:down,act:down,act:down,act:down,"
+    "act:ok,wait:1,act:y,wait:3,act:down,act:ok,wait:1,act:x,wait:0.3,act:back,shot:end")
 
 
 def test_ui_multidisc_queue_and_audit(isolated, mock_url, tmp_path):
@@ -207,3 +208,35 @@ def test_ui_multidisc_queue_and_audit(isolated, mock_url, tmp_path):
                        env=env, capture_output=True, text=True, timeout=300)
     assert p.returncode == 0 and "Traceback" not in p.stderr, p.stderr[-2000:]
     assert sorted(n for n in os.listdir(roms / "psx") if n.endswith(".m3u")) == ["Lorem Odyssey (USA).m3u"]
+
+
+def test_bios_status_and_record(isolated, mock_url):
+    import hashlib
+    ok_data = b"GBA-BIOS" * 32
+    os.makedirs(os.path.join(rommlib.USERDATA, "bios"))
+    open(os.path.join(rommlib.USERDATA, "bios", "gba_bios.bin"), "wb").write(ok_data)
+    data = b"MOCK-BIOS-scph5501.bin" * 64
+    with open(rommlib.BIOS_DB, "w") as f:
+        f.write("systems = %r\n" % {
+            "psx": {"name": "PlayStation", "biosFiles": [
+                {"md5": hashlib.md5(data).hexdigest(), "file": "bios/scph5501.bin"},
+                {"md5": "f" * 32, "file": "bios/notinromm.bin"}]},
+            "saturn": {"name": "Saturn", "biosFiles": [{"md5": "e" * 32, "file": "bios/saturn_bios.bin"}]},
+            "gba": {"name": "Game Boy Advance", "biosFiles": [
+                {"md5": hashlib.md5(ok_data).hexdigest(), "file": "bios/gba_bios.bin"}]},
+            "n64": {"name": "N64", "biosFiles": [{"md5": "d" * 32, "file": "bios/n64.bin"}]}})
+    api = rommlib.Api(mock_url, "demo")
+    pid = {p["fs_slug"]: p["id"] for p in api.platforms()}
+    by_sys = {"psx": [pid["ps1"]], "saturn": [pid["saturn"]], "gba": [pid["gba"]], "n64": [pid["n64"]]}
+    rows = {r["system"]: r for r in rommlib.bios_status(api, by_sys, {"psx", "saturn", "gba"})}
+    assert set(rows) == {"psx", "saturn", "gba"}            # n64: no games here, RomM has nothing
+    assert [m["file"] for m, _ in rows["psx"]["offers"]] == ["bios/scph5501.bin"]
+    assert len(rows["psx"]["missing"]) == 2
+    assert rows["saturn"]["missing"] and not rows["saturn"]["offers"]
+    assert not rows["gba"]["missing"] and rows["gba"]["name"] == "Game Boy Advance"
+    assert rommlib.fetch_bios(api, rows["psx"]["offers"], "psx") == ["bios/scph5501.bin"]
+    rec = rommlib.bios_fetched()
+    assert rec["bios/scph5501.bin"]["system"] == "psx" and rec["bios/scph5501.bin"]["from"] == "scph5501.bin"
+    again = {r["system"]: r for r in rommlib.bios_status(api, by_sys, {"psx", "saturn", "gba"})}
+    assert [m["file"] for m in again["psx"]["missing"]] == ["bios/notinromm.bin"] and not again["psx"]["offers"]
+    assert "bios/scph5501.bin" in again["psx"]["fetched"]

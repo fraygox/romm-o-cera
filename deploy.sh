@@ -55,4 +55,4 @@ print(\"config: url=%s token=%s\" % (cfg.get(\"url\") or \"(unset)\", \"set\" if
 '"
 ssh "${SSH_OPTS[@]}" "$TARGET" "cd $APPDIR && python3 -m py_compile rommlib.py rb_finalize.py rb_chd.py rb_chd_plan.py rb_dl.py && python3 -c 'import ast;ast.parse(open(\"rommbrowser.pygame\").read())' && rm -rf __pycache__"
 echo "Deployed to $HOST:$APPDIR"
-echo "First install: in ES run Main Menu → Game Settings → Update Gamelists, then Pygame → RomM Browser."
+echo "First install: in ES run Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera."

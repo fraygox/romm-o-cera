@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")
@@ -35,6 +35,9 @@ DL_STOP = os.path.join(DATA_DIR, "downloads.stop")          # app asks rb_dl.py 
 DL_STATUS = os.path.join(DATA_DIR, "downloads-status.json")
 USERDATA = os.environ.get("ROMM_BROWSER_USERDATA") or os.path.dirname(ROMS_ROOT.rstrip("/"))
 BIOS_DB = os.environ.get("ROMM_BROWSER_BIOS_DB", "/usr/bin/batocera-systems")
+RELEASE_DATE = "2026-10-10"   # bump with VERSION (tools/build-release.sh refuses a stale one)
+AUTHOR = "fraygox"
+PROJECT_URL = "https://github.com/fraygox/romm-o-cera"
 UPDATE_REPO = os.environ.get("ROMM_BROWSER_UPDATE_REPO", "fraygox/romm-o-cera")
 UPDATE_CACHE = os.path.join(DATA_DIR, "update-check.json")
 UA = "romm-o-cera/" + VERSION
@@ -1184,10 +1187,80 @@ def bios_offer(api, system, platform_id):
     return [(m, by_md5[m["md5"]]) for m in missing if m["md5"] in by_md5]
 
 
-def fetch_bios(api, offers):
+def bios_fetched():
+    """{"bios/x.bin": {"when", "from", "system"}} — what RomM Browser fetched."""
+    try:
+        with open(os.path.join(DATA_DIR, "bios-fetched.json")) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _record_bios(entries):
+    data = bios_fetched()
+    data.update(entries)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    p = os.path.join(DATA_DIR, "bios-fetched.json")
+    with open(p + ".tmp", "w") as f:
+        json.dump(data, f, indent=1)
+    os.replace(p + ".tmp", p)
+
+
+def bios_required(system):
+    """Distinct BIOS files Batocera lists for this system (with checksums)."""
+    out, seen = [], set()
+    db = bios_requirements()
+    for key in [system] + BIOS_ALIASES.get(system, []):
+        for b in (db.get(key) or {}).get("biosFiles", []):
+            if b.get("zippedFile") or not b.get("file") or not b.get("md5") or b["file"] in seen:
+                continue
+            seen.add(b["file"])
+            out.append(b["file"])
+    return out
+
+
+def bios_status(api, platforms_by_system, systems_with_games=()):
+    """Per system that needs BIOS: [{"system", "name", "required", "missing",
+    "offers", "fetched"}], for systems with games on the box or BIOS that
+    RomM can supply. missing = entries absent/wrong; offers = the subset RomM
+    has (matched by MD5)."""
+    db = bios_requirements()
+    rec = bios_fetched()
+    out = []
+    for system in sorted(set(platforms_by_system) | set(systems_with_games)):
+        required = bios_required(system)
+        if not required:
+            continue
+        missing = missing_bios(system)
+        offers, seen = [], set()
+        if missing and api is not None:
+            want = {m["md5"]: m for m in missing}
+            for pid in platforms_by_system.get(system, []):
+                try:
+                    fws = api.firmware(pid)
+                except RommError:
+                    continue
+                for fw in fws:
+                    md5 = (fw.get("md5_hash") or "").lower()
+                    if md5 in want and want[md5]["file"] not in seen:
+                        seen.add(want[md5]["file"])
+                        offers.append((want[md5], fw))
+        if system not in systems_with_games and not offers:
+            continue
+        name = next(((db.get(k) or {}).get("name") for k in [system] + BIOS_ALIASES.get(system, [])
+                     if (db.get(k) or {}).get("name")), system)
+        out.append({"system": system, "name": name, "required": required, "missing": missing,
+                    "offers": offers,
+                    "fetched": {f: r for f, r in rec.items() if f in required}})
+    return out
+
+
+def fetch_bios(api, offers, system=None):
     """Download offered BIOS files to Batocera's paths; MD5-verified, an
     existing wrong file is kept as .bak-romm. Returns the files written."""
     written = []
+    record = {}
     for m, fw in offers:
         if not m["path"].startswith(os.path.join(USERDATA, "bios") + os.sep):
             continue
@@ -1209,7 +1282,11 @@ def fetch_bios(api, offers):
             os.replace(m["path"], m["path"] + ".bak-romm")
         os.replace(part, m["path"])
         written.append(m["file"])
+        record[m["file"]] = {"when": time.strftime("%Y-%m-%d %H:%M"), "from": fw.get("file_name"),
+                             "system": system}
         log("BIOS %s <- RomM firmware %s" % (m["file"], fw["file_name"]))
+    if record:
+        _record_bios(record)
     return written
 
 

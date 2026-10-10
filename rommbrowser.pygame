@@ -20,6 +20,8 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 import pygame  # noqa: E402
 import rommlib  # noqa: E402
+
+APP_NAME = "RomM-o-Cera"
 from rommlib import human_size  # noqa: E402
 
 try:
@@ -262,6 +264,12 @@ OTHER = {
     "nintendo": {"L": "L", "R": "R", "L2 R2": "ZL ZR", "START": "+", "SELECT": "−"},
 }
 STYLE_NAMES = {"xbox": "Xbox", "playstation": "PlayStation", "nintendo": "Nintendo"}
+# While the keyboard is the last thing used, hints show key names instead.
+INPUT_MODE = {"kb": False}
+KEY_LABELS = {"A": "Enter", "B": "Esc", "X": "X", "Y": "Y", "L": "PgUp", "R": "PgDn",
+              "L2 R2": "[ ]", "START": "Home", "SELECT": "Tab"}
+TOKEN_ACTION = {"A": "ok", "B": "back", "X": "x", "Y": "y", "L": "l1", "R": "r1", "L2 R2": "r2",
+                "START": "start", "SELECT": "select"}
 
 
 def style_from_names(names):
@@ -278,6 +286,10 @@ def style_from_names(names):
 def pad_face(token):
     """(kind, text_or_shape, colour) for a hint token in the active style."""
     st = PAD_STYLE["style"]
+    if INPUT_MODE["kb"]:
+        col = {"A": FACE["xbox"]["south"][1], "B": FACE["xbox"]["east"][1], "X": FACE["xbox"]["west"][1],
+               "Y": FACE["xbox"]["north"][1]}.get(token, BTN_COL.get(token, DIM))
+        return "pill", KEY_LABELS.get(token, token), col
     pos = {"A": PAD_STYLE["ok"], "B": PAD_STYLE["back"], "X": "west", "Y": "north"}.get(token)
     if pos:
         lab, col = FACE[st][pos]
@@ -472,7 +484,8 @@ class Input:
 
     def __init__(self, swap_ab):
         self.set_swap(swap_ab)
-        self.pad_seen = False   # once a pad speaks, ignore keyboard nav (evmapy echoes)
+        self.last = {}          # action -> (time, "pad"|"key"): drops evmapy's key echoes of pad presses
+        self.text_mode = False  # a text field has focus: letters type instead of acting
         self.controllers = {}
         self.joysticks = {}
         self.held = {}
@@ -526,9 +539,17 @@ class Input:
             return "back"
         return {"west": "x", "north": "y"}.get(name)
 
-    def _press(self, action, out):
+    ECHO = 0.3
+
+    def _press(self, action, out, src="pad"):
+        now = time.time()
+        t, other = self.last.get(action, (0, src))
+        if other != src and now - t < self.ECHO:
+            return                    # the same press arriving twice (pad + its keyboard echo)
+        self.last[action] = (now, src)
+        INPUT_MODE["kb"] = src == "key"
         if action in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
-            self.held[action] = time.time() + self.REPEAT_DELAY
+            self.held[action] = now + self.REPEAT_DELAY
         out.append(action)
 
     def _release(self, action):
@@ -536,30 +557,32 @@ class Input:
 
     def handle(self, ev, out):
         t = ev.type
-        if t in (pygame.CONTROLLERBUTTONDOWN, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION):
-            self.pad_seen = True
-        if t in (pygame.KEYDOWN, pygame.KEYUP) and self.pad_seen and \
-                not (ev.key == pygame.K_F4 and ev.mod & pygame.KMOD_ALT):
-            # Batocera's evmapy turns the pad into keypresses for pygame apps
-            # (D-pad -> arrows, Start -> Enter, X/Y -> X/Y): we already read
-            # the pad itself, so those would double every press.
-            # rommbrowser.pygame.keys turns that mapping off; this is the
-            # belt-and-braces for boxes where it isn't installed.
+        if t == pygame.TEXTINPUT:
+            if self.text_mode and ev.text and ev.text.isprintable():
+                out.append("text:" + ev.text)
+                INPUT_MODE["kb"] = True
             return
         if t == pygame.KEYDOWN:
-            km = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left",
-                  pygame.K_RIGHT: "right", pygame.K_RETURN: "ok", pygame.K_SPACE: "ok",
-                  pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "back", pygame.K_x: "x",
-                  pygame.K_y: "y", pygame.K_PAGEUP: "l1", pygame.K_PAGEDOWN: "r1",
-                  pygame.K_TAB: "select", pygame.K_HOME: "start",
-                  pygame.K_LEFTBRACKET: "l2", pygame.K_RIGHTBRACKET: "r2"}
             if ev.key == pygame.K_F4 and ev.mod & pygame.KMOD_ALT:
                 out.append("quit")
-            elif ev.key in km:
-                self._press(km[ev.key], out)
+                return
+            if self.text_mode:
+                km = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left",
+                      pygame.K_RIGHT: "right", pygame.K_RETURN: "start", pygame.K_KP_ENTER: "start",
+                      pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "x", pygame.K_TAB: "select"}
+            else:
+                km = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left",
+                      pygame.K_RIGHT: "right", pygame.K_RETURN: "ok", pygame.K_KP_ENTER: "ok",
+                      pygame.K_SPACE: "ok", pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "back",
+                      pygame.K_x: "x", pygame.K_y: "y", pygame.K_PAGEUP: "l1", pygame.K_PAGEDOWN: "r1",
+                      pygame.K_TAB: "select", pygame.K_HOME: "start", pygame.K_s: "y",
+                      pygame.K_LEFTBRACKET: "l2", pygame.K_RIGHTBRACKET: "r2"}
+            if ev.key in km:
+                self._press(km[ev.key], out, "key")
         elif t == pygame.KEYUP:
             for a in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
-                self._release(a)
+                if self.last.get(a, (0, ""))[1] == "key":
+                    self._release(a)
         elif sdlcontroller is not None and t == pygame.CONTROLLERDEVICEADDED:
             self._open(ev.device_index)
             out.append("padchange")
@@ -672,6 +695,7 @@ class App:
         self.scaled_covers = {}
         self.fonts = Fonts()
         self.cfg = rommlib.load_config()
+        self.targets, self.modal_from, self.ptr = [], 0, None
         self.sfx = Sfx(self.cfg.get("sounds", "normal") if screen is not None else "off")
         self.input = Input(self.cfg.get("swap_ab"))
         self.headless = headless
@@ -892,9 +916,9 @@ class App:
     def request_quit(self):
         n = self.downloader.active_count()
         if n and not self.cfg.get("background_downloads", True):
-            self.modal = Confirm(self, "Quit RomM Browser?",
+            self.modal = Confirm(self, "Quit %s?" % APP_NAME,
                                  "%d download%s still running. They're paused and resume "
-                                 "next time you open RomM Browser (or turn on \"Keep "
+                                 "next time you open RomM-o-Cera (or turn on \"Keep "
                                  "downloading after exit\" in Settings)." % (n, "s" if n > 1 else ""),
                                  "Quit", self._quit, danger=True)
         else:
@@ -914,7 +938,7 @@ class App:
                 return
         except OSError:
             pass
-        self.toast("romm-o-cera %s is out. Settings shows how to update." % tag, BLUE)
+        self.toast("%s %s is out. Settings shows how to update." % (APP_NAME, tag), BLUE)
         try:
             with open(seen, "w") as f:
                 f.write(tag)
@@ -954,10 +978,20 @@ class App:
             dt = clock.tick(self.fps) / 1000.0
             self.t += dt
             actions = []
+            want_text = not self.modal and getattr(self.stack[-1], "text_entry", False)
+            if want_text != self.input.text_mode:
+                self.input.text_mode = want_text
+                try:
+                    (pygame.key.start_text_input if want_text else pygame.key.stop_text_input)()
+                except Exception:
+                    pass
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     actions.append("quit")
-                else:
+                elif not self.pointer(ev, actions):
+                    if ev.type in (pygame.KEYDOWN, pygame.CONTROLLERBUTTONDOWN, pygame.JOYBUTTONDOWN) \
+                            and not self.headless:
+                        pygame.mouse.set_visible(False)
                     self.input.handle(ev, actions)
             self.input.repeats(actions)
             if scripted is not None:
@@ -972,7 +1006,67 @@ class App:
             self.draw()
         self.on_exit()
 
+    # ---- touch / mouse: screens register tap targets while drawing
+    def hit(self, rect, fn):
+        self.targets.append((pygame.Rect(rect), fn))
+
+    def to_logical(self, pos):
+        if self.screen is None:
+            return pos
+        sw, sh = self.screen.get_size()
+        cw, ch = self.canvas.get_size()
+        return ((pos[0] - (sw - cw) // 2) / K, (pos[1] - (sh - ch) // 2) / K)
+
+    DRAG_STEP = 46
+
+    def pointer(self, ev, actions):
+        """Tap = press what's under the finger; drag/wheel = scroll. Returns
+        True if the event was a pointer event."""
+        t = ev.type
+        if t == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            p = self.to_logical(ev.pos)
+            self.ptr = {"start": p, "y": p[1], "moved": False}
+        elif t == pygame.MOUSEMOTION:
+            if not getattr(ev, "touch", False) and not self.headless:
+                pygame.mouse.set_visible(True)
+            if self.ptr and ev.buttons and ev.buttons[0]:
+                p = self.to_logical(ev.pos)
+                if abs(p[1] - self.ptr["start"][1]) > 14 or abs(p[0] - self.ptr["start"][0]) > 14:
+                    self.ptr["moved"] = True
+                while p[1] - self.ptr["y"] <= -self.DRAG_STEP:     # finger up: content moves on
+                    actions.append("down")
+                    self.ptr["y"] -= self.DRAG_STEP
+                while p[1] - self.ptr["y"] >= self.DRAG_STEP:
+                    actions.append("up")
+                    self.ptr["y"] += self.DRAG_STEP
+        elif t == pygame.MOUSEBUTTONUP and ev.button == 1:
+            if self.ptr and not self.ptr["moved"]:
+                self.tap(self.to_logical(ev.pos))
+            self.ptr = None
+        elif t == pygame.MOUSEWHEEL:
+            actions += ["up" if ev.y > 0 else "down"] * min(5, abs(ev.y))
+        else:
+            return False
+        return True
+
+    def tap(self, pt):
+        cands = self.targets[self.modal_from:] if self.modal else self.targets
+        for rect, fn in reversed(cands):
+            if rect.collidepoint(pt):
+                if fn:
+                    self.sfx.play("ok")
+                    fn()
+                return
+        if self.modal:
+            self.dispatch("back")              # tap outside a dialog closes it
+
     def dispatch(self, a):
+        if a.startswith("text:"):
+            top = self.stack[-1]
+            if not self.modal and hasattr(top, "type_text"):
+                self.sfx.play("move")
+                top.type_text(a[5:])
+            return
         snd = SOUND_FOR.get(a)
         if snd:
             self.sfx.play(snd)
@@ -1024,6 +1118,7 @@ class App:
     def draw(self):
         c = self.canvas
         c.fill(BG)
+        self.targets = []
         # subtle top glow
         rrect(c, BG2, (0, 0, W, 64), 0)
         hline(c, LINE, (0, 64), (W, 64))
@@ -1031,8 +1126,11 @@ class App:
         # logo
         rrect(c, ACCENT, (24, 16, 34, 34), 9)
         text(c, self.fonts.h3, "R", (41, 33), TEXT, "center")
-        text(c, self.fonts.h2, "RomM", (68, 33), TEXT, "midleft")
-        x = 68 + int(measure(self.fonts.h2, "RomM")) + 14
+        text(c, self.fonts.h2, APP_NAME, (68, 33), TEXT, "midleft")
+        x = 68 + int(measure(self.fonts.h2, APP_NAME)) + 14
+        self.hit((16, 8, x - 16, 50), lambda: self.dispatch("start") if len(self.stack) > 1 else None)
+        if len(self.stack) > 1:
+            self.hit((x, 8, 520, 50), lambda: self.dispatch("back"))
         for crumb in top.crumbs():
             text(c, self.fonts.h3, "›", (x, 32), FAINT, "midleft")
             x += 18
@@ -1054,8 +1152,11 @@ class App:
         hline(c, LINE, (0, H - 46), (W, H - 46))
         fx = 24
         for btn, label in top.hints():
+            x0 = fx
             fx += button_glyph(c, self.fonts, btn, fx, H - 34) + 8
             r = text(c, self.fonts.small, label, (fx, H - 23), DIM, "midleft")
+            if btn in TOKEN_ACTION:
+                self.hit((x0 - 8, H - 46, r.right - x0 + 16, 46), lambda a=TOKEN_ACTION[btn]: self.dispatch(a))
             fx = r.right + 22
         # right side: the two global buttons, then the version
         rx = W - 24
@@ -1070,7 +1171,10 @@ class App:
             r = text(c, self.fonts.small, label, (rx, H - 23), DIM, "midright")
             gw = glyph_width(self.fonts, btn)
             button_glyph(c, self.fonts, btn, r.left - 8 - gw, H - 34)
+            self.hit((r.left - 16 - gw, H - 46, r.width + gw + 24, 46),
+                     lambda a=TOKEN_ACTION[btn]: self.dispatch(a))
             rx = r.left - 8 - gw - 22
+        self.modal_from = len(self.targets)
         if self.modal:
             self.modal.draw(c)
         self.draw_toasts(c)
@@ -1120,6 +1224,18 @@ class Screen:
 
     def draw(self, c):
         pass
+
+    def tap_row(self, i):
+        """Touch: first tap selects (detail panels update), second opens."""
+        if getattr(self, "sel", None) == i:
+            self.action("ok")
+        else:
+            self.sel = i
+
+    def tap_now(self, i):
+        """Touch: select and open in one tap (menus, settings, tiles)."""
+        self.sel = i
+        self.action("ok")
 
 
 class HomeScreen(Screen):
@@ -1183,6 +1299,7 @@ class HomeScreen(Screen):
         y = 84
         for i, (key, label, sub) in enumerate(self.ITEMS):
             r = pygame.Rect(48, y, 520, 64)
+            self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
             if on:
                 focus_box(c, r, 14)
@@ -1312,6 +1429,7 @@ class PlatformScreen(Screen):
                 continue
             r = pygame.Rect(x0 + c_i * (self.CW + self.GAP),
                             y0 + (r_i - self.scroll) * (self.CH + self.GAP), self.CW, self.CH)
+            self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
             rrect(c, PANEL_HI if on else PANEL, r, 14)
             if on:
@@ -1525,6 +1643,7 @@ class CollectionScreen(Screen):
                 hline(c, LINE, (64, y - 2), (W - 112, y - 2))
             on = i == self.sel
             r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            self.app.hit(r, lambda i=i: self.tap_now(i))
             if on:
                 focus_box(c, r)
             right = 150
@@ -2017,7 +2136,7 @@ class GameListScreen(Screen):
         def done(written):
             self.bios = [o for o in offers if o[0]["file"] not in written]
             app.toast("BIOS installed: %s" % ", ".join(os.path.basename(w) for w in written), GREEN)
-        app.bg(lambda: rommlib.fetch_bios(app.api, offers), done)
+        app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
         if self.mark_mode:
@@ -2072,6 +2191,7 @@ class GameListScreen(Screen):
             rom = self.items[i]
             on = i == self.sel
             r = pygame.Rect(lx, ly + (i - self.scroll) * self.ROW_H, lw, self.ROW_H - 4)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
             if on:
                 focus_box(c, r)
             if rom is None:
@@ -2197,6 +2317,7 @@ class GameListScreen(Screen):
             text(c, self.f.small, ln, (p.left + 24, sy + i * 20), DIM)
         # action area
         ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, 52)
+        self.app.hit(ar, lambda: self.action("ok"))
         st, j = self.rom_status(rom)
         system = app.system_for(rom)
         if not system:
@@ -2271,6 +2392,15 @@ class SearchScreen(Screen):
     def _type(self, s):
         self.query = (self.query + s)[:60]
         self.pending_at = time.time() + 0.45
+
+    text_entry = True                 # a physical keyboard types here
+
+    def type_text(self, s):
+        self._type(s)
+
+    def tap_key(self, r, c):
+        self.r, self.c = r, c
+        self.action("ok")
 
     def action(self, a):
         nrows = len(self.ROWS) + 1
@@ -2358,6 +2488,7 @@ class SearchScreen(Screen):
         for ri, row in enumerate(self.ROWS):
             for ci, ch in enumerate(row):
                 kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
+                self.app.hit(kr, lambda ri=ri, ci=ci: self.tap_key(ri, ci))
                 on = (ri, ci) == (self.r, self.c)
                 rrect(c, ACCENT if on else PANEL, kr, 10)
                 text(c, self.f.key, ch, kr.center, TEXT if on else DIM, "center")
@@ -2366,6 +2497,7 @@ class SearchScreen(Screen):
         for ci, (label, span) in enumerate(self.SPECIAL):
             w = span * kw + (span - 1) * gap
             kr = pygame.Rect(sx, sy, w, kh)
+            self.app.hit(kr, lambda ci=ci: self.tap_key(len(self.ROWS), ci))
             on = (self.r, self.c) == (len(self.ROWS), ci)
             col = ACCENT if on else (PANEL_HI if label == "Search" else PANEL)
             rrect(c, col, kr, 10)
@@ -2384,6 +2516,8 @@ class SearchScreen(Screen):
                 ("Searching…" if self.preview_total is None or self.pending_at else "No matches")
             text(c, self.f.body, msg, (p.left + 24, y), DIM)
         for rom in self.preview[:8]:
+            self.app.hit((p.left + 12, y - 6, p.width - 24, 56),
+                         lambda rom=rom: setattr(self.app, "modal", DownloadConfirm(self.app, rom)))
             pl = self.app.platform_by_id.get(rom.get("platform_id"))
             text(c, self.f.row, rom_title(rom), (p.left + 24, y),
                  TEXT, maxw=p.width - 48)
@@ -2528,6 +2662,7 @@ class DownloadsScreen(Screen):
         for i in range(self.scroll, min(len(jobs), self.scroll + rows)):
             j = jobs[i]
             r = pygame.Rect(48, y, W - 96, self.ROW_H - 6)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
             on = i == self.sel
             rrect(c, PANEL_HI if on else PANEL, r, 12)
             if on:
@@ -2627,6 +2762,15 @@ class TextInputScreen(Screen):
         self.app.pop()
         self.on_save(self.value.strip())
 
+    text_entry = True
+
+    def type_text(self, s):
+        self.value = (self.value + s)[:2048]
+
+    def tap_key(self, r, c):
+        self.r, self.c = r, c
+        self.action("ok")
+
     def draw(self, c):
         qf = pygame.Rect(48, 88, W - 96, 60)
         rrect(c, PANEL, qf, 14)
@@ -2649,6 +2793,7 @@ class TextInputScreen(Screen):
         for ri, row in enumerate(self.rows()):
             for ci, ch in enumerate(row):
                 kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
+                self.app.hit(kr, lambda ri=ri, ci=ci: self.tap_key(ri, ci))
                 on = (ri, ci) == (self.r, self.c)
                 rrect(c, ACCENT if on else PANEL, kr, 10)
                 text(c, self.f.key, ch, kr.center, TEXT if on else DIM, "center")
@@ -2657,6 +2802,7 @@ class TextInputScreen(Screen):
         for ci, (label, span) in enumerate(self.SPECIAL):
             w = span * kw + (span - 1) * gap
             kr = pygame.Rect(sx, sy, w, kh)
+            self.app.hit(kr, lambda ci=ci: self.tap_key(len(self.LOWER), ci))
             on = (self.r, self.c) == (len(self.LOWER), ci)
             hot = label == "Save" or (label == "Shift" and self.shift)
             rrect(c, ACCENT if on else (PANEL_HI if hot else PANEL), kr, 10)
@@ -2720,6 +2866,7 @@ class SettingsScreen(Screen):
             ("sounds", "Sounds", {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(
                 cfg.get("sounds", "normal"), "On"), "Clicks and chimes in this app"),
             ("arcade", "Arcade games go to", "roms/" + arcade, "fbneo (forgiving) or mame (exact sets)"),
+            ("bios", "BIOS files", "Open", "What each system needs, and what RomM can fill"),
             ("cache", "Clear cover cache",
              human_size(self.cache_bytes) if self.cache_bytes is not None else "…",
              "Covers re-download as you browse"),
@@ -2828,7 +2975,7 @@ class SettingsScreen(Screen):
                     tag = app.update_tag
                     app.modal = Confirm(app, "Update to %s?" % tag,
                                         "Downloads it from GitHub, checks it, and keeps v%s so you can go "
-                                        "back. RomM Browser then closes; open it again." % rommlib.VERSION,
+                                        "back. RomM-o-Cera then closes; open it again." % rommlib.VERSION,
                                         "Update", lambda: self._do_update())
                 else:
                     app.toast("Checking GitHub…")
@@ -2840,9 +2987,11 @@ class SettingsScreen(Screen):
                     app.bg(lambda: rommlib.newer_release(dict(cfg, check_updates=True), force=True), checked)
             elif key == "rollback" and a == "ok":
                 app.modal = Confirm(app, "Go back to v%s?" % self.prev,
-                                    "Swaps v%s back in; v%s is kept so you can undo this. RomM Browser then "
+                                    "Swaps v%s back in; v%s is kept so you can undo this. RomM-o-Cera then "
                                     "closes; open it again." % (self.prev, rommlib.VERSION),
                                     "Go back", lambda: self._swap(rommlib.rollback), danger=True)
+            elif key == "bios" and a == "ok":
+                app.push(BiosScreen(app))
             elif key == "cache" and a == "ok":
                 shutil.rmtree(rommlib.COVER_CACHE, ignore_errors=True)
                 app.covers.clear()
@@ -2861,8 +3010,8 @@ class SettingsScreen(Screen):
 
         def done(ver):
             app.modal = Confirm(app, "Now on v%s" % ver,
-                                "Close RomM Browser and open it again from Pygame to use it.",
-                                "Close RomM Browser", app._quit)
+                                "Close RomM-o-Cera and open it again from Pygame to use it.",
+                                "Close %s" % APP_NAME, app._quit)
 
         def err(e):
             app.toast(str(e) if isinstance(e, rommlib.UpdateError) else "Update failed (%s)"
@@ -2878,6 +3027,7 @@ class SettingsScreen(Screen):
         y = 84
         for i, (key, label, value, sub) in list(enumerate(items))[self.scroll:self.scroll + self.VISIBLE]:
             r = pygame.Rect(48, y, 700, 52)
+            self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
             rrect(c, PANEL_HI if on else PANEL, r, 12)
             if on:
@@ -2885,7 +3035,7 @@ class SettingsScreen(Screen):
             text(c, self.f.h3, label, (r.left + 22, r.top + 4), TEXT if on else DIM)
             warn = sub.startswith("Plain HTTP")
             text(c, self.f.small, sub, (r.left + 22, r.top + 28), AMBER if warn else FAINT, maxw=420)
-            vcol = ACCENT_HI if key in ("test", "cache", "update", "rollback") else (TEXT if on else DIM)
+            vcol = ACCENT_HI if key in ("test", "cache", "update", "rollback", "bios") else (TEXT if on else DIM)
             text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
             y += 57
         if len(items) > self.VISIBLE:
@@ -2898,11 +3048,13 @@ class SettingsScreen(Screen):
         p = pygame.Rect(776, 84, 472, 554)
         rrect(c, PANEL, p, 16)
 
-        text(c, self.f.h1, "RomM Browser", (p.left + 28, p.top + 24), TEXT)
-        text(c, self.f.body, "romm-o-cera v" + rommlib.VERSION, (p.left + 28, p.top + 72), ACCENT_HI)
+        text(c, self.f.h1, APP_NAME, (p.left + 28, p.top + 24), TEXT)
+        text(c, self.f.body, "v%s · %s · by %s" % (rommlib.VERSION, rommlib.RELEASE_DATE, rommlib.AUTHOR),
+             (p.left + 28, p.top + 72), ACCENT_HI)
         rows = [("Update available", "%s is out. Updates (on the left) installs it."
                  % self.app.update_tag)] if self.app.update_tag else []
-        rows += [("Status", self.app.status if not self.app.error else self.app.error),
+        rows += [("Project", rommlib.PROJECT_URL.replace("https://", "")),
+                ("Status", self.app.status if not self.app.error else self.app.error),
                 ("Platforms here", str(len(self.app.platforms))),
                 ("Config", rommlib.CONFIG_PATH),
                 ("Data / log", rommlib.LOG_PATH),
@@ -2963,7 +3115,8 @@ class InstalledScreen(Screen):
         return ["On this box"]
 
     def hints(self):
-        return [("A", "Delete"), ("X", "Check games"), ("L", "Page up"), ("R", "Page down"), ("B", "Back")]
+        return [("A", "Delete"), ("X", "Check games"), ("Y", "BIOS files"), ("L", "Page up"),
+                ("R", "Page down"), ("B", "Back")]
 
     def check_menu(self):
         app = self.app
@@ -2977,6 +3130,8 @@ class InstalledScreen(Screen):
     def action(self, a):
         if a == "x":
             return self.check_menu()
+        if a == "y":
+            return self.app.push(BiosScreen(self.app))
         if not self.items:
             return super().action(a)
         n = len(self.items)
@@ -3020,7 +3175,7 @@ class InstalledScreen(Screen):
         lab = "{X} Check for damaged games"
         rich_text(c, self.f, self.f.small, lab, (W - 56 - 250, 89), ACCENT_HI)
         if not self.items:
-            text(c, self.f.body, "Nothing installed by RomM Browser yet. Games copied over another way "
+            text(c, self.f.body, "Nothing installed by RomM-o-Cera yet. Games copied over another way "
                  "can be deleted from their game list.", (56, 130), DIM)
             return
         rows = self.ROWS
@@ -3033,6 +3188,7 @@ class InstalledScreen(Screen):
             it = self.items[i]
             on = i == self.sel
             r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
             if on:
                 focus_box(c, r)
             text(c, self.f.row, it["name"], (r.left + 22, r.centery), TEXT if on else DIM, "midleft",
@@ -3045,6 +3201,155 @@ class InstalledScreen(Screen):
             text(c, self.f.small, it["when"][:10], (r.right - 150, r.centery), FAINT, "midright")
             text(c, self.f.small, human_size(it["size"]), (r.right - 20, r.centery), DIM, "midright")
             y += self.ROW_H
+
+
+class BiosScreen(Screen):
+    """BIOS status per system: complete, missing but in RomM (A gets it,
+    X gets everything RomM has), or missing everywhere — plus what RomM
+    Browser has fetched before."""
+    ROWS, ROW_H = 8, 62
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.items = None
+        self.sel = self.scroll = 0
+        self.busy = False
+        self.load()
+
+    def load(self):
+        app = self.app
+        by_sys = {}
+        for p in app.platforms:
+            by_sys.setdefault(p["_system"], []).append(p["id"])
+
+        def scan():
+            with_games = set()
+            try:
+                for d in os.listdir(rommlib.ROMS_ROOT):
+                    full = os.path.join(rommlib.ROMS_ROOT, d)
+                    if os.path.isdir(full) and any(not n.startswith(".") and n not in
+                                                   ("gamelist.xml", "images", "videos", "manuals", "_info.txt")
+                                                   for n in os.listdir(full)):
+                        with_games.add(d)
+            except OSError:
+                pass
+            rows = rommlib.bios_status(app.api, by_sys, with_games)
+            order = lambda r: (0 if r["offers"] else 1 if r["missing"] else 2, r["name"].lower())
+            return sorted(rows, key=order)
+        app.bg(scan, lambda rows: setattr(self, "items", rows),
+               lambda e: (setattr(self, "items", []), app.toast(str(e), RED)))
+
+    def crumbs(self):
+        return ["BIOS files"]
+
+    def hints(self):
+        h = [("A", "Get from RomM")] if self.items and self.items[self.sel]["offers"] else []
+        if self.items and any(r["offers"] for r in self.items):
+            h.append(("X", "Get all from RomM"))
+        return h + [("L", "Page"), ("B", "Back")]
+
+    def fetch(self, rows):
+        app = self.app
+        if self.busy:
+            return
+        self.busy = True
+        offers = [(r["system"], o) for r in rows for o in r["offers"]]
+
+        def run():
+            done = []
+            for system in dict.fromkeys(sy for sy, _ in offers):
+                done += rommlib.fetch_bios(app.api, [o for sy, o in offers if sy == system], system)
+            return done
+
+        def ok(written):
+            self.busy = False
+            app.toast("BIOS installed: %d file%s" % (len(written), "" if len(written) == 1 else "s"), GREEN)
+            self.load()
+
+        def fail(e):
+            self.busy = False
+            app.toast(str(e), RED)
+            self.load()
+        app.bg(run, ok, fail)
+
+    def action(self, a):
+        if not self.items:
+            return super().action(a)
+        n = len(self.items)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
+        if a in mv:
+            self.sel = max(0, min(n - 1, self.sel + mv[a]))
+        elif a == "ok":
+            r = self.items[self.sel]
+            if r["offers"]:
+                self.fetch([r])
+            elif r["missing"]:
+                self.app.toast("Not in RomM either: " + ", ".join(os.path.basename(m["file"])
+                                                                    for m in r["missing"][:4]), AMBER)
+        elif a == "x" and any(r["offers"] for r in self.items):
+            todo = [r for r in self.items if r["offers"]]
+            k = sum(len(r["offers"]) for r in todo)
+            self.app.modal = Confirm(self.app, "Get %d BIOS file%s from RomM?" % (k, "" if k == 1 else "s"),
+                                     "For %s. Each is checked against Batocera's checksum; a wrong file "
+                                     "already there is kept as .bak-romm." % ", ".join(r["name"] for r in todo[:4]) +
+                                     (" and %d more" % (len(todo) - 4) if len(todo) > 4 else ""),
+                                     "Get %d" % k, lambda: self.fetch(todo))
+        else:
+            super().action(a)
+
+    def draw(self, c):
+        if self.items is None:
+            text(c, self.f.h2, "Checking BIOS files…", (W // 2, H // 2), DIM, "center")
+            return
+        if not self.items:
+            text(c, self.f.h2, "No BIOS needed", (W // 2, 300), DIM, "center")
+            text(c, self.f.body, "None of the systems with games on this box needs BIOS files.",
+                 (W // 2, 340), FAINT, "center")
+            return
+        ok = sum(1 for r in self.items if not r["missing"])
+        can = sum(1 for r in self.items if r["offers"])
+        gone = sum(1 for r in self.items if r["missing"] and not r["offers"])
+        x = 56
+        for label, col in (("%d complete" % ok, GREEN), ("%d RomM can fill" % can, ACCENT_HI),
+                           ("%d missing everywhere" % gone, AMBER)):
+            r = text(c, self.f.h3, label, (x, 86), col)
+            x = r.right + 24
+        text(c, self.f.small, "Files go to /userdata/bios", (W - 56, 90), FAINT, "topright")
+        rows = self.ROWS
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + rows:
+            self.scroll = self.sel - rows + 1
+        y = 124
+        for i in range(self.scroll, min(len(self.items), self.scroll + rows)):
+            it = self.items[i]
+            on = i == self.sel
+            r = pygame.Rect(48, y, W - 96, self.ROW_H - 6)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
+            if on:
+                focus_box(c, r)
+            nmiss, noff = len(it["missing"]), len(it["offers"])
+            if not nmiss:
+                pill, col = "Complete", GREEN
+                sub = "%d file%s" % (len(it["required"]), "" if len(it["required"]) == 1 else "s")
+                if it["fetched"]:
+                    f, rec = sorted(it["fetched"].items(), key=lambda kv: kv[1].get("when", ""))[-1]
+                    sub += " · %d fetched by RomM-o-Cera, last %s" % (len(it["fetched"]), rec.get("when", "")[:10])
+            elif noff:
+                pill, col = "RomM has %d of %d missing" % (noff, nmiss), ACCENT_HI
+                sub = ", ".join(os.path.basename(m["file"]) for m, _ in it["offers"][:4])
+            else:
+                pill, col = "%d missing, not in RomM" % nmiss, AMBER
+                sub = ", ".join(os.path.basename(m["file"]) for m in it["missing"][:4])
+            text(c, self.f.row, it["name"], (r.left + 22, r.top + 8), TEXT if on else DIM, maxw=r.width - 420)
+            text(c, self.f.small, sub, (r.left + 22, r.top + 34), FAINT, maxw=r.width - 60)
+            pw = int(measure(self.f.small, pill)) + 20
+            pr = pygame.Rect(r.right - 20 - pw, r.top + 8, pw, 24)
+            rrect(c, BG2, pr, 8)
+            text(c, self.f.small, pill, pr.center, col, "center")
+            y += self.ROW_H
+        if self.busy:
+            text(c, self.f.body, "Fetching from RomM…", (W // 2, H - 90), ACCENT_HI, "center")
 
 
 class AuditScreen(Screen):
@@ -3178,6 +3483,7 @@ class AuditScreen(Screen):
             f = self.findings[i]
             on = i == self.sel
             r = pygame.Rect(48, y, W - 96, self.ROW_H - 6)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
             if on:
                 focus_box(c, r)
             col = RED if f["severity"] == "damaged" else AMBER
@@ -3233,6 +3539,10 @@ class ActionMenu:
         elif a in ("back", "quit", "x"):
             self.app.modal = None
 
+    def tap(self, i):
+        self.sel = i
+        self.action("ok")
+
     def reload(self):
         """Re-read entries, keeping focus on the same row (by label)."""
         if not self.refresh:
@@ -3257,6 +3567,7 @@ class ActionMenu:
         body = sum(self._height(e) for e in self.entries)
         r = pygame.Rect(0, 0, 680, 78 + body + 18)
         r.center = (W // 2, H // 2)
+        self.app.hit(r, None)                    # taps on the dialog itself don't close it
         rrect(c, PANEL, r, 18)
         rrect(c, LINE, r, 18, 1)
         text(c, f.h2, self.title, (r.left + 28, r.top + 24), TEXT, maxw=r.width - 56)
@@ -3271,6 +3582,8 @@ class ActionMenu:
             value = e[3] if len(e) > 3 else None
             kind = self.kind(e)
             row = pygame.Rect(r.left + 16, y, r.width - 32, h - 6)
+            if fn:
+                self.app.hit(row, lambda i=i: self.tap(i))
             on = i == self.sel
             if on:
                 focus_box(c, row)
@@ -3370,6 +3683,7 @@ class Confirm:
         c.blit(veil, (0, 0))
         r = pygame.Rect(0, 0, 640, 260)
         r.center = (W // 2, H // 2)
+        self.app.hit(r, None)
         rrect(c, PANEL, r, 18)
         rrect(c, LINE, r, 18, 1)
         text(c, f.h2, self.title, (r.left + 32, r.top + 28), TEXT, maxw=r.width - 64)
@@ -3378,10 +3692,12 @@ class Confirm:
         bx = r.left + 32
         by = r.bottom - 58
         okr = pygame.Rect(bx, by, 260, 40)
+        self.app.hit(okr, lambda: self.action("ok"))
         rrect(c, RED if self.danger else ACCENT, okr, 10)
         g = button_glyph(c, f, "A", okr.left + 12, okr.centery - 11)
         text(c, f.h3, self.ok_label, (okr.left + 22 + g, okr.centery), TEXT, "midleft")
         nr = pygame.Rect(okr.right + 16, by, 180, 40)
+        self.app.hit(nr, lambda: self.action("back"))
         rrect(c, PANEL_HI, nr, 10)
         g = button_glyph(c, f, "B", nr.left + 12, nr.centery - 11)
         text(c, f.h3, "Back", (nr.left + 22 + g, nr.centery), DIM, "midleft")
@@ -3460,22 +3776,29 @@ class DownloadConfirm(Confirm):
 # --------------------------------------------------------------------- main
 
 def register_self():
-    """First run: queue our own ES gamelist entry (name, icon) for the
-    post-exit merge, so the pygame system lists "RomM Browser", not a folder."""
+    """Queue our own ES gamelist entry (name, icon, developer, release date)
+    for the post-exit merge, so the pygame system lists the app by name, not a
+    folder. Re-queued whenever the version changes, so ES stays current."""
     marker = os.path.join(rommlib.DATA_DIR, ".registered")
-    if os.path.exists(marker):
-        return
+    try:
+        if open(marker).read().strip() == rommlib.VERSION:
+            return
+    except OSError:
+        pass
+    import calendar
+    rel = calendar.timegm(time.strptime(rommlib.RELEASE_DATE, "%Y-%m-%d")) * 1000
     entry = {"system": "pygame", "paths": [os.path.join(APP_DIR, "rommbrowser.pygame")],
-             "name": "RomM Browser",
-             "desc": "Browse and search your RomM library with a controller and download "
-                     "games straight into this box's roms folders (romm-o-cera v%s)."
-                     % rommlib.VERSION,
-             "genres": ["Utility"], "developer": "romm-o-cera", "players": "1",
+             "name": APP_NAME,
+             "desc": "Browse and search your RomM library with a controller and download games "
+                     "straight into this box's roms folders. v%s · %s" % (rommlib.VERSION, rommlib.PROJECT_URL),
+             "genres": ["Utility"], "developer": rommlib.AUTHOR, "publisher": rommlib.AUTHOR,
+             "players": "1", "releasedate": rel,
              "image_local": os.path.join(APP_DIR, "icon.png")}
     import json
     with open(rommlib.GAMELIST_QUEUE, "a") as f:
         f.write(json.dumps(entry) + "\n")
-    open(marker, "w").close()
+    with open(marker, "w") as f:
+        f.write(rommlib.VERSION)
 
 
 def main():
@@ -3490,7 +3813,7 @@ def main():
         screen = pygame.display.set_mode((0, 0), flags)
     except pygame.error:
         screen = pygame.display.set_mode((W, H))
-    pygame.display.set_caption("RomM Browser")
+    pygame.display.set_caption(APP_NAME)
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     rommlib.log("start")
     register_self()
