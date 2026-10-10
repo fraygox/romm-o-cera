@@ -1,0 +1,2543 @@
+#!/usr/bin/env python3
+"""RomM Browser for Batocera — browse/search the RomM library with a
+controller and download games straight into /userdata/roms/<system>.
+
+Launched by Batocera's pygame system (roms/pygame/rommbrowser/). Renders a
+1280x720 logical canvas scaled to the screen. Exit: Hotkey+Start (evmapy
+sends Alt+F4), or Home -> Exit. Backend lives in rommlib.py.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, APP_DIR)
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+
+import pygame  # noqa: E402
+import rommlib  # noqa: E402
+from rommlib import human_size  # noqa: E402
+
+try:
+    from pygame._sdl2 import controller as sdlcontroller
+except Exception:  # pragma: no cover - older pygame
+    sdlcontroller = None
+
+W, H = 1280, 720      # logical layout units; drawn natively at W*K x H*K
+FPS = 60
+K = 1.0               # physical px per logical unit (3.0 on a 4K TV), set at startup
+
+
+def S(v):
+    return int(round(v * K))
+
+
+def SR(r):
+    r = pygame.Rect(r)
+    return pygame.Rect(S(r.x), S(r.y), max(1, S(r.width)), max(1, S(r.height)))
+
+
+def LR(r):
+    """physical rect -> logical rect (what layout code reasons in)"""
+    return pygame.Rect(int(r.x / K), int(r.y / K), int(round(r.width / K)), int(round(r.height / K)))
+
+# palette (RomM-ish violet on near-black)
+# Design tokens (2026-10-10 sweep): deep indigo "ink" instead of neutral black
+# (calmer on a TV, ties to RomM's violet), one focus language (violet outline
+# on a lifted panel), status colours used for status only.
+BG = (21, 19, 42)          # ink        #15132A
+BG2 = (28, 25, 54)         # recess     #1C1936
+PANEL = (33, 30, 64)       # panel      #211E40
+PANEL_HI = (47, 42, 92)    # focus fill #2F2A5C
+LINE = (61, 55, 108)       # rule       #3D376C
+TEXT = (242, 239, 255)     # text       #F2EFFF
+DIM = (171, 165, 216)      # secondary  #ABA5D8
+FAINT = (121, 114, 172)    # tertiary   #7972AC
+ACCENT = (139, 92, 246)    # RomM violet #8B5CF6
+ACCENT_HI = (183, 160, 255)
+GREEN = (74, 222, 128)
+AMBER = (251, 191, 36)
+RED = (248, 113, 113)
+BLUE = (96, 165, 250)
+BTN_COL = {"A": (52, 211, 153), "B": (248, 113, 113), "X": (96, 165, 250),
+           "Y": (251, 191, 36), "L": (171, 165, 216), "R": (171, 165, 216),
+           "START": (171, 165, 216), "SELECT": (171, 165, 216)}
+
+FONT_DIRS = ["/usr/share/fonts/dejavu", "/usr/share/fonts/dejavu-sans-fonts",
+             "/usr/share/fonts/truetype/dejavu", os.path.join(APP_DIR, "fonts")]
+
+
+CJK_FONTS = ["/usr/share/emulationstation/resources/DroidSansFallbackFull.ttf",
+             "/usr/share/fonts/truetype/droid/DroidSansFallback.ttf",
+             "/usr/share/fonts/google-droid-sans-fonts/DroidSansFallbackFull.ttf"]
+FALLBACK = {}   # Font -> same-size CJK Font (DejaVu has no kana/kanji/hangul)
+
+
+def find_font(name):
+    for d in FONT_DIRS:
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+class Fonts:
+    def __init__(self):
+        fdir = os.path.join(APP_DIR, "fonts")
+        bundled = lambda n: os.path.join(fdir, n) if os.path.exists(os.path.join(fdir, n)) else None  # noqa: E731
+        dv = find_font("DejaVuSans.ttf")
+        reg = bundled("Rubik-Regular.ttf") or dv
+        med = bundled("Rubik-Medium.ttf") or find_font("DejaVuSans-Bold.ttf") or reg
+        bold = bundled("Rubik-SemiBold.ttf") or med
+        cjk = next((p for p in CJK_FONTS if os.path.exists(p)), None)
+        cache = {}
+
+        def mk(path, size):
+            size = max(6, int(round(size * K)))
+            k = (path, size)
+            if k not in cache:
+                cache[k] = pygame.font.Font(path, size)
+                if cjk:
+                    FALLBACK[cache[k]] = pygame.font.Font(cjk, size)
+            return cache[k]
+        self.h1 = mk(bold, 36)
+        self.h2 = mk(bold, 25)
+        self.h3 = mk(med, 20)
+        self.body = mk(reg, 19)
+        self.row = mk(reg, 21)
+        self.small = mk(reg, 17)
+        self.cond = mk(reg, 17)
+        self.tiny = mk(med, 14)
+        self.key = mk(med, 24)
+        self.btn = mk(bold, 14)
+
+
+# ------------------------------------------------------------------ drawing
+
+def rrect(surf, color, rect, radius=10, width=0):
+    pygame.draw.rect(surf, color, SR(rect), max(1, S(width)) if width else 0,
+                     border_radius=S(radius))
+
+
+def focus_box(surf, rect, radius=10):
+    """The one focus treatment: lifted fill + violet outline."""
+    rrect(surf, PANEL_HI, rect, radius)
+    rrect(surf, ACCENT, rect, radius, 2)
+
+
+def circle(surf, color, center, radius, width=0):
+    pygame.draw.circle(surf, color, (S(center[0]), S(center[1])), max(1, S(radius)),
+                       max(1, S(width)) if width else 0)
+
+
+def hline(surf, color, a, b, width=1):
+    pygame.draw.line(surf, color, (S(a[0]), S(a[1])), (S(b[0]), S(b[1])), max(1, S(width)))
+
+
+def polyline(surf, color, pts, width=1):
+    pygame.draw.lines(surf, color, False, [(S(x), S(y)) for x, y in pts], max(1, S(width)))
+
+
+def arc(surf, color, rect, a0, a1, width=1):
+    pygame.draw.arc(surf, color, SR(rect), a0, a1, max(1, S(width)))
+
+
+def _wide(ch):
+    return ord(ch) >= 0x2E80        # CJK, kana, hangul, fullwidth forms
+
+
+def _runs(font, s):
+    """Split s into (font, chunk) runs: Latin via font, CJK via its fallback."""
+    fb = FALLBACK.get(font)
+    if fb is None or not any(_wide(ch) for ch in s):
+        return [(font, s)]
+    out = []
+    for ch in s:
+        f = fb if _wide(ch) else font
+        if out and out[-1][0] is f:
+            out[-1] = (f, out[-1][1] + ch)
+        else:
+            out.append((f, ch))
+    return out
+
+
+def measure(font, s):
+    """width in logical units"""
+    return sum(f.size(chunk)[0] for f, chunk in _runs(font, s)) / K
+
+
+_TEXT_CACHE = {}
+
+
+def render_cached(font, s, color):
+    key = (id(font), s, color)
+    img = _TEXT_CACHE.get(key)
+    if img is None:
+        if len(_TEXT_CACHE) > 3000:
+            _TEXT_CACHE.clear()
+        img = _TEXT_CACHE[key] = render(font, s, color)
+    return img
+
+
+def render(font, s, color):
+    runs = _runs(font, s)
+    if len(runs) == 1:
+        return runs[0][0].render(runs[0][1], True, color)
+    imgs = [(f, f.render(chunk, True, color)) for f, chunk in runs]
+    h = font.get_height()
+    out = pygame.Surface((sum(i.get_width() for _, i in imgs), h), pygame.SRCALPHA)
+    x = 0
+    for f, i in imgs:
+        # align baselines
+        out.blit(i, (x, font.get_ascent() - f.get_ascent()))
+        x += i.get_width()
+    return out
+
+
+def text(surf, font, s, pos, color=TEXT, anchor="topleft", maxw=None):
+    s = s or ""
+    if maxw is not None and measure(font, s) > maxw:
+        while s and measure(font, s + "…") > maxw:
+            s = s[:-1]
+        s = s.rstrip() + "…"
+    img = render_cached(font, s, color)
+    r = img.get_rect(**{anchor: (S(pos[0]), S(pos[1]))})
+    surf.blit(img, r)
+    return LR(r)
+
+
+def wrap(font, s, width, max_lines=None):
+    lines = []
+    for para in (s or "").replace("\r", "").split("\n"):
+        cur = ""
+        for w in para.split():
+            t = (cur + " " + w).strip()
+            if measure(font, t) <= width:
+                cur = t
+                continue
+            if cur:
+                lines.append(cur)
+            cur = w
+            while measure(font, cur) > width and len(cur) > 1:   # unbreakable (CJK) run
+                k = len(cur)
+                while k > 1 and measure(font, cur[:k]) > width:
+                    k -= 1
+                lines.append(cur[:k])
+                cur = cur[k:]
+        lines.append(cur)
+    # drop blank paragraph gaps beyond one
+    lines = [l for i, l in enumerate(lines) if l or (i and lines[i - 1])]
+    while lines and not lines[-1]:
+        lines.pop()
+    if max_lines and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1]
+        while last and measure(font, last + "…") > width:
+            last = last[:-1]
+        lines[-1] = last.rstrip() + "…"
+    return lines
+
+
+def button_glyph(surf, fonts, label, x, y):
+    """Round pad-button glyph; returns its width."""
+    col = BTN_COL.get(label, DIM)
+    if len(label) == 1:
+        circle(surf, col, (x + 11, y + 11), 11)
+        text(surf, fonts.btn, label, (x + 11, y + 11), BG, "center")
+        return 22
+    w = int(measure(fonts.btn, label)) + 14
+    rrect(surf, col, (x, y + 1, w, 20), 10)
+    text(surf, fonts.btn, label, (x + w // 2, y + 11), BG, "center")
+    return w
+
+
+def progress_bar(surf, rect, frac, color=ACCENT):
+    rrect(surf, LINE, rect, rect[3] // 2)
+    if frac > 0:
+        w = max(rect[3], int(rect[2] * min(1.0, frac)))
+        rrect(surf, color, (rect[0], rect[1], w, rect[3]), rect[3] // 2)
+
+
+# -------------------------------------------------------------------- input
+
+class Input:
+    """Maps keyboard, SDL game controllers and raw joysticks to actions.
+    Game controllers use SDL's standard layout, so a DualSense and an 8BitDo
+    behave the same. Batocera's ES confirms with the south button; swap_ab in
+    config.json flips that."""
+    REPEAT_DELAY, REPEAT_RATE = 0.32, 0.055
+
+    NAV_KEYS = None   # filled lazily (pygame constants need pygame imported)
+
+    def __init__(self, swap_ab):
+        self.set_swap(swap_ab)
+        self.pad_seen = False   # once a pad speaks, ignore keyboard nav (evmapy echoes)
+        self.controllers = {}
+        self.joysticks = {}
+        self.held = {}
+        self.axis_dir = {}
+        if sdlcontroller is not None:
+            sdlcontroller.init()
+        for i in range(pygame.joystick.get_count()):
+            self._open(i)
+
+    def set_swap(self, swap_ab):
+        self.ok_btn, self.back_btn = ("east", "south") if swap_ab else ("south", "east")
+
+    def _open(self, index):
+        try:
+            if sdlcontroller is not None and sdlcontroller.is_controller(index):
+                c = sdlcontroller.Controller(index)
+                jid = pygame.joystick.Joystick(index).get_instance_id()
+                self.controllers[jid] = c
+                return
+        except Exception:
+            pass
+        try:
+            j = pygame.joystick.Joystick(index)
+            j.init()
+            self.joysticks[j.get_instance_id()] = j
+        except Exception:
+            pass
+
+    def _face(self, name):
+        if name == self.ok_btn:
+            return "ok"
+        if name == self.back_btn:
+            return "back"
+        return {"west": "x", "north": "y"}.get(name)
+
+    def _press(self, action, out):
+        if action in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
+            self.held[action] = time.time() + self.REPEAT_DELAY
+        out.append(action)
+
+    def _release(self, action):
+        self.held.pop(action, None)
+
+    def handle(self, ev, out):
+        t = ev.type
+        if t in (pygame.CONTROLLERBUTTONDOWN, pygame.JOYBUTTONDOWN, pygame.JOYHATMOTION):
+            self.pad_seen = True
+        if t in (pygame.KEYDOWN, pygame.KEYUP) and self.pad_seen and \
+                not (ev.key == pygame.K_F4 and ev.mod & pygame.KMOD_ALT):
+            # Batocera's evmapy turns the pad into keypresses for pygame apps
+            # (D-pad -> arrows, Start -> Enter, X/Y -> X/Y): we already read
+            # the pad itself, so those would double every press.
+            # rommbrowser.pygame.keys turns that mapping off; this is the
+            # belt-and-braces for boxes where it isn't installed.
+            return
+        if t == pygame.KEYDOWN:
+            km = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left",
+                  pygame.K_RIGHT: "right", pygame.K_RETURN: "ok", pygame.K_SPACE: "ok",
+                  pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "back", pygame.K_x: "x",
+                  pygame.K_y: "y", pygame.K_PAGEUP: "l1", pygame.K_PAGEDOWN: "r1",
+                  pygame.K_TAB: "select", pygame.K_HOME: "start",
+                  pygame.K_LEFTBRACKET: "l2", pygame.K_RIGHTBRACKET: "r2"}
+            if ev.key == pygame.K_F4 and ev.mod & pygame.KMOD_ALT:
+                out.append("quit")
+            elif ev.key in km:
+                self._press(km[ev.key], out)
+        elif t == pygame.KEYUP:
+            for a in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
+                self._release(a)
+        elif sdlcontroller is not None and t == pygame.CONTROLLERDEVICEADDED:
+            self._open(ev.device_index)
+        elif t == pygame.JOYDEVICEADDED:
+            # plain joysticks (no SDL mapping) only announce themselves here
+            self._open(ev.device_index)
+        elif t in (pygame.CONTROLLERBUTTONDOWN, pygame.CONTROLLERBUTTONUP):
+            m = {pygame.CONTROLLER_BUTTON_A: "south", pygame.CONTROLLER_BUTTON_B: "east",
+                 pygame.CONTROLLER_BUTTON_X: "west", pygame.CONTROLLER_BUTTON_Y: "north",
+                 pygame.CONTROLLER_BUTTON_DPAD_UP: "up",
+                 pygame.CONTROLLER_BUTTON_DPAD_DOWN: "down",
+                 pygame.CONTROLLER_BUTTON_DPAD_LEFT: "left",
+                 pygame.CONTROLLER_BUTTON_DPAD_RIGHT: "right",
+                 pygame.CONTROLLER_BUTTON_LEFTSHOULDER: "l1",
+                 pygame.CONTROLLER_BUTTON_RIGHTSHOULDER: "r1",
+                 pygame.CONTROLLER_BUTTON_START: "start",
+                 pygame.CONTROLLER_BUTTON_BACK: "select",
+                 pygame.CONTROLLER_BUTTON_GUIDE: "guide"}
+            name = m.get(ev.button)
+            if name in ("south", "east", "west", "north"):
+                name = self._face(name)
+            if name:
+                if t == pygame.CONTROLLERBUTTONDOWN:
+                    self._press(name, out)
+                else:
+                    self._release(name)
+        elif t == pygame.CONTROLLERAXISMOTION:
+            if ev.axis in (pygame.CONTROLLER_AXIS_LEFTX, pygame.CONTROLLER_AXIS_LEFTY):
+                self._axis(("c", ev.instance_id, ev.axis), ev.axis == pygame.CONTROLLER_AXIS_LEFTX,
+                           ev.value / 32767.0, out)
+            elif ev.axis in (pygame.CONTROLLER_AXIS_TRIGGERLEFT, pygame.CONTROLLER_AXIS_TRIGGERRIGHT):
+                key = ("t", ev.instance_id, ev.axis)
+                on = ev.value > 16000
+                trig = "l2" if ev.axis == pygame.CONTROLLER_AXIS_TRIGGERLEFT else "r2"
+                if on and not self.axis_dir.get(key):
+                    self._press(trig, out)
+                elif not on and self.axis_dir.get(key):
+                    self._release(trig)
+                self.axis_dir[key] = on
+        # raw joystick fallback (only for devices SDL has no mapping for)
+        elif t in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
+            if ev.instance_id in self.controllers:
+                return
+            m = {0: "south", 1: "east", 2: "west", 3: "north", 4: "l1", 5: "r1",
+                 6: "select", 7: "start", 8: "select", 9: "start"}
+            name = m.get(ev.button)
+            if name in ("south", "east", "west", "north"):
+                name = self._face(name)
+            if name:
+                if t == pygame.JOYBUTTONDOWN:
+                    self._press(name, out)
+                else:
+                    self._release(name)
+        elif t == pygame.JOYHATMOTION:
+            if ev.instance_id in self.controllers:
+                return
+            x, y = ev.value
+            for a in ("up", "down", "left", "right"):
+                self._release(a)
+            if y == 1:
+                self._press("up", out)
+            elif y == -1:
+                self._press("down", out)
+            if x == -1:
+                self._press("left", out)
+            elif x == 1:
+                self._press("right", out)
+        elif t == pygame.JOYAXISMOTION:
+            if ev.instance_id in self.controllers or ev.axis > 1:
+                return
+            self._axis(("j", ev.instance_id, ev.axis), ev.axis == 0, ev.value, out)
+
+    def _axis(self, key, horizontal, v, out):
+        d = None
+        if v < -0.6:
+            d = "left" if horizontal else "up"
+        elif v > 0.6:
+            d = "right" if horizontal else "down"
+        prev = self.axis_dir.get(key)
+        if d == prev:
+            return
+        if prev:
+            self._release(prev)
+        if d:
+            self._press(d, out)
+        self.axis_dir[key] = d
+
+    def repeats(self, out):
+        now = time.time()
+        for a, due in list(self.held.items()):
+            if now >= due:
+                out.append(a)
+                self.held[a] = now + self.REPEAT_RATE
+
+
+# ------------------------------------------------------------------- app
+
+class App:
+    def __init__(self, screen, headless=False):
+        global K
+        self.screen = screen
+        if screen is not None:
+            sw, sh = screen.get_size()
+            K = min(sw / W, sh / H)
+        else:
+            K = float(os.environ.get("ROMM_BROWSER_SCALE", "1"))
+        self.fps = FPS if K <= 1.5 else 30   # 4K software blits: 30 fps is plenty for menus
+        self.canvas = pygame.Surface((S(W), S(H)))
+        self.scaled_covers = {}
+        self.fonts = Fonts()
+        self.cfg = rommlib.load_config()
+        self.input = Input(self.cfg.get("swap_ab"))
+        self.headless = headless
+        self.api = rommlib.Api.from_config(self.cfg)
+        self.loaded = False
+        self.library = rommlib.Library()
+        self.downloader = rommlib.Downloader(self.api, self.library, self.cfg)
+        self.platforms = []          # mapped platforms only
+        self.platform_by_id = {}
+        self.unmapped = []
+        self.stack = []
+        self.toasts = []
+        self.modal = None
+        self.events_from_threads = []
+        self.lock = threading.Lock()
+        self.covers = {}             # rom_id -> Surface | "loading" | None
+        self.cover_order = []
+        self.running = True
+        self.status = "Connecting…"
+        self.error = None
+        self.t = 0.0
+        self._chd_spawned = 0
+
+    # ---- threading helpers
+    def bg(self, fn, done=None, err=None):
+        def run():
+            try:
+                res = fn()
+                if done:
+                    self.post(lambda: done(res))
+            except Exception as e:
+                if not isinstance(e, rommlib.RommError):
+                    # foreign exception text can carry request details: type only
+                    e = rommlib.RommError("Error (%s)" % e.__class__.__name__)
+                rommlib.log("bg error: %s" % e)
+                # bind e now: Python 3 deletes `e` when the except block ends
+                if err:
+                    self.post(lambda e=e: err(e))
+                else:
+                    self.post(lambda e=e: self.toast(str(e), RED))
+        threading.Thread(target=run, daemon=True).start()
+
+    def post(self, fn):
+        with self.lock:
+            self.events_from_threads.append(fn)
+
+    def toast(self, msg, color=TEXT):
+        self.toasts.append([msg, color, time.time() + 3.5])
+
+    # ---- data
+    def load_platforms(self):
+        def done(plats):
+            mp = dict(rommlib.PLATFORM_MAP)
+            mp.update(self.cfg.get("platform_map") or {})
+            self.platforms, self.unmapped = [], []
+            for p in plats:
+                system = mp.get(p["fs_slug"])
+                p["_system"] = system
+                if not p.get("rom_count"):
+                    continue
+                (self.platforms if system else self.unmapped).append(p)
+            self.platforms.sort(key=lambda p: (p.get("display_name") or p["name"]).lower())
+            self.platform_by_id = {p["id"]: p for p in self.platforms}
+            self.status = "Online"
+            self.error = None
+            self.loaded = True
+
+        def err(e):
+            self.status = "Offline"
+            self.error = str(e)
+        self.bg(self.api.platforms, done, err)
+
+    def system_for(self, rom):
+        p = self.platform_by_id.get(rom.get("platform_id"))
+        return p["_system"] if p else None
+
+    def cover(self, rom):
+        rid = rom["id"]
+        c = self.covers.get(rid)
+        if c is not None or rid in self.covers:
+            return None if c == "loading" else c
+        self.covers[rid] = "loading"
+        self.cover_order.append(rid)
+        if len(self.cover_order) > 160:
+            old = self.cover_order.pop(0)
+            self.covers.pop(old, None)
+
+        def load():
+            path = self.api.fetch_cover(rom, large=K > 1.5)
+            return pygame.image.load(path) if path else None
+
+        def done(img):
+            self.covers[rid] = img
+        self.bg(load, done, lambda e: self.covers.__setitem__(rid, None))
+        return None
+
+    def apply_config(self, reconnect=False):
+        """Called by Settings after a change: persist, re-wire live objects."""
+        rommlib.save_config(self.cfg)
+        self.input.set_swap(self.cfg.get("swap_ab"))
+        if reconnect:
+            self.api = rommlib.Api.from_config(self.cfg)
+            self.downloader.api = self.api
+            self.covers.clear()
+            self.scaled_covers.clear()
+            self.platforms, self.platform_by_id, self.loaded = [], {}, False
+            self.status, self.error = "Connecting…", None
+            self.load_platforms()
+
+    def uninstall(self, rom, system, then=None):
+        def done(res):
+            paths, freed = res
+            self.toast("Deleted %s — %s freed" % (rom.get("name"), human_size(freed)), GREEN)
+            if then:
+                then()
+        self.bg(lambda: self.library.uninstall(rom, system), done)
+
+    def start_download(self, rom):
+        system = self.system_for(rom)
+        if not system:
+            self.toast("No Batocera system for this platform", RED)
+            return
+        self.downloader.enqueue(rom, system)
+        self.toast("Queued: %s" % rom.get("name"), GREEN)
+
+    def spawn_helper(self, script):
+        try:
+            subprocess.Popen(["/usr/bin/python3" if os.path.exists("/usr/bin/python3")
+                              else sys.executable, os.path.join(APP_DIR, script)],
+                             start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             close_fds=True)
+        except OSError as e:
+            rommlib.log("spawn %s failed: %r" % (script, e))
+
+    # ---- navigation
+    def push(self, screen):
+        self.stack.append(screen)
+        screen.enter()
+
+    def pop(self):
+        if len(self.stack) > 1:
+            self.stack.pop()
+            self.stack[-1].enter()
+
+    def request_quit(self):
+        n = self.downloader.active_count()
+        if n and not self.cfg.get("background_downloads", True):
+            self.modal = Confirm(self, "Quit RomM Browser?",
+                                 "%d download%s still running. They're paused and resume "
+                                 "next time you open RomM Browser (or turn on \"Keep "
+                                 "downloading after exit\" in Settings)." % (n, "s" if n > 1 else ""),
+                                 "Quit", self._quit, danger=True)
+        else:
+            self._quit()
+
+    def _quit(self):
+        self.running = False
+
+    # ---- main loop
+    def take_over_downloads(self):
+        """A background rb_dl.py may still be working: ask it to hand over,
+        then resume whatever is queued (here or left from last time)."""
+        try:
+            import rb_dl
+            was_running = rb_dl.handover()
+        except Exception as e:
+            rommlib.log("handover: %r" % e)
+            was_running = False
+        n = self.downloader.resume()
+        if n:
+            self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
+                                                    " from the background" if was_running else ""), BLUE)
+
+    def run(self, scripted=None):
+        clock = pygame.time.Clock()
+        self.take_over_downloads()
+        self.load_platforms()
+        self.push(HomeScreen(self))
+        while self.running:
+            dt = clock.tick(self.fps) / 1000.0
+            self.t += dt
+            actions = []
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    actions.append("quit")
+                else:
+                    self.input.handle(ev, actions)
+            self.input.repeats(actions)
+            if scripted is not None:
+                actions += scripted(self)
+            with self.lock:
+                fns, self.events_from_threads = self.events_from_threads, []
+            for fn in fns:
+                fn()
+            for a in actions:
+                self.dispatch(a)
+            self.tick_downloads()
+            self.draw()
+        self.on_exit()
+
+    def dispatch(self, a):
+        if a == "quit":
+            self.request_quit()
+            return
+        if self.modal:
+            self.modal.action(a)
+            return
+        if a == "select" and not isinstance(self.stack[-1], DownloadsScreen):
+            self.push(DownloadsScreen(self))
+            return
+        if a == "start" and len(self.stack) > 1 and not getattr(self.stack[-1], "own_start", False):
+            del self.stack[1:]
+            self.stack[0].enter()
+            return
+        self.stack[-1].action(a)
+
+    def tick_downloads(self):
+        for j in self.downloader.jobs:
+            if j.state == rommlib.Job.DONE and not getattr(j, "_announced", False):
+                j._announced = True
+                self.toast("Ready: %s" % j.name, GREEN)
+                if j.chd_queued and not self.headless:
+                    self.spawn_helper("rb_chd.py")   # flock'd: no-op if already running
+            elif j.state == rommlib.Job.FAILED and not getattr(j, "_announced", False):
+                j._announced = True
+                self.toast("Failed: %s — %s" % (j.name, j.message), RED)
+
+    def on_exit(self):
+        pending = self.downloader.pending_count()
+        self.downloader.pause_all()          # keeps them in download-queue.json
+        if self.headless:
+            return
+        if pending and self.cfg.get("background_downloads", True):
+            self.spawn_helper("rb_dl.py")     # finishes the queue while you play
+            return                            # it runs CHD + gamelist merge when done
+        if os.path.exists(rommlib.GAMELIST_QUEUE):
+            self.spawn_helper("rb_finalize.py")
+        if os.path.isdir(rommlib.CHD_QUEUE_DIR) and os.listdir(rommlib.CHD_QUEUE_DIR):
+            self.spawn_helper("rb_chd.py")
+
+    # ---- drawing
+    def draw(self):
+        c = self.canvas
+        c.fill(BG)
+        # subtle top glow
+        rrect(c, BG2, (0, 0, W, 64), 0)
+        hline(c, LINE, (0, 64), (W, 64))
+        top = self.stack[-1]
+        # logo
+        rrect(c, ACCENT, (24, 16, 34, 34), 9)
+        text(c, self.fonts.h3, "R", (41, 33), TEXT, "center")
+        text(c, self.fonts.h2, "RomM", (68, 33), TEXT, "midleft")
+        x = 68 + int(measure(self.fonts.h2, "RomM")) + 14
+        for crumb in top.crumbs():
+            text(c, self.fonts.h3, "›", (x, 32), FAINT, "midleft")
+            x += 18
+            r = text(c, self.fonts.h3, crumb, (x, 33), DIM, "midleft", maxw=380)
+            x = r.right + 12
+        # right side status
+        n = self.downloader.active_count()
+        rx = W - 24
+        dot = GREEN if self.status == "Online" else (AMBER if self.status.startswith("Conn") else RED)
+        r = text(c, self.fonts.small, self.status, (rx, 33), DIM, "midright")
+        circle(c, dot, (r.left - 12, 33), 5)
+        rx = r.left - 30
+        if n:
+            j = next((j for j in self.downloader.jobs if j.state == rommlib.Job.DOWNLOADING), None)
+            label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed else "")
+            r = text(c, self.fonts.small, label, (rx, 33), BLUE, "midright")
+        top.draw(c)
+        # footer
+        hline(c, LINE, (0, H - 46), (W, H - 46))
+        fx = 24
+        for btn, label in top.hints():
+            fx += button_glyph(c, self.fonts, btn, fx, H - 34) + 8
+            r = text(c, self.fonts.small, label, (fx, H - 23), DIM, "midleft")
+            fx = r.right + 22
+        # right side: the two global buttons, then the version
+        rx = W - 24
+        r = text(c, self.fonts.small, "v" + rommlib.VERSION, (rx, H - 23), FAINT, "midright")
+        rx = r.left - 28
+        globals_ = [("START", "Home"), ("SELECT", "Downloads")]
+        if getattr(top, "own_start", False) or len(self.stack) == 1:
+            globals_ = [g for g in globals_ if g[0] != "START"]     # Start means something else here
+        if isinstance(top, DownloadsScreen):
+            globals_ = [g for g in globals_ if g[0] != "SELECT"]
+        for btn, label in globals_:
+            r = text(c, self.fonts.small, label, (rx, H - 23), DIM, "midright")
+            gw = int(measure(self.fonts.btn, btn)) + 14
+            button_glyph(c, self.fonts, btn, r.left - 8 - gw, H - 34)
+            rx = r.left - 8 - gw - 22
+        if self.modal:
+            self.modal.draw(c)
+        self.draw_toasts(c)
+        if self.screen is not None:
+            # canvas is already native-resolution; just centre it (letterbox if
+            # the screen isn't 16:9)
+            sw, sh = self.screen.get_size()
+            cw, ch = c.get_size()
+            if (sw, sh) != (cw, ch):
+                self.screen.fill(BG)
+            self.screen.blit(c, ((sw - cw) // 2, (sh - ch) // 2))
+            pygame.display.flip()
+
+    def draw_toasts(self, c):
+        now = time.time()
+        self.toasts = [t for t in self.toasts if t[2] > now][-3:]
+        y = H - 64
+        for msg, color, _ in reversed(self.toasts):
+            w = min(900, measure(self.fonts.body, msg) + 52)
+            r = pygame.Rect(0, 0, w, 40)
+            r.midbottom = (W // 2, y)
+            rrect(c, PANEL_HI, r, 20)
+            circle(c, color, (r.left + 18, r.centery), 5)
+            text(c, self.fonts.body, msg, (r.left + 30, r.centery), TEXT, "midleft", maxw=w - 44)
+            y -= 48
+
+
+# ------------------------------------------------------------------ screens
+
+class Screen:
+    def __init__(self, app):
+        self.app = app
+        self.f = app.fonts
+
+    def enter(self):
+        pass
+
+    def crumbs(self):
+        return []
+
+    def hints(self):
+        return [("A", "Select"), ("B", "Back")]
+
+    def action(self, a):
+        if a == "back":
+            self.app.pop()
+
+    def draw(self, c):
+        pass
+
+
+class HomeScreen(Screen):
+    ITEMS = [("search", "Search", "Find any game across every platform"),
+             ("platforms", "Platforms", "Browse by console"),
+             ("collections", "Collections", "Series, Top-N lists and themes"),
+             ("recent", "Recently added", "Newest games in the library"),
+             ("downloads", "Downloads", "Queue and progress"),
+             ("installed", "On this box", "Games you downloaded, biggest first"),
+             ("settings", "Settings", "Server, token, buttons, CHD, cache"),
+             ("exit", "Exit", "Back to EmulationStation")]
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = 0
+        self.free = None
+
+    def enter(self):
+        try:
+            st = os.statvfs(rommlib.ROMS_ROOT)
+            self.free = st.f_bavail * st.f_frsize
+        except OSError:
+            self.free = None
+
+    def hints(self):
+        return [("A", "Select"), ("B", "Exit")]
+
+    def action(self, a):
+        if a == "up":
+            self.sel = (self.sel - 1) % len(self.ITEMS)
+        elif a == "down":
+            self.sel = (self.sel + 1) % len(self.ITEMS)
+        elif a == "back":
+            self.app.request_quit()
+        elif a == "ok":
+            key = self.ITEMS[self.sel][0]
+            app = self.app
+            if key == "exit":
+                app.request_quit()
+            elif key == "settings":
+                app.push(SettingsScreen(app))
+            elif key == "installed":
+                app.push(InstalledScreen(app))
+            elif not app.platforms and key not in ("downloads",):
+                app.load_platforms()
+                msg = app.error or ("No RomM platform maps to a Batocera system"
+                                    if app.loaded else "Still loading platforms…")
+                app.toast(msg, AMBER)
+            elif key == "search":
+                app.push(SearchScreen(app))
+            elif key == "platforms":
+                app.push(PlatformScreen(app))
+            elif key == "collections":
+                app.push(CollectionScreen(app))
+            elif key == "recent":
+                app.push(GameListScreen(app, "Recently added", order_by="id_desc"))
+            elif key == "downloads":
+                app.push(DownloadsScreen(app))
+
+    def draw(self, c):
+        y = 84
+        for i, (key, label, sub) in enumerate(self.ITEMS):
+            r = pygame.Rect(48, y, 520, 64)
+            on = i == self.sel
+            if on:
+                focus_box(c, r, 14)
+            else:
+                rrect(c, PANEL, r, 14)
+            text(c, self.f.h2, label, (r.left + 28, r.top + 8), TEXT if on else DIM)
+            extra = ""
+            if key == "downloads":
+                n = self.app.downloader.active_count()
+                extra = (", %d running" % n) if n else ""
+            text(c, self.f.small, sub + extra, (r.left + 28, r.top + 38), DIM if on else FAINT)
+            y += 71
+        # right panel: a shelf of the newest box art — the library's own face
+        p = pygame.Rect(616, 84, 616, 558)
+        rrect(c, PANEL, p, 16)
+        app = self.app
+        if app.platforms:
+            total = sum(pl["rom_count"] for pl in app.platforms)
+            text(c, self.f.h2, "Recently added", (p.left + 28, p.top + 22), TEXT)
+            text(c, self.f.small, "{:,} games on {} platforms".format(total, len(app.platforms)),
+                 (p.right - 28, p.top + 28), FAINT, "topright")
+            self.load_recent()
+            cw, ch, gap = 128, 172, 16
+            x0 = p.left + (p.width - (4 * cw + 3 * gap)) // 2
+            for k, rom in enumerate((self.recent or [])[:8]):
+                cr = pygame.Rect(x0 + (k % 4) * (cw + gap), p.top + 70 + (k // 4) * (ch + gap), cw, ch)
+                img = app.cover(rom)
+                if img:
+                    sc = self.shelf.get(rom["id"])
+                    if sc is None or sc[0] is not img:
+                        pc = SR(cr)
+                        iw, ih = img.get_size()
+                        f = max(pc.width / iw, pc.height / ih)      # fill the slot, crop overflow
+                        scaled = pygame.transform.smoothscale(img, (max(1, int(iw * f)), max(1, int(ih * f))))
+                        crop = pygame.Rect(0, 0, pc.width, pc.height)
+                        crop.center = scaled.get_rect().center
+                        sc = (img, scaled.subsurface(crop.clip(scaled.get_rect())).copy())
+                        self.shelf[rom["id"]] = sc
+                    c.blit(sc[1], SR(cr).topleft)
+                else:
+                    rrect(c, BG2, cr, 8)
+                    for j, ln in enumerate(wrap(self.f.small, rom.get("name") or "", cw - 16, 4)):
+                        text(c, self.f.small, ln, (cr.left + 8, cr.top + 10 + j * 20), FAINT)
+            if self.recent == []:
+                text(c, self.f.body, "Nothing new yet.", (p.left + 28, p.top + 80), DIM)
+        elif app.error:
+            text(c, self.f.h2, "Can't reach RomM", (p.left + 28, p.top + 22), RED)
+            for i, line in enumerate(wrap(self.f.body, app.error, p.width - 56, 4)):
+                text(c, self.f.body, line, (p.left + 28, p.top + 66 + i * 26), DIM)
+            text(c, self.f.small, rommlib.display_url(app.cfg.get("url")) or "No server set",
+                 (p.left + 28, p.top + 180), FAINT)
+            text(c, self.f.small, "Check Settings, then select any item to retry.",
+                 (p.left + 28, p.top + 206), FAINT)
+        else:
+            text(c, self.f.h2, "Loading…", (p.left + 28, p.top + 22), DIM)
+        # panel foot: this box and the server, as plain sentences
+        hline(c, LINE, (p.left + 28, p.bottom - 74), (p.right - 28, p.bottom - 74))
+        if self.free is not None:
+            text(c, self.f.h3, "%s free on this box" % human_size(self.free),
+                 (p.left + 28, p.bottom - 38), TEXT, "midleft")
+        u = rommlib.display_url(app.cfg.get("url")) or "No server set"
+        insecure = u.lower().startswith("http://")
+        text(c, self.f.small, u if insecure else u.split("://")[-1], (p.right - 28, p.bottom - 38),
+             AMBER if insecure else DIM, "midright", maxw=270)
+
+    recent = None
+    shelf = None
+
+    def load_recent(self):
+        if self.recent is not None or getattr(self, "_recent_loading", False):
+            return
+        self._recent_loading = True
+        app = self.app
+        self.shelf = {}
+        p = {"limit": 8, "offset": 0, "order_by": "id", "order_dir": "desc",
+             "with_char_index": "false", "with_filter_values": "false", "with_rom_id_index": "false",
+             "platform_ids": [pl["id"] for pl in app.platforms]}
+        app.bg(lambda: app.api.get("/api/roms", p).get("items", []),
+               lambda items: setattr(self, "recent", items),
+               lambda e: setattr(self, "recent", []))
+
+
+class PlatformScreen(Screen):
+    COLS, CW, CH, GAP = 4, 284, 98, 14
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = 0
+        self.scroll = 0
+
+    def crumbs(self):
+        return ["Platforms"]
+
+    def action(self, a):
+        n = len(self.app.platforms)
+        if not n:
+            return super().action(a)
+        moves = {"left": -1, "right": 1, "up": -self.COLS, "down": self.COLS,
+                 "l1": -self.COLS * 4, "r1": self.COLS * 4}
+        if a in moves:
+            self.sel = max(0, min(n - 1, self.sel + moves[a]))
+        elif a == "ok":
+            p = self.app.platforms[self.sel]
+            self.app.push(GameListScreen(self.app, p.get("display_name") or p["name"],
+                                         platform=p))
+        elif a == "y":
+            self.app.push(SearchScreen(self.app, platform=self.app.platforms[self.sel]))
+        else:
+            super().action(a)
+
+    def hints(self):
+        return [("A", "Open"), ("Y", "Search platform"), ("L", "Page up"),
+                ("R", "Page down"), ("B", "Back")]
+
+    def draw(self, c):
+        plats = self.app.platforms
+        x0, y0 = 48, 88
+        rows_vis = 5
+        row = self.sel // self.COLS
+        if row < self.scroll:
+            self.scroll = row
+        elif row >= self.scroll + rows_vis:
+            self.scroll = row - rows_vis + 1
+        for i, p in enumerate(plats):
+            r_i, c_i = divmod(i, self.COLS)
+            if not (self.scroll <= r_i < self.scroll + rows_vis):
+                continue
+            r = pygame.Rect(x0 + c_i * (self.CW + self.GAP),
+                            y0 + (r_i - self.scroll) * (self.CH + self.GAP), self.CW, self.CH)
+            on = i == self.sel
+            rrect(c, PANEL_HI if on else PANEL, r, 14)
+            if on:
+                rrect(c, ACCENT, r, 14, 2)
+            name = p.get("display_name") or p["name"]
+            lines = wrap(self.f.h3, name, r.width - 36, 2)
+            for k, ln in enumerate(lines):
+                text(c, self.f.h3, ln, (r.left + 18, r.top + 14 + k * 24), TEXT if on else DIM)
+            text(c, self.f.small, "{:,} games".format(p["rom_count"]),
+                 (r.left + 18, r.bottom - 28), DIM if on else FAINT)
+            tag = "roms/" + p["_system"]
+            tw = int(measure(self.f.tiny, tag)) + 14
+            tr = pygame.Rect(r.right - tw - 14, r.bottom - 30, tw, 20)
+            rrect(c, BG2, tr, 6)
+            text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+        # scrollbar
+        total_rows = (len(plats) + self.COLS - 1) // self.COLS
+        if total_rows > rows_vis:
+            track = pygame.Rect(W - 20, y0, 4, rows_vis * (self.CH + self.GAP) - self.GAP)
+            rrect(c, LINE, track, 2)
+            h = max(30, track.height * rows_vis // total_rows)
+            yy = track.top + (track.height - h) * self.scroll // (total_rows - rows_vis)
+            rrect(c, ACCENT, (track.left, yy, 4, h), 2)
+
+
+def letter_of(name):
+    """Jump-bucket for a title: A–Z, '#' for digits/symbols, else the first
+    character itself (kana/kanji/hangul get their own buckets)."""
+    for ch in (name or ""):
+        if ch.isspace() or ch in "'\"[(~.!¡¿-_*":
+            continue
+        if ch.isdigit():
+            return "#"
+        if "a" <= ch.lower() <= "z":
+            return ch.upper()
+        return ch if ch.isalpha() else "#"
+    return "#"
+
+
+def letter_jump(starts, sel, forward):
+    """starts: sorted [(index, label)]. Next/previous letter from sel; going
+    back from inside a letter first returns to that letter's start."""
+    if not starts:
+        return None
+    g = max((k for k, (i, _) in enumerate(starts) if i <= sel), default=0)
+    if forward:
+        return starts[g + 1] if g + 1 < len(starts) else None
+    if sel > starts[g][0]:
+        return starts[g]
+    return starts[g - 1] if g > 0 else None
+
+
+def draw_bubble(c, f, label, until, center):
+    if label and time.time() < until:
+        r = pygame.Rect(0, 0, 120, 120)
+        r.center = center
+        rrect(c, ACCENT, r, 24)
+        text(c, f.h1, label, r.center, TEXT, "center")
+
+
+KNOWN_KINDS = re.compile(r"^(top\s*\d+|theme|series)$", re.I)
+VIRTUAL_TYPES = [("genre", "Genre"), ("franchise", "Franchise"), ("collection", "Series"),
+                 ("company", "Company"), ("mode", "Game mode")]
+
+
+def collection_kinds(names):
+    """Prefixes ("Theme" in "Theme: Hidden Gems") that are real categories:
+    a known word, or shared by 3+ collections. Anything else stays part of
+    the name, so "Zelda: Best Of" isn't split into a tag."""
+    counts = {}
+    for n in names:
+        if ":" in n:
+            k = n.split(":", 1)[0].strip()
+            counts[k.lower()] = counts.get(k.lower(), 0) + 1
+    return {k for k, c in counts.items() if c >= 3 or KNOWN_KINDS.match(k)}
+
+
+class CollectionScreen(Screen):
+    """Top level: the user's collections (grouped by kind when the names use
+    a "Kind: Name" convention), smart collections, and "Browse by" entries
+    for RomM's virtual collections. With `vtype` set: one virtual type's list."""
+    ROWS, ROW_H = 10, 54
+
+    def __init__(self, app, vtype=None, vlabel=None):
+        super().__init__(app)
+        self.vtype, self.vlabel = vtype, vlabel
+        self.items = None
+        self.sel = 0
+        self.scroll = 0
+        if vtype:
+            app.bg(lambda: app.api.virtual_collections(vtype), self._loaded_virtual,
+                   lambda e: self._failed(e))
+        else:
+            app.bg(self._load_top, self._loaded_top, lambda e: self._failed(e))
+
+    def _failed(self, e):
+        self.items = []
+        self.app.toast(str(e), RED)
+
+    def _load_top(self):
+        api = self.app.api
+        regular = api.collections()
+        try:
+            smart = api.smart_collections()
+        except rommlib.RommError:
+            smart = []            # older RomM without smart collections
+        return regular, smart
+
+    def _loaded_top(self, res):
+        regular, smart = res
+        kinds = collection_kinds([c["name"] for c in regular])
+        items = []
+        for c in regular:
+            if not c.get("rom_count"):
+                continue
+            name, kind = c["name"], ""
+            if ":" in name and name.split(":", 1)[0].strip().lower() in kinds:
+                kind, name = [x.strip() for x in name.split(":", 1)]
+            group = "Top lists" if re.match(r"top\s*\d+", kind, re.I) else \
+                {"theme": "Themes", "series": "Series"}.get(kind.lower(), kind or "Your collections")
+            items.append({"name": name, "tag": kind, "group": group, "count": c["rom_count"],
+                          "full": c["name"], "param": "collection_id", "id": c["id"]})
+        order = {"Top lists": 0, "Themes": 1, "Series": 2}
+        items.sort(key=lambda i: (order.get(i["group"], 3 if i["group"] != "Your collections" else 4),
+                                  i["group"].lower(), i["name"].lower()))
+        for c in sorted(smart, key=lambda c: c["name"].lower()):
+            if c.get("rom_count"):
+                items.append({"name": c["name"], "tag": "smart", "group": "Smart", "count": c["rom_count"],
+                              "full": c["name"], "param": "smart_collection_id", "id": c["id"]})
+        for vt, label in VIRTUAL_TYPES:
+            items.append({"name": label, "tag": "", "group": "Browse by", "count": None,
+                          "full": label, "vtype": vt})
+        self.items = items
+
+    def _loaded_virtual(self, cols):
+        self.items = [{"name": c["name"], "tag": "", "group": self.vlabel, "count": c.get("rom_count"),
+                       "full": c["name"], "param": "virtual_collection_id", "id": c["id"]}
+                      for c in sorted(cols, key=lambda c: c["name"].lower()) if c.get("rom_count")]
+
+    def groups(self):
+        return [] if not self.items else list(dict.fromkeys(i["group"] for i in self.items))
+
+    bubble, bubble_until = None, 0.0
+
+    def letter_starts(self):
+        """Only for plain alphabetical lists (a Browse-by list, or one group)."""
+        if not self.items or (not self.vtype and len(self.groups()) > 1):
+            return []
+        out = []
+        for i, it in enumerate(self.items):
+            lab = letter_of(it["name"])
+            if not out or out[-1][1] != lab:
+                out.append((i, lab))
+        return out
+
+    def action(self, a):
+        if not self.items:
+            return super().action(a)
+        n = len(self.items)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
+        if a in mv:
+            self.sel = max(0, min(n - 1, self.sel + mv[a]))
+        elif a in ("l2", "r2"):
+            hit = letter_jump(self.letter_starts(), self.sel, a == "r2")
+            if hit:
+                self.sel = hit[0]
+                self.bubble, self.bubble_until = hit[1], time.time() + 0.7
+        elif a in ("left", "right") and len(self.groups()) > 1:
+            gs = self.groups()
+            gi = gs.index(self.items[self.sel]["group"])
+            gi = max(0, min(len(gs) - 1, gi + (1 if a == "right" else -1)))
+            self.sel = next(i for i, it in enumerate(self.items) if it["group"] == gs[gi])
+        elif a == "ok":
+            it = self.items[self.sel]
+            if it.get("vtype"):
+                self.app.push(CollectionScreen(self.app, it["vtype"], it["name"]))
+            else:
+                self.app.push(GameListScreen(self.app, it["full"], collection=it))
+        else:
+            super().action(a)
+
+    def hints(self):
+        h = [("A", "Open"), ("L", "Page up"), ("R", "Page down")]
+        if len(self.letter_starts()) > 1:
+            h.append(("L2 R2", "A–Z"))
+        return h + [("B", "Back")]
+
+    def crumbs(self):
+        if self.vtype:
+            return ["Collections", self.vlabel]
+        if self.items and len(self.groups()) > 1:
+            return ["Collections", self.items[self.sel]["group"]]
+        return ["Collections"]
+
+    def draw(self, c):
+        if self.items is None:
+            text(c, self.f.h2, "Loading…", (W // 2, H // 2), DIM, "center")
+            return
+        if not self.items:
+            text(c, self.f.h2, "No collections", (W // 2, 300), DIM, "center")
+            return
+        rows = self.ROWS
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + rows:
+            self.scroll = self.sel - rows + 1
+        y = 80
+        for i in range(self.scroll, min(len(self.items), self.scroll + rows)):
+            it = self.items[i]
+            if i > self.scroll and it["group"] != self.items[i - 1]["group"]:
+                hline(c, LINE, (64, y - 2), (W - 112, y - 2))
+            on = i == self.sel
+            r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            if on:
+                focus_box(c, r)
+            right = 150
+            tag = it["tag"]
+            if tag:
+                tw = int(measure(self.f.tiny, tag)) + 14
+                tr = pygame.Rect(r.right - right - tw, r.centery - 10, tw, 20)
+                rrect(c, BG2, tr, 6)
+                text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+                right += tw + 16
+            # full name: one line if it fits, else two smaller lines — never "…"
+            name = it["name"]
+            avail = r.width - 22 - right
+            col_txt = TEXT if on else DIM
+            if measure(self.f.row, name) <= avail:
+                text(c, self.f.row, name, (r.left + 22, r.centery), col_txt, "midleft")
+            else:
+                lines = wrap(self.f.small, name, avail)
+                fnt, lh = (self.f.small, 19) if len(lines) <= 2 else (self.f.tiny, 15)
+                if len(lines) > 2:
+                    lines = wrap(fnt, name, avail)
+                y0 = r.centery - lh * len(lines) // 2
+                for k, ln in enumerate(lines):
+                    text(c, fnt, ln, (r.left + 22, y0 + k * lh), col_txt)
+            cnt = ("{:,} game{}".format(it["count"], "" if it["count"] == 1 else "s")
+                   if it["count"] is not None else "›")
+            text(c, self.f.small, cnt, (r.right - 20, r.centery), FAINT, "midright")
+            y += self.ROW_H
+        n = len(self.items)
+        if n > rows:
+            track = pygame.Rect(W - 30, 80, 4, rows * self.ROW_H - 4)
+            rrect(c, LINE, track, 2)
+            h = max(24, track.height * rows // n)
+            yy = track.top + int((track.height - h) * (self.sel / max(1, n - 1)))
+            rrect(c, ACCENT, (track.left, yy, 4, h), 2)
+        draw_bubble(c, self.f, self.bubble, self.bubble_until, (W // 2, H // 2))
+
+
+REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Australia": "AU",
+               "Brazil": "BR", "Korea": "KR", "China": "CN", "Germany": "DE", "France": "FR",
+               "Spain": "ES", "Italy": "IT", "UK": "UK", "Asia": "Asia"}
+
+
+JUNK_MARKERS = ("~hack~", "~unlicensed~", "~prototype~", "~demo~", "~homebrew~", "(proto",
+                "(beta", "(demo", "(sample", "(hack", "(pirate", "(unl)")
+
+
+def rank_search(query, items):
+    """RomM's search order is effectively alphabetical ('~Hack~', 'BS …' first).
+    Re-rank the first page: real titles containing every query word, USA/World
+    releases, Latin names first; hacks/protos/BS broadcasts last. Stable."""
+    words = [w for w in query.lower().split() if w]
+
+    def key(rom):
+        name = (rom.get("name") or rom.get("fs_name_no_ext") or "").lower()
+        fs = (rom.get("fs_name") or "").lower()
+        score = 0
+        if not all(w in name for w in words):
+            score += 4
+        if name.startswith(query.lower()) or name.startswith("the " + query.lower()):
+            score -= 1
+        if any(m in name or m in fs for m in JUNK_MARKERS):
+            score += 6
+        if any(_wide(ch) for ch in name):
+            score += 3
+        regions = [r.lower() for r in (rom.get("regions") or [])]
+        if any(r in ("usa", "world") for r in regions):
+            score -= 2
+        elif any(r in ("europe", "uk", "australia") for r in regions):
+            score -= 1
+        return score
+    return sorted(items, key=key)
+
+
+class GameListScreen(Screen):
+    PAGE = 60
+    ROWS = 12
+    ROW_H = 44
+
+    REGION_CHOICES = [(None, "All regions"), (["USA", "World"], "USA + World"),
+                      (["Europe", "World"], "Europe + World"), (["Japan"], "Japan")]
+    BULK_MAX = 1000
+
+    def __init__(self, app, title, platform=None, collection=None, search=None,
+                 order_by="name"):
+        super().__init__(app)
+        self.title = title
+        self.platform = platform
+        self.collection = collection
+        self.search = search
+        self.order_by = order_by
+        self.region_i = 0
+        self.hide_installed = False
+        self.mark_mode = False
+        self.marks = {}               # rom id -> rom
+        self.bios = None              # [(missing, firmware)] RomM can supply
+        self.reset()
+        if platform and platform.get("_system"):
+            app.bg(lambda: rommlib.bios_offer(app.api, platform["_system"], platform["id"]),
+                   lambda offers: setattr(self, "bios", offers), lambda e: None)
+
+    @property
+    def regions(self):
+        return self.REGION_CHOICES[self.region_i][0]
+
+    @property
+    def dense(self):
+        # hiding installed games can't use sparse paging (offsets shift as rows
+        # are filtered out), so that mode loads sequentially and filters
+        return self.hide_installed
+
+    def reset(self):
+        # items is a sparse list (None = row not fetched yet) once total is known,
+        # so jumping to a letter loads just that page, not everything before it
+        self.items = []
+        self.total = None
+        self.pending = set()
+        self.starts = []          # [(offset, letter)] from RomM's char_index
+        self.sel = 0
+        self.scroll = 0
+        self.gen = getattr(self, "gen", 0) + 1
+        self.bubble, self.bubble_until = None, 0.0
+        self.server_off, self.server_total, self.exhausted = 0, None, False
+        self.fetch_page(0)
+
+    def crumbs(self):
+        out = []
+        if self.platform and not self.search:
+            out.append("Platforms")
+        elif self.collection:
+            return ["Collections"]      # full name is shown (unclipped) in the list header
+        if self.search:
+            out.append("Search")
+            if self.platform:
+                out.append(self.platform.get("display_name") or self.platform["name"])
+            out.append('"%s"' % self.search)
+        else:
+            out.append(self.title)
+        return out
+
+    @property
+    def loading(self):
+        return self.total is None
+
+    def _pids(self):
+        if self.platform:
+            return [self.platform["id"]]
+        if self.search or self.order_by == "id_desc":
+            return [p["id"] for p in self.app.platforms]
+        return None
+
+    def _query(self, offset, limit, char_index=False):
+        """One page from RomM with this list's filters (blocking)."""
+        app, pids = self.app, self._pids()
+        if self.order_by == "id_desc":
+            p = {"offset": offset, "limit": limit, "with_char_index": "false",
+                 "with_filter_values": "false", "with_rom_id_index": "false",
+                 "order_by": "id", "order_dir": "desc", "platform_ids": pids}
+            if self.regions:
+                p["regions"], p["regions_logic"] = self.regions, "any"
+            return app.api.get("/api/roms", p)
+        return app.api.roms(platform_ids=pids, search=self.search, offset=offset, limit=limit,
+                            order_by=self.order_by, char_index=char_index, regions=self.regions,
+                            collection=(self.collection["param"], self.collection["id"])
+                            if self.collection else None)
+
+    def installed(self, rom):
+        system = self.app.system_for(rom)
+        return bool(system) and self.app.library.is_installed(rom, system)
+
+    def fetch_page(self, offset):
+        if self.dense:
+            return self._fetch_dense()
+        if offset in self.pending:
+            return
+        self.pending.add(offset)
+        app, gen = self.app, self.gen
+        first = self.total is None
+        want_ci = first and self.order_by == "name" and not self.search
+        limit = 250 if self.search and offset == 0 else self.PAGE
+
+        def done(page):
+            if gen != self.gen:
+                return
+            self.pending.discard(offset)
+            total = page.get("total", len(page.get("items", [])))
+            self.server_total = total
+            if self.total is None or total != self.total:
+                self.items = (self.items + [None] * total)[:total]
+                self.total = total
+            got = page.get("items", [])
+            if self.search and offset == 0:
+                got = rank_search(self.search, got)
+            for k, rom in enumerate(got):
+                if offset + k < total:
+                    self.items[offset + k] = rom
+            if want_ci and page.get("char_index"):
+                merged = {}
+                for ch, off in page["char_index"].items():
+                    lab = letter_of(ch)
+                    if off < total and (lab not in merged or off < merged[lab]):
+                        merged[lab] = off
+                self.starts = sorted((off, lab) for lab, off in merged.items())
+
+        def err(e):
+            self.pending.discard(offset)
+            if self.total is None:
+                self.total = 0
+            app.toast(str(e), RED)
+        app.bg(lambda: self._query(offset, limit, want_ci), done, err)
+
+    def _fetch_dense(self):
+        """Sequential pages, installed games filtered out, until there's a
+        screenful past the cursor (or the list ends)."""
+        if "dense" in self.pending or self.exhausted:
+            return
+        self.pending.add("dense")
+        app, gen, off = self.app, self.gen, self.server_off
+
+        def done(page):
+            if gen != self.gen:
+                return
+            self.pending.discard("dense")
+            got = page.get("items", [])
+            self.server_total = page.get("total", 0)
+            self.server_off = off + len(got)
+            self.exhausted = not got or self.server_off >= self.server_total
+            self.items.extend(r for r in got if not self.installed(r))
+            self.total = len(self.items)
+            if not self.exhausted and len(self.items) < self.sel + 3 * self.ROWS:
+                self._fetch_dense()
+
+        def err(e):
+            self.pending.discard("dense")
+            self.exhausted = True
+            self.total = len(self.items)
+            app.toast(str(e), RED)
+        app.bg(lambda: self._query(off, 120), done, err)
+
+    def ensure(self, i):
+        """Make sure the page holding row i is loaded (or loading)."""
+        if self.dense:
+            if i >= len(self.items) - self.ROWS:
+                self._fetch_dense()
+            return
+        if self.total is None or not (0 <= i < self.total):
+            return
+        start = (i // self.PAGE) * self.PAGE
+        if any(r is None for r in self.items[start:start + self.PAGE]):
+            self.fetch_page(start)
+
+    # -- actions ------------------------------------------------------------
+    def action(self, a):
+        n = len(self.items)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS,
+              "left": -self.ROWS, "right": self.ROWS}
+        if a in mv and n:
+            self.sel = max(0, min(n - 1, self.sel + mv[a]))
+            self.ensure(self.sel + self.ROWS)
+        elif a in ("l2", "r2") and n:
+            if not self.starts or self.dense:
+                self.app.toast("A–Z jump works in full lists sorted by name")
+                return
+            hit = letter_jump(self.starts, self.sel, a == "r2")
+            if hit:
+                self.sel = hit[0]
+                # put the letter at the top of the list (without scrolling past the end)
+                self.scroll = max(0, min(hit[0], len(self.items) - self.ROWS))
+                self.bubble, self.bubble_until = hit[1], time.time() + 0.7
+                self.ensure(self.sel)
+                self.ensure(self.sel + self.ROWS)
+        elif a == "ok" and n and self.items[self.sel] is not None:
+            rom = self.items[self.sel]
+            if self.mark_mode:
+                if rom["id"] in self.marks:
+                    del self.marks[rom["id"]]
+                elif self.app.system_for(rom):
+                    self.marks[rom["id"]] = rom
+            elif self.rom_status(rom)[0] == "installed":
+                self.app.modal = ManageMenu(self.app, rom)
+            else:
+                self.app.modal = DownloadConfirm(self.app, rom)
+        elif a == "y":
+            self.app.push(SearchScreen(self.app, platform=self.platform))
+        elif a == "x":
+            self.app.modal = ActionMenu(self.app, "This list", self.menu_entries())
+        elif a == "back" and self.mark_mode:
+            self.mark_mode = False
+        else:
+            super().action(a)
+
+    def menu_entries(self):
+        app = self.app
+        e = []
+        if not self.search and not self.collection:
+            e.append(("Sort", "", self._toggle_sort,
+                      "Newest first" if self.order_by == "id_desc" else "A to Z"))
+        e.append(("Hide games on this box", "", self._toggle_hide, "On" if self.hide_installed else "Off"))
+        e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1]))
+        if self.mark_mode:
+            e.append(("Stop picking", "", lambda: setattr(self, "mark_mode", False)))
+        else:
+            e.append(("Pick games to download", "Then A marks games, and this menu downloads them",
+                      lambda: setattr(self, "mark_mode", True)))
+        if self.marks:
+            size = sum(r.get("fs_size_bytes") or 0 for r in self.marks.values())
+            e.append(("Download %d picked" % len(self.marks), human_size(size), self._download_marked))
+            e.append(("Clear picks", "", self.marks.clear))
+        tot = self.server_total
+        if tot:
+            if tot <= self.BULK_MAX:
+                e.append(("Download every game in this list", "{:,} games; skips any already on this box".format(tot),
+                          self._download_all))
+            else:
+                e.append(("Download every game in this list", "{:,} is too many. Pick a region or a collection first."
+                          .format(tot), None))
+        if self.bios:
+            n = len(self.bios)
+            e.append(("Get BIOS for %s" % (self.platform.get("display_name") or self.platform["_system"]),
+                      "%d file%s from RomM, checksum-verified" % (n, "" if n == 1 else "s"), self._fetch_bios))
+        return e
+
+    def _toggle_sort(self):
+        self.order_by = "id_desc" if self.order_by == "name" else "name"
+        self.reset()
+
+    def _toggle_hide(self):
+        self.hide_installed = not self.hide_installed
+        self.reset()
+
+    def _cycle_region(self):
+        self.region_i = (self.region_i + 1) % len(self.REGION_CHOICES)
+        self.reset()
+
+    def _queue_many(self, roms, title):
+        app = self.app
+        def busy(r):
+            j = app.downloader.job_for(r["id"])
+            return bool(j and j.active)
+        roms = [r for r in roms if app.system_for(r) and not self.installed(r) and not busy(r)]
+        if not roms:
+            app.toast("Nothing to download — all on this box already", AMBER)
+            return
+        size = sum(r.get("fs_size_bytes") or 0 for r in roms)
+        try:
+            st = os.statvfs(rommlib.ROMS_ROOT)
+            free = st.f_bavail * st.f_frsize
+        except OSError:
+            free = None
+        body = "%d games, %s download%s." % (len(roms), human_size(size),
+                                            "" if free is None else " — %s free on this box" % human_size(free))
+        if free is not None and size * 1.5 > free:
+            body += " That may not fit once disc games are extracted."
+
+        def go():
+            for r in roms:
+                app.downloader.enqueue(r, app.system_for(r))
+            app.toast("Queued %d games" % len(roms), GREEN)
+            self.marks.clear()
+            self.mark_mode = False
+        app.modal = Confirm(app, title, body, "Download %d" % len(roms), go)
+
+    def _download_marked(self):
+        self._queue_many(list(self.marks.values()), "Download picked games?")
+
+    def _download_all(self):
+        app = self.app
+        app.toast("Listing every game…")
+
+        def collect():
+            out, off = [], 0
+            while True:
+                page = self._query(off, 250)
+                got = page.get("items", [])
+                out.extend(got)
+                off += len(got)
+                if not got or off >= page.get("total", 0) or off >= self.BULK_MAX:
+                    return out
+        app.bg(collect, lambda roms: self._queue_many(roms, "Download this whole list?"))
+
+    def _fetch_bios(self):
+        app, offers, system = self.app, self.bios, self.platform["_system"]
+
+        def done(written):
+            self.bios = [o for o in offers if o[0]["file"] not in written]
+            app.toast("BIOS installed: %s" % ", ".join(os.path.basename(w) for w in written), GREEN)
+        app.bg(lambda: rommlib.fetch_bios(app.api, offers), done)
+
+    def hints(self):
+        if self.mark_mode:
+            return [("A", "Pick"), ("X", "Download %d picked" % len(self.marks) if self.marks else "Menu"),
+                    ("B", "Stop picking")]
+        h = [("A", "Download"), ("X", "Menu"), ("Y", "Search")]
+        if self.starts and not self.dense:
+            h.append(("L2 R2", "Letter"))
+        return h + [("L", "Page"), ("B", "Back")]
+
+    def rom_status(self, rom):
+        j = self.app.downloader.job_for(rom["id"])
+        if j and j.active:
+            return "active", j
+        if j and j.state == rommlib.Job.FAILED:
+            return "failed", j
+        system = self.app.system_for(rom)
+        if j and j.state == rommlib.Job.DONE:
+            return "installed", j
+        if system and self.app.library.is_installed(rom, system):
+            return "installed", None
+        return "remote", None
+
+    def draw(self, c):
+        app = self.app
+        lx, ly, lw = 32, 80, 676
+        # list header
+        if self.total is None:
+            cnt = "Loading…"
+        elif self.dense:
+            cnt = "{:,}{} not on this box".format(self.total, "" if self.exhausted else "+")
+        else:
+            cnt = "{:,} games".format(self.total) if self.total else "No games found"
+        flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
+                                   (self.mark_mode, "%d picked" % len(self.marks))) if on]
+        if flt:
+            cnt = ", ".join(flt + [cnt])
+        title = self.title if not self.search else 'Results for "%s"' % self.search
+        if measure(self.f.h3, title) <= 520:
+            text(c, self.f.h3, title, (lx + 8, ly + 4), TEXT)
+        else:
+            for k, ln in enumerate(wrap(self.f.small, title, 520)[:2]):
+                text(c, self.f.small, ln, (lx + 8, ly - 2 + k * 18), TEXT)
+        text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), FAINT, "topright")
+        ly += 40
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + self.ROWS:
+            self.scroll = self.sel - self.ROWS + 1
+        multi_plat = self.platform is None
+        for i in range(self.scroll, min(len(self.items), self.scroll + self.ROWS)):
+            rom = self.items[i]
+            on = i == self.sel
+            r = pygame.Rect(lx, ly + (i - self.scroll) * self.ROW_H, lw, self.ROW_H - 4)
+            if on:
+                focus_box(c, r)
+            if rom is None:
+                self.ensure(i)
+                text(c, self.f.row, "…", (r.left + 44, r.centery), FAINT, "midleft")
+                continue
+            st, j = self.rom_status(rom)
+            ix = r.left + 24
+            if self.mark_mode and st != "installed":
+                picked = rom["id"] in self.marks
+                rrect(c, ACCENT if picked else LINE, (ix - 9, r.centery - 9, 18, 18), 4, 0 if picked else 2)
+                if picked:
+                    polyline(c, TEXT, [(ix - 4, r.centery), (ix - 1, r.centery + 3), (ix + 4, r.centery - 3)], 2)
+            elif st == "installed":
+                circle(c, GREEN, (ix, r.centery), 9)
+                polyline(c, BG, [(ix - 4, r.centery), (ix - 1, r.centery + 3),
+                                                 (ix + 4, r.centery - 3)], 2)
+            elif st == "active":
+                frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+                circle(c, LINE, (ix, r.centery), 9, 2)
+                if frac > 0:
+                    arc(c, BLUE, (ix - 9, r.centery - 9, 18, 18),
+                                    1.5708 - 6.2832 * frac, 1.5708, 3)
+            elif st == "failed":
+                circle(c, RED, (ix, r.centery), 9)
+                text(c, self.f.tiny, "!", (ix, r.centery), BG, "center")
+            else:
+                circle(c, LINE, (ix, r.centery), 4)
+            right_w = 0
+            size = human_size(rom.get("fs_size_bytes"))
+            sr = text(c, self.f.small, size, (r.right - 14, r.centery), FAINT if not on else DIM, "midright")
+            right_w = sr.width + 14
+            if multi_plat:
+                p = app.platform_by_id.get(rom.get("platform_id"))
+                tag = p["_system"] if p else rom.get("platform_slug") or "?"
+                tw = int(measure(self.f.tiny, tag)) + 12
+                tr = pygame.Rect(r.right - right_w - tw - 12, r.centery - 10, tw, 20)
+                rrect(c, BG2 if p else (60, 30, 30), tr, 6)
+                text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+                right_w += tw + 12
+            name = rom.get("name") or rom.get("fs_name_no_ext")
+            nr = text(c, self.f.row, name, (r.left + 44, r.centery), TEXT if on else DIM,
+                      "midleft", maxw=r.width - 44 - right_w - 70)
+            regions = rom.get("regions") or []
+            if regions:
+                rg = "/".join(REGION_ABBR.get(x, x[:3]) for x in regions[:2])
+                text(c, self.f.tiny, rg, (nr.right + 8, r.centery + 1), FAINT, "midleft")
+        if self.loading:
+            text(c, self.f.body, "Loading…", (lx + lw // 2, ly + 120), DIM, "center")
+        # scrollbar
+        if self.total and self.total > self.ROWS:
+            track = pygame.Rect(lx + lw + 6, ly, 4, self.ROWS * self.ROW_H - 4)
+            rrect(c, LINE, track, 2)
+            h = max(24, track.height * self.ROWS // self.total)
+            yy = track.top + int((track.height - h) * (self.sel / max(1, self.total - 1)))
+            rrect(c, ACCENT, (track.left, yy, 4, h), 2)
+        # detail panel
+        if self.items and self.items[self.sel] is not None:
+            self.draw_detail(c, self.items[self.sel])
+        elif self.items:
+            p = pygame.Rect(728, 80, 520, 576)
+            rrect(c, PANEL, p, 16)
+            text(c, self.f.body, "Loading…", p.center, DIM, "center")
+        draw_bubble(c, self.f, self.bubble, self.bubble_until, (lx + lw // 2, H // 2))
+
+    def draw_detail(self, c, rom):
+        app = self.app
+        p = pygame.Rect(728, 80, 520, 576)
+        rrect(c, PANEL, p, 16)
+        cov = pygame.Rect(p.left + 24, p.top + 24, 192, 256)
+        img = app.cover(rom)
+        if img:
+            pc = SR(cov)
+            sc = app.scaled_covers.get(rom["id"])
+            if sc is None or sc[0] is not img:
+                iw, ih = img.get_size()
+                f = min(pc.width / iw, pc.height / ih)
+                sc = (img, pygame.transform.smoothscale(
+                    img, (max(1, int(iw * f)), max(1, int(ih * f)))))
+                if len(app.scaled_covers) > 64:
+                    app.scaled_covers.clear()
+                app.scaled_covers[rom["id"]] = sc
+            c.blit(sc[1], sc[1].get_rect(midtop=(pc.centerx, pc.top)))
+        else:
+            rrect(c, BG2, cov, 10)
+            text(c, self.f.small, "no cover" if rom["id"] in app.covers and
+                 app.covers[rom["id"]] is None else "…", cov.center, FAINT, "center")
+        tx, tw = cov.right + 20, p.right - cov.right - 44
+        y = p.top + 24
+        title = rom.get("name") or rom.get("fs_name_no_ext")
+        tl = wrap(self.f.h3, title, tw)
+        tf, lh = (self.f.h3, 25) if len(tl) <= 3 else (self.f.body, 22)
+        for ln in wrap(tf, title, tw, 5):
+            text(c, tf, ln, (tx, y), TEXT)
+            y += lh
+        y += 8
+        md = rom.get("metadatum") or {}
+        plat = app.platform_by_id.get(rom.get("platform_id"))
+        year = ""
+        if md.get("first_release_date"):
+            year = time.strftime("%Y", time.gmtime(md["first_release_date"] / 1000))
+        facts = [
+            ("Platform", (plat.get("display_name") or plat["name"]) if plat else
+             (rom.get("platform_display_name") or "?")),
+            ("Released", year),
+            ("Genre", ", ".join((md.get("genres") or [])[:2])),
+            ("Players", md.get("player_count") or ""),
+            ("Size", human_size(rom.get("fs_size_bytes"))),
+        ]
+        for k, v in facts:
+            if not v:
+                continue
+            text(c, self.f.small, k, (tx, y), FAINT)
+            text(c, self.f.cond, str(v), (tx, y + 17), DIM, maxw=tw)
+            y += 42
+        # summary
+        sy = max(y, cov.bottom) + 18
+        summ = rom.get("summary") or ""
+        lines = wrap(self.f.small, summ, p.width - 48, max(1, (p.bottom - 110 - sy) // 20))
+        for i, ln in enumerate(lines if summ else []):
+            text(c, self.f.small, ln, (p.left + 24, sy + i * 20), DIM)
+        # action area
+        ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, 52)
+        st, j = self.rom_status(rom)
+        system = app.system_for(rom)
+        if not system:
+            rrect(c, BG2, ar, 12)
+            text(c, self.f.body, "No Batocera system for this platform", ar.center, FAINT, "center")
+        elif st == "installed":
+            rrect(c, (20, 60, 48), ar, 12)
+            gx = ar.left + 18
+            gx += button_glyph(c, self.f, "A", gx, ar.centery - 11) + 12
+            text(c, self.f.h3, "On this box", (gx, ar.centery), GREEN, "midleft")
+            text(c, self.f.small, "roms/" + system, (ar.right - 20, ar.centery), DIM, "midright")
+        elif st == "active":
+            rrect(c, BG2, ar, 12)
+            frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+            label = j.state
+            if j.state == rommlib.Job.DOWNLOADING:
+                label = "Downloading %d%%, %s/s" % (frac * 100, human_size(j.speed))
+            text(c, self.f.body, label, (ar.left + 18, ar.top + 10), TEXT)
+            progress_bar(c, (ar.left + 18, ar.bottom - 16, ar.width - 36, 6), frac, BLUE)
+        else:
+            rrect(c, ACCENT, ar, 12)
+            gx = ar.left + 18
+            gx += button_glyph(c, self.f, "A", gx, ar.centery - 11) + 12
+            msg = "Retry download" if st == "failed" else "Download"
+            text(c, self.f.h3, msg, (gx, ar.centery), TEXT, "midleft")
+            text(c, self.f.small, "to roms/" + system, (ar.right - 20, ar.centery), (225, 215, 255), "midright")
+            if st == "failed":
+                text(c, self.f.small, j.message, (ar.left, ar.top - 22), RED, maxw=ar.width)
+
+
+class SearchScreen(Screen):
+    ROWS = ["1234567890", "QWERTYUIOP", "ASDFGHJKL'", "ZXCVBNM-:&"]
+    SPECIAL = [("Space", 3), ("Delete", 3), ("Clear", 2), ("Search", 2)]
+
+    def __init__(self, app, platform=None):
+        super().__init__(app)
+        self.platform = platform
+        self.query = ""
+        self.r, self.c = 1, 0
+        self.preview = []
+        self.preview_total = None
+        self.preview_q = None
+        self.pending_at = None
+
+    def crumbs(self):
+        out = ["Search"]
+        if self.platform:
+            out.append(self.platform.get("display_name") or self.platform["name"])
+        return out
+
+    def hints(self):
+        return [("A", "Type"), ("X", "Delete"), ("Y", "Space"), ("START", "Search"), ("B", "Back")]
+
+    def row_len(self, r):
+        return len(self.ROWS[r]) if r < len(self.ROWS) else len(self.SPECIAL)
+
+    def _type(self, s):
+        self.query = (self.query + s)[:60]
+        self.pending_at = time.time() + 0.45
+
+    def action(self, a):
+        nrows = len(self.ROWS) + 1
+        if a == "up":
+            self.r = (self.r - 1) % nrows
+        elif a == "down":
+            self.r = (self.r + 1) % nrows
+        elif a == "left":
+            self.c = (self.c - 1) % self.row_len(self.r)
+        elif a == "right":
+            self.c = (self.c + 1) % self.row_len(self.r)
+        elif a == "x":
+            self.query = self.query[:-1]
+            self.pending_at = time.time() + 0.45
+        elif a == "y":
+            self._type(" ")
+        elif a == "ok":
+            if self.r < len(self.ROWS):
+                self._type(self.ROWS[self.r][self.c].lower() if self.r else self.ROWS[self.r][self.c])
+            else:
+                key = self.SPECIAL[self.c][0]
+                if key == "Space":
+                    self._type(" ")
+                elif key == "Delete":
+                    self.query = self.query[:-1]
+                    self.pending_at = time.time() + 0.45
+                elif key == "Clear":
+                    self.query = ""
+                    self.preview = []
+                    self.preview_total = None
+                else:
+                    self.go()
+        elif a in ("start", "r1"):
+            self.go()
+        elif a == "back":
+            self.app.pop()
+        self.c = min(self.c, self.row_len(self.r) - 1)
+
+    def go(self):
+        q = self.query.strip()
+        if len(q) < 2:
+            self.app.toast("Type at least 2 characters", AMBER)
+            return
+        self.app.push(GameListScreen(self.app, "Search", platform=self.platform, search=q))
+
+    def live_preview(self):
+        if self.pending_at and time.time() >= self.pending_at:
+            self.pending_at = None
+            q = self.query.strip()
+            if len(q) < 2:
+                self.preview, self.preview_total = [], None
+                return
+            app = self.app
+            pids = [self.platform["id"]] if self.platform else [p["id"] for p in app.platforms]
+
+            def done(page, q=q):
+                if q == self.query.strip():
+                    self.preview = page.get("items", [])
+                    self.preview_total = page.get("total")
+            def call():
+                page = app.api.roms(platform_ids=pids, search=q, limit=250)
+                page["items"] = rank_search(q, page.get("items", []))[:8]
+                return page
+            app.bg(call, done)
+
+    own_start = True   # Start = run the search here, not "go Home"
+
+    def draw(self, c):
+        self.live_preview()
+        # query field
+        qf = pygame.Rect(48, 88, 640, 60)
+        rrect(c, PANEL, qf, 14)
+        rrect(c, ACCENT, qf, 14, 2)
+        shown = self.query or ""
+        r = text(c, self.f.h2, shown, (qf.left + 22, qf.centery), TEXT, "midleft", maxw=qf.width - 50)
+        if not shown:
+            text(c, self.f.h2, "Search " + ((self.platform.get("display_name") or self.platform["name"])
+                                            if self.platform else "all games"),
+                 (qf.left + 22, qf.centery), FAINT, "midleft", maxw=qf.width - 50)
+            r = pygame.Rect(qf.left + 20, qf.top, 0, qf.height)
+        if int(self.app.t * 2) % 2 == 0:
+            hline(c, ACCENT_HI, (r.right + 3, qf.top + 16), (r.right + 3, qf.bottom - 16), 2)
+        # keyboard
+        kx, ky, kw, kh, gap = 48, 172, 58, 58, 6
+        for ri, row in enumerate(self.ROWS):
+            for ci, ch in enumerate(row):
+                kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
+                on = (ri, ci) == (self.r, self.c)
+                rrect(c, ACCENT if on else PANEL, kr, 10)
+                text(c, self.f.key, ch, kr.center, TEXT if on else DIM, "center")
+        sy = ky + len(self.ROWS) * (kh + gap)
+        sx = kx
+        for ci, (label, span) in enumerate(self.SPECIAL):
+            w = span * kw + (span - 1) * gap
+            kr = pygame.Rect(sx, sy, w, kh)
+            on = (self.r, self.c) == (len(self.ROWS), ci)
+            col = ACCENT if on else (PANEL_HI if label == "Search" else PANEL)
+            rrect(c, col, kr, 10)
+            text(c, self.f.h3, label, kr.center, TEXT if on or label == "Search" else DIM, "center")
+            sx += w + gap
+        # live results
+        p = pygame.Rect(720, 88, 528, 568)
+        rrect(c, PANEL, p, 16)
+        text(c, self.f.h3, "Top matches", (p.left + 24, p.top + 20), DIM)
+        if self.preview_total is not None:
+            text(c, self.f.small, "{:,} total".format(self.preview_total),
+                 (p.right - 24, p.top + 22), FAINT, "topright")
+        y = p.top + 56
+        if not self.preview:
+            msg = "Start typing — results appear here." if len(self.query.strip()) < 2 else \
+                ("Searching…" if self.preview_total is None or self.pending_at else "No matches")
+            text(c, self.f.body, msg, (p.left + 24, y), DIM)
+        for rom in self.preview[:8]:
+            pl = self.app.platform_by_id.get(rom.get("platform_id"))
+            text(c, self.f.row, rom.get("name") or rom.get("fs_name_no_ext"), (p.left + 24, y),
+                 TEXT, maxw=p.width - 48)
+            sr = text(c, self.f.small, pl["_system"] if pl else "?", (p.left + 24, y + 26), FAINT)
+            text(c, self.f.small, human_size(rom.get("fs_size_bytes")), (sr.right + 16, y + 26), FAINT)
+            y += 58
+        if self.preview:
+            text(c, self.f.small, "Press START to see all results", (p.left + 24, p.bottom - 34), ACCENT_HI)
+
+
+class DownloadsScreen(Screen):
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = 0
+
+    def crumbs(self):
+        return ["Downloads"]
+
+    def hints(self):
+        return [("A", "Cancel / retry"), ("B", "Back")]
+
+    def action(self, a):
+        jobs = list(reversed(self.app.downloader.jobs))
+        if a in ("up", "down") and jobs:
+            self.sel = max(0, min(len(jobs) - 1, self.sel + (1 if a == "down" else -1)))
+        elif a == "ok" and jobs:
+            j = jobs[self.sel]
+            if j.active:
+                self.app.modal = Confirm(self.app, "Cancel download?", j.name, "Cancel download",
+                                         j.cancel.set, danger=True)
+            elif j.state in (rommlib.Job.FAILED, rommlib.Job.CANCELLED, rommlib.Job.PAUSED):
+                self.app.downloader.enqueue(j.rom, j.system)
+        else:
+            super().action(a)
+
+    def draw(self, c):
+        jobs = list(reversed(self.app.downloader.jobs))
+        if not jobs:
+            text(c, self.f.h2, "No downloads yet", (W // 2, 300), DIM, "center")
+            text(c, self.f.body, "Pick a game and press A to download it to this box.",
+                 (W // 2, 340), FAINT, "center")
+        y = 84
+        chd = len([f for f in os.listdir(rommlib.CHD_QUEUE_DIR) if f.endswith(".json")]) \
+            if os.path.isdir(rommlib.CHD_QUEUE_DIR) else 0
+        if chd:
+            text(c, self.f.small, "%d disc game%s waiting for background CHD compression "
+                 "(runs when no game is playing)" % (chd, "s" if chd > 1 else ""),
+                 (48, y), AMBER)
+            y += 28
+        self.sel = min(self.sel, max(0, len(jobs) - 1))
+        for i, j in enumerate(jobs[:7]):
+            r = pygame.Rect(48, y, W - 96, 72)
+            on = i == self.sel
+            rrect(c, PANEL_HI if on else PANEL, r, 12)
+            if on:
+                rrect(c, ACCENT, r, 12, 2)
+            text(c, self.f.h3, j.name, (r.left + 20, r.top + 12), TEXT, maxw=r.width - 560)
+            col = {rommlib.Job.DONE: GREEN, rommlib.Job.FAILED: RED, rommlib.Job.PAUSED: AMBER,
+                   rommlib.Job.CANCELLED: FAINT}.get(j.state, BLUE)
+            st = j.state
+            frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+            if j.state == rommlib.Job.DOWNLOADING:
+                st = "%d%%   %s of %s   %s/s" % (frac * 100, human_size(j.done_bytes),
+                                                    human_size(j.total_bytes), human_size(j.speed))
+            elif j.message:
+                st = "%s — %s" % (j.state, j.message)
+            text(c, self.f.small, st, (r.right - 20, r.top + 14), col, "topright", maxw=520)
+            text(c, self.f.small, "roms/" + j.system, (r.left + 20, r.top + 42), FAINT)
+            if j.active:
+                progress_bar(c, (r.left + 240, r.top + 48, r.width - 260, 8),
+                             frac if j.state == rommlib.Job.DOWNLOADING else (1.0 if j.state == "Extracting" else 0),
+                             AMBER if j.state == "Extracting" else BLUE)
+            y += 80
+
+
+class TextInputScreen(Screen):
+    """Full-charset on-screen keyboard for URLs / tokens. A types, X deletes,
+    Y = shift, Start saves, B cancels."""
+    LOWER = ["1234567890", "qwertyuiop", "asdfghjkl:", "zxcvbnm./-", "_@?=&%~+#!"]
+    SPECIAL = [("Shift", 2), ("Space", 2), ("Delete", 2), ("Clear", 2), ("Save", 2)]
+    own_start = True
+
+    def __init__(self, app, title, value, on_save, secret=False):
+        super().__init__(app)
+        self.title, self.value, self.on_save, self.secret = title, value or "", on_save, secret
+        self.shift = False
+        self.r, self.c = 1, 0
+
+    def rows(self):
+        if not self.shift:
+            return self.LOWER
+        return [r.upper() if i in (1, 2, 3) else
+                ("!@#$%^&*()" if i == 0 else "<>[]{}|;,\'")
+                for i, r in enumerate(self.LOWER)]
+
+    def crumbs(self):
+        return ["Settings", self.title]
+
+    def hints(self):
+        return [("A", "Type"), ("X", "Delete"), ("Y", "Shift"), ("START", "Save"), ("B", "Cancel")]
+
+    def row_len(self, r):
+        return len(self.rows()[r]) if r < len(self.LOWER) else len(self.SPECIAL)
+
+    def action(self, a):
+        n = len(self.LOWER) + 1
+        if a == "up":
+            self.r = (self.r - 1) % n
+        elif a == "down":
+            self.r = (self.r + 1) % n
+        elif a == "left":
+            self.c = (self.c - 1) % self.row_len(self.r)
+        elif a == "right":
+            self.c = (self.c + 1) % self.row_len(self.r)
+        elif a == "x":
+            self.value = self.value[:-1]
+        elif a == "y":
+            self.shift = not self.shift
+        elif a == "ok":
+            if self.r < len(self.LOWER):
+                self.value += self.rows()[self.r][self.c]
+            else:
+                key = self.SPECIAL[self.c][0]
+                if key == "Shift":
+                    self.shift = not self.shift
+                elif key == "Space":
+                    self.value += " "
+                elif key == "Delete":
+                    self.value = self.value[:-1]
+                elif key == "Clear":
+                    self.value = ""
+                else:
+                    self.save()
+        elif a == "start":
+            self.save()
+        elif a == "back":
+            self.app.pop()
+        self.c = min(self.c, self.row_len(self.r) - 1)
+
+    def save(self):
+        self.app.pop()
+        self.on_save(self.value.strip())
+
+    def draw(self, c):
+        qf = pygame.Rect(48, 88, W - 96, 60)
+        rrect(c, PANEL, qf, 14)
+        rrect(c, ACCENT, qf, 14, 2)
+        shown = self.value
+        if self.secret and len(shown) > 8:
+            shown = shown[:4] + "•" * min(24, len(shown) - 8) + shown[-4:]
+        # keep the tail (where you type) visible
+        while shown and measure(self.f.h3, shown) > qf.width - 50:
+            shown = shown[1:]
+        r = text(c, self.f.h3, shown, (qf.left + 22, qf.centery), TEXT, "midleft")
+        if not self.value:
+            text(c, self.f.h3, self.title, (qf.left + 22, qf.centery), FAINT, "midleft")
+            r = pygame.Rect(qf.left + 20, qf.top, 0, qf.height)
+        if int(self.app.t * 2) % 2 == 0:
+            hline(c, ACCENT_HI, (r.right + 3, qf.top + 16), (r.right + 3, qf.bottom - 16), 2)
+        kw, kh, gap = 96, 62, 8
+        kx = (W - (10 * kw + 9 * gap)) // 2
+        ky = 172
+        for ri, row in enumerate(self.rows()):
+            for ci, ch in enumerate(row):
+                kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
+                on = (ri, ci) == (self.r, self.c)
+                rrect(c, ACCENT if on else PANEL, kr, 10)
+                text(c, self.f.key, ch, kr.center, TEXT if on else DIM, "center")
+        sy = ky + len(self.LOWER) * (kh + gap)
+        sx = kx
+        for ci, (label, span) in enumerate(self.SPECIAL):
+            w = span * kw + (span - 1) * gap
+            kr = pygame.Rect(sx, sy, w, kh)
+            on = (self.r, self.c) == (len(self.LOWER), ci)
+            hot = label == "Save" or (label == "Shift" and self.shift)
+            rrect(c, ACCENT if on else (PANEL_HI if hot else PANEL), kr, 10)
+            text(c, self.f.h3, label, kr.center, TEXT if on or hot else DIM, "center")
+            sx += w + gap
+
+
+class SettingsScreen(Screen):
+    """Everything in config.json, editable with the pad. Saved immediately."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = 0
+        self.cache_bytes = None
+        self._measure_cache()
+
+    def _measure_cache(self):
+        def size():
+            tot = 0
+            for dp, _, fns in os.walk(rommlib.COVER_CACHE):
+                for f in fns:
+                    try:
+                        tot += os.path.getsize(os.path.join(dp, f))
+                    except OSError:
+                        pass
+            return tot
+        self.app.bg(size, lambda n: setattr(self, "cache_bytes", n))
+
+    def items(self):
+        cfg = self.app.cfg
+        tok = cfg.get("token") or ""
+        masked = (tok[:4] + "…" + tok[-4:]) if len(tok) > 10 else ("set" if tok else "not set")
+        tls = rommlib.norm_verify(cfg.get("verify_tls", True))
+        tls_s = "On" if tls is True else ("Off" if tls is False else "CA: " + os.path.basename(tls))
+        arcade = (cfg.get("platform_map") or {}).get("arcade") or rommlib.PLATFORM_MAP["arcade"]
+        return [
+            ("url", "RomM server", rommlib.display_url(cfg.get("url")) or "not set",
+             "Plain HTTP: the token isn't encrypted"
+             if (cfg.get("url") or "").lower().startswith("http://") else "A to edit (http:// or https://)"),
+            ("token", "API token", masked, "Create one in RomM under Profile, Client API tokens"),
+            ("tls", "Verify TLS certificate", tls_s, "Off only for a self-signed cert"),
+            ("test", "Test connection", "", "Fetch the platform list now"),
+            ("swap", "Confirm button", "East (right)" if cfg.get("swap_ab") else "South (bottom)",
+             "Which face button means OK"),
+            ("chd", "Compress disc games to CHD", "On" if cfg.get("chd", True) else "Off",
+             "Background, only while no game is running"),
+            ("bgdl", "Keep downloading after exit", "On" if cfg.get("background_downloads", True) else "Off",
+             "Finishes the queue while you play"),
+            ("arcade", "Arcade games go to", "roms/" + arcade, "fbneo (forgiving) or mame (exact sets)"),
+            ("cache", "Clear cover cache",
+             human_size(self.cache_bytes) if self.cache_bytes is not None else "…",
+             "Covers re-download as you browse"),
+        ]
+
+    def crumbs(self):
+        return ["Settings"]
+
+    def hints(self):
+        return [("A", "Change"), ("B", "Back")]
+
+    def action(self, a):
+        n = len(self.items())
+        if a in ("up", "down"):
+            self.sel = (self.sel + (1 if a == "down" else -1)) % n
+        elif a in ("ok", "left", "right"):
+            key = self.items()[self.sel][0]
+            app, cfg = self.app, self.app.cfg
+            if key == "url" and a == "ok":
+                def save_url(v):
+                    if v and "://" not in v:
+                        v = "https://" + v
+                    if rommlib.url_has_userinfo(v):
+                        app.toast("Leave user:password out of the URL — the token is the login", RED)
+                        return
+                    cfg["url"] = v.rstrip("/")
+                    app.apply_config(reconnect=True)
+                    app.toast("Server saved — reconnecting", GREEN)
+                cur = cfg.get("url") or "https://"
+                if rommlib.url_has_userinfo(cur):
+                    cur = "https://"          # never pre-fill an embedded password
+                app.push(TextInputScreen(app, "RomM server URL", cur, save_url))
+            elif key == "token" and a == "ok":
+                def save_tok(v):
+                    cfg["token"] = v
+                    app.apply_config(reconnect=True)
+                    app.toast("Token saved — reconnecting", GREEN)
+                app.push(TextInputScreen(app, "RomM client API token", cfg.get("token") or "",
+                                         save_tok, secret=True))
+            elif key == "tls":
+                cfg["verify_tls"] = rommlib.norm_verify(cfg.get("verify_tls", True)) is False
+                app.apply_config(reconnect=True)
+            elif key == "test" and a == "ok":
+                app.toast("Testing…")
+                app.bg(app.api.platforms,
+                       lambda p: app.toast("Connected: %d platforms on the server" % len(p), GREEN),
+                       lambda e: app.toast(str(e), RED))
+            elif key == "swap":
+                cfg["swap_ab"] = not cfg.get("swap_ab")
+                app.apply_config()
+                app.toast("Confirm is now the %s button" % ("east" if cfg["swap_ab"] else "south"))
+            elif key == "bgdl":
+                cfg["background_downloads"] = not cfg.get("background_downloads", True)
+                app.apply_config()
+            elif key == "chd":
+                cfg["chd"] = not cfg.get("chd", True)
+                app.apply_config()
+                app.downloader.cfg = cfg
+            elif key == "arcade":
+                pm = dict(cfg.get("platform_map") or {})
+                cur = pm.get("arcade") or rommlib.PLATFORM_MAP["arcade"]
+                pm["arcade"] = "mame" if cur == "fbneo" else "fbneo"
+                cfg["platform_map"] = pm
+                app.apply_config(reconnect=True)
+            elif key == "cache" and a == "ok":
+                shutil.rmtree(rommlib.COVER_CACHE, ignore_errors=True)
+                app.covers.clear()
+                app.scaled_covers.clear()
+                self.cache_bytes = 0
+                app.toast("Cover cache cleared", GREEN)
+        else:
+            super().action(a)
+
+    def draw(self, c):
+        items = self.items()
+        y = 84
+        for i, (key, label, value, sub) in enumerate(items):
+            r = pygame.Rect(48, y, 700, 56)
+            on = i == self.sel
+            rrect(c, PANEL_HI if on else PANEL, r, 12)
+            if on:
+                rrect(c, ACCENT, r, 12, 2)
+            text(c, self.f.h3, label, (r.left + 22, r.top + 6), TEXT if on else DIM)
+            warn = sub.startswith("Plain HTTP")
+            text(c, self.f.small, sub, (r.left + 22, r.top + 32), AMBER if warn else FAINT, maxw=420)
+            vcol = ACCENT_HI if key in ("test", "cache") else (TEXT if on else DIM)
+            text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
+            y += 62
+        # About panel
+        p = pygame.Rect(776, 84, 472, 554)
+        rrect(c, PANEL, p, 16)
+
+        text(c, self.f.h1, "RomM Browser", (p.left + 28, p.top + 24), TEXT)
+        text(c, self.f.body, "romm-o-cera v" + rommlib.VERSION, (p.left + 28, p.top + 72), ACCENT_HI)
+        rows = [("Status", self.app.status if not self.app.error else self.app.error),
+                ("Platforms here", str(len(self.app.platforms))),
+                ("Config", rommlib.CONFIG_PATH),
+                ("Data / log", rommlib.LOG_PATH),
+                ("Roms", rommlib.ROMS_ROOT)]
+        yy = p.top + 124
+        for k, v in rows:
+            text(c, self.f.small, k, (p.left + 28, yy), FAINT)
+            for j, ln in enumerate(wrap(self.f.cond, v, p.width - 56, 2)):
+                text(c, self.f.cond, ln, (p.left + 28, yy + 18 + j * 19), DIM)
+            yy += 66
+        text(c, self.f.small, "Hotkey + Start exits", (p.left + 28, p.bottom - 36), FAINT)
+
+
+class InstalledScreen(Screen):
+    """Games RomM Browser installed, biggest first, with delete."""
+    ROWS, ROW_H = 10, 54
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.items = None
+        self.sel = self.scroll = 0
+        self.load()
+
+    def load(self):
+        lib = self.app.library
+
+        def scan():
+            out = []
+            for rid, rec in list(lib.installed.items()):
+                paths = [p for p in rec.get("paths", []) if os.path.exists(p)]
+                if not paths:
+                    continue
+                out.append({"id": int(rid), "name": rec.get("name") or os.path.basename(paths[0]),
+                            "system": rec.get("system"), "when": rec.get("when", ""),
+                            "size": sum(rommlib.path_size(p) for p in paths)})
+            return sorted(out, key=lambda i: -i["size"])
+        self.app.bg(scan, lambda items: setattr(self, "items", items))
+
+    def enter(self):
+        self.load()
+
+    def crumbs(self):
+        return ["On this box"]
+
+    def hints(self):
+        return [("A", "Delete"), ("L", "Page up"), ("R", "Page down"), ("B", "Back")]
+
+    def action(self, a):
+        if not self.items:
+            return super().action(a)
+        n = len(self.items)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
+        if a in mv:
+            self.sel = max(0, min(n - 1, self.sel + mv[a]))
+        elif a == "ok":
+            it = self.items[self.sel]
+            rom = {"id": it["id"], "name": it["name"]}
+            self.app.modal = Confirm(self.app, "Delete %s?" % it["name"],
+                                     "Removes it from roms/%s (%s). Saves and states are kept."
+                                     % (it["system"], human_size(it["size"])), "Delete",
+                                     lambda: self.app.uninstall(rom, it["system"], self.load), danger=True)
+        else:
+            super().action(a)
+
+    def draw(self, c):
+        if self.items is None:
+            text(c, self.f.h2, "Measuring…", (W // 2, H // 2), DIM, "center")
+            return
+        try:
+            st = os.statvfs(rommlib.ROMS_ROOT)
+            free = human_size(st.f_bavail * st.f_frsize)
+        except OSError:
+            free = "?"
+        text(c, self.f.h3, "%d game%s from RomM use %s. %s free." % (
+            len(self.items), "" if len(self.items) == 1 else "s",
+            human_size(sum(i["size"] for i in self.items)), free), (56, 86), TEXT)
+        if not self.items:
+            text(c, self.f.body, "Nothing installed by RomM Browser yet. Games copied over another way "
+                 "can be deleted from their game list (A on a ✓ game).", (56, 130), DIM)
+            return
+        rows = self.ROWS
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + rows:
+            self.scroll = self.sel - rows + 1
+        y = 124
+        for i in range(self.scroll, min(len(self.items), self.scroll + rows)):
+            it = self.items[i]
+            on = i == self.sel
+            r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            if on:
+                focus_box(c, r)
+            text(c, self.f.row, it["name"], (r.left + 22, r.centery), TEXT if on else DIM, "midleft",
+                 maxw=r.width - 420)
+            tag = it["system"] or "?"
+            tw = int(measure(self.f.tiny, tag)) + 14
+            tr = pygame.Rect(r.right - 290 - tw, r.centery - 10, tw, 20)
+            rrect(c, BG2, tr, 6)
+            text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+            text(c, self.f.small, it["when"][:10], (r.right - 150, r.centery), FAINT, "midright")
+            text(c, self.f.small, human_size(it["size"]), (r.right - 20, r.centery), DIM, "midright")
+            y += self.ROW_H
+
+
+# ------------------------------------------------------------------ modals
+
+class ActionMenu:
+    """Modal list of actions: entries = [(label, sub, fn or None=disabled[, value])]."""
+
+    def __init__(self, app, title, entries):
+        self.app, self.title, self.entries = app, title, entries
+        self.sel = next((i for i, e in enumerate(entries) if e[2]), 0)
+
+    def action(self, a):
+        n = len(self.entries)
+        if a in ("up", "down") and n:
+            for _ in range(n):
+                self.sel = (self.sel + (1 if a == "down" else -1)) % n
+                if self.entries[self.sel][2]:
+                    break
+        elif a == "ok" and n and self.entries[self.sel][2]:
+            fn = self.entries[self.sel][2]
+            self.app.modal = None
+            fn()
+        elif a in ("back", "quit", "x"):
+            self.app.modal = None
+
+    def draw(self, c):
+        f = self.app.fonts
+        veil = pygame.Surface(c.get_size(), pygame.SRCALPHA)
+        veil.fill((0, 0, 0, 170))
+        c.blit(veil, (0, 0))
+        rh = 54
+        h = 84 + rh * len(self.entries) + 16
+        r = pygame.Rect(0, 0, 680, h)
+        r.center = (W // 2, H // 2)
+        rrect(c, PANEL, r, 18)
+        rrect(c, LINE, r, 18, 1)
+        text(c, f.h2, self.title, (r.left + 28, r.top + 24), TEXT, maxw=r.width - 56)
+        y = r.top + 74
+        for i, entry in enumerate(self.entries):
+            label, sub, fn = entry[:3]
+            value = entry[3] if len(entry) > 3 else None
+            row = pygame.Rect(r.left + 16, y, r.width - 32, rh - 6)
+            on = i == self.sel
+            if on:
+                focus_box(c, row)
+            col = (TEXT if on else DIM) if fn else FAINT
+            vw = 0
+            if value:
+                vr = text(c, f.body, value, (row.right - 18, row.centery), ACCENT_HI if on else DIM, "midright")
+                vw = vr.width + 24
+            if sub:
+                text(c, f.body, label, (row.left + 18, row.top + 6), col, maxw=row.width - 36 - vw)
+            else:
+                text(c, f.body, label, (row.left + 18, row.centery), col, "midleft", maxw=row.width - 36 - vw)
+            if sub:
+                text(c, f.small, sub, (row.left + 18, row.top + 28), FAINT, maxw=row.width - 36 - vw)
+            y += rh
+
+
+class ManageMenu(ActionMenu):
+    """For a game already on the box."""
+
+    def __init__(self, app, rom):
+        system = app.system_for(rom)
+        lib = app.library
+        paths = lib.paths_for(rom, system) if system else []
+        size = sum(rommlib.path_size(p) for p in paths)
+        name = rom.get("name") or rom.get("fs_name_no_ext")
+
+        def delete():
+            files = ", ".join(os.path.basename(p) for p in paths[:3]) + ("…" if len(paths) > 3 else "")
+            app.modal = Confirm(app, "Delete %s?" % name,
+                                "Removes %s from roms/%s (%s). Saves and states are kept."
+                                % (files, system, human_size(size)),
+                                "Delete", lambda: app.uninstall(rom, system), danger=True)
+        super().__init__(app, name, [
+            ("Delete from this box", "Frees %s (%d file%s)" % (human_size(size), len(paths),
+                                                         "" if len(paths) == 1 else "s"),
+             delete if paths else None),
+            ("Download again", "Replaces what's on the box", lambda: setattr(
+                app, "modal", DownloadConfirm(app, rom))),
+        ])
+
+
+class Confirm:
+    def __init__(self, app, title, body, ok_label, on_ok, danger=False):
+        self.app, self.title, self.body = app, title, body
+        self.ok_label, self.on_ok, self.danger = ok_label, on_ok, danger
+
+    def action(self, a):
+        if a == "ok":
+            self.app.modal = None
+            self.on_ok()
+        elif a in ("back", "quit"):
+            self.app.modal = None
+
+    def draw(self, c):
+        f = self.app.fonts
+        veil = pygame.Surface(c.get_size(), pygame.SRCALPHA)
+        veil.fill((0, 0, 0, 170))
+        c.blit(veil, (0, 0))
+        r = pygame.Rect(0, 0, 640, 260)
+        r.center = (W // 2, H // 2)
+        rrect(c, PANEL, r, 18)
+        rrect(c, LINE, r, 18, 1)
+        text(c, f.h2, self.title, (r.left + 32, r.top + 28), TEXT, maxw=r.width - 64)
+        for i, ln in enumerate(wrap(f.body, self.body, r.width - 64, 4)):
+            text(c, f.body, ln, (r.left + 32, r.top + 76 + i * 26), DIM)
+        bx = r.left + 32
+        by = r.bottom - 58
+        okr = pygame.Rect(bx, by, 260, 40)
+        rrect(c, RED if self.danger else ACCENT, okr, 10)
+        g = button_glyph(c, f, "A", okr.left + 12, okr.centery - 11)
+        text(c, f.h3, self.ok_label, (okr.left + 22 + g, okr.centery), TEXT, "midleft")
+        nr = pygame.Rect(okr.right + 16, by, 180, 40)
+        rrect(c, PANEL_HI, nr, 10)
+        g = button_glyph(c, f, "B", nr.left + 12, nr.centery - 11)
+        text(c, f.h3, "Back", (nr.left + 22 + g, nr.centery), DIM, "midleft")
+
+
+class DownloadConfirm(Confirm):
+    def __init__(self, app, rom):
+        system = app.system_for(rom)
+        st = GameListScreen.rom_status(app.stack[-1], rom) if isinstance(app.stack[-1], GameListScreen) \
+            else ("remote", None)
+        name = rom.get("name") or rom.get("fs_name_no_ext")
+        if not system:
+            super().__init__(app, name, "This platform has no Batocera system to put it in.",
+                             "OK", lambda: None)
+            return
+        if st[0] == "active":
+            super().__init__(app, name, "Already downloading.", "OK", lambda: None)
+            return
+        body = "%s, saved to roms/%s" % (human_size(rom.get("fs_size_bytes")), system)
+        if st[0] == "installed":
+            body = "Already on this box. Download again anyway?  " + body
+        super().__init__(app, name, body, "Download", lambda: app.start_download(rom))
+
+
+# --------------------------------------------------------------------- main
+
+def register_self():
+    """First run: queue our own ES gamelist entry (name, icon) for the
+    post-exit merge, so the pygame system lists "RomM Browser", not a folder."""
+    marker = os.path.join(rommlib.DATA_DIR, ".registered")
+    if os.path.exists(marker):
+        return
+    entry = {"system": "pygame", "paths": [os.path.join(APP_DIR, "rommbrowser.pygame")],
+             "name": "RomM Browser",
+             "desc": "Browse and search your RomM library with a controller and download "
+                     "games straight into this box's roms folders (romm-o-cera v%s)."
+                     % rommlib.VERSION,
+             "genres": ["Utility"], "developer": "romm-o-cera", "players": "1",
+             "image_local": os.path.join(APP_DIR, "icon.png")}
+    import json
+    with open(rommlib.GAMELIST_QUEUE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    open(marker, "w").close()
+
+
+def main():
+    pygame.init()
+    pygame.mouse.set_visible(False)
+    flags = pygame.FULLSCREEN
+    try:
+        screen = pygame.display.set_mode((0, 0), flags)
+    except pygame.error:
+        screen = pygame.display.set_mode((W, H))
+    pygame.display.set_caption("RomM Browser")
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    rommlib.log("start")
+    register_self()
+    app = App(screen)
+    try:
+        app.run()
+    except Exception as e:
+        import traceback
+        rommlib.log("crash: " + traceback.format_exc())
+        raise
+    finally:
+        rommlib.log("exit")
+        pygame.quit()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,7 @@
+# test dependencies (unit + pipeline + contract + disposable runner)
+pytest
+requests
+pillow
+pygame==2.6.1
+python-socketio[client]
+websocket-client
