@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")
@@ -85,6 +85,7 @@ DEFAULT_CONFIG = {
     "token": "",               # RomM client API token (read scopes)
     "verify_tls": True,        # False for a self-signed cert, or a path to a CA bundle
     "swap_ab": False,          # False: south button = confirm (Batocera default)
+    "button_style": "auto",    # button labels: auto | xbox | playstation | nintendo
     "chd": True,               # background CHD conversion of extracted disc games
     "background_downloads": True,  # keep downloading after the app exits
     "platform_map": {},        # per-slug overrides of PLATFORM_MAP (null hides)

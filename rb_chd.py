@@ -230,6 +230,13 @@ def convert(task):
             if os.path.isfile(p):
                 os.remove(p)
     if folder_root and os.path.isdir(folder_root):
+        # drop subfolders the conversion emptied (e.g. "Game (Disc 2)/")
+        for dp, _, _ in sorted(os.walk(folder_root), key=lambda w: -len(w[0])):
+            if dp != folder_root:
+                try:
+                    os.rmdir(dp)          # only succeeds when empty
+                except OSError:
+                    pass
         leftovers = [os.path.join(dp, f) for dp, _, fs in os.walk(folder_root) for f in fs]
         if all(os.path.splitext(f)[1].lower() in JUNK_EXTS for f in leftovers):
             shutil.rmtree(folder_root, ignore_errors=True)

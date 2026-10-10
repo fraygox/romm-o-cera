@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.3.0).** It works on the author's box every day, but it
+**Early software (v0.3.1).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -41,6 +41,9 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
 - **Post-processing**: cartridge zips stay zipped when the system reads them,
   disc archives are extracted, and disc games can be **CHD-compressed in the
   background** while nothing is running (verified before anything is deleted).
+- **Button labels match your controller**: Xbox, PlayStation (✕ ○ □ △) or
+  Nintendo, picked automatically from the controller's name or set in
+  Settings — the hint bar and on-screen text use the same symbols.
 - **EmulationStation metadata**: name, description, date, genre, developer,
   players, rating and cover go into `gamelist.xml` once ES is idle.
 
@@ -92,6 +95,7 @@ On the box: **Main Menu → Game Settings → Update Gamelists**, then open
 | `token` | — | client API token |
 | `verify_tls` | `true` | `false` or a CA-bundle path for self-signed certs |
 | `swap_ab` | `false` | `false`: south button confirms (Batocera's default) |
+| `button_style` | `auto` | `auto`, `xbox`, `playstation` or `nintendo` button labels |
 | `chd` | `true` | background CHD compression of extracted disc games |
 | `background_downloads` | `true` | keep downloading after the app exits |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
@@ -124,7 +128,7 @@ environment (they win over `config.json`), and these paths:
 
 ## Controls
 
-South button confirms (switch in Settings) · East back · Y search · X sort
+Labels follow your controller (Settings → Button labels). South button confirms (switch in Settings) · East back · Y search · X sort
 A–Z / newest · L/R page · L2/R2 previous/next letter · Select downloads · Start home · **Hotkey + Start
 exits**. `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard
 mapping for this app (otherwise every press would arrive twice).

@@ -242,17 +242,111 @@ def wrap(font, s, width, max_lines=None):
     return lines
 
 
+# --- controller styles -------------------------------------------------------
+# Hints name *actions* with Xbox-ish tokens ("A" confirm, "B" back, "X"/"Y" the
+# west/north buttons, "L"/"R", "L2 R2", "START", "SELECT"). PAD_STYLE turns a
+# token into what is printed on the user's controller, by physical position, so
+# the glyphs stay right with any style and with the confirm-button swap.
+PAD_STYLE = {"style": "xbox", "ok": "south", "back": "east"}
+FACE = {
+    "xbox": {"south": ("A", (52, 211, 153)), "east": ("B", (248, 113, 113)),
+             "west": ("X", (96, 165, 250)), "north": ("Y", (251, 191, 36))},
+    "nintendo": {"south": ("B", (251, 191, 36)), "east": ("A", (248, 113, 113)),
+                 "west": ("Y", (74, 222, 128)), "north": ("X", (96, 165, 250))},
+    "playstation": {"south": ("cross", (125, 167, 230)), "east": ("circle", (236, 112, 112)),
+                    "west": ("square", (226, 140, 205)), "north": ("triangle", (95, 205, 160))},
+}
+OTHER = {
+    "xbox": {"L": "LB", "R": "RB", "L2 R2": "LT RT", "START": "Menu", "SELECT": "View"},
+    "playstation": {"L": "L1", "R": "R1", "L2 R2": "L2 R2", "START": "Options", "SELECT": "Create"},
+    "nintendo": {"L": "L", "R": "R", "L2 R2": "ZL ZR", "START": "+", "SELECT": "−"},
+}
+STYLE_NAMES = {"xbox": "Xbox", "playstation": "PlayStation", "nintendo": "Nintendo"}
+
+
+def style_from_names(names):
+    """Guess the label style from controller names SDL reports."""
+    for n in names:
+        n = (n or "").lower()
+        if any(k in n for k in ("dualsense", "dualshock", "playstation", "ps3", "ps4", "ps5", "sony")):
+            return "playstation"
+        if any(k in n for k in ("nintendo", "pro controller", "joy-con", "joycon", "switch")):
+            return "nintendo"
+    return "xbox"
+
+
+def pad_face(token):
+    """(kind, text_or_shape, colour) for a hint token in the active style."""
+    st = PAD_STYLE["style"]
+    pos = {"A": PAD_STYLE["ok"], "B": PAD_STYLE["back"], "X": "west", "Y": "north"}.get(token)
+    if pos:
+        lab, col = FACE[st][pos]
+        return ("shape" if st == "playstation" else "letter"), lab, col
+    return "pill", OTHER[st].get(token, token), BTN_COL.get(token, DIM)
+
+
+def pad_text(token):
+    """Plain-text name of a button for prose ("Press Options to …")."""
+    kind, lab, _ = pad_face(token)
+    return {"cross": "Cross", "circle": "Circle", "square": "Square", "triangle": "Triangle"}.get(lab, lab)
+
+
+def glyph_width(fonts, token):
+    kind, lab, _ = pad_face(token)
+    return 22 if kind in ("letter", "shape") else int(measure(fonts.btn, lab)) + 14
+
+
 def button_glyph(surf, fonts, label, x, y):
-    """Round pad-button glyph; returns its width."""
-    col = BTN_COL.get(label, DIM)
-    if len(label) == 1:
-        circle(surf, col, (x + 11, y + 11), 11)
-        text(surf, fonts.btn, label, (x + 11, y + 11), BG, "center")
+    """Pad-button glyph in the active controller style; returns its width."""
+    kind, lab, col = pad_face(label)
+    cx, cy = x + 11, y + 11
+    if kind == "letter":
+        circle(surf, col, (cx, cy), 11)
+        text(surf, fonts.btn, lab, (cx, cy), BG, "center")
         return 22
-    w = int(measure(fonts.btn, label)) + 14
+    if kind == "shape":                 # PlayStation symbols, drawn (no font has them all)
+        circle(surf, BG2, (cx, cy), 11)
+        circle(surf, col, (cx, cy), 11, 2)
+        if lab == "cross":
+            hline(surf, col, (cx - 4, cy - 4), (cx + 4, cy + 4), 2)
+            hline(surf, col, (cx - 4, cy + 4), (cx + 4, cy - 4), 2)
+        elif lab == "circle":
+            circle(surf, col, (cx, cy), 5, 2)
+        elif lab == "square":
+            rrect(surf, col, (cx - 4.5, cy - 4.5, 9, 9), 1, 2)
+        else:
+            polyline(surf, col, [(cx, cy - 5), (cx + 5, cy + 4), (cx - 5, cy + 4), (cx, cy - 5)], 2)
+        return 22
+    w = int(measure(fonts.btn, lab)) + 14
     rrect(surf, col, (x, y + 1, w, 20), 10)
-    text(surf, fonts.btn, label, (x + w // 2, y + 11), BG, "center")
+    text(surf, fonts.btn, lab, (x + w // 2, y + 11), BG, "center")
     return w
+
+
+GLYPH_RE = re.compile(r"\{(A|B|X|Y|L|R|L2 R2|START|SELECT)\}")
+
+
+def rich_text(surf, fonts, font, s, pos, color=TEXT, anchor="topleft"):
+    """Text with inline pad glyphs: "Press {START} to see all results" draws
+    the same glyph the hint bar uses, in the active controller style, so
+    prose and hints always match. Supports topleft/midleft anchors."""
+    parts = GLYPH_RE.split(s)            # text, token, text, token, ...
+    lh = font.get_height() / K
+    x, y = pos
+    top = y - lh / 2 if anchor == "midleft" else y
+    cy = top + lh / 2
+    for i, part in enumerate(parts):
+        if i % 2:
+            x += button_glyph(surf, fonts, part, x, cy - 11) + 7
+        else:
+            if i > 0:
+                part = part.lstrip()      # the glyph's own gap replaces the space
+            if i + 1 < len(parts):
+                part = part.rstrip()
+            if part:
+                r = text(surf, font, part, (x, cy), color, "midleft")
+                x = r.right + (7 if i + 1 < len(parts) else 0)
+    return pygame.Rect(pos[0], top, x - pos[0], lh)
 
 
 def progress_bar(surf, rect, frac, color=ACCENT):
@@ -287,6 +381,24 @@ class Input:
 
     def set_swap(self, swap_ab):
         self.ok_btn, self.back_btn = ("east", "south") if swap_ab else ("south", "east")
+        PAD_STYLE["ok"], PAD_STYLE["back"] = self.ok_btn, self.back_btn
+
+    def names(self):
+        out = []
+        for j in list(self.joysticks.values()):
+            try:
+                out.append(j.get_name())
+            except Exception:
+                pass
+        for jid in self.controllers:
+            for i in range(pygame.joystick.get_count()):
+                try:
+                    js = pygame.joystick.Joystick(i)
+                    if js.get_instance_id() == jid:
+                        out.append(js.get_name())
+                except Exception:
+                    pass
+        return out
 
     def _open(self, index):
         try:
@@ -347,9 +459,11 @@ class Input:
                 self._release(a)
         elif sdlcontroller is not None and t == pygame.CONTROLLERDEVICEADDED:
             self._open(ev.device_index)
+            out.append("padchange")
         elif t == pygame.JOYDEVICEADDED:
             # plain joysticks (no SDL mapping) only announce themselves here
             self._open(ev.device_index)
+            out.append("padchange")
         elif t in (pygame.CONTROLLERBUTTONDOWN, pygame.CONTROLLERBUTTONUP):
             m = {pygame.CONTROLLER_BUTTON_A: "south", pygame.CONTROLLER_BUTTON_B: "east",
                  pygame.CONTROLLER_BUTTON_X: "west", pygame.CONTROLLER_BUTTON_Y: "north",
@@ -550,10 +664,16 @@ class App:
         self.bg(load, done, lambda e: self.covers.__setitem__(rid, None))
         return None
 
+    def resolve_style(self):
+        want = self.cfg.get("button_style") or "auto"
+        PAD_STYLE["style"] = want if want in FACE else style_from_names(self.input.names())
+        return PAD_STYLE["style"]
+
     def apply_config(self, reconnect=False):
         """Called by Settings after a change: persist, re-wire live objects."""
         rommlib.save_config(self.cfg)
         self.input.set_swap(self.cfg.get("swap_ab"))
+        self.resolve_style()
         if reconnect:
             self.api = rommlib.Api.from_config(self.cfg)
             self.downloader.api = self.api
@@ -614,6 +734,10 @@ class App:
         self.running = False
 
     # ---- main loop
+    def on_pad_change(self):
+        if (self.cfg.get("button_style") or "auto") == "auto":
+            self.resolve_style()
+
     def take_over_downloads(self):
         """A background rb_dl.py may still be working: ask it to hand over,
         then resume whatever is queued (here or left from last time)."""
@@ -630,6 +754,7 @@ class App:
 
     def run(self, scripted=None):
         clock = pygame.time.Clock()
+        self.resolve_style()
         self.take_over_downloads()
         self.load_platforms()
         self.push(HomeScreen(self))
@@ -656,6 +781,9 @@ class App:
         self.on_exit()
 
     def dispatch(self, a):
+        if a == "padchange":
+            self.on_pad_change()
+            return
         if a == "quit":
             self.request_quit()
             return
@@ -743,7 +871,7 @@ class App:
             globals_ = [g for g in globals_ if g[0] != "SELECT"]
         for btn, label in globals_:
             r = text(c, self.fonts.small, label, (rx, H - 23), DIM, "midright")
-            gw = int(measure(self.fonts.btn, btn)) + 14
+            gw = glyph_width(self.fonts, btn)
             button_glyph(c, self.fonts, btn, r.left - 8 - gw, H - 34)
             rx = r.left - 8 - gw - 22
         if self.modal:
@@ -1484,6 +1612,8 @@ class GameListScreen(Screen):
                 self.app.modal = DownloadConfirm(self.app, rom)
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.platform))
+        elif a == "x" and self.mark_mode and self.marks:
+            self._download_marked()          # what the hint bar promises in pick mode
         elif a == "x":
             self.app.modal = ActionMenu(self.app, "This list", self.menu_entries())
         elif a == "back" and self.mark_mode:
@@ -1502,7 +1632,7 @@ class GameListScreen(Screen):
         if self.mark_mode:
             e.append(("Stop picking", "", lambda: setattr(self, "mark_mode", False)))
         else:
-            e.append(("Pick games to download", "Then A marks games, and this menu downloads them",
+            e.append(("Pick games to download", "Then {A} marks games, and {X} downloads them",
                       lambda: setattr(self, "mark_mode", True)))
         if self.marks:
             size = sum(r.get("fs_size_bytes") or 0 for r in self.marks.values())
@@ -1943,7 +2073,8 @@ class SearchScreen(Screen):
             text(c, self.f.small, human_size(rom.get("fs_size_bytes")), (sr.right + 16, y + 26), FAINT)
             y += 58
         if self.preview:
-            text(c, self.f.small, "Press START to see all results", (p.left + 24, p.bottom - 34), ACCENT_HI)
+            rich_text(c, self.f, self.f.small, "Press {START} to see all results",
+                      (p.left + 24, p.bottom - 34), ACCENT_HI)
 
 
 class DownloadsScreen(Screen):
@@ -2151,6 +2282,7 @@ class SettingsScreen(Screen):
             ("token", "API token", masked, "Create one in RomM under Profile, Client API tokens"),
             ("tls", "Verify TLS certificate", tls_s, "Off only for a self-signed cert"),
             ("test", "Test connection", "", "Fetch the platform list now"),
+            ("style", "Button labels", self._style_value(), "Match the symbols on your controller"),
             ("swap", "Confirm button", "East (right)" if cfg.get("swap_ab") else "South (bottom)",
              "Which face button means OK"),
             ("chd", "Compress disc games to CHD", "On" if cfg.get("chd", True) else "Off",
@@ -2162,6 +2294,14 @@ class SettingsScreen(Screen):
              human_size(self.cache_bytes) if self.cache_bytes is not None else "…",
              "Covers re-download as you browse"),
         ]
+
+    STYLES = ["auto", "xbox", "playstation", "nintendo"]
+
+    def _style_value(self):
+        want = self.app.cfg.get("button_style") or "auto"
+        if want == "auto":
+            return "Auto (%s)" % STYLE_NAMES[style_from_names(self.app.input.names())]
+        return STYLE_NAMES.get(want, want)
 
     def crumbs(self):
         return ["Settings"]
@@ -2205,6 +2345,11 @@ class SettingsScreen(Screen):
                 app.bg(app.api.platforms,
                        lambda p: app.toast("Connected: %d platforms on the server" % len(p), GREEN),
                        lambda e: app.toast(str(e), RED))
+            elif key == "style":
+                cur = cfg.get("button_style") or "auto"
+                i = self.STYLES.index(cur) if cur in self.STYLES else 0
+                cfg["button_style"] = self.STYLES[(i + (-1 if a == "left" else 1)) % len(self.STYLES)]
+                app.apply_config()
             elif key == "swap":
                 cfg["swap_ab"] = not cfg.get("swap_ab")
                 app.apply_config()
@@ -2235,17 +2380,17 @@ class SettingsScreen(Screen):
         items = self.items()
         y = 84
         for i, (key, label, value, sub) in enumerate(items):
-            r = pygame.Rect(48, y, 700, 56)
+            r = pygame.Rect(48, y, 700, 52)
             on = i == self.sel
             rrect(c, PANEL_HI if on else PANEL, r, 12)
             if on:
                 rrect(c, ACCENT, r, 12, 2)
-            text(c, self.f.h3, label, (r.left + 22, r.top + 6), TEXT if on else DIM)
+            text(c, self.f.h3, label, (r.left + 22, r.top + 4), TEXT if on else DIM)
             warn = sub.startswith("Plain HTTP")
-            text(c, self.f.small, sub, (r.left + 22, r.top + 32), AMBER if warn else FAINT, maxw=420)
+            text(c, self.f.small, sub, (r.left + 22, r.top + 28), AMBER if warn else FAINT, maxw=420)
             vcol = ACCENT_HI if key in ("test", "cache") else (TEXT if on else DIM)
             text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
-            y += 62
+            y += 57
         # About panel
         p = pygame.Rect(776, 84, 472, 554)
         rrect(c, PANEL, p, 16)
@@ -2263,7 +2408,7 @@ class SettingsScreen(Screen):
             for j, ln in enumerate(wrap(self.f.cond, v, p.width - 56, 2)):
                 text(c, self.f.cond, ln, (p.left + 28, yy + 18 + j * 19), DIM)
             yy += 66
-        text(c, self.f.small, "Hotkey + Start exits", (p.left + 28, p.bottom - 36), FAINT)
+        rich_text(c, self.f, self.f.small, "Hotkey + {START} exits", (p.left + 28, p.bottom - 36), FAINT)
 
 
 class InstalledScreen(Screen):
@@ -2331,7 +2476,7 @@ class InstalledScreen(Screen):
             human_size(sum(i["size"] for i in self.items)), free), (56, 86), TEXT)
         if not self.items:
             text(c, self.f.body, "Nothing installed by RomM Browser yet. Games copied over another way "
-                 "can be deleted from their game list (A on a ✓ game).", (56, 130), DIM)
+                 "can be deleted from their game list.", (56, 130), DIM)
             return
         rows = self.ROWS
         if self.sel < self.scroll:
@@ -2409,7 +2554,9 @@ class ActionMenu:
                 text(c, f.body, label, (row.left + 18, row.top + 6), col, maxw=row.width - 36 - vw)
             else:
                 text(c, f.body, label, (row.left + 18, row.centery), col, "midleft", maxw=row.width - 36 - vw)
-            if sub:
+            if sub and GLYPH_RE.search(sub):
+                rich_text(c, f, f.small, sub, (row.left + 18, row.top + 28), FAINT)
+            elif sub:
                 text(c, f.small, sub, (row.left + 18, row.top + 28), FAINT, maxw=row.width - 36 - vw)
             y += rh
 

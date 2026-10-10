@@ -271,3 +271,18 @@ def test_missing_bios_and_aliases(isolated):
     miss = {m["file"] for m in rommlib.missing_bios("psx")}
     assert miss == {"bios/wrong.bin", "bios/absent.bin"}       # zipped entries skipped
     assert [m["file"] for m in rommlib.missing_bios("megacd")] == ["bios/bios_CD_U.bin"]  # alias
+
+
+def test_controller_styles(rb):
+    rb.PAD_STYLE.update(style="playstation", ok="south", back="east")
+    assert rb.pad_face("A")[:2] == ("shape", "cross") and rb.pad_face("B")[1] == "circle"
+    assert rb.pad_face("START")[1] == "Options"
+    rb.PAD_STYLE.update(style="nintendo")
+    assert rb.pad_face("A")[1] == "B"          # confirm is the south button = "B" on Nintendo
+    rb.PAD_STYLE.update(ok="east", back="south")
+    assert rb.pad_face("A")[1] == "A"          # swapped confirm follows the physical button
+    rb.PAD_STYLE.update(style="xbox", ok="south", back="east")
+    assert rb.style_from_names(["Sony Interactive Entertainment DualSense Wireless Controller"]) == "playstation"
+    assert rb.style_from_names(["Nintendo Switch Pro Controller"]) == "nintendo"
+    assert rb.style_from_names(["8BitDo Ultimate 2C", "Xbox Wireless Controller"]) == "xbox"
+    assert rb.GLYPH_RE.split("Press {START} now") == ["Press ", "START", " now"]
