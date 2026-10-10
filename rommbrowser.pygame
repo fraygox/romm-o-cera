@@ -1102,7 +1102,9 @@ class App:
                 top.type_text(a[5:])
             return
         snd = SOUND_FOR.get(a)
-        if snd:
+        moving = snd in ("move", "page")
+        before = self.nav_state() if moving else None
+        if snd and not moving:
             self.sfx.play(snd)
         if a == "padchange":
             self.on_pad_change()
@@ -1112,6 +1114,7 @@ class App:
             return
         if self.modal:
             self.modal.action(a)
+            self._moved_sound(snd, before)
             return
         if a == "select" and not isinstance(self.stack[-1], DownloadsScreen):
             self.push(DownloadsScreen(self))
@@ -1121,6 +1124,25 @@ class App:
             self.stack[0].enter()
             return
         self.stack[-1].action(a)
+        self._moved_sound(snd, before)
+
+    def nav_state(self):
+        """What a move/page could change: focus, scroll, keyboard cursor,
+        menu row, screen/dialog identity."""
+        out = [len(self.stack), id(self.modal), id(self.stack[-1])]
+        for o in (self.stack[-1], self.modal):
+            if o is not None:
+                out += [getattr(o, k, None) for k in ("sel", "scroll", "r", "c", "region_i")]
+        ents = getattr(self.modal, "entries", None)
+        if ents:                                   # in-place switches / choices in a menu
+            out.append(tuple(e[3] if e and len(e) > 3 else None for e in ents))
+        out.append(repr(sorted(self.cfg.items())))   # Settings rows cycled with left/right
+        return tuple(out)
+
+    def _moved_sound(self, snd, before):
+        # held at the top/bottom of a list, repeats change nothing: stay quiet
+        if before is not None and self.nav_state() != before:
+            self.sfx.play(snd)
 
     def tick_downloads(self):
         for j in self.downloader.jobs:

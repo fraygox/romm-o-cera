@@ -61,7 +61,12 @@ def running_game():
 def chdman(*args):
     """Run chdman at nice 19; pause it (SIGSTOP) whenever a game starts."""
     cmd = ["nice", "-n", "19", "chdman"] + list(args)   # no ionice in Batocera
-    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    # stderr goes to a file, never a pipe: chdman prints progress all the way
+    # through, and a pipe nobody drains until exit fills up (64 KB) and blocks
+    # it forever — that froze long DVD conversions (2026-10-10, Ratchet).
+    import tempfile
+    errf = tempfile.TemporaryFile(mode="w+", dir=rommlib.DATA_DIR)
+    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=errf, text=True)
     paused = False
     while p.poll() is None:
         time.sleep(3)
@@ -74,8 +79,11 @@ def chdman(*args):
             p.send_signal(signal.SIGCONT)
             paused = False
             rommlib.log("chd: resumed")
-    err = p.stderr.read() if p.stderr else ""
-    return p.returncode, (err or "")[-300:]
+    errf.seek(0, 2)
+    errf.seek(max(0, errf.tell() - 4000))
+    err = errf.read().replace("\r", "\n")
+    errf.close()
+    return p.returncode, err.strip()[-300:]
 
 
 def sources_of(cue_or_gdi):

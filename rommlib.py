@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.2"
+VERSION = "0.6.3"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")
@@ -1380,6 +1380,36 @@ def zip_matches(path, members):
     return True, "zip"
 
 
+def zip_content_ok(path, f):
+    """A zip RomM recorded without its member list: when it holds one file,
+    RomM's file-level hashes are that file's (content hashing), so hash the
+    decompressed member (reading it also checks the zip's own CRC).
+    (None, None) for several members (RomM's combined hash can't be redone)."""
+    import hashlib
+    import zlib
+    want = [(k, a) for k, a in (("sha1_hash", "sha1"), ("md5_hash", "md5"), ("crc_hash", "crc")) if f.get(k)]
+    if not want:
+        return None, None
+    key, algo = want[0]
+    try:
+        with zipfile.ZipFile(path) as z:
+            infos = [i for i in z.infolist() if not i.is_dir()]
+            if len(infos) != 1:
+                return None, None
+            h = hashlib.new(algo) if algo != "crc" else None
+            c = 0
+            with z.open(infos[0]) as fh:
+                for b in iter(lambda: fh.read(1 << 22), b""):
+                    if h:
+                        h.update(b)
+                    else:
+                        c = zlib.crc32(b, c)
+    except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, NotImplementedError):
+        return False, "zip"
+    got = h.hexdigest() if h else "%08x" % c
+    return got == f[key].lower().zfill(len(got)), "zip"
+
+
 def file_hash_ok(path, f, name=None):
     """(ok, algo) — compare a file with a RomM file record's checksums.
     ok is None when RomM's record can't vouch for it (no hash, or an archive
@@ -1390,7 +1420,7 @@ def file_hash_ok(path, f, name=None):
     name = (name or f.get("file_name") or path).lower()
     if name.endswith(".zip"):
         members = f.get("archive_members") or []
-        return zip_matches(path, members) if members else (None, None)
+        return zip_matches(path, members) if members else zip_content_ok(path, f)
     if name.endswith(CONTENT_HASHED):
         return None, None
     for key, algo in (("sha1_hash", "sha1"), ("md5_hash", "md5"), ("crc_hash", "crc")):

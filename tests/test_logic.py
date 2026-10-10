@@ -4,6 +4,7 @@ import os
 import stat
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 
 import pytest
 
@@ -413,3 +414,75 @@ def test_touch_taps_rows_hints_and_dialogs(isolated, rb, monkeypatch):
     app.pointer(pygame.event.Event(pygame.MOUSEMOTION, buttons=(1, 0, 0), pos=(400, 300), touch=True), acts)
     app.pointer(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(400, 300)), acts)
     assert acts == ["down", "down"]
+
+
+def test_no_move_sound_at_list_edges(isolated, rb, monkeypatch):
+    """Holding a direction at the top/bottom of a list repeats the action but
+    nothing moves: no sound. Moving, or cycling a setting, still clicks."""
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    played = []
+    app.sfx.play = played.append
+    app.push(rb.SettingsScreen(app))
+    app.dispatch("up")                    # Settings wraps: moves to the last row
+    assert played == ["move"]
+    scr = app.stack[-1]
+    scr.sel = 0
+    played.clear()
+    app.push(rb.InstalledScreen(app))
+    inst = app.stack[-1]
+    inst.items = [{"id": 1, "name": "A", "system": "gba", "when": "", "size": 1}]
+    for _ in range(5):
+        app.dispatch("up")                # top of a one-row list: nothing moves
+    app.dispatch("down")
+    assert played == []
+    app.pop()
+    i = next(k for k, it in enumerate(scr.items()) if it[0] == "speed")
+    scr.sel = i
+    app.dispatch("right")                 # cycles a setting in place
+    assert played == ["move"]
+
+
+def test_single_member_zip_without_member_list(tmp_path):
+    """RomM records some zips with no archive_members; their file hashes are
+    the single member's content (e.g. Kirby Super Star Ultra)."""
+    import hashlib
+    rom = bytes(range(256)) * 300
+    zp = tmp_path / "Kirby (USA).zip"
+    with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("Kirby (USA).nds", rom)
+    rec = {"file_name": "Kirby (USA).zip", "sha1_hash": hashlib.sha1(rom).hexdigest(), "archive_members": []}
+    assert rommlib.file_hash_ok(str(zp), rec) == (True, "zip")
+    assert rommlib.file_hash_ok(str(zp), dict(rec, sha1_hash="0" * 40)) == (False, "zip")
+    assert rommlib.file_hash_ok(str(zp), {"file_name": "x.zip", "crc_hash": "%08x" % zlib.crc32(rom)}) == (True, "zip")
+    with zipfile.ZipFile(zp, "a") as z:
+        z.writestr("readme.txt", b"hi")
+    assert rommlib.file_hash_ok(str(zp), rec) == (None, None)          # several members: can't redo RomM's hash
+
+
+def test_chdman_with_huge_progress_output_does_not_hang(isolated, tmp_path, monkeypatch):
+    """Regression: chdman's stderr was a pipe read only at exit; long
+    conversions printed >64 KB of progress and blocked forever."""
+    import stat
+    import sys
+    import rb_chd
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    exe = bindir / "chdman"
+    exe.write_text("#!%s\nimport sys\nfor i in range(20000):\n"
+                   "    sys.stderr.write('Compressing, %%d.%%d%%%% complete... (ratio=50.0%%%%)\\r' %% (i // 200, i %% 10))\n"
+                   "sys.stderr.write('done\\n')\n" % sys.executable)
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", "%s:%s" % (bindir, os.environ["PATH"]))
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    import threading
+    res = []
+    t = threading.Thread(target=lambda: res.append(rb_chd.chdman("createdvd", "-i", "x", "-o", "y")), daemon=True)
+    t.start()
+    t.join(30)
+    assert res and res[0][0] == 0 and res[0][1].endswith("done")
