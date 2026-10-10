@@ -1,18 +1,34 @@
 #!/usr/bin/env python3
-"""Merge RomM Browser's pending gamelist entries into ES once ES is idle.
+"""Hand RomM-o-Cera's pending game info to EmulationStation, through ES's own
+API, once ES is idle.
 
-Spawned detached by the browser on exit (and by the CHD worker after a
-conversion). Waits until no game is running — never touches ES while one is —
-then: /reloadgames (ES flushes its dirty in-memory lists to disk first), merge
-our entries / path renames into roms/<sys>/gamelist.xml, /reloadgames again so
-ES re-parses them. Without the first reload ES's own flush clobbers our write
-(observed on Batocera 43).
+Spawned detached by the app on exit (and by the CHD / download workers).
+EmulationStation owns its gamelists: it saves them by itself at any time (its
+RetroAchievements hasher writes entries for new files in the background), so
+editing gamelist.xml behind its back can always be overwritten — that lost
+game info after CHD conversions up to v0.6.6. Since v0.6.7 nothing here
+writes gamelist.xml. Instead:
+
+  1. wait until no game (and not this app) is running;
+  2. read, from gamelist.xml (read only), the info of games about to be
+     renamed (CHD conversions), so it can be carried to the new file;
+  3. /reloadgames, so ES discovers new files (downloads, CHDs);
+  4. per game, POST /systems/<sys>/games/<id> with only the fields that
+     should change (ES keeps the rest), and upload covers/manuals/media with
+     POST .../media/<type>. ES updates its in-memory list and its own
+     crash-safe journal, and writes gamelist.xml itself.
+
+Entries ES can't take yet (a system or file it doesn't list) are kept and
+retried; nothing is dropped silently.
 """
 import fcntl
 import json
 import os
 import sys
+import tempfile
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -21,7 +37,22 @@ import rommlib  # noqa: E402
 
 ES = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")
 LOCK = os.path.join(rommlib.DATA_DIR, "finalize.lock")
+# entries ES couldn't take this time (game/system not listed yet): retried next run
+DEFERRED = os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl")
+MAX_TRIES = 5
 
+TEXT_FIELDS = ("name", "desc", "releasedate", "developer", "publisher", "genre", "players", "rating",
+               "region", "lang", "family")
+USAGE_FIELDS = ("playcount", "lastplayed", "gametime", "favorite")
+# gamelist media tags ES accepts uploads for, and the content types it wants
+MEDIA_TAGS = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "bezel", "manual", "map",
+              "titleshot", "wheel", "box", "cartridge", "magazine")
+CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+          ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
+          ".pdf": "application/pdf", ".cbz": "application/cbz"}
+
+
+# ------------------------------------------------------------------ ES API
 
 def es_get(path, timeout=5):
     with urllib.request.urlopen(ES + path, timeout=timeout) as r:
@@ -56,113 +87,441 @@ def wait_idle(max_wait=6 * 3600):
     return False
 
 
+class EsApi:
+    """The slice of Batocera ES's HTTP API this uses (Batocera 43)."""
+
+    def __init__(self, base=None):
+        self.base = base or ES
+        self._games = {}
+
+    def _req(self, method, path, data=None, ctype=None, timeout=30):
+        req = urllib.request.Request(self.base + path, data=data, method=method,
+                                     headers={"Content-Type": ctype} if ctype else {})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    def games(self, system, refresh=False):
+        """{absolute path: game dict} for a system ES lists, or None."""
+        if refresh or system not in self._games:
+            st, body = self._req("GET", "/systems/%s/games" % urllib.parse.quote(system))
+            if st != 200:
+                return None
+            try:
+                self._games[system] = {g["path"]: g for g in json.loads(body)}
+            except (ValueError, KeyError, TypeError):
+                return None
+        return self._games[system]
+
+    def game(self, system, gid):
+        st, body = self._req("GET", "/systems/%s/games/%s" % (urllib.parse.quote(system), gid))
+        return json.loads(body) if st == 200 else None
+
+    @staticmethod
+    def same(a, b):
+        """ES reformats numbers ("0.80" reads back "0.800000")."""
+        a, b = str(a if a is not None else ""), str(b if b is not None else "")
+        if a == b:
+            return True
+        try:
+            return abs(float(a) - float(b)) < 1e-6
+        except ValueError:
+            return a.strip() == b.strip()
+
+    def set_meta(self, system, gid, fields):
+        """Only the given fields change (ES keeps the rest). 404 also means
+        "nothing changed" in ES's API, so the result is read back."""
+        if not fields:
+            return True
+        body = json.dumps({k: str(v) for k, v in fields.items()}).encode("utf-8")
+        self._req("POST", "/systems/%s/games/%s" % (urllib.parse.quote(system), gid), body, "application/json")
+        g = self.game(system, gid)
+        return g is not None and all(self.same(g.get(k, ""), v) for k, v in fields.items())
+
+    def set_media(self, system, gid, mtype, data, ctype):
+        st, _ = self._req("POST", "/systems/%s/games/%s/media/%s" % (urllib.parse.quote(system), gid, mtype),
+                          data, ctype, timeout=120)
+        return st == 200
+
+    def reload(self):
+        es_get("/reloadgames", timeout=120)
+
+
+# ------------------------------------------------------------------ helpers
+
 def rel(sysdir, path):
     return "./" + os.path.relpath(path, sysdir)
 
 
-PRIMARY_ORDER = [".m3u", ".chd", ".gdi", ".cue", ".cdi", ".iso", ".rvz"]
+def blank_name(game):
+    """ES names a game it has no info for after its file."""
+    stem = os.path.splitext(os.path.basename(game.get("path", "")))[0]
+    return not game.get("name") or game.get("name") == stem
 
 
-def primary_path(system, paths, es):
-    """The one file ES lists for this rom."""
-    exts = es.get(system)
-    cands = []
-    for p in paths:
-        if os.path.isdir(p):
-            for dp, _, fns in os.walk(p):
-                cands += [os.path.join(dp, f) for f in fns]
-        elif os.path.exists(p):
-            cands.append(p)
-    if exts is not None:
-        cands = [c for c in cands if os.path.splitext(c)[1].lower() in exts]
-    if not cands:
+def has(game, k):
+    if k == "name":
+        return not blank_name(game)
+    v = str(game.get(k) or "").strip()
+    return bool(v) and v not in ("0", "0.000000", "not-a-date-time", "false")
+
+
+def fetch_bytes(api, url_path, limit=200 << 20):
+    """A RomM asset by server-relative path (token session), or None."""
+    if api is None or not url_path or not url_path.startswith("/") or url_path.startswith("//"):
         return None
-
-    def key(c):
-        e = os.path.splitext(c)[1].lower()
-        return (PRIMARY_ORDER.index(e) if e in PRIMARY_ORDER else 99, len(c))
-    return sorted(cands, key=key)[0]
-
-
-def fetch_cover(api, url_path, dest):
-    return fetch_asset(api, url_path, dest, png=True)
-
-
-def fetch_asset(api, url_path, dest, png=False, limit=200 << 20):
-    if not url_path or not url_path.startswith("/") or url_path.startswith("//"):
-        return os.path.exists(dest)       # only server-relative paths (token-bearing session)
-    if os.path.exists(dest):
-        return True
-    if api is None:
-        return False
     try:
         r = api.s.get(api.base + url_path, timeout=60, stream=True)
         if r.status_code != 200:
-            return False
+            return None
         data = r.raw.read(limit + 1, decode_content=True)
-        if not data or len(data) > limit:
-            return False
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if png:
-            rommlib.write_png(data, dest)
-        else:
-            if not data.startswith(b"%PDF"):
-                return False
-            with open(dest + ".tmp", "wb") as f:
-                f.write(data)
-            os.replace(dest + ".tmp", dest)
-        return True
+        return data if data and len(data) <= limit else None
     except Exception:
-        pass
+        return None
+
+
+def as_png(data):
+    """Covers can be WebP: ES takes png/jpg/gif."""
+    try:
+        os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(suffix=".png", dir=rommlib.DATA_DIR)
+        os.close(fd)
+    except OSError:
+        return None
+    try:
+        rommlib.write_png(data, tmp)
+        with open(tmp, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def entry_fields(e):
+    out = {"name": e.get("name"), "desc": e.get("desc"),
+           "genre": ", ".join(e.get("genres") or []) or None,
+           "developer": e.get("developer"), "publisher": e.get("publisher"),
+           "players": e.get("players")}
+    ms = e.get("releasedate")
+    if ms:
+        out["releasedate"] = time.strftime("%Y%m%dT000000", time.gmtime(ms / 1000))
+    if e.get("rating") is not None:
+        out["rating"] = "%.2f" % (float(e["rating"]) / 100)
+    return {k: v for k, v in out.items() if v not in (None, "")}
+
+
+def node_info(sysdir, g):
+    """A gamelist.xml <game> as {text, usage, hidden, media{tag: abs path}}."""
+    info = {"text": {}, "usage": {}, "hidden": g.findtext("hidden") == "true", "media": {}}
+    for k in TEXT_FIELDS:
+        v = (g.findtext(k) or "").strip()
+        if v:
+            info["text"][k] = v
+    for k in USAGE_FIELDS:
+        v = (g.findtext(k) or "").strip()
+        if v:
+            info["usage"][k] = v
+    for k in MEDIA_TAGS:
+        v = (g.findtext(k) or "").strip()
+        if v:
+            p = os.path.normpath(os.path.join(sysdir, v))
+            if os.path.isfile(p):
+                info["media"][k] = p
+    return info
+
+
+def richness(info):
+    return len(info["text"]) + len(info["media"]) + len(info["usage"])
+
+
+def api_info(g):
+    """An ES API game dict as node_info() shape (no media paths: ES gives URLs)."""
+    info = {"text": {}, "usage": {}, "hidden": str(g.get("hidden")) == "true", "media": {}}
+    for k in TEXT_FIELDS:
+        if has(g, k):
+            info["text"][k] = str(g[k])
+    for k in USAGE_FIELDS:
+        if has(g, k):
+            info["usage"][k] = str(g[k])
+    return info
+
+
+def snapshot_renames(entries, esapi=None):
+    """Before ES reloads: the info of every path a CHD conversion is renaming,
+    keyed by the new path — from gamelist.xml (with media) and from ES's
+    memory (fresher: may not be saved yet), richest wins; a deferred entry
+    brings the snapshot it took the first time."""
+    carry, cache, live = {}, {}, {}
+    for e in entries:
+        if "remove" in e:
+            gone = [r for r in e["remove"] if not os.path.exists(r)]   # reinstalled since: keep its art
+            carry[("media-of-removed", id(e))] = removed_media(
+                os.path.join(rommlib.ROMS_ROOT, e["system"]), gone) if gone else []
+            continue
+        if "rename" not in e:
+            continue
+        for new, info in (e.get("_carry") or {}).items():
+            carry[new] = info
+        sysdir = os.path.join(rommlib.ROMS_ROOT, e["system"])
+        if esapi is not None and e["system"] not in live:
+            live[e["system"]] = esapi.games(e["system"], refresh=True) or {}
+        if sysdir not in cache:
+            try:
+                cache[sysdir] = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().findall("game")
+            except (OSError, ET.ParseError):
+                cache[sysdir] = []
+        for old, new in e["rename"].items():
+            old_rel = rel(sysdir, old)
+            for g in cache[sysdir]:
+                p = g.findtext("path") or ""
+                if p == old_rel or p.startswith(old_rel.rstrip("/") + "/"):
+                    info = node_info(sysdir, g)
+                    if richness(info) and (new not in carry or richness(info) > richness(carry[new])):
+                        carry[new] = info
+            for path, g in (live.get(e["system"]) or {}).items():
+                if path == old or path.startswith(old.rstrip("/") + "/"):
+                    info = api_info(g)
+                    base = carry.get(new)
+                    if base is None:
+                        if richness(info):
+                            carry[new] = info
+                    else:                    # ES's memory wins for text/usage, the file keeps media
+                        base["text"].update(info["text"])
+                        base["usage"].update(info["usage"])
+                        base["hidden"] = base["hidden"] or info["hidden"]
+    return carry
+
+
+def merge_usage(game, usage):
+    """Never lose play history: the higher count/time, the later date."""
+    out = {}
+    for k in ("playcount", "gametime"):
+        try:
+            old, cur = int(float(usage.get(k) or 0)), int(float(game.get(k) or 0))
+        except ValueError:
+            continue
+        if old > cur:
+            out[k] = str(old)
+    lp = usage.get("lastplayed") or ""
+    if lp and lp > str(game.get("lastplayed") or "") and lp[:1].isdigit():
+        out["lastplayed"] = lp
+    if usage.get("favorite") == "true" and str(game.get("favorite")) != "true":
+        out["favorite"] = "true"
+    return out
+
+
+MEDIA_DIRS = ("images", "videos", "manuals")
+
+
+def removed_media(sysdir, removed):
+    """Media files of uninstalled games, from gamelist.xml (read only, before
+    ES reloads): those inside the system's media folders that no other entry
+    uses. The entries themselves are left to ES (it ignores missing files)."""
+    try:
+        nodes = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().findall("game")
+    except (OSError, ET.ParseError):
+        return []
+    rels = [rel(sysdir, r) for r in removed]
+    gone, keep = set(), set()
+    for g in nodes:
+        p = g.findtext("path") or ""
+        dead = any(p == r or p.startswith(r.rstrip("/") + "/") for r in rels)
+        for k in MEDIA_TAGS:
+            v = (g.findtext(k) or "").strip()
+            if v:
+                (gone if dead else keep).add(os.path.normpath(os.path.join(sysdir, v)))
+    return sorted(f for f in gone - keep
+                  if any(f.startswith(os.path.join(sysdir, d) + os.sep) for d in MEDIA_DIRS))
+
+
+def upload_file(esapi, system, gid, tag, path):
+    ctype = CTYPES.get(os.path.splitext(path)[1].lower())
+    if not ctype:
+        return False
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return False
+    return esapi.set_media(system, gid, tag, data, ctype)
+
+
+# ------------------------------------------------------------------ apply
+
+def apply(entries, api, es, esapi, carry):
+    """Hand entries to ES. Returns the entries ES couldn't take yet."""
+    left = []
+    games_of = {}
+
+    def find(system, path):
+        if system not in games_of:
+            games_of[system] = esapi.games(system, refresh=True)
+        g = (games_of[system] or {}).get(path)
+        return g
+
+    for e in entries:
+        system = e["system"]
+        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+        try:
+            if "remove" in e:
+                for f in carry.get(("media-of-removed", id(e)), []):   # ES itself drops the games
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+                continue
+            if "rename" in e or "hide" in e:
+                targets = list(e.get("rename", {}).values()) if "rename" in e else []
+                ok = True
+                for new in targets:
+                    g = find(system, rommlib.primary_path(system, [new], es) or new)
+                    if g is None:
+                        ok = ok and not os.path.exists(new)    # gone again: nothing to carry
+                        continue
+                    info = carry.get(new)
+                    if info:
+                        fields = {k: v for k, v in info["text"].items() if not has(g, k)}
+                        fields.update(merge_usage(g, info["usage"]))
+                        if info["hidden"] and not new.lower().endswith(".m3u"):
+                            fields["hidden"] = "true"      # a disc under a playlist stays hidden; the playlist never
+                        ok = esapi.set_meta(system, g["id"], fields) and ok
+                        for tag, p in info["media"].items():
+                            if not g.get(tag):
+                                upload_file(esapi, system, g["id"], tag, p)
+                for h in e.get("hide", []):
+                    g = find(system, h)
+                    if g is None:
+                        ok = ok and not os.path.exists(h)
+                        continue
+                    if str(g.get("hidden")) != "true":
+                        ok = esapi.set_meta(system, g["id"], {"hidden": "true"}) and ok
+                if not ok:
+                    left.append(e)
+                continue
+            paths = e.get("paths") or []
+            prim = (paths[0] if len(paths) == 1 and paths[0].lower().endswith(".m3u")
+                    else rommlib.primary_path(system, paths, es))
+            if not prim:
+                continue                            # nothing ES would list (files gone)
+            g = find(system, prim)
+            if g is None:
+                left.append(e)
+                continue
+            want = entry_fields(e)
+            if e.get("fill"):
+                want = {k: v for k, v in want.items() if not has(g, k)}
+            else:
+                want = {k: v for k, v in want.items() if not EsApi.same(g.get(k, ""), v)}
+            if not esapi.set_meta(system, g["id"], want):
+                left.append(e)
+                continue
+            if not g.get("image"):
+                data = None
+                if e.get("image_local") and os.path.isfile(e["image_local"]):
+                    with open(e["image_local"], "rb") as f:
+                        data = f.read()
+                elif e.get("cover"):
+                    raw = fetch_bytes(api, e["cover"])
+                    data = as_png(raw) if raw else None
+                if data:
+                    esapi.set_media(system, g["id"], "image", data, "image/png")
+            if e.get("manual") and not g.get("manual"):
+                pdf = fetch_bytes(api, e["manual"])
+                if pdf and pdf.startswith(b"%PDF"):
+                    esapi.set_media(system, g["id"], "manual", pdf, "application/pdf")
+        except Exception as ex:                    # one bad entry never sinks the batch
+            rommlib.log("finalize: entry for %s failed (%r)" % (system, ex))
+            left.append(e)
+    return left
+
+
+def wait_listed(esapi, entries, es, timeout=180):
+    """After /reloadgames: wait until ES lists the systems (and new files) we
+    need — the reload runs on ES's UI thread after the request returns."""
+    want = {}
+    for e in entries:
+        ps = list((e.get("rename") or {}).values()) or e.get("paths") or []
+        for p in ps:
+            if os.path.exists(p):
+                prim = p if p.lower().endswith(".m3u") else rommlib.primary_path(e["system"], [p], es)
+                if prim:
+                    want.setdefault(e["system"], set()).add(prim)
+    time.sleep(6)
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        missing = 0
+        for system, paths in want.items():
+            gs = esapi.games(system, refresh=True)
+            missing += len(paths) if gs is None else sum(1 for p in paths if p not in gs)
+        if not missing:
+            return True
+        time.sleep(3)
     return False
 
 
-MEDIA_DIRS = ("images", "manuals")
+# ------------------------------------------------------------------ queue
+
+def valid(e):
+    return isinstance(e, dict) and isinstance(e.get("system"), str) and e["system"] and \
+        any(k in e for k in ("paths", "hide", "rename", "remove"))
 
 
-def drop_media(sysdir, g):
-    """Files a removed entry pointed at in images/ or manuals/ (ours)."""
-    for tag in ("image", "manual", "thumbnail"):
-        v = g.findtext(tag)
-        if not v:
-            continue
-        p = os.path.normpath(os.path.join(sysdir, v))
-        if any(p.startswith(os.path.join(sysdir, d) + os.sep) for d in MEDIA_DIRS) and os.path.isfile(p):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
+def _read_jsonl(path):
+    """Entries, one per line. A torn or malformed line (power cut mid-append,
+    an entry that isn't one) is set aside in <file>.bad, never the batch."""
+    out, bad = [], []
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    bad.append(line)
+                    continue
+                (out if valid(e) else bad).append(e if valid(e) else line)
+    except OSError:
+        return []
+    if bad:
+        with open(path + ".bad", "a") as f:
+            for line in bad:
+                f.write(line if line.endswith("\n") else line + "\n")
+        rommlib.log("finalize: set aside %d unreadable queue line(s) in %s.bad" % (len(bad), os.path.basename(path)))
+    return out
 
 
-def set_text(game, tag, value):
-    if value in (None, "", []):
+def _write_jsonl(path, entries):
+    if not entries:
+        if os.path.exists(path):
+            os.remove(path)
         return
-    el = game.find(tag)
-    if el is None:
-        el = ET.SubElement(game, tag)
-    el.text = str(value)
+    with open(path + ".tmp", "w") as f:
+        for e in entries:
+            f.write(json.dumps(e) + "\n")
+    os.replace(path + ".tmp", path)
 
 
-def load_gamelist(path):
-    if os.path.exists(path):
-        try:
-            return ET.parse(path)
-        except ET.ParseError:
-            os.replace(path, path + ".broken-%d" % time.time())
-    return ET.ElementTree(ET.Element("gameList"))
-
-
-def merge(entries, api, es):
-    # A CHD conversion may have finished before the download's own entry was
-    # merged: route those entries' paths through the batch's renames.
+def route_renames(entries):
+    """A CHD conversion may finish before a download's or a set's entries are
+    handed over: point their paths (and a set's discs to hide) at the new
+    files, using the batch's renames (a file, or anything inside a folder)."""
     renames = {}
     for e in entries:
         renames.update(e.get("rename") or {})
+    if not renames:
+        return entries
 
     def route(p):
         if p in renames:
             return renames[p]
-        for old, new in renames.items():         # a file inside a converted game folder
+        for old, new in renames.items():
             if p.startswith(old.rstrip("/") + "/"):
                 return new
         return p
@@ -171,104 +530,23 @@ def merge(entries, api, es):
             e["paths"] = list(dict.fromkeys(route(p) for p in e["paths"]))
         if "hide" in e and "rename" not in e:
             e["hide"] = list(dict.fromkeys(route(p) for p in e["hide"]))
-    by_sys = {}
-    for e in entries:
-        by_sys.setdefault(e["system"], []).append(e)
-    for system, items in by_sys.items():
-        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
-        gl_path = os.path.join(sysdir, "gamelist.xml")
-        tree = load_gamelist(gl_path)
-        root = tree.getroot()
-        index = {g.findtext("path"): g for g in root.findall("game")}
-        for e in items:
-            if "remove" in e:          # uninstalled from the box
-                for old in e["remove"]:
-                    r = rel(sysdir, old)
-                    for p, g in list(index.items()):
-                        if p and (p == r or p.startswith(r.rstrip("/") + "/")):
-                            drop_media(sysdir, g)
-                            root.remove(g)
-                            index.pop(p)
-                continue
-            if "hide" in e and "rename" not in e:      # discs grouped under an .m3u
-                for h in e["hide"]:
-                    hr = rel(sysdir, h)
-                    g = index.get(hr)
-                    if g is None:
-                        g = ET.SubElement(root, "game")
-                        set_text(g, "path", hr)
-                        index[hr] = g
-                    set_text(g, "hidden", "true")
-                continue
-            if "rename" in e:          # CHD worker: old path(s) -> new path
-                for old, new in e["rename"].items():
-                    old_rel, new_rel = rel(sysdir, old), rel(sysdir, new)
-                    for p, g in list(index.items()):
-                        if p and (p == old_rel or p.startswith(old_rel.rstrip("/") + "/")):
-                            index.pop(p)
-                            keep = index.get(new_rel)
-                            if keep is not None and keep is not g:
-                                # e.g. ES had both the .cue and its .bin listed:
-                                # one entry per file, keep the richer one
-                                if len(list(g)) > len(list(keep)):
-                                    keep, g = g, keep
-                                if g.findtext("hidden") == "true":
-                                    set_text(keep, "hidden", "true")   # a disc under an .m3u stays hidden
-                                root.remove(g)
-                                g = keep
-                            g.find("path").text = new_rel
-                            index[new_rel] = g
-                for h in e.get("hide", []):
-                    hr = rel(sysdir, h)
-                    g = index.get(hr)
-                    if g is None:          # (an Element's truthiness is its child count)
-                        g = ET.SubElement(root, "game")
-                    set_text(g, "path", hr)
-                    set_text(g, "hidden", "true")
-                    index[hr] = g
-                continue
-            prim = (e["paths"][0] if len(e["paths"]) == 1 and e["paths"][0].lower().endswith(".m3u")
-                    else rommlib.primary_path(system, e["paths"], es))
-            if not prim:
-                continue
-            p = rel(sysdir, prim)
-            g = index.get(p)
-            if g is None:
-                g = ET.SubElement(root, "game")
-                set_text(g, "path", p)
-                index[p] = g
-            set_text(g, "name", e.get("name"))
-            set_text(g, "desc", e.get("desc"))
-            ms = e.get("releasedate")
-            if ms:
-                set_text(g, "releasedate", time.strftime("%Y%m%dT000000", time.gmtime(ms / 1000)))
-            set_text(g, "genre", ", ".join(e.get("genres") or []))
-            set_text(g, "developer", e.get("developer"))
-            set_text(g, "publisher", e.get("publisher"))
-            set_text(g, "players", e.get("players"))
-            if e.get("rating") is not None:
-                set_text(g, "rating", "%.2f" % (float(e["rating"]) / 100))
-            stem = os.path.splitext(os.path.basename(prim))[0]
-            img = os.path.join(sysdir, "images", stem + "-image.png")
-            if e.get("image_local") and os.path.exists(e["image_local"]):
-                os.makedirs(os.path.dirname(img), exist_ok=True)
-                with open(e["image_local"], "rb") as src, open(img, "wb") as dst:
-                    dst.write(src.read())
-                set_text(g, "image", rel(sysdir, img))
-            elif g.find("image") is None and fetch_cover(api, e.get("cover"), img):
-                set_text(g, "image", rel(sysdir, img))
-            if e.get("manual") and g.find("manual") is None:
-                man = os.path.join(sysdir, "manuals", stem + "-manual.pdf")
-                if fetch_asset(api, e["manual"], man):
-                    set_text(g, "manual", rel(sysdir, man))
-        if os.path.exists(gl_path):
-            bak = gl_path + ".bak-rommbrowser"
-            if not os.path.exists(bak):
-                with open(gl_path, "rb") as src, open(bak, "wb") as dst:
-                    dst.write(src.read())
-        tmp = gl_path + ".tmp"
-        tree.write(tmp, encoding="utf-8", xml_declaration=True)
-        os.replace(tmp, gl_path)
+    return entries
+
+
+def process(entries, api=None, es=None, esapi=None):
+    """One batch: route renames, snapshot old info, reload ES, apply.
+    Returns the entries ES couldn't take yet."""
+    es = es if es is not None else rommlib.load_es_systems()
+    esapi = esapi or EsApi()
+    route_renames(entries)
+    carry = snapshot_renames(entries, esapi)
+    esapi.reload()
+    wait_listed(esapi, entries, es)
+    left = apply(entries, api, es, esapi, carry)
+    for e in left:                           # keep what we knew about renamed games
+        if "rename" in e:
+            e["_carry"] = {new: carry[new] for new in e["rename"].values() if new in carry}
+    return left
 
 
 def main():
@@ -278,52 +556,62 @@ def main():
         fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return  # another finalize is already waiting; it will pick ours up
+    # entries ES couldn't take last time: try them again, once per run
+    deferred = _read_jsonl(DEFERRED)
+    if deferred:
+        _write_jsonl(DEFERRED, [])
+        rommlib.append_gamelist(*deferred)
+    work = rommlib.GAMELIST_QUEUE + ".work"
+    failures = 0
     while True:
-        if not os.path.exists(rommlib.GAMELIST_QUEUE) or \
-                os.path.getsize(rommlib.GAMELIST_QUEUE) == 0:
+        queued = os.path.exists(rommlib.GAMELIST_QUEUE) and os.path.getsize(rommlib.GAMELIST_QUEUE) > 0
+        if not queued and not os.path.exists(work):
             return
         if not wait_idle():
             rommlib.log("finalize: gave up waiting for ES to go idle")
             return
-        # claim the queue atomically; anything appended later is a new batch
-        work = rommlib.GAMELIST_QUEUE + ".work"
-        if os.path.exists(work):
-            # left by an interrupted run: keep it, in front of the new batch
-            with open(work) as f:
-                old = f.read()
-            with open(rommlib.GAMELIST_QUEUE) as f:
-                new = f.read()
-            with open(work, "w") as f:
+        # claim the queue (under the writers' lock); a .work left by an
+        # interrupted run goes in front of anything newer
+        with rommlib.queue_lock():
+            old = ""
+            if os.path.exists(work):
+                with open(work, errors="replace") as f:
+                    old = f.read()
+            new = ""
+            if os.path.exists(rommlib.GAMELIST_QUEUE):
+                with open(rommlib.GAMELIST_QUEUE, errors="replace") as f:
+                    new = f.read()
+                os.remove(rommlib.GAMELIST_QUEUE)
+            if old and not old.endswith("\n"):
+                old += "\n"
+            with open(work + ".tmp", "w") as f:
                 f.write(old + new)
-            os.remove(rommlib.GAMELIST_QUEUE)
-        else:
-            os.replace(rommlib.GAMELIST_QUEUE, work)
-        with open(work) as f:
-            entries = [json.loads(l) for l in f if l.strip()]
+            os.replace(work + ".tmp", work)
+        entries = _read_jsonl(work)
         cfg = rommlib.load_config()
         api = rommlib.Api.from_config(cfg)
         try:
-            if game_running():      # re-check right before touching ES
+            if game_running():      # re-check right before reloading ES
                 raise RuntimeError("game started")
-            es_get("/reloadgames", timeout=120)   # flush ES's dirty lists
-            time.sleep(3)
-            merge(entries, api, rommlib.load_es_systems())
-            if not game_running():
-                es_get("/reloadgames", timeout=120)
+            left = process(entries, api)
+            keep = []
+            for e in left:
+                e["_tries"] = e.get("_tries", 0) + 1
+                if e["_tries"] < MAX_TRIES:
+                    keep.append(e)
+                else:
+                    rommlib.log("finalize: giving up on an entry for %s after %d tries: %s" % (
+                        e.get("system"), MAX_TRIES, (e.get("paths") or list((e.get("rename") or {}).values()) or ["?"])[0]))
+            _write_jsonl(DEFERRED, _read_jsonl(DEFERRED) + keep)
             os.remove(work)
-            rommlib.log("finalize: merged %d entries" % len(entries))
+            rommlib.log("finalize: %d entries to ES, %d kept for later" % (len(entries) - len(left), len(keep)))
         except Exception as e:
-            # put the batch back in front of anything new and retry later
+            # keep the batch (.work stays, in front of anything new) and retry later
+            failures += 1
             rommlib.log("finalize: deferred (%r)" % e)
-            with open(work) as f:
-                old = f.read()
-            newer = ""
-            if os.path.exists(rommlib.GAMELIST_QUEUE):
-                with open(rommlib.GAMELIST_QUEUE) as f:
-                    newer = f.read()
-            with open(rommlib.GAMELIST_QUEUE, "w") as f:
-                f.write(old + newer)
-            os.remove(work)
+            if failures >= MAX_TRIES:
+                rommlib.log("finalize: stopping after %d failed passes; the batch waits for the next run" % failures)
+                return
             time.sleep(30)
 
 

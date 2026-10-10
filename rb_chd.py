@@ -34,7 +34,6 @@ import rommlib  # noqa: E402
 import rb_finalize  # noqa: E402
 
 LOCK = os.path.join(rommlib.DATA_DIR, "chd.lock")
-THREADS = str(max(1, (os.cpu_count() or 4) - 2))   # leave 2 threads free; only runs while no game is up
 SAVES_ROOT = os.environ.get("ROMM_BROWSER_SAVES", "/userdata/saves")
 DISC_EXTS = (".cue", ".gdi", ".iso", ".bin", ".raw", ".img", ".chd", ".cdi", ".ccd", ".sub")
 JUNK_EXTS = {".txt", ".nfo", ".md5", ".sfv", ".sha1", ".jpg", ".jpeg", ".png", ".m3u",
@@ -58,6 +57,10 @@ def running_game():
     return "" if path.endswith("rommbrowser.pygame") else path
 
 
+class ChdmanMissing(Exception):
+    """chdman isn't installed: stop, keeping the queue."""
+
+
 def chdman(*args):
     """Run chdman at nice 19; pause it (SIGSTOP) whenever a game starts."""
     cmd = ["nice", "-n", "19", "chdman"] + list(args)   # no ionice in Batocera
@@ -68,17 +71,28 @@ def chdman(*args):
     errf = tempfile.TemporaryFile(mode="w+", dir=rommlib.DATA_DIR)
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=errf, text=True)
     paused = False
-    while p.poll() is None:
-        time.sleep(3)
-        busy = running_game() != ""
-        if busy and not paused:
-            p.send_signal(signal.SIGSTOP)
-            paused = True
-            rommlib.log("chd: paused (game running)")
-        elif not busy and paused:
-            p.send_signal(signal.SIGCONT)
-            paused = False
-            rommlib.log("chd: resumed")
+    try:
+        while p.poll() is None:
+            time.sleep(3)
+            busy = running_game() != ""
+            if busy and not paused:
+                p.send_signal(signal.SIGSTOP)
+                paused = True
+                rommlib.log("chd: paused (game running)")
+            elif not busy and paused:
+                p.send_signal(signal.SIGCONT)
+                paused = False
+                rommlib.log("chd: resumed")
+    finally:
+        if p.poll() is None:          # we're going down (killed, error): never leave chdman frozen
+            try:
+                p.send_signal(signal.SIGCONT)
+                p.terminate()
+                p.wait(10)
+            except Exception:
+                p.kill()
+    if p.returncode == 127:
+        raise ChdmanMissing()
     errf.seek(0, 2)
     errf.seek(max(0, errf.tell() - 4000))
     err = errf.read().replace("\r", "\n")
@@ -139,7 +153,8 @@ def fix_m3us(sysdir, old_to_new):
                 continue
             p = os.path.join(dp, fn)
             try:
-                lines = open(p, errors="replace").read().splitlines()
+                with open(p, errors="surrogateescape") as f:      # odd bytes in names survive as-is
+                    lines = f.read().splitlines()
             except OSError:
                 continue
             changed = False
@@ -152,7 +167,7 @@ def fix_m3us(sysdir, old_to_new):
                 else:
                     out.append(ln)
             if changed:
-                with open(p, "w") as f:
+                with open(p, "w", errors="surrogateescape") as f:
                     f.write("\n".join(out) + "\n")
                 touched.append(p)
     return touched
@@ -181,15 +196,21 @@ def convert(task):
         else:
             stem = os.path.basename(folder_root)      # game name, not track name
         plan.append((src, os.path.join(out_dir, stem + ".chd")))
+    if len({out for _, out in plan}) != len(plan):
+        # two sources would become the same .chd: converting would overwrite
+        # one with the other and then delete both originals
+        rommlib.log("chd: SKIP name clash (%s)" % ", ".join(os.path.basename(s) for s in srcs))
+        return False
     for _, out in plan:
         if os.path.exists(out):
             rommlib.log("chd: SKIP exists %s" % out)
             return False
     made = []
     for src, out in plan:
-        tmp = out + ".tmp.chd"
+        tmp = out + ".part"                    # not a name ES lists as a game while it's written
         t0 = time.time()
-        rc, err = chdman(mode, "-np", THREADS, "-f", "-i", src, "-o", tmp)
+        threads = str(rommlib.chd_threads(rommlib.load_config()))    # read per disc: Settings apply next disc
+        rc, err = chdman(mode, "-np", threads, "-f", "-i", src, "-o", tmp)
         if rc == 0:
             rc, err = chdman("verify", "-i", tmp)
         if rc != 0:
@@ -206,7 +227,7 @@ def convert(task):
     in_size = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
     out_size = sum(os.path.getsize(m) for m in made)
     m3us = fix_m3us(sysdir, old_to_new)
-    rename, hide = {}, []
+    hide = []
     if multi:
         # an existing playlist (now rewritten) stays the entry; else write one
         outside = [m for m in m3us if not (folder_root and m.startswith(folder_root + "/"))]
@@ -233,6 +254,23 @@ def convert(task):
         primary = made[0]
         migrate_saves(system, srcs[0], primary)
 
+    # record the rename before deleting anything: a crash after this leaves
+    # duplicates at worst, never a CHD whose game info can't follow it
+    rename = {}
+    gone = set()
+    for src in srcs:
+        for p in sources_of(src):
+            rename[p] = primary
+            gone.add(os.path.normpath(p))
+    folder_goes = False
+    if folder_root and os.path.isdir(folder_root):
+        rest = [os.path.join(dp, f) for dp, _, fs in os.walk(folder_root) for f in fs
+                if os.path.normpath(os.path.join(dp, f)) not in gone]
+        folder_goes = all(os.path.splitext(f)[1].lower() in JUNK_EXTS for f in rest)
+    if folder_goes:
+        rename[folder_root] = primary            # the whole game folder becomes this file
+    rommlib.append_gamelist({"system": system, "rename": rename, "hide": hide})
+    rommlib.Library().rename_paths(rename, hide)
     for src in srcs:
         for p in sources_of(src):
             if os.path.isfile(p):
@@ -245,54 +283,97 @@ def convert(task):
                     os.rmdir(dp)          # only succeeds when empty
                 except OSError:
                     pass
-        leftovers = [os.path.join(dp, f) for dp, _, fs in os.walk(folder_root) for f in fs]
-        if all(os.path.splitext(f)[1].lower() in JUNK_EXTS for f in leftovers):
+        if folder_goes:
             shutil.rmtree(folder_root, ignore_errors=True)
         else:
+            # other games / files stay in it: only the converted files were renamed
             rommlib.log("chd: kept folder (non-junk leftovers) %s" % folder_root)
-        rename[folder_root] = primary
-    else:
-        for src in srcs:
-            rename[src] = primary
-    with open(rommlib.GAMELIST_QUEUE, "a") as f:
-        f.write(json.dumps({"system": system, "rename": rename, "hide": hide}) + "\n")
-    rommlib.Library().rename_paths(rename, hide)
     rommlib.log("chd: OK %s -> %s  (%.2f GB -> %.2f GB)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),
         in_size / 1e9, out_size / 1e9))
     return True
 
 
-def main():
-    os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
-    lockf = open(LOCK, "w")
+def finalize_later():
+    """Merge gamelist changes in a separate process. rb_finalize waits for ES
+    to be idle — with RomM-o-Cera open that means until it closes — and this
+    worker must not sit on chd.lock meanwhile (new conversions queued by
+    downloads would wait behind it). rb_finalize is flock'd: extra spawns no-op."""
+    subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rb_finalize.py")],
+                     start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, close_fds=True)
+
+
+def pending():
     try:
-        fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return any(t.endswith(".json") for t in os.listdir(rommlib.CHD_QUEUE_DIR))
     except OSError:
-        return
+        return False
+
+
+def _sigterm(signum, frame):
+    raise SystemExit(0)                         # runs chdman()'s cleanup on the way out
+
+
+def main():
+    signal.signal(signal.SIGTERM, _sigterm)
+    os.umask(0o022)       # CHDs readable like any other rom, however this worker was started
+    os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
+    while True:
+        lockf = open(LOCK, "w")
+        try:
+            fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return                              # another worker has it
+        work(lockf)
+        lockf.close()
+        # a task queued while we were giving up the lock would find it taken
+        # and not start a worker: look once more after releasing it
+        if not pending():
+            return
+
+
+def work(lockf):
     since_finalize = 0
+    try:
+        os.remove(os.path.join(rommlib.DATA_DIR, "chd-current.json"))   # left by a killed run
+    except OSError:
+        pass
     while True:
         tasks = sorted(t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json"))
         if not tasks:
             if not since_finalize:
                 break
-            rb_finalize.main()      # merge what's done, then look for new tasks
-            since_finalize = 0
-            continue
+            finalize_later()        # merge what's done (once ES is idle), in its own process
+            break
         if running_game() != "":
             time.sleep(20)
             continue
         path = os.path.join(rommlib.CHD_QUEUE_DIR, tasks[0])
+        cur = os.path.join(rommlib.DATA_DIR, "chd-current.json")
         try:
             with open(path) as f:
                 task = json.load(f)
+            with open(cur, "w") as f:         # lets the app show "compressing…" for this download
+                json.dump({"task": tasks[0], "since": time.time()}, f)
             if convert(task):
                 since_finalize += 1
+        except ChdmanMissing:
+            rommlib.log("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
+            try:
+                os.remove(cur)
+            except OSError:
+                pass
+            break
         except Exception as e:
             rommlib.log("chd: error on %s: %r" % (tasks[0], e))
         os.remove(path)
+        try:
+            os.remove(cur)
+        except OSError:
+            pass
         if since_finalize >= FINALIZE_EVERY:
-            rb_finalize.main()      # waits for ES idle; flock'd
+            finalize_later()
             since_finalize = 0
 
 

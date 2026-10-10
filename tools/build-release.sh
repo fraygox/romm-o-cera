@@ -7,13 +7,15 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${OUT:-$HERE/dist}
 VER=$(cd "$HERE" && python3 -c 'import rommlib; print(rommlib.VERSION)')
 REL=$(cd "$HERE" && python3 -c 'import rommlib; print(rommlib.RELEASE_DATE)')
+BLD=$(cd "$HERE" && python3 -c 'import rommlib; print(rommlib.BUILD)')
+[ -z "$BLD" ] || { echo "rommlib.BUILD must be empty in a release (is '$BLD')" >&2; exit 1; }
 if [ "$REL" != "$(date +%F)" ] && [ -z "${ALLOW_OLD_DATE:-}" ]; then
     echo "rommlib.RELEASE_DATE is $REL, not today ($(date +%F)): bump it (or ALLOW_OLD_DATE=1)" >&2
     exit 1
 fi
 rm -rf "$OUT"; mkdir -p "$OUT/stage/rommbrowser"
 for f in rommbrowser.pygame rommbrowser.pygame.keys rommlib.py rb_finalize.py rb_chd.py \
-         rb_chd_plan.py rb_dl.py icon.png LICENSE; do
+         rb_chd_plan.py rb_dl.py rb_repair.py icon.png LICENSE; do
     cp "$HERE/$f" "$OUT/stage/rommbrowser/"
 done
 mkdir -p "$OUT/stage/rommbrowser/fonts"

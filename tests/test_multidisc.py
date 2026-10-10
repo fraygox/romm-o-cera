@@ -110,7 +110,7 @@ def _fake_chdman(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "%s:%s" % (bindir, os.environ["PATH"]))
 
 
-def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, monkeypatch):
+def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, monkeypatch, fake_es):
     """Download a 3-disc set as one: every disc verified, one .m3u, discs
     hidden in ES and the playlist carrying the metadata; then the CHD worker
     converts the discs and everything (m3u, installed.json, gamelist) follows."""
@@ -159,23 +159,24 @@ def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, 
             os.path.join(sysdir, "Lorem Odyssey (USA) (Disc %d).chd" % n), m3u]
     assert d._finish_group(group, "psx") == m3u            # still consistent
 
-    # --- gamelist merge of the whole batch: one visible entry, discs hidden ---
+    # --- the whole batch handed to ES: one visible entry, discs hidden ---
     entries = [json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)]
-    rb_finalize.merge(entries, None, PSX_ES)
-    games = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().findall("game")
-    shown = [g.findtext("path") for g in games if g.findtext("hidden") != "true"]
-    hidden = sorted(g.findtext("path") for g in games if g.findtext("hidden") == "true")
-    assert shown == ["./Lorem Odyssey (USA).m3u"]
-    assert hidden == ["./Lorem Odyssey (USA) (Disc %d).chd" % n for n in (1, 2, 3)]
-    pl = next(g for g in games if g.findtext("path") == "./Lorem Odyssey (USA).m3u")
-    assert pl.findtext("name") == "Lorem Odyssey" and pl.findtext("desc")
+    es = fake_es(PSX_ES)
+    assert rb_finalize.process(entries, None, PSX_ES) == []
+    es.save()                                    # ES's own save keeps it all
+    es.reload()
+    shown = sorted(os.path.basename(p) for p, md in es.mem["psx"].items() if md.get("hidden") != "true")
+    hidden = sorted(os.path.basename(p) for p, md in es.mem["psx"].items() if md.get("hidden") == "true")
+    assert shown == ["Lorem Odyssey (USA).m3u"]
+    assert hidden == ["Lorem Odyssey (USA) (Disc %d).chd" % n for n in (1, 2, 3)]
+    pl = es.game("psx", "Lorem Odyssey (USA).m3u")
+    assert pl["name"] == "Lorem Odyssey" and pl["desc"]
 
     # --- deleting the set removes discs + playlist, keeps nothing behind ---
     lib = rommlib.Library()
     assert lib.group_for(discs[0][1]["id"])["id"] == group["id"]
     paths, freed = lib.uninstall_group(group, "psx")
-    assert freed > 0 and sorted(os.listdir(sysdir)) == ["gamelist.xml", "gamelist.xml.bak-rommbrowser"] or \
-        sorted(os.listdir(sysdir)) == ["gamelist.xml"]
+    assert freed > 0 and sorted(n for n in os.listdir(sysdir) if n != "images") == ["gamelist.xml"]
     assert not any(str(r["id"]) in json.load(open(rommlib.STATE_PATH)) for _, r in discs)
 
 
@@ -365,7 +366,8 @@ def test_queue_reorder_pause_and_persist(isolated):
     # a new session keeps the queue paused (and so does the background worker)
     d2 = rommlib.Downloader(d.api, rommlib.Library(), cfg)
     assert d2.resume() == 2 and d2.hold
-    assert all(j.state == "Queued" for j in d2.jobs)
+    # Cart 1 was paused by hand: it stays paused across a restart (sweep A3)
+    assert {j.name: j.state for j in d2.jobs} == {"Cart 0": "Queued", "Cart 1": "Paused"}
     d2.release_all()
     assert not d2.hold and not json.load(open(rommlib.QUEUE_PATH))["held"]
 
@@ -477,7 +479,7 @@ def test_background_notes(monkeypatch):
 
 # ------------------------------------------------------------ manuals, achievements, sounds
 
-def test_manual_lands_in_gamelist_and_leaves_with_the_game(isolated, mock_url):
+def test_manual_lands_in_gamelist_and_leaves_with_the_game(isolated, mock_url, fake_es):
     api, d = _setup(mock_url)
     cart = _rom(api, "Flaky Cart (USA)")
     monkey = rommlib.RETRY_DELAYS
@@ -489,17 +491,19 @@ def test_manual_lands_in_gamelist_and_leaves_with_the_game(isolated, mock_url):
     assert rommlib.ra_summary(cart) == (3, 40)
     q = [json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)]
     assert q[0]["manual"].startswith("/assets/romm/resources/roms/")
-    rb_finalize.merge(q, api, PSX_ES)
+    es = fake_es(PSX_ES)
+    assert rb_finalize.process(q, api, PSX_ES) == []
     sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
-    g = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().find("game")
-    man = os.path.join(sysdir, g.findtext("manual"))
-    assert g.findtext("manual") == "./manuals/Flaky Cart (USA)-manual.pdf"
+    g = es.game("gba", "Flaky Cart (USA).zip")
+    man = os.path.join(sysdir, g["manual"])
+    assert g["manual"] == "./manuals/Flaky Cart (USA)-manual.pdf" and g.get("image")
     assert open(man, "rb").read().startswith(b"%PDF")
+    es.save()
     # deleting the game takes its manual + cover with it
     paths, _ = d.library.uninstall(cart, "gba")
-    rb_finalize.merge([json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)][-1:], api, PSX_ES)
-    assert not os.path.exists(man)
-    assert ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().find("game") is None
+    rb_finalize.process([json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)][-1:], api, PSX_ES)
+    assert not os.path.exists(man) and not os.listdir(os.path.join(sysdir, "images"))
+    assert es.game("gba", "Flaky Cart (USA).zip") is None
 
 
 def test_manual_path_is_never_the_scraper_url():
@@ -520,3 +524,87 @@ def test_sounds_synthesise(rb):
     sfx.play("ok")
     sfx.set_level("off")
     sfx.play("move")
+
+
+# ------------------------------------------------------------ download hours
+
+def test_download_hours_window():
+    T = lambda h: time.mktime((2026, 10, 10, h, 30, 0, 0, 0, -1))
+    night = {"download_hours": "1-7"}
+    assert [rommlib.in_download_hours(night, T(h)) for h in (0, 1, 6, 7, 12)] == [False, True, True, False, False]
+    wrap = {"download_hours": "22-6"}
+    assert [rommlib.in_download_hours(wrap, T(h)) for h in (21, 22, 23, 0, 5, 6)] == [False, True, True, True, True, False]
+    assert rommlib.in_download_hours({"download_hours": "any"}) and rommlib.in_download_hours({})
+    assert rommlib.hours_label("22-6") == "10 pm – 6 am" and rommlib.hours_label("any") == "Any time"
+    assert rommlib.parse_hours("junk") is None and rommlib.parse_hours("5-5") is None
+
+
+def test_downloads_wait_for_hours_pause_and_resume(isolated, mock_url, monkeypatch):
+    api, d = _setup(mock_url)
+    window = {"open": False}
+    monkeypatch.setattr(rommlib, "in_download_hours", lambda cfg, now=None: window["open"])
+    small = _rom(api, "Lorem Odyssey (Europe) (Disc 2)")
+    j = d.enqueue(small, "psx")
+    time.sleep(1.5)
+    assert j.state == "Queued" and j.done_bytes == 0           # outside the hours: waits
+    d.force_job(j)                                             # "Download now"
+    _wait([j])
+    assert j.state == "Done"
+    # the window closes mid-transfer: back to the queue, partial kept, resumes later
+    big = _rom(api, "Lorem Odyssey (USA) (Disc 3)")
+    window["open"] = True
+    orig = d._fetch
+
+    def slow_fetch(job, *a, **k):
+        window["open"] = False                                  # closes as soon as it starts
+        return orig(job, *a, **k)
+    d._fetch = slow_fetch
+    j2 = d.enqueue(big, "psx")
+    t0 = time.time()
+    while j2.message != "Waiting for download hours":
+        assert time.time() - t0 < 30, (j2.state, j2.message)
+        time.sleep(0.05)
+    assert j2.state == "Queued"
+    d._fetch = orig
+    window["open"] = True
+    with d.cv:
+        d.cv.notify_all()
+    _wait([j2])
+    assert j2.state == "Done" and j2.verified
+
+
+# ------------------------------------------------------------ fill in game info
+
+def test_fill_in_info_for_games_already_here(isolated, mock_url, fake_es):
+    api = rommlib.Api(mock_url, "demo")
+    pid = {p["fs_slug"]: p["id"] for p in api.platforms()}["ps1"]
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(sysdir)
+    for n in ("Lorem Odyssey (USA) (Disc 1).chd", "Lorem Odyssey (USA) (Disc 2).chd",
+              "Ipsum Saga (Japan) (Disc 1).chd", "Not In RomM (USA).chd"):
+        open(os.path.join(sysdir, n), "w").close()
+    open(os.path.join(sysdir, "Lorem Odyssey (USA).m3u"), "w").write(
+        "Lorem Odyssey (USA) (Disc 1).chd\nLorem Odyssey (USA) (Disc 2).chd\n")
+    # the user's own scrape of Ipsum Saga: has a desc, no cover — desc must survive
+    with open(os.path.join(sysdir, "gamelist.xml"), "w") as f:
+        f.write('<gameList><game><path>./Ipsum Saga (Japan) (Disc 1).chd</path><name>My Name</name>'
+                '<desc>my own words</desc><playcount>4</playcount></game></gameList>')
+    es = {"psx": {".chd", ".m3u", ".cue"}}
+    entries, st = rommlib.plan_info(api, "psx", [pid], es)
+    paths = sorted(os.path.basename(e["paths"][0]) for e in entries)
+    assert paths == ["Ipsum Saga (Japan) (Disc 1).chd", "Lorem Odyssey (USA).m3u"]   # m3u discs skipped
+    assert st == {"on_box": 3, "matched": 2, "complete": 0, "queued": 2}
+    m3u = next(e for e in entries if e["paths"][0].endswith(".m3u"))
+    assert m3u["name"] == "Lorem Odyssey" and m3u["fill"] and m3u["manual"]
+    fes = fake_es(es)
+    left = rb_finalize.process(entries, api, es)
+    assert left == []
+    fes.save()
+    ips = fes.game("psx", "Ipsum Saga (Japan) (Disc 1).chd")
+    assert ips["name"] == "My Name" and ips["desc"] == "my own words"
+    assert ips["playcount"] == "4" and ips.get("image")                            # cover added
+    lo = fes.game("psx", "Lorem Odyssey (USA).m3u")
+    assert lo["name"] == "Lorem Odyssey" and lo["desc"] and lo.get("manual")
+    # run again: Lorem Odyssey is now complete; Ipsum Saga only lacks what RomM can't give
+    _, st2 = rommlib.plan_info(api, "psx", [pid], es)
+    assert st2["complete"] >= 1

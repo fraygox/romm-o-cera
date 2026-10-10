@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.3).** It works on the author's box every day, but it
+**Early software (v0.6.4).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -53,6 +53,13 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   exit** (and while you play — optionally speed-capped), with a popup in
   EmulationStation when they're done. In Downloads: reorder, pause, cancel,
   pause/resume everything, clear finished.
+- **Fill in game info** for games already on the box (a platform's list menu,
+  or On this box → X for every system): names, descriptions, covers and
+  manuals from RomM, matched by file name, added only where missing — your
+  own scrapes and edits are never replaced.
+- **Download hours** (Settings, off by default): only download in a window,
+  e.g. 1–7 am; a transfer running when it closes pauses and picks up the next
+  night. "Download now" in Downloads skips the wait for one game.
 - **Other versions**: the detail panel tells you when another region or
   revision of the game is already on the box.
 - **Manuals and achievements**: a game's manual (PDF) comes along from RomM
@@ -131,6 +138,8 @@ On the box: **Main Menu → Game Settings → Update Gamelists**, then open
 | `chd` | `true` | background CHD compression of extracted disc games |
 | `background_downloads` | `true` | keep downloading after the app exits |
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
+| `download_hours` | `any` | `any`, or a local-time window like `1-7` / `22-6` |
+| `chd_threads` | `auto` | chdman threads: `auto` (N−2 with 6+ threads, N−1 with 3–5) or a number |
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
@@ -180,6 +189,22 @@ side by side.
 menu entries, keys, buttons and the hint bar; tap the logo for Home and the
 breadcrumbs to go back; drag or scroll the wheel to move through lists.
 
+## Game info lost after CHD conversion (versions up to v0.6.6)
+
+Up to v0.6.6, a game converted to CHD could lose its EmulationStation info
+(description, cover, play count) because EmulationStation saved its own lists
+over ours. v0.6.7 hands all game info to EmulationStation through its own API
+instead, and ships a one-time repair that finds the lost info in the gamelist
+backups and gives it back (only empty fields are filled; play history is
+merged; your gamelists are backed up first):
+
+```sh
+ssh root@<box>
+cd /userdata/roms/pygame/rommbrowser
+python3 rb_repair.py --dry-run     # what would be restored
+python3 rb_repair.py
+```
+
 ## Converting an existing library to CHD
 
 ```sh
@@ -201,7 +226,8 @@ It only converts while no game is running. Progress:
 | `rommbrowser.pygame` | the UI (Batocera's pygame system runs it) |
 | `rommbrowser.pygame.keys` | evmapy override: only Hotkey+Start (exit) |
 | `rommlib.py` | RomM API client, platform map, download/extract pipeline, config |
-| `rb_finalize.py` | idle-gated gamelist merge + ES reload |
+| `rb_finalize.py` | hands game info to EmulationStation through its API once ES is idle |
+| `rb_repair.py` | one-time restore of game info lost after CHD conversion (≤ v0.6.6) |
 | `rb_chd.py` | background CHD worker |
 | `rb_chd_plan.py` | queue an existing library for CHD |
 | `rb_dl.py` | background downloader (finishes the queue after exit) |

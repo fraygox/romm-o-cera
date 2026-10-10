@@ -18,7 +18,9 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.3"
+VERSION = "0.6.4"            # changes only for a real GitHub release
+BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
+VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")
@@ -89,10 +91,13 @@ DEFAULT_CONFIG = {
     "url": "",                 # your RomM, e.g. https://romm.example.com
     "token": "",               # RomM client API token (read scopes)
     "verify_tls": True,        # False for a self-signed cert, or a path to a CA bundle
+    "verify_tls_ca": "",       # the CA bundle path last used (Settings cycles back to it)
     "swap_ab": False,          # False: south button = confirm (Batocera default)
     "button_style": "auto",    # button labels: auto | xbox | playstation | nintendo
     "check_updates": True,     # once a day, ask GitHub if a newer release exists
     "chd": True,               # background CHD conversion of extracted disc games
+    "chd_threads": "auto",     # chdman threads: "auto" or a number (see chd_threads())
+    "download_hours": "any",   # "any", or "S-E" local hours (e.g. "1-7"): downloads only run then
     "background_downloads": True,  # keep downloading after the app exits
     "speed_while_playing": 0,  # MB/s cap for background downloads while a game runs (0 = no cap)
     "notify": True,            # EmulationStation popup when background downloads finish/fail
@@ -136,6 +141,120 @@ def es_notify(msg):
             return r.status < 300
     except Exception:
         return False
+
+
+CHD_CURRENT = os.path.join(DATA_DIR, "chd-current.json")
+
+
+def chd_status(task_name, library=None, rom_id=None):
+    """Where a download's CHD conversion stands: "queued", "compressing",
+    "done", or None (no task / gave up — the original files stay)."""
+    if not task_name:
+        return None
+    try:
+        with open(os.path.join(os.path.dirname(CHD_QUEUE_DIR), os.path.basename(CHD_CURRENT))) as f:
+            if json.load(f).get("task") == task_name:
+                return "compressing"
+    except (OSError, ValueError):
+        pass
+    if os.path.exists(os.path.join(CHD_QUEUE_DIR, task_name)):
+        return "queued"
+    if library is not None and rom_id is not None:
+        with library.lock:
+            library._reload()
+            rec = library.installed.get(str(rom_id)) or {}
+        if any(p.lower().endswith(".chd") and os.path.exists(p) for p in rec.get("paths", [])):
+            return "done"
+    return None
+
+
+DOWNLOAD_HOURS = ["any", "1-7", "0-6", "2-8", "22-6", "23-7"]
+
+
+def parse_hours(v):
+    """(start, end) hours from "S-E", or None for any time."""
+    try:
+        a, b = (int(x) for x in str(v).split("-"))
+        if 0 <= a < 24 and 0 <= b <= 24 and a != b:
+            return a, b % 24
+    except ValueError:
+        pass
+    return None
+
+
+def hours_label(v):
+    hb = parse_hours(v)
+    if not hb:
+        return "Any time"
+
+    def h(x):
+        return "midnight" if x == 0 else "noon" if x == 12 else "%d %s" % (x % 12 or 12, "am" if x < 12 else "pm")
+    return "%s – %s" % (h(hb[0]), h(hb[1]))
+
+
+def in_download_hours(cfg, now=None):
+    hb = parse_hours((cfg or {}).get("download_hours", "any"))
+    if not hb:
+        return True
+    hr = time.localtime(now).tm_hour
+    a, b = hb
+    return a <= hr < b if a < b else (hr >= a or hr < b)
+
+
+def cpu_threads():
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        return os.cpu_count() or 4
+
+
+def auto_chd_threads(n=None):
+    """chdman runs only while no game is up, at nice 19. Plenty of threads
+    (6+): leave 2 for EmulationStation and the system. Few (3-5, e.g. a Pi
+    or a small handheld): leave 1 — 2 would halve the work for little gain.
+    1-2 threads: 1."""
+    n = n or cpu_threads()
+    if n >= 6:
+        return n - 2
+    if n >= 3:
+        return n - 1
+    return 1
+
+
+def chd_threads(cfg):
+    v = (cfg or {}).get("chd_threads", "auto")
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        return auto_chd_threads()
+    return max(1, min(v, cpu_threads()))
+
+
+class queue_lock:
+    """Exclusive lock on gamelist-pending.jsonl: every writer appends under
+    it and rb_finalize claims the file under it, so no append is lost."""
+
+    def __enter__(self):
+        import fcntl
+        os.makedirs(DATA_DIR, exist_ok=True)
+        self.f = open(GAMELIST_QUEUE + ".lock", "w")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *a):
+        self.f.close()
+
+
+def append_gamelist(*entries):
+    """Queue game-info entries for rb_finalize (whole lines, under the lock)."""
+    if not entries:
+        return
+    data = "".join(json.dumps(e) + "\n" for e in entries)
+    with queue_lock():
+        with open(GAMELIST_QUEUE, "a") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
 
 
 def log(msg):
@@ -434,7 +553,8 @@ def newer_release(cfg, force=False):
             cache = json.load(f)
     except (OSError, ValueError):
         pass
-    if force or now - cache.get("checked", 0) > 86400:
+    checked = cache.get("checked", 0)
+    if force or now - checked > 86400 or checked > now + 3600:
         try:
             r = requests.get("https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO,
                              timeout=6, headers={"User-Agent": UA,
@@ -443,11 +563,14 @@ def newer_release(cfg, force=False):
                 cache = {"checked": now, "latest": r.json().get("tag_name", "")}
             else:
                 cache = {"checked": now, "latest": cache.get("latest", "")}
+        except Exception:
+            cache = {"checked": now, "latest": cache.get("latest", "")}    # offline: try again tomorrow
+        try:
             os.makedirs(DATA_DIR, exist_ok=True)
             with open(UPDATE_CACHE, "w") as f:
                 json.dump(cache, f)
-        except Exception:
-            return None
+        except OSError:
+            pass
     latest = cache.get("latest") or ""
     return latest if _vtuple(latest) > _vtuple(VERSION) else None
 
@@ -584,7 +707,11 @@ def rollback(app_dir=APP_DIR, backup=APP_BACKUP):
     tmp = backup + ".swap"
     shutil.rmtree(tmp, ignore_errors=True)
     _move(app_dir, tmp)
-    _move(backup, app_dir)
+    try:
+        _move(backup, app_dir)
+    except Exception:
+        _move(tmp, app_dir)                  # put the current version back
+        raise UpdateError("Couldn't swap versions; nothing changed")
     _move(tmp, backup)
     log("ROLLBACK now %s (backup %s)" % (_version_in(app_dir), _version_in(backup)))
     return _version_in(app_dir)
@@ -610,6 +737,10 @@ class Library:
     def _reload(self):
         try:
             mt = os.stat(STATE_PATH).st_mtime_ns
+        except FileNotFoundError:
+            if self._mtime is not None:          # it was deleted (a reset): don't write old records back
+                self.installed, self._mtime = {}, None
+            return
         except OSError:
             return
         if mt == self._mtime:
@@ -801,8 +932,7 @@ class Library:
         self.update(lambda inst: inst.pop(str(rom["id"]), None))
         self._stems.pop(system, None)
         if paths:
-            with open(GAMELIST_QUEUE, "a") as f:
-                f.write(json.dumps({"system": system, "remove": paths}) + "\n")
+            append_gamelist({"system": system, "remove": paths})
         log("UNINSTALL %s: %s (%s)" % (rom.get("name"), paths, human_size(freed)))
         return paths, freed
 
@@ -875,15 +1005,18 @@ def find_disc_set(api, rom):
         pass
     # The same set is sometimes in RomM twice ("Disc 01" and "Disc 1"): prefer
     # the copies tagged in the same style as the disc picked, never mix them.
-    style = DISC_RE.search(rom.get("fs_name_no_ext") or "").group(0).strip().lower()
+    def tag_style(name):
+        m = DISC_RE.search(name)
+        g = m.group(0)                     # "(Disc 01)" vs "(Disc 1)": the digit count is the style
+        return (g[:m.start(1) - m.start(0)] + "#" * len(m.group(1)) + g[m.end(1) - m.start(0):]).strip().lower()
+    style = tag_style(rom.get("fs_name_no_ext") or "")
     discs = {}
     for r in sorted(cands.values(), key=lambda r: r["id"]):
         name = r.get("fs_name_no_ext") or ""
         d = disc_info(name)
         if not d or d[0].lower() != base or r.get("platform_id") != pid:
             continue
-        same_style = DISC_RE.search(name).group(0).strip().lower().replace(str(d[1]), "#") == \
-            style.replace(str(me[1]), "#")
+        same_style = tag_style(name) == style
         if d[1] not in discs or (same_style and not discs[d[1]][1]):
             discs[d[1]] = (r, same_style)
     discs = {n: v[0] for n, v in discs.items()}
@@ -978,7 +1111,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                          "severity": severity, "rom": _slim(rom) if rom else None})
 
     def members_of(files):
-        return {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])}
+        return {m["name"].lower(): m for f in files for m in (f.get("archive_members") or []) if m.get("name")}
 
     def check_zip(system, path, files, rom):
         """A zip kept as-is: judge the ROM inside, not the container (the same
@@ -998,8 +1131,9 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                     os.path.getsize(path) != files[0]["file_size_bytes"]:
                 add(system, path, "Differs from RomM's copy (size)", rom, "differs")
             return
+        by_base = {os.path.basename(k): v for k, v in local.items()}
         for name, m in want.items():
-            i = local.get(name)
+            i = local.get(name) or by_base.get(os.path.basename(name))
             if i is None:
                 add(system, path, "Missing inside the zip: %s" % m["name"], rom)
             elif m.get("crc_hash") and ("%08x" % i.CRC) != m["crc_hash"].lower().zfill(8):
@@ -1025,7 +1159,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 return findings, stats
             path = os.path.join(sysdir, n)
             low = n.lower()
-            if n.startswith(".") or n in AUDIT_SKIP or low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd")):
+            if n.startswith(".") or n in AUDIT_SKIP or low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd", ".chd.part")):
                 continue
             if progress:
                 progress(system, n)
@@ -1064,9 +1198,10 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 if len(files) == 1 and files[0]["file_name"].lower() == low:
                     want = [(path, files[0])]               # same file as RomM (iso, chd…)
                 else:
-                    members = {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])}
+                    members = {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])
+                               if m.get("name")}
                     m = members.get(low)
-                    want = [(path, {"file_size_bytes": m["size"], "sha1_hash": m.get("sha1_hash"),
+                    want = [(path, {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
                                     "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})] if m else []
             else:
                 if detail.get("has_multiple_files") or detail.get("has_nested_single_file"):
@@ -1078,7 +1213,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                         want.append((os.path.join(path, *rel.split("/")), f))
                 else:
                     want = [(os.path.join(path, *m["name"].split("/")),
-                             {"file_size_bytes": m["size"], "sha1_hash": m.get("sha1_hash"),
+                             {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
                               "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})
                             for f in files for m in (f.get("archive_members") or [])]
                 # a disc folder later turned into <folder>.chd keeps nothing to compare
@@ -1115,6 +1250,107 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 elif deep and file_hash_ok(fp, f)[0] is False:
                     add(system, fp, "Checksum doesn't match RomM", rom)
     return findings, stats
+
+
+# ----------------------------------------------------------- game info for games already here
+
+INFO_TAGS = ("name", "desc", "image")
+
+
+def _gamelist_info(sysdir):
+    """{relative path: set of filled tags} from roms/<sys>/gamelist.xml (read only)."""
+    out = {}
+    try:
+        root = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot()
+    except (OSError, ET.ParseError):
+        return out
+    for g in root.findall("game"):
+        p = g.findtext("path")
+        if p:
+            out[p] = {t for t in INFO_TAGS + ("manual",) if (g.findtext(t) or "").strip()}
+    return out
+
+
+def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
+    """Gamelist entries for games already in roms/<system> that RomM knows
+    (matched by file name, like "already on this box") and whose ES entry
+    lacks a name, description or cover. Entries carry "fill": the merge only
+    sets what's missing. Returns (entries, stats)."""
+    sysdir = os.path.join(ROMS_ROOT, system)
+    stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
+    if not os.path.isdir(sysdir):
+        return [], stats
+    index, sets = {}, {}
+    for pid in platform_ids:
+        off = 0
+        while True:
+            if cancel is not None and cancel.is_set():
+                return [], stats
+            page = api.roms(platform_ids=[pid], offset=off, limit=500)
+            for r in page.get("items", []):
+                index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
+                index.setdefault((r.get("fs_name") or "").lower(), r)
+                d = disc_info(r.get("fs_name_no_ext") or "")
+                if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
+                    sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
+            off += len(page.get("items", []))
+            if not page.get("items") or off >= page.get("total", 0):
+                break
+    have = _gamelist_info(sysdir)
+    names = sorted(os.listdir(sysdir))
+    in_m3u = set()
+    for n in names:
+        if n.lower().endswith(".m3u"):
+            try:
+                with open(os.path.join(sysdir, n), errors="replace") as f:
+                    in_m3u |= {os.path.normpath(os.path.join(sysdir, ln.strip())) for ln in f if ln.strip()}
+            except OSError:
+                pass
+    exts = es.get(system)
+    entries = []
+    for n in names:
+        path = os.path.join(sysdir, n)
+        low = n.lower()
+        if n.startswith(".") or n in AUDIT_SKIP or low.endswith((".xml", ".txt", ".part", ".tmp.chd")) \
+                or ".bak" in low or path in in_m3u \
+                or any(q.startswith(path + os.sep) for q in in_m3u):       # a disc folder of a playlist
+            continue
+        isdir = os.path.isdir(path)
+        if not isdir and exts is not None and os.path.splitext(low)[1] not in exts:
+            continue
+        stats["on_box"] += 1
+        stem = n if isdir else os.path.splitext(n)[0]
+        rom = index.get(low) or index.get(stem.lower())
+        title = None
+        if rom is None and low.endswith(".m3u"):
+            hit = sets.get(stem.lower())
+            if hit:
+                rom = hit[1]
+                d = disc_info(rom.get("name") or "")
+                title = d[0] if d else rom.get("name")
+        if rom is None:
+            continue
+        stats["matched"] += 1
+        prim = path if (not isdir or low.endswith(".m3u")) else primary_path(system, [path], es)
+        if not prim:
+            continue
+        got = have.get("./" + os.path.relpath(prim, sysdir), set())
+        if set(INFO_TAGS) <= got and (not manuals or not manual_path(rom) or "manual" in got):
+            stats["complete"] += 1
+            continue
+        e = gamelist_entry(rom, system, [prim], manual=manuals)
+        e["fill"] = True
+        if title:
+            e["name"] = title
+        entries.append(e)
+    stats["queued"] = len(entries)
+    return entries, stats
+
+
+def queue_info(entries):
+    if entries:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        append_gamelist(*entries)
 
 
 # ----------------------------------------------------------- BIOS
@@ -1261,8 +1497,18 @@ def fetch_bios(api, offers, system=None):
     existing wrong file is kept as .bak-romm. Returns the files written."""
     written = []
     record = {}
+    try:
+        _fetch_bios_into(api, offers, system, written, record)
+    finally:
+        if record:
+            _record_bios(record)              # what got written, even if a later file failed
+    return written
+
+
+def _fetch_bios_into(api, offers, system, written, record):
+    biosdir = os.path.realpath(os.path.join(USERDATA, "bios"))
     for m, fw in offers:
-        if not m["path"].startswith(os.path.join(USERDATA, "bios") + os.sep):
+        if not os.path.realpath(m["path"]).startswith(biosdir + os.sep):
             continue
         os.makedirs(os.path.dirname(m["path"]), exist_ok=True)
         part = m["path"] + ".part"
@@ -1285,9 +1531,6 @@ def fetch_bios(api, offers, system=None):
         record[m["file"]] = {"when": time.strftime("%Y-%m-%d %H:%M"), "from": fw.get("file_name"),
                              "system": system}
         log("BIOS %s <- RomM firmware %s" % (m["file"], fw["file_name"]))
-    if record:
-        _record_bios(record)
-    return written
 
 
 # ----------------------------------------------------------- downloads
@@ -1310,6 +1553,8 @@ class Job:
         self.attempts = 0
         self.retry_at = 0.0
         self.pause = False            # cancel, but keep it in the saved queue
+        self.force = False            # "Download now": ignore the download hours
+        self.user_paused = False      # paused by the user (not by "Pause all" / exit)
         self.cancel = threading.Event()
 
     @property
@@ -1331,12 +1576,17 @@ class Job:
 
     def requeue(self):
         self.state, self.message, self.pause = Job.QUEUED, "", False
+        self.user_paused, self.force = False, False
         self.cancel = threading.Event()
         self.done_bytes, self.speed, self.attempts, self.retry_at = 0, 0.0, 0, 0.0
 
 
 class Cancelled(Exception):
     pass
+
+
+class OutsideHours(Exception):
+    """The download hours ended mid-transfer: back to the queue, .part kept."""
 
 
 class NetError(RommError):
@@ -1375,7 +1625,9 @@ def zip_matches(path, members):
                     return False, "zip"
             if z.testzip() is not None:
                 return False, "zip"
-    except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, NotImplementedError):
+    except (NotImplementedError, RuntimeError):
+        return None, None             # a method Python can't decompress (Deflate64, encrypted): size only
+    except (zipfile.BadZipFile, OSError, EOFError):
         return False, "zip"
     return True, "zip"
 
@@ -1404,7 +1656,9 @@ def zip_content_ok(path, f):
                         h.update(b)
                     else:
                         c = zlib.crc32(b, c)
-    except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, NotImplementedError):
+    except (NotImplementedError, RuntimeError):
+        return None, None             # can't decompress it here: size only
+    except (zipfile.BadZipFile, OSError, EOFError):
         return False, "zip"
     got = h.hexdigest() if h else "%08x" % c
     return got == f[key].lower().zfill(len(got)), "zip"
@@ -1525,14 +1779,24 @@ class Downloader:
         with self.cv:
             self.hold = False
             for j in self.jobs:
-                if j.state == Job.PAUSED:
+                if j.state == Job.PAUSED and not j.user_paused:    # one you paused yourself stays paused
                     j.requeue()
             self.cv.notify_all()
         self.save_queue()
 
+    def force_job(self, job):
+        """Download this one now, outside the download hours."""
+        with self.cv:
+            job.force = True
+            if job.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
+                job.requeue()
+                job.force = True
+            self.cv.notify_all()
+
     def pause_job(self, job):
         """Pause one download (keeps its .part and its place in the queue)."""
         with self.cv:
+            job.user_paused = True
             if job.state == Job.QUEUED:
                 job.state, job.message = Job.PAUSED, "Paused"
             elif job.active:
@@ -1547,22 +1811,47 @@ class Downloader:
                 self.cv.notify_all()
         self.save_queue()
 
+    def _drop_parts(self, job):
+        """Delete a cancelled/removed download's partial files (only .part
+        files of that rom, only inside roms/<system>)."""
+        sysdir = os.path.join(ROMS_ROOT, job.system)
+        base = os.path.join(sysdir, safe_name(job.rom.get("fs_name") or ""))
+        if not job.rom.get("fs_name") or not _inside(base, sysdir):
+            return
+        cands = [base + ".part"]
+        if os.path.isdir(base):
+            cands += [os.path.join(dp, f) for dp, _, fs in os.walk(base) for f in fs if f.endswith(".part")]
+        for p in cands:
+            try:
+                if os.path.isfile(p) and _inside(p, sysdir):
+                    os.remove(p)
+            except OSError:
+                pass
+
     def cancel_job(self, job):
+        drop = False
         with self.cv:
             if job.state in (Job.QUEUED, Job.PAUSED):
                 job.state, job.message = Job.CANCELLED, "Cancelled"
+                drop = True
             elif job.active:
                 job.pause = False
-                job.cancel.set()
+                job.cancel.set()               # the worker drops the partial when it stops
+        if drop:
+            self._drop_parts(job)
         self.save_queue()
 
     def remove(self, job):
         """Drop a finished/failed/cancelled/paused job from the list."""
+        drop = False
         with self.cv:
             if job in self.jobs and not (job.active and job.state != Job.QUEUED):
                 if job.state == Job.QUEUED:
                     job.state = Job.CANCELLED
+                drop = job.state != Job.DONE
                 self.jobs.remove(job)
+        if drop:
+            self._drop_parts(job)
         self.save_queue()
 
     def clear_finished(self):
@@ -1583,7 +1872,7 @@ class Downloader:
     def _save_queue(self):
         with self.qlock:
             pend = [{"rom": {k: j.rom.get(k) for k in self.SLIM_KEYS}, "system": j.system,
-                     "group": j.group}
+                     "group": j.group, "paused": bool(j.user_paused)}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(DATA_DIR, exist_ok=True)
             tmp = QUEUE_PATH + ".tmp"
@@ -1618,7 +1907,12 @@ class Downloader:
         n = 0
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
-                self.enqueue(it["rom"], it["system"], it.get("group"))
+                j = self.enqueue(it["rom"], it["system"], it.get("group"))
+                if it.get("paused"):
+                    with self.cv:
+                        j.user_paused = True
+                        if j.state == Job.QUEUED:
+                            j.state, j.message = Job.PAUSED, "Paused"
                 n += 1
         return n
 
@@ -1651,17 +1945,20 @@ class Downloader:
                 if self._closed:
                     return None
                 now = time.time()
-                if not self.hold:
-                    for j in self.jobs:
-                        if j.state != Job.QUEUED:
-                            continue
-                        if j.cancel.is_set():
-                            j.state = Job.PAUSED if j.pause else Job.CANCELLED
-                            continue
-                        if j.retry_at > now:
-                            continue
-                        j.state = Job.DOWNLOADING
-                        return j
+                for j in self.jobs:
+                    if self.hold and not j.force:
+                        continue                 # "Pause all" ("Download now" still goes)
+                    if j.state != Job.QUEUED:
+                        continue
+                    if j.cancel.is_set():
+                        j.state = Job.PAUSED if j.pause else Job.CANCELLED
+                        continue
+                    if j.retry_at > now:
+                        continue
+                    if not j.force and not in_download_hours(self.cfg):
+                        continue                 # waits for the download hours
+                    j.state = Job.DOWNLOADING
+                    return j
                 self.cv.wait(1.0)
 
     def _run(self):
@@ -1675,6 +1972,11 @@ class Downloader:
             except Cancelled:
                 j.state = Job.PAUSED if j.pause else Job.CANCELLED
                 j.message = "Paused" if j.pause else "Cancelled"
+                if not j.pause:
+                    self._drop_parts(j)
+            except OutsideHours:
+                j.state, j.message, j.speed = Job.QUEUED, "Waiting for download hours", 0.0
+                log("HOURS %s: paused until %s" % (j.name, hours_label(self.cfg.get("download_hours"))))
             except (NetError, ChecksumError) as e:
                 j.attempts += 1
                 limit = 1 if isinstance(e, ChecksumError) else len(RETRY_DELAYS)
@@ -1717,8 +2019,10 @@ class Downloader:
         if r.status_code == 416:      # .part already complete (verified below)
             r.close()
         elif r.status_code in (429, 500, 502, 503, 504):
+            r.close()
             raise NetError("RomM busy (HTTP %d)." % r.status_code)
         elif r.status_code not in (200, 206):
+            r.close()
             raise RommError("Download failed: HTTP %d" % r.status_code)
         else:
             if r.status_code == 200:
@@ -1733,6 +2037,9 @@ class Downloader:
                             r.close()
                             raise Cancelled()
                         f.write(chunk)
+                        if not j.force and not in_download_hours(self.cfg):
+                            r.close()
+                            raise OutsideHours()
                         j.done_bytes += len(chunk)
                         dt = time.time() - t0
                         if dt >= 1.0:
@@ -1745,9 +2052,16 @@ class Downloader:
                                 time.sleep(min(ahead, 2.0))
                         else:
                             lim_t0, lim_b = time.time(), 0
-            except Cancelled:
+            except (Cancelled, OutsideHours):
                 raise
+            except OSError as e:
+                r.close()
+                import errno
+                if e.errno in (errno.ENOSPC, errno.EDQUOT):
+                    raise RommError("The disk is full.") from None      # not worth retrying
+                raise NetError("Download interrupted (%s)." % e.__class__.__name__) from None
             except Exception as e:
+                r.close()
                 raise NetError("Download interrupted (%s)." % e.__class__.__name__) from None
         if size_hint and os.path.getsize(part) != size_hint:
             got = os.path.getsize(part)
@@ -1764,6 +2078,10 @@ class Downloader:
             raise ChecksumError(("Zip contents don't match RomM's" if algo == "zip" else
                                  "Checksum (%s) doesn't match RomM" % algo) + " — got a damaged copy.")
         j.verified = (j.verified is not False) and bool(ok)
+        if j.cancel.is_set():
+            if not j.pause:
+                os.remove(part)            # cancelled while verifying: don't keep it
+            raise Cancelled()
         os.replace(part, dest)
 
     def _free_bytes(self, path):
@@ -1818,17 +2136,21 @@ class Downloader:
             results = self._postprocess_folder(j, folder)
         else:
             dest = os.path.join(sysdir, fs_name)
-            self._fetch(j, "/api/roms/%d/content/%s" % (
-                rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes,
-                files[0] if len(files) == 1 else None)
+            rec = files[0] if len(files) == 1 else None
+            if os.path.isfile(dest) and not os.path.exists(dest + ".part") and \
+                    os.path.getsize(dest) == j.total_bytes and file_hash_ok(dest, rec, name=dest)[0] is True:
+                j.done_bytes, j.verified = j.total_bytes, True   # already here, verified (e.g. paused while extracting)
+            else:
+                self._fetch(j, "/api/roms/%d/content/%s" % (
+                    rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes, rec)
             results = self._postprocess_file(j, dest)
 
         entry = self._queue_gamelist(rom, system, results)
         self.library.mark(rom, system, results, group=j.group, meta=entry)
         j.chd_queued = self._chd_queued
+        j.chd_task = self._chd_task if self._chd_queued else None
         j.state = Job.DONE
-        j.message = "Ready to play" + (", checksum OK" if j.verified else "") + \
-            (" (CHD later)" if self._chd_queued else "")
+        j.message = "Ready to play" + (", checksum OK" if j.verified else "")
         log("OK %s -> %s%s" % (j.name, results, " [verified]" if j.verified else ""))
 
     # -- multi-disc sets -----------------------------------------------
@@ -1876,9 +2198,7 @@ class Downloader:
         first = recs[0]
         meta = dict(first.get("meta") or {}, system=system, paths=[m3u],
                     name=group.get("title") or group["base"])
-        with open(GAMELIST_QUEUE, "a") as f:
-            f.write(json.dumps({"system": system, "hide": prims}) + "\n")
-            f.write(json.dumps(meta) + "\n")
+        append_gamelist({"system": system, "hide": prims}, meta)
         log("group %s: wrote %s (%d discs)" % (group["base"], m3u, len(prims)))
         return m3u
 
@@ -1903,6 +2223,8 @@ class Downloader:
     # -- post-processing -------------------------------------------------
     _chd_queued = False
 
+    _chd_task = None
+
     def _accepts(self, system, ext):
         exts = self.es.get(system)
         return True if exts is None else ext.lower() in exts
@@ -1914,6 +2236,8 @@ class Downloader:
         if ext not in ARCHIVE_EXTS or system in ZIP_NATIVE:
             return [path]
         members = self._list_archive(path)
+        if not members:
+            raise RommError("The archive is empty.")
         has_disc = any(os.path.splitext(m)[1].lower() in DISC_EXTS for m in members)
         if self._accepts(system, ext) and not has_disc:
             return [path]          # cart rom in a zip the core reads directly
@@ -1977,13 +2301,24 @@ class Downloader:
         if path.lower().endswith(".zip"):
             with zipfile.ZipFile(path) as z:
                 real = os.path.realpath(target)
-                for info in z.infolist():
+                infos = z.infolist()
+                for info in infos:                     # check every member before writing any
                     dest = os.path.realpath(os.path.join(target, info.filename))
                     if not dest.startswith(real + os.sep):
                         raise RommError("Unsafe path in archive: %s" % info.filename)
-                    if j.cancel.is_set():
-                        raise Cancelled()
-                    z.extract(info, target)
+                made = []
+                try:
+                    for info in infos:
+                        if j.cancel.is_set():
+                            raise Cancelled()
+                        made.append(z.extract(info, target))
+                except BaseException:
+                    for m in reversed(made):          # no half-extracted game left behind
+                        try:
+                            os.rmdir(m) if os.path.isdir(m) else os.remove(m)
+                        except OSError:
+                            pass
+                    raise
         else:
             for m in self._list_archive(path):        # same zip-slip rule for 7z/rar
                 if m.startswith(("/", "\\")) or ".." in m.replace("\\", "/").split("/"):
@@ -2010,6 +2345,7 @@ class Downloader:
         task = {"system": system, "mode": mode, "sources": srcs, "roots": roots,
                 "queued": time.time()}
         name = "%d-%s.json" % (int(time.time() * 1000), re.sub(r"\W+", "_", system))
+        self._chd_task = name
         with open(os.path.join(CHD_QUEUE_DIR, name), "w") as f:
             json.dump(task, f)
         self._chd_queued = True
@@ -2019,8 +2355,7 @@ class Downloader:
         (ES must not be written to while it runs — see rb_finalize.py)."""
         entry = gamelist_entry(rom, system, paths, manual=self.cfg.get("manuals", True))
         os.makedirs(DATA_DIR, exist_ok=True)
-        with open(GAMELIST_QUEUE, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        append_gamelist(entry)
         return entry
 
 

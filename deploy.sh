@@ -32,7 +32,7 @@ TARGET="${SSH_USER:-root}@$HOST"
 APPDIR=/userdata/roms/pygame/rommbrowser
 ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p $APPDIR/fonts /userdata/system/romm-browser"
 scp -q "${SSH_OPTS[@]}" "$HERE"/rommbrowser.pygame "$HERE"/rommbrowser.pygame.keys "$HERE"/rommlib.py \
-    "$HERE"/rb_finalize.py "$HERE"/rb_chd.py "$HERE"/rb_chd_plan.py "$HERE"/rb_dl.py "$HERE"/icon.png "$TARGET:$APPDIR/"
+    "$HERE"/rb_finalize.py "$HERE"/rb_chd.py "$HERE"/rb_chd_plan.py "$HERE"/rb_dl.py "$HERE"/rb_repair.py "$HERE"/icon.png "$TARGET:$APPDIR/"
 scp -q "${SSH_OPTS[@]}" "$HERE"/fonts/*.ttf "$HERE"/fonts/OFL-Rubik.txt "$TARGET:$APPDIR/fonts/"
 # config.json: merge — only keys given here are changed. Values travel via the
 # environment of the local helper and ssh's stdin — never as command-line
@@ -53,6 +53,12 @@ with os.fdopen(fd, \"w\") as f:
 os.replace(p + \".tmp\", p)
 print(\"config: url=%s token=%s\" % (cfg.get(\"url\") or \"(unset)\", \"set\" if cfg.get(\"token\") else \"(unset)\"))
 '"
-ssh "${SSH_OPTS[@]}" "$TARGET" "cd $APPDIR && python3 -m py_compile rommlib.py rb_finalize.py rb_chd.py rb_chd_plan.py rb_dl.py && python3 -c 'import ast;ast.parse(open(\"rommbrowser.pygame\").read())' && rm -rf __pycache__"
+# internal build: stamp the deployed copy with the git commit (the repo keeps BUILD="")
+BUILD_ID=$(cd "$HERE" && git rev-parse --short HEAD 2>/dev/null || true)
+if [ -n "$BUILD_ID" ]; then
+    (cd "$HERE" && git diff --quiet -- . 2>/dev/null) || BUILD_ID="$BUILD_ID-dirty"
+    ssh "${SSH_OPTS[@]}" "$TARGET" "sed -i 's/^BUILD = \"\"/BUILD = \"$BUILD_ID\"/' $APPDIR/rommlib.py"
+fi
+ssh "${SSH_OPTS[@]}" "$TARGET" "cd $APPDIR && python3 -m py_compile rommlib.py rb_finalize.py rb_chd.py rb_chd_plan.py rb_dl.py rb_repair.py && python3 -c 'import ast;ast.parse(open(\"rommbrowser.pygame\").read())' && rm -rf __pycache__"
 echo "Deployed to $HOST:$APPDIR"
 echo "First install: in ES run Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera."

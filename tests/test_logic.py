@@ -182,38 +182,6 @@ def test_postprocess_keeps_cart_zip_extracts_disc(isolated):
 
 # ------------------------------------------------------------ gamelist merge
 
-def test_merge_renames_and_collapses_duplicates(isolated):
-    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
-    os.makedirs(sysdir)
-    open(os.path.join(sysdir, "Game.chd"), "w").close()
-    with open(os.path.join(sysdir, "gamelist.xml"), "w") as f:
-        f.write('<?xml version="1.0"?><gameList>'
-                '<game><path>./Game/Game.cue</path><name>Game</name><desc>d</desc><playcount>3</playcount></game>'
-                '<game><path>./Game/Game.bin</path><name>Game (bin)</name></game>'
-                '<game><path>./Other.cue</path><name>Other</name></game></gameList>')
-    rb_finalize.merge([{"system": "psx", "rename": {os.path.join(sysdir, "Game"): os.path.join(sysdir, "Game.chd")},
-                        "hide": []}], None, {})
-    games = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().findall("game")
-    paths = [g.findtext("path") for g in games]
-    assert paths.count("./Game.chd") == 1 and "./Other.cue" in paths and len(games) == 2
-    kept = next(g for g in games if g.findtext("path") == "./Game.chd")
-    assert kept.findtext("desc") == "d" and kept.findtext("playcount") == "3"
-
-
-def test_merge_adds_metadata_entry(isolated):
-    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
-    os.makedirs(sysdir)
-    rom = os.path.join(sysdir, "A (World).zip")
-    open(rom, "w").close()
-    rb_finalize.merge([{"system": "gba", "paths": [rom], "name": "A", "desc": "Hello",
-                        "releasedate": 946684800000, "genres": ["Puzzle"], "players": "1",
-                        "rating": 80, "developer": "Dev", "publisher": "Pub", "cover": None}],
-                      None, {"gba": {".zip", ".gba"}})
-    g = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot().find("game")
-    assert g.findtext("path") == "./A (World).zip" and g.findtext("name") == "A"
-    assert g.findtext("releasedate") == "20000101T000000" and g.findtext("rating") == "0.80"
-
-
 # ------------------------------------------------------------ uninstall
 
 def test_uninstall_only_touches_the_game(isolated):
@@ -238,16 +206,6 @@ def test_uninstall_only_touches_the_game(isolated):
     assert q[-1]["system"] == "psx" and len(q[-1]["remove"]) == 3
     evil = {"id": 8, "name": "Evil", "fs_name": "Evil.chd", "fs_name_no_ext": "Evil"}
     assert lib.paths_for(evil, "psx") == []                  # symlink out of roms/ is refused
-
-
-def test_merge_removes_entries(isolated):
-    sysdir = os.path.join(rommlib.ROMS_ROOT, "snes")
-    os.makedirs(sysdir)
-    with open(os.path.join(sysdir, "gamelist.xml"), "w") as f:
-        f.write('<gameList><game><path>./A.zip</path></game><game><path>./B.zip</path></game></gameList>')
-    rb_finalize.merge([{"system": "snes", "remove": [os.path.join(sysdir, "A.zip")]}], None, {})
-    paths = [g.findtext("path") for g in ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot()]
-    assert paths == ["./B.zip"]
 
 
 # ------------------------------------------------------------ BIOS detection
@@ -486,3 +444,356 @@ def test_chdman_with_huge_progress_output_does_not_hang(isolated, tmp_path, monk
     t.start()
     t.join(30)
     assert res and res[0][0] == 0 and res[0][1].endswith("done")
+
+
+def test_chd_threads_auto_and_setting(monkeypatch):
+    assert [rommlib.auto_chd_threads(n) for n in (1, 2, 3, 4, 5, 6, 8, 12, 32)] == [1, 1, 2, 3, 4, 4, 6, 10, 30]
+    monkeypatch.setattr(rommlib, "cpu_threads", lambda: 8)
+    assert rommlib.chd_threads({"chd_threads": "auto"}) == 6
+    assert rommlib.chd_threads({}) == 6
+    assert rommlib.chd_threads({"chd_threads": 3}) == 3
+    assert rommlib.chd_threads({"chd_threads": 64}) == 8          # never more than the box has
+    assert rommlib.chd_threads({"chd_threads": "junk"}) == 6
+
+
+def test_chd_status_follows_the_worker(isolated):
+    """Finished downloads show where their CHD conversion is, not a frozen
+    "(CHD later)"."""
+    os.makedirs(rommlib.CHD_QUEUE_DIR)
+    lib = rommlib.Library()
+    task = "1-psx.json"
+    open(os.path.join(rommlib.CHD_QUEUE_DIR, task), "w").write("{}")
+    assert rommlib.chd_status(task, lib, 7) == "queued"
+    json.dump({"task": task}, open(os.path.join(rommlib.DATA_DIR, "chd-current.json"), "w"))
+    assert rommlib.chd_status(task, lib, 7) == "compressing"
+    os.remove(os.path.join(rommlib.DATA_DIR, "chd-current.json"))
+    os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, task))
+    chd = os.path.join(rommlib.ROMS_ROOT, "psx", "Game.chd")
+    os.makedirs(os.path.dirname(chd))
+    open(chd, "w").close()
+    lib.mark({"id": 7, "name": "Game"}, "psx", [chd])
+    assert rommlib.chd_status(task, lib, 7) == "done"
+    assert rommlib.chd_status(None) is None
+
+
+def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypatch):
+    """Regression: after its last disc the worker ran the gamelist merge
+    inline, which waits for ES to go idle (forever while the app is open),
+    holding chd.lock — so conversions queued meanwhile never started."""
+    import fcntl
+    import rb_chd
+    os.makedirs(rommlib.CHD_QUEUE_DIR)
+    monkeypatch.setattr(rb_chd, "LOCK", os.path.join(rommlib.DATA_DIR, "chd.lock"))
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    done, spawned = [], []
+
+    def fake_convert(task):
+        done.append(task["n"])
+        if task["n"] == 1:      # a download queues another disc while the worker runs
+            json.dump({"n": 2}, open(os.path.join(rommlib.CHD_QUEUE_DIR, "2-psx.json"), "w"))
+        return True
+    monkeypatch.setattr(rb_chd, "convert", fake_convert)
+    monkeypatch.setattr(rb_chd, "finalize_later", lambda: spawned.append(1))
+    monkeypatch.setattr(rb_chd.rb_finalize, "main", lambda: pytest.fail("finalize ran inline"))
+    json.dump({"n": 1}, open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-psx.json"), "w"))
+    rb_chd.main()
+    assert done == [1, 2] and spawned and not os.listdir(rommlib.CHD_QUEUE_DIR)
+    with open(rb_chd.LOCK, "w") as f:                       # and the lock is free again
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+# ------------------------------------------------------------ gamelist write safety
+
+
+
+# ------------------------------------------------------------ game info via ES's API
+
+def _gl(sysdir, body):
+    os.makedirs(sysdir, exist_ok=True)
+    with open(os.path.join(sysdir, "gamelist.xml"), "w") as f:
+        f.write(body)
+
+
+def test_metadata_entry_goes_through_es_api(isolated, fake_es):
+    es = fake_es({"gba": {".zip", ".gba"}})
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    os.makedirs(sysdir, exist_ok=True)
+    rom = os.path.join(sysdir, "A (World).zip")
+    open(rom, "w").close()
+    _gl(sysdir, "<gameList><game><path>./Other.zip</path><name>Other</name></game></gameList>")
+    gl_before = open(os.path.join(sysdir, "gamelist.xml")).read()
+    left = rb_finalize.process([{"system": "gba", "paths": [rom], "name": "A", "desc": "Hello",
+                                 "releasedate": 946684800000, "genres": ["Puzzle"], "players": "1",
+                                 "rating": 80, "developer": "Dev", "publisher": "Pub", "cover": None}],
+                               None, {"gba": {".zip", ".gba"}})
+    assert left == []
+    g = es.game("gba", "A (World).zip")
+    assert g["name"] == "A" and g["releasedate"] == "20000101T000000" and g["rating"] == "0.80"
+    assert g["genre"] == "Puzzle" and g["publisher"] == "Pub"
+    # we never wrote gamelist.xml ourselves (only ES's reload-save did, from its memory)
+    es.save()
+    names = {x.findtext("path"): x.findtext("name") for x in
+             ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot()}
+    assert names["./A (World).zip"] == "A"
+
+
+def test_fill_entries_never_replace_existing_info(isolated, fake_es):
+    es = fake_es({"snes": {".zip"}})
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "snes")
+    os.makedirs(sysdir, exist_ok=True)
+    rom = os.path.join(sysdir, "G.zip")
+    open(rom, "w").close()
+    _gl(sysdir, "<gameList><game><path>./G.zip</path><name>My Name</name><desc>mine</desc>"
+                "<playcount>4</playcount></game></gameList>")
+    es.reload()
+    rb_finalize.process([{"system": "snes", "paths": [rom], "name": "RomM", "desc": "romm",
+                          "developer": "Dev", "fill": True}], None, {"snes": {".zip"}})
+    g = es.game("snes", "G.zip")
+    assert g["name"] == "My Name" and g["desc"] == "mine" and g["playcount"] == "4" and g["developer"] == "Dev"
+
+
+def test_chd_rename_carries_info_media_and_play_history(isolated, fake_es):
+    """The v0.6.6 loss: a CHD conversion renames the game; ES's own save of
+    the new file's bare entry overwrote the info we had moved in the file.
+    Now the old entry's info goes into ES itself, so ES's saves keep it."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "images"))
+    open(os.path.join(sysdir, "images", "Game-image.png"), "wb").write(b"\x89PNG fake")
+    open(os.path.join(sysdir, "images", "Game-video.mp4"), "wb").write(b"mp4 fake")
+    _gl(sysdir, '<gameList>'
+                '<game><path>./Game/Game.cue</path><name>Game</name><desc>d</desc><playcount>3</playcount>'
+                '<lastplayed>20251110T002042</lastplayed><favorite>true</favorite>'
+                '<image>./images/Game-image.png</image><video>./images/Game-video.mp4</video></game>'
+                '<game><path>./Game/Game.bin</path><name>Game (bin)</name></game>'
+                '<game><path>./Other.chd</path><name>Other</name></game></gameList>')
+    open(os.path.join(sysdir, "Other.chd"), "w").close()
+    es = fake_es({"psx": {".chd", ".cue", ".m3u"}})
+    # the conversion: folder gone, Game.chd appears; ES hasn't seen it yet
+    open(os.path.join(sysdir, "Game.chd"), "w").close()
+    left = rb_finalize.process([{"system": "psx", "rename": {os.path.join(sysdir, "Game"): os.path.join(sysdir, "Game.chd")},
+                                 "hide": []}], None, {"psx": {".chd", ".cue", ".m3u"}})
+    assert left == []
+    es.save()                     # ES saves on its own — must keep what we gave it
+    es.reload()
+    g = es.game("psx", "Game.chd")
+    assert g["name"] == "Game" and g["desc"] == "d" and g["playcount"] == "3" and g["favorite"] == "true"
+    assert g["lastplayed"] == "20251110T002042"
+    assert g.get("image", "").endswith("Game-image.png") and g.get("video", "").endswith("Game-video.mp4")
+    assert es.game("psx", "Other.chd")["name"] == "Other"
+
+
+def test_hide_and_remove(isolated, fake_es):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "images"))
+    for n in ("D1.chd", "D2.chd", "Set.m3u"):
+        open(os.path.join(sysdir, n), "w").close()
+    open(os.path.join(sysdir, "images", "Gone-image.png"), "w").close()
+    open(os.path.join(sysdir, "images", "Shared-image.png"), "w").close()
+    _gl(sysdir, '<gameList><game><path>./Gone.chd</path><image>./images/Gone-image.png</image></game>'
+                '<game><path>./D1.chd</path><image>./images/Shared-image.png</image></game></gameList>')
+    es = fake_es({"psx": {".chd", ".m3u"}})
+    rb_finalize.process([{"system": "psx", "hide": [os.path.join(sysdir, "D1.chd"), os.path.join(sysdir, "D2.chd")]},
+                         {"system": "psx", "remove": [os.path.join(sysdir, "Gone.chd")]}], None,
+                        {"psx": {".chd", ".m3u"}})
+    assert es.game("psx", "D1.chd")["hidden"] == "true" and es.game("psx", "D2.chd")["hidden"] == "true"
+    assert not es.game("psx", "Set.m3u").get("hidden")
+    assert not os.path.exists(os.path.join(sysdir, "images", "Gone-image.png"))     # the uninstalled game's art
+    assert os.path.exists(os.path.join(sysdir, "images", "Shared-image.png"))
+
+
+def test_entries_es_cannot_take_yet_are_kept(isolated, fake_es, monkeypatch):
+    """A system ES doesn't list (no games yet, or a reload that didn't pick
+    the file up): the entry is kept for the next run, not dropped."""
+    es = fake_es({"gba": {".zip"}})
+    monkeypatch.setattr(rb_finalize, "wait_listed", lambda *a, **k: False)
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "nes")
+    os.makedirs(sysdir)
+    rom = os.path.join(sysdir, "N.zip")
+    open(rom, "w").close()
+    e = {"system": "nes", "paths": [rom], "name": "N"}
+    assert rb_finalize.process([dict(e)], None, {"nes": {".zip"}}) == [e]
+
+
+def test_corrupt_gamelist_is_never_touched(isolated, fake_es):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "snes")
+    _gl(sysdir, "<gameList><game><path>./A.zip</path>")          # truncated
+    rom = os.path.join(sysdir, "B.zip")
+    open(rom, "w").close()
+    es = fake_es({"snes": {".zip"}})
+    es.save = lambda: None                                       # (only ES would ever write it)
+    rb_finalize.process([{"system": "snes", "paths": [rom], "name": "Bee"}], None, {"snes": {".zip"}})
+    assert open(os.path.join(sysdir, "gamelist.xml")).read() == "<gameList><game><path>./A.zip</path>"
+    assert es.game("snes", "B.zip")["name"] == "Bee"
+
+
+def test_repair_restores_lost_info_strictly(isolated, fake_es, capsys):
+    """rb_repair: the v0.6.6 loss (bare CHD entry, rich entry only in the
+    backup) is restored through ES; other copies and other discs are never
+    used; a dry run changes nothing."""
+    import rb_repair
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "images"))
+    os.makedirs(os.path.join(sysdir, "51. Alundra (USA)"))
+    open(os.path.join(sysdir, "images", "Alundra (USA)-image.png"), "wb").write(b"\x89PNG x")
+    for n in ("Alundra (USA).chd", "51. Alundra (USA)/Alundra (USA).cue", "Game (Disc 2).chd"):
+        open(os.path.join(sysdir, n), "w").close()
+    bak = ('<gameList>'
+           '<game><path>./Alundra (USA)/Alundra (USA).cue</path><name>Alundra</name><desc>dream</desc>'
+           '<playcount>1</playcount><image>./images/Alundra (USA)-image.png</image></game>'
+           '<game><path>./Game (Disc 1).cue</path><name>Game</name><desc>disc one only</desc></game>'
+           '</gameList>')
+    open(os.path.join(sysdir, "gamelist.xml.bak-rommbrowser"), "w").write(bak)
+    _gl(sysdir, '<gameList><game><path>./Alundra (USA).chd</path><name>Alundra (USA)</name>'
+                '<cheevosHash>38</cheevosHash></game>'
+                '<game><path>./51. Alundra (USA)/Alundra (USA).cue</path><name>Alundra</name>'
+                '<desc>the TOP copy</desc></game></gameList>')
+    es = fake_es({"psx": {".chd", ".cue"}})
+    assert rb_repair.main(["--dry-run"]) == 0
+    assert es.game("psx", "Alundra (USA).chd").get("desc") is None          # dry run: untouched
+    out = capsys.readouterr().out
+    assert "TOTAL: 1 games" in out
+    assert rb_repair.main([]) == 0
+    g = es.game("psx", "Alundra (USA).chd")
+    assert g["name"] == "Alundra" and g["desc"] == "dream" and g["playcount"] == "1" and g.get("image")
+    assert g["cheevosHash"] == "38"                                        # ES's own data kept
+    assert es.game("psx", "Game (Disc 2).chd").get("desc") is None         # disc 1's info is not disc 2's
+    assert [d for d in os.listdir(rommlib.DATA_DIR) if d.startswith("repair-backup-")]
+
+
+def test_chd_plan_never_merges_different_games(isolated):
+    """Sweep regression: a folder holding several games' "(Disc N)" folders
+    became one multi-disc game (the disc check looked at full paths)."""
+    import rb_chd_plan
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    for rel in ("TOP 100/Alpha (Disc 1)/x.cue", "TOP 100/FF7 (Disc 1)/x.cue",
+                "Game (USA)/Game (USA) (Disc 1)/Game (USA) (Disc 1).cue",
+                "Game (USA)/Game (USA) (Disc 2)/Game (USA) (Disc 2).cue", "Loose (USA).cue"):
+        os.makedirs(os.path.dirname(os.path.join(sysdir, rel)), exist_ok=True)
+        open(os.path.join(sysdir, rel), "w").close()
+    got = {os.path.relpath(r, sysdir): [os.path.relpath(f, sysdir) for f in fs]
+           for r, fs in rb_chd_plan.games_for("psx")}
+    assert got["TOP 100/Alpha (Disc 1)"] == ["TOP 100/Alpha (Disc 1)/x.cue"]
+    assert got["TOP 100/FF7 (Disc 1)"] == ["TOP 100/FF7 (Disc 1)/x.cue"]
+    assert got["Game (USA)"] == ["Game (USA)/Game (USA) (Disc 1)/Game (USA) (Disc 1).cue",
+                                 "Game (USA)/Game (USA) (Disc 2)/Game (USA) (Disc 2).cue"]
+    assert got["Loose (USA).cue"] == ["Loose (USA).cue"] and "TOP 100" not in got
+
+
+def test_chd_refuses_two_sources_with_one_output_name(isolated, monkeypatch):
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    for d in ("G/CD1", "G/CD2"):
+        os.makedirs(os.path.join(sysdir, d))
+        open(os.path.join(sysdir, d, "game.cue"), "w").write("x")
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("must not convert"))
+    srcs = [os.path.join(sysdir, "G/CD1/game.cue"), os.path.join(sysdir, "G/CD2/game.cue")]
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": srcs,
+                           "roots": [os.path.join(sysdir, "G")]}) is False
+    assert all(os.path.exists(s) for s in srcs)
+
+
+# ------------------------------------------------------------ bug-sweep regressions (2026-10-10)
+
+def test_sweep_hidden_never_carried_onto_a_playlist(isolated, fake_es):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "G (Disc 1)"))
+    open(os.path.join(sysdir, "G.m3u"), "w").write("G (Disc 1).chd\n")
+    open(os.path.join(sysdir, "G (Disc 1).chd"), "w").close()
+    _gl(sysdir, "<gameList><game><path>./G (Disc 1)/G (Disc 1).cue</path><name>G</name><desc>d</desc>"
+                "<hidden>true</hidden></game></gameList>")
+    es = fake_es({"psx": {".chd", ".m3u", ".cue"}})
+    rb_finalize.process([{"system": "psx", "rename": {os.path.join(sysdir, "G (Disc 1)"): os.path.join(sysdir, "G.m3u")},
+                          "hide": []}], None, {"psx": {".chd", ".m3u", ".cue"}})
+    assert es.game("psx", "G.m3u").get("hidden") != "true" and es.game("psx", "G.m3u")["desc"] == "d"
+
+
+def test_sweep_torn_or_bad_queue_lines_are_set_aside(isolated):
+    os.makedirs(rommlib.DATA_DIR)
+    p = os.path.join(rommlib.DATA_DIR, "q.jsonl")
+    with open(p, "w") as f:
+        f.write(json.dumps({"system": "gba", "paths": ["/x"]}) + "\n")
+        f.write('{"system": "gba", "pat')                       # torn by a power cut
+        f.write(json.dumps({"no": "system"}) + "\n")            # glued + not an entry
+        f.write(json.dumps([1, 2]) + "\n")
+        f.write(json.dumps({"system": "snes", "remove": ["/y"]}) + "\n")
+    got = rb_finalize._read_jsonl(p)
+    assert [e["system"] for e in got] == ["gba", "snes"]
+    assert len(open(p + ".bad").read().splitlines()) == 2
+
+
+def test_sweep_reinstalled_game_keeps_its_cover(isolated, fake_es):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    os.makedirs(os.path.join(sysdir, "images"))
+    rom = os.path.join(sysdir, "A.zip")
+    open(rom, "w").close()                                       # back again after the uninstall
+    open(os.path.join(sysdir, "images", "A-image.png"), "w").close()
+    _gl(sysdir, "<gameList><game><path>./A.zip</path><image>./images/A-image.png</image></game></gameList>")
+    fake_es({"gba": {".zip"}})
+    rb_finalize.process([{"system": "gba", "remove": [rom]}], None, {"gba": {".zip"}})
+    assert os.path.exists(os.path.join(sysdir, "images", "A-image.png"))
+
+
+def test_sweep_numbers_compare_by_value():
+    assert rb_finalize.EsApi.same("0.80", "0.800000") and rb_finalize.EsApi.same("7", "7.0")
+    assert not rb_finalize.EsApi.same("0.8", "0.7") and rb_finalize.EsApi.same(" a ", "a")
+
+
+def test_sweep_unsupported_zip_method_is_not_called_damaged(tmp_path):
+    zp = tmp_path / "g.zip"
+    with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("g.gba", b"x" * 1000)
+    raw = bytearray(zp.read_bytes())
+    for sig in (b"PK\x03\x04", b"PK\x01\x02"):                  # say Deflate64 (method 9) in both headers
+        i = raw.find(sig)
+        off = i + (8 if sig == b"PK\x03\x04" else 10)
+        raw[off:off + 2] = (9).to_bytes(2, "little")
+    zp.write_bytes(bytes(raw))
+    rec = {"file_name": "g.zip", "sha1_hash": "0" * 40,
+           "archive_members": [{"name": "g.gba", "size": 1000, "crc_hash": "%08x" % zlib.crc32(b"x" * 1000)}]}
+    assert rommlib.file_hash_ok(str(zp), rec) == (None, None)
+    assert rommlib.file_hash_ok(str(zp), dict(rec, archive_members=[])) == (None, None)
+
+
+def test_sweep_resume_all_keeps_jobs_paused_by_hand(isolated):
+    cfg = dict(rommlib.DEFAULT_CONFIG, url="http://127.0.0.1:9", token="x")
+    d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
+    d.hold_all()
+    roms = [{"id": 9100 + i, "name": "C%d" % i, "fs_name": "C%d.zip" % i, "fs_name_no_ext": "C%d" % i,
+             "fs_size_bytes": 1} for i in range(2)]
+    a, b = d.enqueue(roms[0], "gba"), d.enqueue(roms[1], "gba")
+    d.pause_job(a)
+    d.release_all()
+    assert a.state == "Paused" and b.state != "Paused"
+
+
+def test_sweep_ui_sort_infodialog_clamp_and_status(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    # Sort row exists now (was an AttributeError)
+    gl = rb.GameListScreen(app, "Recently added", order_by="id_desc")
+    app.push(gl)
+    gl._toggle_sort()
+    assert gl.order_by == "name"
+    # arrows under the Fill-in-info dialog (was KeyError in nav_state)
+    dlg = rb.InfoDialog.__new__(rb.InfoDialog)
+    rb.Confirm.__init__(dlg, app, "t", "b", "OK", lambda: None)
+    dlg.pending, dlg.plan = False, [{"system": "gba", "paths": ["/x"], "name": "n", "desc": "d", "fill": True}]
+    app.modal = dlg
+    app.dispatch("down")
+    app.modal = None
+    # On this box: deleting the last row keeps a valid selection
+    inst = rb.InstalledScreen(app)
+    inst.items, inst.sel = [{"id": 1}, {"id": 2}, {"id": 3}], 2
+    inst._loaded([{"id": 1}, {"id": 2}])
+    assert inst.sel == 1
+    # a finished download whose files are gone isn't "installed"
+    rom = {"id": 77, "name": "Gone", "fs_name": "Gone.zip", "fs_name_no_ext": "Gone", "platform_id": 1}
+    j = rommlib.Job(rom, "gba")
+    j.state = rommlib.Job.DONE
+    app.downloader.jobs.append(j)
+    app.platform_by_id = {1: {"_system": "gba"}}
+    assert app.rom_status(rom)[0] == "remote"

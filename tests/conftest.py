@@ -97,3 +97,22 @@ def mock_url():
     yield url
     p.terminate()
     p.wait(5)
+
+
+@pytest.fixture
+def fake_es(monkeypatch):
+    """Start tests/fake_es.FakeES for a {system: {exts}} map and point
+    rb_finalize at it (short waits)."""
+    from fake_es import FakeES
+    import rb_finalize
+    made = []
+
+    def make(systems):
+        es = FakeES(rommlib.ROMS_ROOT, systems)
+        monkeypatch.setattr(rb_finalize, "ES", es.url)
+        monkeypatch.setattr(rb_finalize.time, "sleep", lambda s: None)
+        made.append(es)
+        return es
+    yield make
+    for es in made:
+        es.close()

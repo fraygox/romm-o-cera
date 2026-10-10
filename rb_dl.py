@@ -85,6 +85,8 @@ def main():
     cfg = rommlib.load_config()
     if rommlib.Downloader.saved_held():
         rommlib.log("dl-worker: queue is paused (Pause all); not starting")
+        lockf.close()
+        after_downloads(cfg, None)           # earlier games' CHD + game info still go ahead
         return
     d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
     n = d.resume()
@@ -123,21 +125,26 @@ def main():
     if stopped:
         return
     notes.collect(d)
-    if not done:
-        notes.flush()
-        return
+    after_downloads(cfg, notes)
+
+
+def after_downloads(cfg, notes):
+    """CHD-compress and hand game info to ES for whatever is queued — this
+    run's downloads or earlier ones (the app leaves them to us on exit)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    if cfg.get("chd", True) and os.path.isdir(rommlib.CHD_QUEUE_DIR) and os.listdir(rommlib.CHD_QUEUE_DIR):
+    if cfg.get("chd", True) and os.path.isdir(rommlib.CHD_QUEUE_DIR) and \
+            any(t.endswith(".json") for t in os.listdir(rommlib.CHD_QUEUE_DIR)):
         subprocess.Popen([sys.executable, os.path.join(here, "rb_chd.py")], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     import rb_finalize
-    rb_finalize.main()                           # waits until ES is idle, reloads the gamelists
-    if notes.on and (notes.ready or notes.failed):
-        rb_finalize.wait_idle()                  # (finalize may have had nothing to wait for)
-    notes.flush()                                # games are listed now: tell the player
+    rb_finalize.main()                           # waits until ES is idle; no-op with nothing queued
+    if notes is not None:
+        if notes.on and (notes.ready or notes.failed):
+            rb_finalize.wait_idle()              # (finalize may have had nothing to wait for)
+        notes.flush()                            # games are listed now: tell the player
 
 
-def handover(timeout=15):
+def handover(timeout=30):
     """Called by the app at start: if a worker is running, ask it to stop and
     wait until it has released the lock. Returns True if one was running."""
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)

@@ -58,6 +58,21 @@ def test_downloads_on_a_fresh_box(isolated, mock_url):
     assert len(pending) == 3 and all(p.get("name") for p in pending)
 
 
+def test_cancel_deletes_partial(isolated, mock_url):
+    """Sweep A4: a cancelled download doesn't leave its .part behind."""
+    api, d, plats = _setup(isolated, mock_url)
+    big = _first(api, plats["dreamcast"], lambda r: not r["has_multiple_files"])
+    j = d.enqueue(big, "dreamcast")
+    part = os.path.join(rommlib.ROMS_ROOT, "dreamcast", big["fs_name"] + ".part")
+    t0 = time.time()
+    while j.done_bytes < 8 << 20:
+        assert time.time() - t0 < 60 and j.active, j.message
+        time.sleep(0.02)
+    d.cancel_job(j)
+    _wait([j])
+    assert j.state == "Cancelled" and not os.path.exists(part)
+
+
 def test_cancel_then_resume(isolated, mock_url):
     api, d, plats = _setup(isolated, mock_url)
     big = _first(api, plats["dreamcast"], lambda r: not r["has_multiple_files"])
@@ -66,9 +81,9 @@ def test_cancel_then_resume(isolated, mock_url):
     while j.done_bytes < 20 << 20:
         assert time.time() - t0 < 60 and j.active, j.message
         time.sleep(0.02)
-    j.cancel.set()
+    d.pause_job(j)                       # pause keeps the partial for a resume
     _wait([j])
-    assert j.state == "Cancelled"
+    assert j.state == "Paused"
     part = os.path.join(rommlib.ROMS_ROOT, "dreamcast", big["fs_name"] + ".part")
     had = os.path.getsize(part)
     assert 0 < had < big["fs_size_bytes"]

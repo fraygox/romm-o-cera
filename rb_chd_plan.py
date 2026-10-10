@@ -40,28 +40,41 @@ def games_for(system):
     by_dir = {}
     for p in found:
         by_dir.setdefault(os.path.dirname(p), []).append(p)
-    games = {}
+    games, loose = {}, []
     for d, files in by_dir.items():
         if any(f.lower().endswith(".gdi") for f in files):
             files = [f for f in files if f.lower().endswith(".gdi")]
         if os.path.normpath(d) == os.path.normpath(sysdir):
             for f in files:                       # loose files: one game each
-                games[f] = [f]
+                loose.append((f, [f]))
             continue
-        root = d
-        if DISC_DIR.search(os.path.basename(d)) and \
-                os.path.normpath(os.path.dirname(d)) != os.path.normpath(sysdir):
-            root = os.path.dirname(d)             # Game/Game (Disc 2)/x.cue -> Game/
-        # a folder with many unrelated games (e.g. "TOP 100 …" holding loose
-        # discs) must not become one multi-disc game: only group when the
-        # discs look like one title's discs
-        games.setdefault(root, []).extend(files)
-    out = []
-    for root, files in games.items():
-        files = sorted(set(files))
-        if len(files) > 1 and not all(DISC_DIR.search(f) for f in files):
+        base = rommlib.disc_info(os.path.basename(d))
+        if base and os.path.normpath(os.path.dirname(d)) != os.path.normpath(sysdir):
+            # Game/Game (Disc 2)/x.cue -> Game/, but only together with discs
+            # of the same title (a "TOP 100" folder can hold many games' discs)
+            key = (os.path.dirname(d), base[0].lower())
+        else:
+            key = (d, None)
+        games.setdefault(key, []).append((d, files))
+    out = list(loose)
+    by_root = {}
+    for (root, title), parts in games.items():
+        by_root.setdefault(root, []).append((title, parts))
+    for root, groups in by_root.items():
+        if len(groups) > 1:
+            # several titles' disc folders in one folder: each disc folder on its own
+            for t, parts in groups:
+                for d, files in parts:
+                    out.append((d, sorted(set(files))))
+            continue
+        title, parts = groups[0]
+        files = sorted({f for _, fs in parts for f in fs})
+        if title is None and len(files) > 1 and \
+                not all(DISC_DIR.search(os.path.basename(f)) for f in files):
             for f in files:                      # unrelated games sharing a folder
                 out.append((f, [f]))
+        elif title is not None and len(parts) == 1 and len(files) == 1:
+            out.append((parts[0][0], files))    # a lone disc folder: convert it in place
         else:
             out.append((root, files))
     return sorted(out)

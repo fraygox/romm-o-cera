@@ -520,6 +520,12 @@ class Input:
 
     def _open(self, index):
         try:
+            jid = pygame.joystick.Joystick(index).get_instance_id()
+            if jid in self.controllers or jid in self.joysticks:
+                return                            # both "added" events fire for one pad
+        except Exception:
+            pass
+        try:
             if sdlcontroller is not None and sdlcontroller.is_controller(index):
                 c = sdlcontroller.Controller(index)
                 jid = pygame.joystick.Joystick(index).get_instance_id()
@@ -620,6 +626,11 @@ class Input:
         elif t == pygame.JOYDEVICEADDED:
             # plain joysticks (no SDL mapping) only announce themselves here
             self._open(ev.device_index)
+            out.append("padchange")
+        elif t in (pygame.JOYDEVICEREMOVED, getattr(pygame, "CONTROLLERDEVICEREMOVED", -1)):
+            iid = getattr(ev, "instance_id", None)
+            self.controllers.pop(iid, None)
+            self.joysticks.pop(iid, None)
             out.append("padchange")
         elif t in (pygame.CONTROLLERBUTTONDOWN, pygame.CONTROLLERBUTTONUP):
             m = {pygame.CONTROLLER_BUTTON_A: "south", pygame.CONTROLLER_BUTTON_B: "east",
@@ -761,7 +772,7 @@ class App:
                 if done:
                     self.post(lambda: done(res))
             except Exception as e:
-                if not isinstance(e, rommlib.RommError):
+                if not isinstance(e, (rommlib.RommError, rommlib.UpdateError)):
                     # foreign exception text can carry request details: type only
                     e = rommlib.RommError("Error (%s)" % e.__class__.__name__)
                 rommlib.log("bg error: %s" % e)
@@ -865,7 +876,25 @@ class App:
             self.toast("No Batocera system for this platform", RED)
             return
         self.downloader.enqueue(rom, system)
-        self.toast("Queued: %s" % rom_title(rom), GREEN)
+        self.toast("Queued: %s" % rom_title(rom) + self.hours_note(), GREEN)
+
+    def hours_note(self):
+        if rommlib.in_download_hours(self.cfg):
+            return ""
+        return " — downloads run %s" % rommlib.hours_label(self.cfg.get("download_hours"))
+
+    def rom_status(self, rom):
+        """("active"|"failed"|"installed"|"remote", job or None). A finished
+        download counts as installed only while its files are still there."""
+        j = self.downloader.job_for(rom["id"])
+        if j and j.active:
+            return "active", j
+        if j and j.state == rommlib.Job.FAILED:
+            return "failed", j
+        system = self.system_for(rom)
+        if system and self.library.is_installed(rom, system):
+            return "installed", j if j and j.state == rommlib.Job.DONE else None
+        return "remote", None
 
     def set_title(self, rom):
         name = rom.get("name") or rom.get("fs_name_no_ext") or ""
@@ -946,6 +975,8 @@ class App:
             self.stack[-1].enter()
 
     def request_quit(self):
+        if getattr(self.modal, "is_quit", False):
+            return self._quit()                     # asked twice: quit
         n = self.downloader.active_count()
         if n and not self.cfg.get("background_downloads", True):
             self.modal = Confirm(self, "Quit %s?" % APP_NAME,
@@ -953,6 +984,7 @@ class App:
                                  "next time you open RomM-o-Cera (or turn on \"Keep "
                                  "downloading after exit\" in Settings)." % (n, "s" if n > 1 else ""),
                                  "Quit", self._quit, danger=True)
+            self.modal.is_quit = True
         else:
             self._quit()
 
@@ -992,6 +1024,9 @@ class App:
             rommlib.log("handover: %r" % e)
             was_running = False
         n = self.downloader.resume()
+        if not self.headless and self.cfg.get("chd", True) and os.path.isdir(rommlib.CHD_QUEUE_DIR) \
+                and any(t.endswith(".json") for t in os.listdir(rommlib.CHD_QUEUE_DIR)):
+            self.spawn_helper("rb_chd.py")        # discs left waiting last time (flock'd: no-op if running)
         if n and self.downloader.hold:
             self.toast("%d download%s waiting — paused (Downloads, X resumes)" % (n, "" if n == 1 else "s"), AMBER)
         elif n:
@@ -1133,7 +1168,7 @@ class App:
         for o in (self.stack[-1], self.modal):
             if o is not None:
                 out += [getattr(o, k, None) for k in ("sel", "scroll", "r", "c", "region_i")]
-        ents = getattr(self.modal, "entries", None)
+        ents = self.modal.entries if isinstance(self.modal, ActionMenu) else None
         if ents:                                   # in-place switches / choices in a menu
             out.append(tuple(e[3] if e and len(e) > 3 else None for e in ents))
         out.append(repr(sorted(self.cfg.items())))   # Settings rows cycled with left/right
@@ -1216,7 +1251,7 @@ class App:
             fx = r.right + 22
         # right side: the two global buttons, then the version
         rx = W - 24
-        r = text(c, self.fonts.small, "v" + rommlib.VERSION, (rx, H - 23), FAINT, "midright")
+        r = text(c, self.fonts.small, "v" + rommlib.VERSION_LABEL, (rx, H - 23), FAINT, "midright")
         rx = r.left - 28
         globals_ = [("START", "Home"), ("SELECT", "Downloads")]
         if getattr(top, "own_start", False) or len(self.stack) == 1:
@@ -1287,6 +1322,9 @@ class Screen:
             self.action("ok")
         else:
             self.sel = i
+            if hasattr(self, "sel_job") or isinstance(self, DownloadsScreen):
+                jobs = self.view()
+                self.sel_job = jobs[i] if i < len(jobs) else None
 
     def tap_now(self, i):
         """Touch: select and open in one tap (menus, settings, tiles)."""
@@ -1820,6 +1858,7 @@ class GameListScreen(Screen):
         self.items = []
         self.total = None
         self.pending = set()
+        self.failed = {}          # offset -> (retry after, failures)
         self.starts = []          # [(offset, letter)] from RomM's char_index
         self.sel = 0
         self.scroll = 0
@@ -1893,6 +1932,8 @@ class GameListScreen(Screen):
             return self._fetch_dense()
         if offset in self.pending:
             return
+        if self.failed.get(offset, (0, 0))[0] > time.time():
+            return                                 # failed a moment ago: back off
         self.pending.add(offset)
         app, gen = self.app, self.gen
         first = self.total is None
@@ -1924,10 +1965,15 @@ class GameListScreen(Screen):
                 self.starts = sorted((off, lab) for lab, off in merged.items())
 
         def err(e):
+            if gen != self.gen:
+                return
             self.pending.discard(offset)
             if self.total is None:
                 self.total = 0
-            app.toast(str(e), RED)
+            n = self.failed.get(offset, (0, 0))[1] + 1
+            self.failed[offset] = (time.time() + min(60, 5 * 2 ** (n - 1)), n)
+            if n == 1:
+                app.toast(str(e), RED)             # once per page, not every retry
         app.bg(lambda: self._query(offset, limit, want_ci), done, err)
 
     def _fetch_dense(self):
@@ -2051,6 +2097,11 @@ class GameListScreen(Screen):
             else:
                 e.append(("Download every game in this list",
                           "{:,} is more than 1,000. Narrow it with the filters below.".format(tot), None))
+        if self.platform:
+            sy = self.platform["_system"]
+            e.append(("Fill in game info for roms/%s" % sy,
+                      "Covers, descriptions, manuals from RomM for games already here",
+                      lambda: InfoDialog.start(self.app, [(sy, [self.platform["id"]])])))
         if self.bios:
             n = len(self.bios)
             e.append(("Get BIOS for %s" % (self.platform.get("display_name") or self.platform["_system"]),
@@ -2090,7 +2141,8 @@ class GameListScreen(Screen):
                 app.junk = rommlib.junk_tags(tags)
                 self.hide_junk = True
                 self.reset()
-                self.refresh_menu()
+                if app.stack[-1] is self:
+                    self.refresh_menu()
             app.bg(app.api.all_tags, done)
             return
         self.hide_junk = not self.hide_junk
@@ -2098,6 +2150,10 @@ class GameListScreen(Screen):
 
     def _toggle_verified(self):
         self.only_verified = not self.only_verified
+        self.reset()
+
+    def _toggle_sort(self):
+        self.order_by = "name" if self.order_by == "id_desc" else "id_desc"
         self.reset()
 
     def _toggle_hide(self):
@@ -2132,7 +2188,7 @@ class GameListScreen(Screen):
             if not any(rommlib.disc_info(r.get("fs_name_no_ext") or "") for r, _ in chosen):
                 for r, sy in chosen:
                     app.downloader.enqueue(r, sy)
-                app.toast("Queued %d games" % len(chosen), GREEN)
+                app.toast("Queued %d games" % len(chosen) + app.hours_note(), GREEN)
                 return
             app.toast("Finding the other discs of multi-disc games…")
 
@@ -2148,7 +2204,7 @@ class GameListScreen(Screen):
                 sets = sum(1 for g, _ in groups if g)
                 app.toast("Queued %d download%s%s" % (n, "" if n == 1 else "s",
                           (", %d multi-disc set%s kept together" % (sets, "" if sets == 1 else "s"))
-                          if sets else ""), GREEN)
+                          if sets else "") + app.hours_note(), GREEN)
             app.bg(lambda: app.expand_sets(chosen), queued)
 
         if free is not None and need + rommlib.SPACE_MARGIN > free:
@@ -2173,6 +2229,8 @@ class GameListScreen(Screen):
 
     def _download_all(self):
         app = self.app
+        if self.static is not None:                # "More like this": exactly what's shown
+            return self._queue_many([r for r in self.items if r], "Download this whole list?")
         app.toast("Listing every game…")
 
         def collect():
@@ -2184,7 +2242,12 @@ class GameListScreen(Screen):
                 off += len(got)
                 if not got or off >= page.get("total", 0) or off >= self.BULK_MAX:
                     return out
-        app.bg(collect, lambda roms: self._queue_many(roms, "Download this whole list?"))
+        def listed(roms):
+            if app.modal is not None or app.stack[-1] is not self:
+                app.toast("List ready — open the menu again to download it", AMBER)   # don't cover another dialog
+                return
+            self._queue_many(roms, "Download this whole list?")
+        app.bg(collect, listed)
 
     def _fetch_bios(self):
         app, offers, system = self.app, self.bios, self.platform["_system"]
@@ -2204,17 +2267,7 @@ class GameListScreen(Screen):
         return h + [("L", "Page"), ("B", "Back")]
 
     def rom_status(self, rom):
-        j = self.app.downloader.job_for(rom["id"])
-        if j and j.active:
-            return "active", j
-        if j and j.state == rommlib.Job.FAILED:
-            return "failed", j
-        system = self.app.system_for(rom)
-        if j and j.state == rommlib.Job.DONE:
-            return "installed", j
-        if system and self.app.library.is_installed(rom, system):
-            return "installed", None
-        return "remote", None
+        return self.app.rom_status(rom)
 
     def draw(self, c):
         app = self.app
@@ -2440,6 +2493,8 @@ class SearchScreen(Screen):
         return out
 
     def hints(self):
+        if INPUT_MODE["kb"]:
+            return [("Type", "Letters"), ("Bksp", "Delete"), ("Enter", "Search"), ("Esc", "Back")]
         return [("A", "Type"), ("X", "Delete"), ("Y", "Space"), ("START", "Search"), ("B", "Back")]
 
     def row_len(self, r):
@@ -2613,12 +2668,20 @@ class DownloadsScreen(Screen):
             h.append(("Y", "Clear finished"))
         return h + [("B", "Back")]
 
+    def follow(self, jobs):
+        """Keep the highlight on the same download when the list reorders."""
+        sj = getattr(self, "sel_job", None)
+        if sj in jobs:
+            self.sel = jobs.index(sj)
+
     def action(self, a):
         app, d = self.app, self.app.downloader
         jobs = self.view()
+        self.follow(jobs)
         if a in ("up", "down", "l1", "r1") and jobs:
             step = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}[a]
             self.sel = max(0, min(len(jobs) - 1, self.sel + step))
+            self.sel_job = jobs[self.sel]
         elif a == "ok" and jobs:
             self.menu(jobs[min(self.sel, len(jobs) - 1)])
         elif a == "x" and d.pending_count():
@@ -2646,6 +2709,8 @@ class DownloadsScreen(Screen):
                   ("Move up", "", (lambda: d.move(j, "up")) if i else None),
                   ("Move down", "", (lambda: d.move(j, "down")) if i < len(queued) - 1 else None),
                   None]
+        if j.state in (J.QUEUED, J.PAUSED) and not j.force and (d.hold or not rommlib.in_download_hours(app.cfg)):
+            e.append(("Download now", "Start this one anyway (download hours / Pause all)", lambda: d.force_job(j)))
         if j.active:
             e.append(("Pause", "Keeps the partial file; resume any time", lambda: d.pause_job(j)))
             e.append(("Cancel download", "", lambda: setattr(app, "modal", Confirm(
@@ -2675,13 +2740,24 @@ class DownloadsScreen(Screen):
         if j.state == J.QUEUED:
             if self.app.downloader.hold:
                 return "Paused (all)", AMBER
+            if not j.force and not rommlib.in_download_hours(self.app.cfg):
+                return "Waiting for download hours (%s)" % rommlib.hours_label(
+                    self.app.cfg.get("download_hours")), AMBER
             wait = j.retry_at - time.time()
             if wait > 0:
                 return "%s Retry %d of %d in %d s" % (j.message.split(" Retrying")[0], j.attempts,
                                                       len(rommlib.RETRY_DELAYS), wait + 1), AMBER
             return "Queued", DIM
         if j.state == J.DONE:
-            return j.message or "Done", GREEN
+            msg = j.message or "Done"
+            cache = self.__dict__.setdefault("_chd_st", {})
+            if id(j) not in cache:
+                cache[id(j)] = rommlib.chd_status(getattr(j, "chd_task", None), self.app.library,
+                                                  j.rom.get("id")) if getattr(j, "chd_task", None) else None
+            st = cache[id(j)]
+            msg += {"queued": " · CHD queued", "compressing": " · compressing to CHD…",
+                    "done": " · compressed to CHD"}.get(st, "")
+            return msg, GREEN
         if j.state == J.FAILED:
             return "Failed — " + j.message, RED
         if j.state == J.PAUSED:
@@ -2691,12 +2767,18 @@ class DownloadsScreen(Screen):
     def draw(self, c):
         d = self.app.downloader
         jobs = self.view()
+        self.follow(jobs)
         y = 84
         if d.hold and d.pending_count():
             rich_text(c, self.f, self.f.small, "Downloads are paused. {X} resumes them.", (48, y), AMBER)
             y += 28
-        chd = len([f for f in os.listdir(rommlib.CHD_QUEUE_DIR) if f.endswith(".json")]) \
-            if os.path.isdir(rommlib.CHD_QUEUE_DIR) else 0
+        now = time.time()
+        if now - getattr(self, "_chd_at", 0) > 1.0:   # disk reads once a second, not every frame
+            self._chd_at = now
+            self._chd_n = len([f for f in os.listdir(rommlib.CHD_QUEUE_DIR) if f.endswith(".json")]) \
+                if os.path.isdir(rommlib.CHD_QUEUE_DIR) else 0
+            self._chd_st = {}
+        chd = self._chd_n
         if chd:
             text(c, self.f.small, "%d disc game%s waiting for background CHD compression "
                  "(runs when no game is playing)" % (chd, "s" if chd > 1 else ""),
@@ -2774,6 +2856,8 @@ class TextInputScreen(Screen):
         return ["Settings", self.title]
 
     def hints(self):
+        if INPUT_MODE["kb"]:
+            return [("Type", "Letters"), ("Bksp", "Delete"), ("Enter", "Save"), ("Esc", "Cancel")]
         return [("A", "Type"), ("X", "Delete"), ("Y", "Shift"), ("START", "Save"), ("B", "Cancel")]
 
     def row_len(self, r):
@@ -2832,8 +2916,9 @@ class TextInputScreen(Screen):
         rrect(c, PANEL, qf, 14)
         rrect(c, ACCENT, qf, 14, 2)
         shown = self.value
-        if self.secret and len(shown) > 8:
-            shown = shown[:4] + "•" * min(24, len(shown) - 8) + shown[-4:]
+        if self.secret:
+            shown = (shown[:4] + "•" * min(24, len(shown) - 8) + shown[-4:]) if len(shown) > 16 \
+                else "•" * len(shown)
         # keep the tail (where you type) visible
         while shown and measure(self.f.h3, shown) > qf.width - 50:
             shown = shown[1:]
@@ -2910,6 +2995,13 @@ class SettingsScreen(Screen):
              "Which face button means OK"),
             ("chd", "Compress disc games to CHD", "On" if cfg.get("chd", True) else "Off",
              "Background, only while no game is running"),
+            ("chdthreads", "CHD compression threads",
+             ("Auto (%d of %d)" % (rommlib.auto_chd_threads(), rommlib.cpu_threads()))
+             if str(cfg.get("chd_threads", "auto")) == "auto" else
+             "%d of %d" % (rommlib.chd_threads(cfg), rommlib.cpu_threads()),
+             "More is faster; fewer keeps the menus snappier"),
+            ("hours", "Download hours", rommlib.hours_label(cfg.get("download_hours", "any")),
+             "Only download in this window (e.g. overnight)"),
             ("bgdl", "Keep downloading after exit", "On" if cfg.get("background_downloads", True) else "Off",
              "Finishes the queue while you play"),
             ("speed", "Download speed while playing",
@@ -2977,8 +3069,16 @@ class SettingsScreen(Screen):
                 app.push(TextInputScreen(app, "RomM client API token", cfg.get("token") or "",
                                          save_tok, secret=True))
             elif key == "tls":
-                cfg["verify_tls"] = rommlib.norm_verify(cfg.get("verify_tls", True)) is False
+                cur = rommlib.norm_verify(cfg.get("verify_tls", True))
+                ca = cfg.get("verify_tls_ca") or ""
+                if isinstance(cur, str):
+                    cfg["verify_tls_ca"] = ca = cur          # remember the bundle when cycling away
+                cycle = [True, False] + ([ca] if ca else [])
+                i = next((k for k, v in enumerate(cycle) if v == cur), 0)
+                cfg["verify_tls"] = cycle[(i + (-1 if a == "left" else 1)) % len(cycle)]
                 app.apply_config(reconnect=True)
+                if cfg["verify_tls"] is False:
+                    app.toast("Certificates aren't checked now — only for a self-signed RomM", AMBER)
             elif key == "test" and a == "ok":
                 app.toast("Testing…")
                 app.bg(app.api.platforms,
@@ -2993,6 +3093,15 @@ class SettingsScreen(Screen):
                 cfg["swap_ab"] = not cfg.get("swap_ab")
                 app.apply_config()
                 app.toast("Confirm is now the %s button" % ("east" if cfg["swap_ab"] else "south"))
+            elif key == "hours":
+                opts = rommlib.DOWNLOAD_HOURS
+                cur = cfg.get("download_hours", "any")
+                i = opts.index(cur) if cur in opts else 0
+                cfg["download_hours"] = opts[(i + (-1 if a == "left" else 1)) % len(opts)]
+                app.apply_config()
+                app.downloader.cfg = cfg
+                with app.downloader.cv:
+                    app.downloader.cv.notify_all()
             elif key == "bgdl":
                 cfg["background_downloads"] = not cfg.get("background_downloads", True)
                 app.apply_config()
@@ -3016,6 +3125,13 @@ class SettingsScreen(Screen):
                 app.apply_config()
                 app.sfx.set_level(cfg["sounds"])
                 app.sfx.play("toggle")
+            elif key == "chdthreads":
+                n = rommlib.cpu_threads()
+                opts = ["auto"] + list(range(1, n + 1))
+                cur = cfg.get("chd_threads", "auto")
+                cur = cur if cur in opts else "auto"
+                cfg["chd_threads"] = opts[(opts.index(cur) + (-1 if a == "left" else 1)) % len(opts)]
+                app.apply_config()
             elif key == "chd":
                 cfg["chd"] = not cfg.get("chd", True)
                 app.apply_config()
@@ -3063,14 +3179,22 @@ class SettingsScreen(Screen):
 
     def _swap(self, fn):
         app = self.app
+        if getattr(app, "updating", False):
+            app.toast("An update is already running")
+            return
+        app.updating = True
 
         def done(ver):
+            app.updating = False
+            app.update_tag = None                  # we're on it now
+            self.prev = rommlib.backup_version()
             app.modal = Confirm(app, "Now on v%s" % ver,
                                 "Close RomM-o-Cera and open it again from Pygame to use it.",
                                 "Close %s" % APP_NAME, app._quit)
 
         def err(e):
-            app.toast(str(e) if isinstance(e, rommlib.UpdateError) else "Update failed (%s)"
+            app.updating = False
+            app.toast(str(e) if isinstance(e, (rommlib.UpdateError, rommlib.RommError)) else "Update failed (%s)"
                       % e.__class__.__name__, RED)
         app.bg(fn, done, err)
 
@@ -3105,7 +3229,7 @@ class SettingsScreen(Screen):
         rrect(c, PANEL, p, 16)
 
         text(c, self.f.h1, APP_NAME, (p.left + 28, p.top + 24), TEXT)
-        text(c, self.f.body, "v%s · %s · by %s" % (rommlib.VERSION, rommlib.RELEASE_DATE, rommlib.AUTHOR),
+        text(c, self.f.body, "v%s · %s · by %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE, rommlib.AUTHOR),
              (p.left + 28, p.top + 72), ACCENT_HI)
         rows = [("Update available", "%s is out. Updates (on the left) installs it."
                  % self.app.update_tag)] if self.app.update_tag else []
@@ -3162,7 +3286,12 @@ class InstalledScreen(Screen):
             for it in out:
                 it["size"] = sum(rommlib.path_size(p) for p in it.pop("paths"))
             return sorted(out, key=lambda i: -i["size"])
-        self.app.bg(scan, lambda items: setattr(self, "items", items))
+        self.app.bg(scan, self._loaded)
+
+    def _loaded(self, items):
+        self.items = items
+        self.sel = max(0, min(self.sel, len(items) - 1))
+        self.scroll = min(self.scroll, self.sel)
 
     def enter(self):
         self.load()
@@ -3171,7 +3300,7 @@ class InstalledScreen(Screen):
         return ["On this box"]
 
     def hints(self):
-        return [("A", "Delete"), ("X", "Check games"), ("Y", "BIOS files"), ("L", "Page up"),
+        return [("A", "Delete"), ("X", "Check / info"), ("Y", "BIOS files"), ("L", "Page up"),
                 ("R", "Page down"), ("B", "Back")]
 
     def check_menu(self):
@@ -3181,6 +3310,9 @@ class InstalledScreen(Screen):
              lambda: app.push(AuditScreen(app, deep=False))),
             ("Full check", "Also checksums every file and verifies CHDs. Slow: hours for a big library",
              lambda: app.push(AuditScreen(app, deep=True))),
+            None,
+            ("Fill in game info (all systems)", "Covers, descriptions, manuals from RomM where missing",
+             lambda: InfoDialog.start(app, InfoDialog.all_systems(app))),
         ])
 
     def action(self, a):
@@ -3292,8 +3424,11 @@ class BiosScreen(Screen):
             rows = rommlib.bios_status(app.api, by_sys, with_games)
             order = lambda r: (0 if r["offers"] else 1 if r["missing"] else 2, r["name"].lower())
             return sorted(rows, key=order)
-        app.bg(scan, lambda rows: setattr(self, "items", rows),
-               lambda e: (setattr(self, "items", []), app.toast(str(e), RED)))
+        def loaded(rows):
+            self.items = rows
+            self.sel = max(0, min(self.sel, len(rows) - 1))
+            self.scroll = min(self.scroll, self.sel)
+        app.bg(scan, loaded, lambda e: (setattr(self, "items", []), app.toast(str(e), RED)))
 
     def crumbs(self):
         return ["BIOS files"]
@@ -3759,14 +3894,86 @@ class Confirm:
         text(c, f.h3, "Back", (nr.left + 22 + g, nr.centery), DIM, "midleft")
 
 
+class InfoDialog(Confirm):
+    """Fill in game info (name, description, cover, manual) from RomM for
+    games already on the box. Only what's missing is added — scrapes and
+    edits stay — and it's written by the usual idle-time gamelist merge."""
+
+    @staticmethod
+    def all_systems(app):
+        by = {}
+        for p in app.platforms:
+            by.setdefault(p["_system"], []).append(p["id"])
+        return sorted(by.items())
+
+    @classmethod
+    def start(cls, app, systems):
+        app.modal = cls(app, systems)
+
+    def __init__(self, app, systems):
+        super().__init__(app, "Fill in game info", "Matching the games on this box with RomM…",
+                         "Fill in", lambda: None)
+        self.pending, self.plan = True, []
+        self.cancel = threading.Event()
+        es = app.downloader.es
+        manuals = app.cfg.get("manuals", True)
+
+        def run():
+            tot = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
+            out = []
+            for system, pids in systems:
+                if self.cancel.is_set():
+                    break
+                self.body = "Matching roms/%s with RomM…" % system
+                ents, st = rommlib.plan_info(app.api, system, pids, es, manuals, self.cancel)
+                out += ents
+                for k in tot:
+                    tot[k] += st[k]
+            return out, tot
+        app.bg(run, self._planned, self._failed)
+
+    def _failed(self, e):
+        self.pending = False
+        self.body = "Couldn't ask RomM: %s" % e
+        self.ok_label, self.on_ok = "OK", lambda: None
+
+    def _planned(self, res):
+        self.plan, st = res
+        self.pending = False
+        if not self.plan:
+            self.title = "Nothing to fill in"
+            self.body = ("%d games here, %d found in RomM, all already have a name, description and cover."
+                         % (st["on_box"], st["matched"]))
+            self.ok_label, self.on_ok = "OK", lambda: None
+            return
+        self.title = "Fill in info for %d game%s?" % (len(self.plan), "" if len(self.plan) == 1 else "s")
+        self.body = ("%d games here, %d found in RomM, %d already complete. Only what's missing is added — "
+                     "nothing you have is replaced. Saved when you leave RomM-o-Cera."
+                     % (st["on_box"], st["matched"], st["complete"]))
+        self.ok_label = "Fill in %d" % len(self.plan)
+        self.on_ok = self._queue
+
+    def _queue(self):
+        rommlib.queue_info(self.plan)
+        self.app.toast("Game info queued for %d games — saved when you leave RomM-o-Cera" % len(self.plan),
+                       GREEN)
+
+    def action(self, a):
+        if self.pending:
+            if a in ("back", "quit"):
+                self.cancel.set()
+                self.app.modal = None
+            return
+        super().action(a)
+
+
 class DownloadConfirm(Confirm):
     """Download one game. A disc of a multi-disc set first looks the set up in
     RomM, then offers all discs (one ES entry via an .m3u) or just this one."""
 
     def __init__(self, app, rom):
         system = app.system_for(rom)
-        st = GameListScreen.rom_status(app.stack[-1], rom) if isinstance(app.stack[-1], GameListScreen) \
-            else ("remote", None)
+        st = app.rom_status(rom)
         name = rom.get("name") or rom.get("fs_name_no_ext")
         self.pending = False
         if not system:
@@ -3837,7 +4044,7 @@ def register_self():
     folder. Re-queued whenever the version changes, so ES stays current."""
     marker = os.path.join(rommlib.DATA_DIR, ".registered")
     try:
-        if open(marker).read().strip() == rommlib.VERSION:
+        if open(marker).read().strip() == rommlib.VERSION_LABEL:
             return
     except OSError:
         pass
@@ -3851,10 +4058,9 @@ def register_self():
              "players": "1", "releasedate": rel,
              "image_local": os.path.join(APP_DIR, "icon.png")}
     import json
-    with open(rommlib.GAMELIST_QUEUE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    rommlib.append_gamelist(entry)
     with open(marker, "w") as f:
-        f.write(rommlib.VERSION)
+        f.write(rommlib.VERSION_LABEL)
 
 
 def main():
