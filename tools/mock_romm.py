@@ -166,6 +166,102 @@ def build_library(seed=7):
     return roms
 
 
+def _disc_zip(stem, seed, size=600 * 1024):
+    """A real zip holding <stem>.cue + <stem>.bin (deterministic bytes)."""
+    import zipfile
+    import zlib
+    rng = random.Random(seed)
+    binary = bytes(rng.getrandbits(8) for _ in range(256)) * (size // 256)
+    cue = ('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % stem).encode()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in ((stem + ".cue", cue), (stem + ".bin", binary)):
+            z.writestr(zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0)), data)
+    members = [{"name": n, "size": len(d), "crc_hash": "%08x" % zlib.crc32(d),
+                "md5_hash": hashlib.md5(d).hexdigest(), "sha1_hash": hashlib.sha1(d).hexdigest()}
+               for n, d in ((stem + ".cue", cue), (stem + ".bin", binary))]
+    return buf.getvalue(), members
+
+
+# Fixed test fixtures appended after the generated library (ids continue).
+# (platform id, rom name, fs stem, tags) — the multi-disc cases the app must
+# handle: a full set, the same set again tagged "Disc 01" (only discs 1-2),
+# another region of it, an incomplete set (no disc 2), plus carts whose
+# download is corrupt (wrong checksum) or flaky (503 twice, then fine).
+SPECIAL = [
+    (6, "Lorem Odyssey", "Lorem Odyssey (USA) (Disc 1)"),
+    (6, "Lorem Odyssey", "Lorem Odyssey (USA) (Disc 2)"),
+    (6, "Lorem Odyssey", "Lorem Odyssey (USA) (Disc 3)"),
+    (6, "Lorem Odyssey", "Lorem Odyssey (USA) (Disc 01)"),
+    (6, "Lorem Odyssey", "Lorem Odyssey (USA) (Disc 02)"),
+    (6, "Lorem Odyssey", "Lorem Odyssey (Europe) (Disc 1)"),
+    (6, "Lorem Odyssey", "Lorem Odyssey (Europe) (Disc 2)"),
+    (6, "Ipsum Saga", "Ipsum Saga (Japan) (Disc 1)"),
+    (6, "Ipsum Saga", "Ipsum Saga (Japan) (Disc 3)"),
+    (3, "Corrupt Cart", "Corrupt Cart (USA)"),
+    (3, "Flaky Cart", "Flaky Cart (USA)"),
+]
+
+
+def add_special(roms):
+    plat = {p[0]: p for p in PLATFORMS}
+    rid = max(r["id"] for r in roms) + 1
+    made = []
+    for pid, name, stem in SPECIAL:
+        slug = plat[pid][1]
+        if pid == 6:
+            data, members = _disc_zip(stem, rid)
+        else:
+            import zipfile
+            import zlib
+            rom_bytes = bytes(range(256)) * 512
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+                z.writestr(zipfile.ZipInfo(stem + ".gba", date_time=(2020, 1, 1, 0, 0, 0)), rom_bytes)
+            data = buf.getvalue()
+            members = [{"name": stem + ".gba", "size": len(rom_bytes),
+                        "crc_hash": "%08x" % zlib.crc32(rom_bytes),
+                        "md5_hash": hashlib.md5(rom_bytes).hexdigest(),
+                        "sha1_hash": hashlib.sha1(rom_bytes).hexdigest()}]
+            if name == "Corrupt Cart":        # RomM's record disagrees with what's served
+                members[0] = dict(members[0], crc_hash="deadbeef", sha1_hash="0" * 40)
+        fs_name = stem + ".zip"
+        # like RomM: an archive's file-level hashes describe its contents, not the zip
+        sha1 = members[0]["sha1_hash"] if len(members) == 1 else hashlib.sha1(
+            "".join(m["sha1_hash"] for m in members).encode()).hexdigest()
+        regions = [re.search(r"\((USA|Europe|Japan)\)", stem).group(1)]
+        r = {
+            "id": rid, "platform_id": pid, "platform_slug": slug, "platform_fs_slug": slug,
+            "platform_display_name": plat[pid][2], "name": name, "fs_name": fs_name,
+            "fs_name_no_ext": stem, "fs_extension": "zip", "fs_size_bytes": len(data),
+            "regions": regions, "summary": "A test fixture for the mock RomM.",
+            "metadatum": {"genres": ["Role-Playing"], "first_release_date": int(29 * MS_PER_YEAR),
+                          "player_count": "1", "developers": ["Lorem Ipsum Soft"],
+                          "publishers": ["Lorem Ipsum Soft"], "average_rating": 80},
+            "path_cover_small": "/covers/%d.png?s=1" % rid, "path_cover_large": "/covers/%d.png?s=2" % rid,
+            "has_multiple_files": False, "has_nested_single_file": False, "tags": [], "verified": True,
+            "full_path": "roms/%s/%s" % (slug, fs_name),
+            "files": [{"id": rid * 10, "rom_id": rid, "file_name": fs_name, "file_size_bytes": len(data),
+                       "category": "game", "full_path": "roms/%s/%s" % (slug, fs_name),
+                       "sha1_hash": sha1, "md5_hash": None, "crc_hash": None,
+                       "archive_members": members}],
+            "_data": data,
+        }
+        if name in ("Lorem Odyssey", "Flaky Cart"):      # a manual + RetroAchievements data
+            r.update(has_manual=True, path_manual="roms/%d/%d/manual/%d.pdf" % (pid, rid, rid),
+                     ra_id=1000 + rid, merged_ra_metadata={"achievements": [
+                         {"title": "Lorem %d" % i, "points": p} for i, p in enumerate((5, 10, 25))]})
+        made.append(r)
+        roms.append(r)
+        rid += 1
+    # IGDB-style siblings: every Lorem Odyssey copy is a "sibling" of the others
+    lo = [r for r in made if r["name"] == "Lorem Odyssey"]
+    for r in lo:
+        r["sibling_roms"] = [{"id": o["id"], "name": o["name"], "fs_name_no_ext": o["fs_name_no_ext"]}
+                             for o in lo if o is not r]
+    return made
+
+
 def build_collections(roms, seed=11):
     rng = random.Random(seed)
     real = [r["id"] for r in roms if r["metadatum"]["developers"][0] != "Lorem Ipsum Soft"]
@@ -335,6 +431,9 @@ class Handler(BaseHTTPRequestHandler):
                 col = next(c for c in self.collections if c["id"] == int(q["collection_id"][0]))
                 ids = set(col["rom_ids"])
                 items = [r for r in items if r["id"] in ids]
+            if q.get("regions"):
+                want = set(q["regions"])
+                items = [r for r in items if want & set(r["regions"])]
             if (q.get("verified") or [""])[0] == "true":
                 items = [r for r in items if r["verified"]]
             if q.get("tags") and (q.get("tags_logic") or ["any"])[0] == "none":
@@ -351,7 +450,8 @@ class Handler(BaseHTTPRequestHandler):
                 items = sorted(items, key=lambda r: r["name"].lower(), reverse=rev)
             off = int((q.get("offset") or [0])[0])
             lim = int((q.get("limit") or [50])[0])
-            page = [{k: v for k, v in r.items() if k != "files"} for r in items[off:off + lim]]
+            page = [{k: v for k, v in r.items() if k not in ("files", "_data", "sibling_roms")}
+                    for r in items[off:off + lim]]
             out = {"items": page, "total": len(items), "offset": off, "limit": lim}
             if (q.get("with_filter_values") or ["false"])[0] == "true":
                 out["filter_values"] = {"tags": sorted({t for r in self.roms for t in r["tags"]} | {"Homebrew"})}
@@ -366,20 +466,33 @@ class Handler(BaseHTTPRequestHandler):
             me = self.by_id[int(m.group(1))]
             same = [r for r in self.roms if r["platform_id"] == me["platform_id"] and r["id"] != me["id"]]
             pick = random.Random(me["id"]).sample(same, min(int((q.get("limit") or [12])[0]), len(same), 12))
-            return self._json([{"rom": {k: v for k, v in r.items() if k != "files"}, "score": 0.9,
+            return self._json([{"rom": {k: v for k, v in r.items() if k not in ("files", "_data", "sibling_roms")},
+                                "score": 0.9,
                                 "reasons": ["genre"]} for r in pick])
         m = re.match(r"^/api/roms/(\d+)$", path)
         if m and int(m.group(1)) in self.by_id:
-            return self._json(self.by_id[int(m.group(1))])
+            r = self.by_id[int(m.group(1))]
+            return self._json(dict({k: v for k, v in r.items() if k != "_data"},
+                                   sibling_roms=r.get("sibling_roms", [])))
         m = re.match(r"^/api/roms/(\d+)/content/", path)
         if m and int(m.group(1)) in self.by_id:
             r = self.by_id[int(m.group(1))]
+            if r["name"] == "Flaky Cart":
+                Handler.flaky = getattr(Handler, "flaky", 0) + 1
+                if Handler.flaky % 3:             # 503 twice, then serve
+                    return self._json({"detail": "busy"}, 503)
+            if "_data" in r:
+                return self._stream(len(r["_data"]), r["_data"])
             if r["fs_name"].endswith(".zip") and r["fs_size_bytes"] <= 64 << 20:
                 return self._stream(r["fs_size_bytes"], self._zip_for(r))
             return self._stream(r["fs_size_bytes"])
         m = re.match(r"^/api/roms/(\d+)/files/content/", path)
         if m and int(m.group(1)) in self.files:
             return self._stream(self.files[int(m.group(1))]["file_size_bytes"])
+        m = re.match(r"^/assets/romm/resources/roms/\d+/(\d+)/manual/\d+\.pdf$", path)
+        if m and self.by_id.get(int(m.group(1)), {}).get("has_manual"):
+            data = b"%PDF-1.4\n% mock manual for rom " + m.group(1).encode() + b"\n%%EOF\n"
+            return self._stream(len(data), data)
         m = re.match(r"^/covers/(\d+)\.png$", path)
         if m and int(m.group(1)) in self.by_id:
             s = int((q.get("s") or ["1"])[0])
@@ -458,6 +571,7 @@ def main():
     ap.add_argument("--rate-mb", type=float, default=12, help="download speed, MB/s")
     a = ap.parse_args()
     Handler.roms = build_library()
+    add_special(Handler.roms)
     Handler.by_id = {r["id"]: r for r in Handler.roms}
     Handler.files = {f["id"]: f for r in Handler.roms for f in r["files"]}
     Handler.collections = build_collections(Handler.roms)

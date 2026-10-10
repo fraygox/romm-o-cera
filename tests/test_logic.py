@@ -317,3 +317,15 @@ def test_update_check_uses_cache(isolated, monkeypatch):
     assert rommlib.newer_release({"check_updates": True}) is None
     assert rommlib.newer_release({"check_updates": False}) is None
     assert rommlib._vtuple("v0.10.0") > rommlib._vtuple("0.9.9")
+
+
+def test_palette_cover_does_not_crash(rb):
+    """Regression: an 8-bit (palette) cover crashed the detail panel —
+    smoothscale only takes 24/32-bit surfaces."""
+    import pygame
+    pal = pygame.Surface((40, 60), depth=8)
+    pal.set_palette([(i, i, i) for i in range(256)])
+    img = rb.as_rgba(pal)
+    assert img.get_bitsize() == 32
+    assert rb.smooth_scale(img, (20, 30)).get_size() == (20, 30)
+    assert rb.smooth_scale(pal, (20, 30)).get_size() == (20, 30)      # fallback path

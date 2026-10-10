@@ -220,3 +220,19 @@ def test_verified_and_tag_filters_accepted(api, busiest):
     junk = rommlib.junk_tags(tags)
     if junk:
         assert api.roms(platform_ids=[busiest["id"]], limit=1, exclude_tags=junk)["total"] <= total
+
+
+def test_manual_and_achievement_fields(api, busiest):
+    """Manuals come from RomM's assets via path_manual; achievements from
+    ra_id + merged_ra_metadata.achievements (count/points)."""
+    items = api.roms(platform_ids=[busiest["id"]], limit=200)["items"]
+    assert items and all({"has_manual", "path_manual", "ra_id"} <= set(r) for r in items)
+    withman = [r for r in items if rommlib.manual_path(r)]
+    if withman:
+        r = api.s.get(api.base + rommlib.manual_path(withman[0]), stream=True, timeout=30)
+        assert r.status_code == 200 and r.raw.read(4) == b"%PDF"
+        r.close()
+    for r in items:
+        if r.get("ra_id") and r.get("merged_ra_metadata"):
+            ach = r["merged_ra_metadata"].get("achievements")
+            assert ach is None or isinstance(ach, list)

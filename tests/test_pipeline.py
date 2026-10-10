@@ -183,3 +183,27 @@ def test_similar_and_filters_against_mock(isolated, mock_url):
     assert clean["total"] < total and not any(set(r["tags"]) & set(junk) for r in clean["items"])
     ver = api.roms(platform_ids=[pid], limit=1, verified=True)["total"]
     assert 0 < ver < total
+
+
+MULTIDISC_STEPS = (
+    "wait:3,act:ok,type:lorem odyssey,wait:2,act:start,wait:2,act:ok,wait:2,act:ok,wait:0.5,"
+    "act:select,wait:0.5,act:ok,wait:0.3,act:back,act:x,wait:0.3,act:x,wait:4,act:y,act:back,"
+    "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
+    "act:back,act:back,act:down,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
+    "act:down,act:ok,shot:end")
+
+
+def test_ui_multidisc_queue_and_audit(isolated, mock_url, tmp_path):
+    """Disc-set download menu -> queue options, pause/resume all, clear
+    finished -> On this box (set shown once) -> quick check -> settings rows."""
+    pytest.importorskip("pygame")
+    roms = isolated / "uiroms"
+    env = dict(os.environ, ROMM_URL=mock_url, ROMM_TOKEN="demo",
+               ROMM_BROWSER_DATA=str(isolated / "uidata"), ROMM_BROWSER_ROMS=str(roms),
+               SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    out = tmp_path / "shots"
+    out.mkdir()
+    p = subprocess.run([sys.executable, os.path.join(APP, "tools", "shoot.py"), str(out), MULTIDISC_STEPS],
+                       env=env, capture_output=True, text=True, timeout=300)
+    assert p.returncode == 0 and "Traceback" not in p.stderr, p.stderr[-2000:]
+    assert sorted(n for n in os.listdir(roms / "psx") if n.endswith(".m3u")) == ["Lorem Odyssey (USA).m3u"]

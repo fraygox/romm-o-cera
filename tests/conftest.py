@@ -28,6 +28,15 @@ PATH_ATTRS = ("DATA_DIR", "ROMS_ROOT", "CONFIG_PATH", "STATE_PATH", "GAMELIST_QU
               "CHD_QUEUE_DIR", "COVER_CACHE", "LOG_PATH")
 
 
+@pytest.fixture(autouse=True)
+def _stop_workers():
+    """Each test's download workers stop before the next test starts (they'd
+    otherwise keep writing into whatever paths the next test patches in)."""
+    yield
+    while rommlib.Downloader.instances:
+        rommlib.Downloader.instances.pop().close()
+
+
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
     """Point every rommlib path at a fresh temp tree (data dir NOT created,

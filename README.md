@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.4.0).** It works on the author's box every day, but it
+**Early software (v0.6.0).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -33,15 +33,31 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   checksum-verified dumps, pick several games, or download a whole list (up to
   1,000). Bulk downloads estimate the space they'll need once extracted and
   offer to download only what fits.
-- **Update notice**: once a day it asks GitHub whether a newer release exists
-  and says so in Settings (turn off with `"check_updates": false`).
+- **Updates from the box**: Settings → Updates checks GitHub, then downloads,
+  verifies and installs a new release in place, keeping the previous version
+  for one-step rollback. A daily check flags new releases (turn off with
+  `"check_updates": false`).
 - **On this box**: everything RomM Browser installed, biggest first, with
   delete. Any game marked ✓ (including ones you copied over before) can be
   deleted from its list; saves and states are always kept.
 - **BIOS from RomM**: in a platform's list menu, fetch the BIOS files Batocera
   wants for that system that your RomM has — matched and verified by checksum.
-- **Downloads** are resumable and size-checked, and **keep going after you
-  exit** (and while you play); the next launch picks the queue back up.
+- **Multi-disc games** download as a set: one entry in EmulationStation (an
+  `.m3u` playlist, the single discs hidden), and the discs you already have
+  are reused. "Only this disc" is there too.
+- **Downloads** are resumable and **checked against RomM's checksums** (zips
+  member by member), retried on network errors, and **keep going after you
+  exit** (and while you play — optionally speed-capped), with a popup in
+  EmulationStation when they're done. In Downloads: reorder, pause, cancel,
+  pause/resume everything, clear finished.
+- **Other versions**: the detail panel tells you when another region or
+  revision of the game is already on the box.
+- **Manuals and achievements**: a game's manual (PDF) comes along from RomM
+  and opens from the game's menu in EmulationStation; the detail panel shows
+  how many RetroAchievements it has.
+- **Sounds**: soft clicks and chimes while you browse (Settings: on, quiet, off).
+- **Check games** (On this box → X): finds missing tracks, damaged zips and
+  files that don't match RomM, and downloads damaged ones again.
 - **Post-processing**: cartridge zips stay zipped when the system reads them,
   disc archives are extracted, and disc games can be **CHD-compressed in the
   background** while nothing is running (verified before anything is deleted).
@@ -78,6 +94,14 @@ Pick one:
 - **From a clone** (developers): `ROMM_URL=… ROMM_TOKEN=… ./deploy.sh <box-ip>`
   also writes the config for you.
 
+### Updating
+
+On the box: **Settings → Updates**. It downloads the latest release from
+GitHub, checks it against the release's SHA256SUMS, confirms every file stays
+inside the app folder and compiles, then swaps it in and keeps the previous
+version ("Go back to the previous version" appears below Updates). Re-running
+the install one-liner works too. Your config, queue and logs are never touched.
+
 ### 3. First launch
 
 On the box: **Main Menu → Game Settings → Update Gamelists**, then open
@@ -103,6 +127,10 @@ On the box: **Main Menu → Game Settings → Update Gamelists**, then open
 | `check_updates` | `true` | daily check of GitHub for a newer release (sends no data beyond the request) |
 | `chd` | `true` | background CHD compression of extracted disc games |
 | `background_downloads` | `true` | keep downloading after the app exits |
+| `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
+| `notify` | `true` | EmulationStation popup when background downloads finish or fail |
+| `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
+| `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
 
 The app also reads `ROMM_URL`, `ROMM_TOKEN` and `ROMM_VERIFY_TLS` from its

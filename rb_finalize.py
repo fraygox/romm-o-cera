@@ -85,19 +85,53 @@ def primary_path(system, paths, es):
 
 
 def fetch_cover(api, url_path, dest):
+    return fetch_asset(api, url_path, dest, png=True)
+
+
+def fetch_asset(api, url_path, dest, png=False, limit=200 << 20):
     if not url_path or not url_path.startswith("/") or url_path.startswith("//"):
         return os.path.exists(dest)       # only server-relative paths (token-bearing session)
     if os.path.exists(dest):
         return True
+    if api is None:
+        return False
     try:
-        r = api.s.get(api.base + url_path, timeout=20)
-        if r.status_code == 200 and r.content:
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            rommlib.write_png(r.content, dest)
-            return True
+        r = api.s.get(api.base + url_path, timeout=60, stream=True)
+        if r.status_code != 200:
+            return False
+        data = r.raw.read(limit + 1, decode_content=True)
+        if not data or len(data) > limit:
+            return False
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if png:
+            rommlib.write_png(data, dest)
+        else:
+            if not data.startswith(b"%PDF"):
+                return False
+            with open(dest + ".tmp", "wb") as f:
+                f.write(data)
+            os.replace(dest + ".tmp", dest)
+        return True
     except Exception:
         pass
     return False
+
+
+MEDIA_DIRS = ("images", "manuals")
+
+
+def drop_media(sysdir, g):
+    """Files a removed entry pointed at in images/ or manuals/ (ours)."""
+    for tag in ("image", "manual", "thumbnail"):
+        v = g.findtext(tag)
+        if not v:
+            continue
+        p = os.path.normpath(os.path.join(sysdir, v))
+        if any(p.startswith(os.path.join(sysdir, d) + os.sep) for d in MEDIA_DIRS) and os.path.isfile(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 def set_text(game, tag, value):
@@ -124,9 +158,19 @@ def merge(entries, api, es):
     renames = {}
     for e in entries:
         renames.update(e.get("rename") or {})
+
+    def route(p):
+        if p in renames:
+            return renames[p]
+        for old, new in renames.items():         # a file inside a converted game folder
+            if p.startswith(old.rstrip("/") + "/"):
+                return new
+        return p
     for e in entries:
         if "paths" in e:
-            e["paths"] = [renames.get(p, p) for p in e["paths"]]
+            e["paths"] = list(dict.fromkeys(route(p) for p in e["paths"]))
+        if "hide" in e and "rename" not in e:
+            e["hide"] = list(dict.fromkeys(route(p) for p in e["hide"]))
     by_sys = {}
     for e in entries:
         by_sys.setdefault(e["system"], []).append(e)
@@ -142,8 +186,19 @@ def merge(entries, api, es):
                     r = rel(sysdir, old)
                     for p, g in list(index.items()):
                         if p and (p == r or p.startswith(r.rstrip("/") + "/")):
+                            drop_media(sysdir, g)
                             root.remove(g)
                             index.pop(p)
+                continue
+            if "hide" in e and "rename" not in e:      # discs grouped under an .m3u
+                for h in e["hide"]:
+                    hr = rel(sysdir, h)
+                    g = index.get(hr)
+                    if g is None:
+                        g = ET.SubElement(root, "game")
+                        set_text(g, "path", hr)
+                        index[hr] = g
+                    set_text(g, "hidden", "true")
                 continue
             if "rename" in e:          # CHD worker: old path(s) -> new path
                 for old, new in e["rename"].items():
@@ -157,6 +212,8 @@ def merge(entries, api, es):
                                 # one entry per file, keep the richer one
                                 if len(list(g)) > len(list(keep)):
                                     keep, g = g, keep
+                                if g.findtext("hidden") == "true":
+                                    set_text(keep, "hidden", "true")   # a disc under an .m3u stays hidden
                                 root.remove(g)
                                 g = keep
                             g.find("path").text = new_rel
@@ -170,7 +227,8 @@ def merge(entries, api, es):
                     set_text(g, "hidden", "true")
                     index[hr] = g
                 continue
-            prim = primary_path(system, e["paths"], es)
+            prim = (e["paths"][0] if len(e["paths"]) == 1 and e["paths"][0].lower().endswith(".m3u")
+                    else rommlib.primary_path(system, e["paths"], es))
             if not prim:
                 continue
             p = rel(sysdir, prim)
@@ -199,6 +257,10 @@ def merge(entries, api, es):
                 set_text(g, "image", rel(sysdir, img))
             elif g.find("image") is None and fetch_cover(api, e.get("cover"), img):
                 set_text(g, "image", rel(sysdir, img))
+            if e.get("manual") and g.find("manual") is None:
+                man = os.path.join(sysdir, "manuals", stem + "-manual.pdf")
+                if fetch_asset(api, e["manual"], man):
+                    set_text(g, "manual", rel(sysdir, man))
         if os.path.exists(gl_path):
             bak = gl_path + ".bak-rommbrowser"
             if not os.path.exists(bak):

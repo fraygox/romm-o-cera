@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.4.0"
+VERSION = "0.6.0"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")
@@ -91,11 +91,48 @@ DEFAULT_CONFIG = {
     "check_updates": True,     # once a day, ask GitHub if a newer release exists
     "chd": True,               # background CHD conversion of extracted disc games
     "background_downloads": True,  # keep downloading after the app exits
+    "speed_while_playing": 0,  # MB/s cap for background downloads while a game runs (0 = no cap)
+    "notify": True,            # EmulationStation popup when background downloads finish/fail
+    "manuals": True,           # fetch the game's manual (PDF) from RomM for ES's manual viewer
+    "sounds": "normal",        # UI sounds: normal | quiet | off
     "platform_map": {},        # per-slug overrides of PLATFORM_MAP (null hides)
 }
 # Environment overrides (handy for testing / other launchers); config.json wins
 # for anything the Settings screen saves, env wins over both when set.
 ENV_OVERRIDES = {"ROMM_URL": "url", "ROMM_TOKEN": "token", "ROMM_VERIFY_TLS": "verify_tls"}
+
+
+ES_API = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")
+
+
+def es_running_game():
+    """Path of the game ES is running ('' when idle or only this app runs);
+    None when ES can't be asked."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(ES_API + "/runningGame", timeout=5) as r:
+            status, body = r.status, r.read()
+    except Exception:
+        return None
+    if status != 200 or not body.strip():
+        return ""
+    try:
+        path = json.loads(body).get("path") or ""
+    except (ValueError, AttributeError):
+        return ""
+    return "" if path.endswith("rommbrowser.pygame") else path
+
+
+def es_notify(msg):
+    """Show a popup in EmulationStation (Batocera's ES API). Best effort."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(ES_API + "/notify", data=msg.encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "text/plain; charset=utf-8"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status < 300
+    except Exception:
+        return False
 
 
 def log(msg):
@@ -412,6 +449,144 @@ def newer_release(cfg, force=False):
     return latest if _vtuple(latest) > _vtuple(VERSION) else None
 
 
+# ----------------------------------------------------------- self-update
+# Manual, from GitHub releases only: the release zip must match the release's
+# SHA256SUMS, contain only rommbrowser/…, compile, and carry the version its tag
+# names. It is staged next to the app and swapped in with two renames; the
+# previous version is kept for one-step rollback. The RomM token is never sent
+# (plain requests, not the RomM session). SHA256SUMS comes from the same
+# release, so it guards against corruption, not against a compromised repo.
+GITHUB_API = os.environ.get("ROMM_BROWSER_GITHUB_API", "https://api.github.com")
+APP_STAGING = os.path.join(DATA_DIR, "app-staging")
+APP_BACKUP = os.path.join(DATA_DIR, "app-backup")     # outside roms/: ES must not list it
+MAX_RELEASE_BYTES = 40 << 20
+
+
+class UpdateError(Exception):
+    pass
+
+
+def _gh_get(url, **kw):
+    kw.setdefault("timeout", 20)
+    headers = {"User-Agent": UA, "Accept": "application/vnd.github+json"}
+    try:
+        r = requests.get(url, headers=headers, **kw)
+    except requests.RequestException as e:
+        raise UpdateError("Can't reach GitHub (%s)" % e.__class__.__name__) from None
+    if r.status_code != 200:
+        raise UpdateError("GitHub answered HTTP %d" % r.status_code)
+    return r
+
+
+def release_info(tag=None):
+    """{"tag", "zip", "sums"} for the latest (or a given) release."""
+    path = "releases/tags/%s" % tag if tag else "releases/latest"
+    data = _gh_get("%s/repos/%s/%s" % (GITHUB_API, UPDATE_REPO, path)).json()
+    assets = {a.get("name"): a.get("browser_download_url") for a in data.get("assets") or []}
+    if not assets.get("romm-o-cera.zip") or not assets.get("SHA256SUMS"):
+        raise UpdateError("Release %s has no romm-o-cera.zip / SHA256SUMS" % data.get("tag_name"))
+    return {"tag": data.get("tag_name") or "", "zip": assets["romm-o-cera.zip"],
+            "sums": assets["SHA256SUMS"]}
+
+
+def _version_in(app_dir):
+    try:
+        with open(os.path.join(app_dir, "rommlib.py")) as f:
+            m = re.search(r'^VERSION = "([^"]+)"', f.read(), re.M)
+        return m.group(1) if m else None
+    except OSError:
+        return None
+
+
+def stage_release(info, staging=APP_STAGING):
+    """Download, verify and unpack a release into staging; returns the staged
+    app folder. Raises UpdateError and leaves nothing behind on any problem."""
+    import hashlib
+    import io
+    sums = _gh_get(info["sums"]).text
+    want = None
+    for ln in sums.splitlines():
+        parts = ln.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == "romm-o-cera.zip":
+            want = parts[0].lower()
+    if not want:
+        raise UpdateError("SHA256SUMS doesn't list romm-o-cera.zip")
+    r = _gh_get(info["zip"], stream=True)
+    buf = io.BytesIO()
+    for chunk in r.iter_content(1 << 16):
+        buf.write(chunk)
+        if buf.tell() > MAX_RELEASE_BYTES:
+            raise UpdateError("Release zip is unexpectedly large")
+    data = buf.getvalue()
+    if hashlib.sha256(data).hexdigest() != want:
+        raise UpdateError("Checksum mismatch — download corrupted, nothing changed")
+    shutil.rmtree(staging, ignore_errors=True)
+    os.makedirs(staging)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for n in z.namelist():
+                parts = n.replace("\\", "/").split("/")
+                if n.startswith("/") or ".." in parts or parts[0] != "rommbrowser":
+                    raise UpdateError("Unexpected path in release: %s" % n)
+            z.extractall(staging)
+        app = os.path.join(staging, "rommbrowser")
+        for need in ("rommbrowser.pygame", "rommlib.py"):
+            if not os.path.isfile(os.path.join(app, need)):
+                raise UpdateError("Release is missing %s" % need)
+        for fn in os.listdir(app):
+            if fn.endswith((".py", ".pygame")):
+                with open(os.path.join(app, fn), encoding="utf-8") as f:
+                    compile(f.read(), fn, "exec")
+        ver = _version_in(app)
+        if not ver or _vtuple(ver) != _vtuple(info["tag"]):
+            raise UpdateError("Release %s contains version %s" % (info["tag"], ver))
+        return app
+    except UpdateError:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    except (zipfile.BadZipFile, SyntaxError, OSError, UnicodeDecodeError) as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise UpdateError("Release failed checks (%s)" % e.__class__.__name__) from None
+
+
+def _move(src, dst):
+    try:
+        os.rename(src, dst)                 # atomic on the same filesystem
+    except OSError:
+        shutil.move(src, dst)
+
+
+def install_staged(staged_app, app_dir=APP_DIR, backup=APP_BACKUP):
+    """Swap the staged app in; the current one becomes the backup."""
+    shutil.rmtree(backup, ignore_errors=True)
+    _move(app_dir, backup)
+    try:
+        _move(staged_app, app_dir)
+    except Exception:
+        _move(backup, app_dir)              # put the old version back
+        raise
+    shutil.rmtree(os.path.dirname(staged_app), ignore_errors=True)
+    log("UPDATE installed %s (previous %s kept for rollback)" % (_version_in(app_dir), _version_in(backup)))
+    return _version_in(app_dir)
+
+
+def backup_version(backup=APP_BACKUP):
+    return _version_in(backup) if os.path.isdir(backup) else None
+
+
+def rollback(app_dir=APP_DIR, backup=APP_BACKUP):
+    """Swap app and backup (so a rollback can itself be undone)."""
+    if not os.path.isdir(backup):
+        raise UpdateError("No previous version to go back to")
+    tmp = backup + ".swap"
+    shutil.rmtree(tmp, ignore_errors=True)
+    _move(app_dir, tmp)
+    _move(backup, app_dir)
+    _move(tmp, backup)
+    log("ROLLBACK now %s (backup %s)" % (_version_in(app_dir), _version_in(backup)))
+    return _version_in(app_dir)
+
+
 # ------------------------------------------------------- installed tracking
 
 class Library:
@@ -420,14 +595,46 @@ class Library:
     filenames) also show as installed."""
 
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.installed = {}
         self._stems = {}
+        self._mtime = None
+        self._reload()
+
+    # installed.json is shared with rb_chd.py / rb_dl.py (other processes):
+    # every change is a read-modify-write under an flock, and reads pick up
+    # changes made elsewhere.
+    def _reload(self):
+        try:
+            mt = os.stat(STATE_PATH).st_mtime_ns
+        except OSError:
+            return
+        if mt == self._mtime:
+            return
         try:
             with open(STATE_PATH) as f:
-                self.installed = json.load(f)
+                data = json.load(f)
+            if isinstance(data, dict):
+                self.installed, self._mtime = data, mt
         except (OSError, ValueError):
             pass
+
+    def update(self, fn):
+        """Apply fn(installed) to the freshest installed.json and write it back."""
+        import fcntl
+        with self.lock:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(STATE_PATH + ".lock", "w") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)
+                self._mtime = None
+                self._reload()
+                out = fn(self.installed)
+                tmp = STATE_PATH + ".tmp.%d" % os.getpid()
+                with open(tmp, "w") as f:
+                    json.dump(self.installed, f, indent=1)
+                os.replace(tmp, STATE_PATH)
+                self._mtime = os.stat(STATE_PATH).st_mtime_ns
+            return out
 
     def _scan(self, system):
         stems = set()
@@ -443,6 +650,7 @@ class Library:
 
     def is_installed(self, rom, system):
         with self.lock:
+            self._reload()
             rec = self.installed.get(str(rom["id"]))
             if rec and any(os.path.exists(p) for p in rec.get("paths", [])):
                 return True
@@ -452,17 +660,82 @@ class Library:
         fs = (rom.get("fs_name") or "").lower()
         return fs in stems or (rom.get("fs_name_no_ext") or "").lower() in stems
 
-    def mark(self, rom, system, paths):
+    def mark(self, rom, system, paths, group=None, meta=None):
+        rec = {"system": system, "paths": list(paths), "name": rom.get("name"),
+               "fs_name": rom.get("fs_name"), "when": time.strftime("%Y-%m-%d %H:%M:%S")}
+        if group:
+            rec["group"] = group
+        if meta:
+            rec["meta"] = meta
+
+        def put(inst):
+            inst[str(rom["id"])] = rec
+        self.update(put)
+        self._stems.pop(system, None)
+
+    def group_for(self, rom_id):
         with self.lock:
-            self.installed[str(rom["id"])] = {
-                "system": system, "paths": paths, "name": rom.get("name"),
+            self._reload()
+        rec = self.installed.get(str(rom_id)) or {}
+        return rec.get("group")
+
+    def variants(self, rom, system):
+        """Other versions of this game on the box (different region/revision),
+        by filename: same title once every (...)/[...] tag is removed, but not
+        the rom itself nor another disc of the same set."""
+        mine = (rom.get("fs_name_no_ext") or "").lower()
+        title = strip_tags(mine)
+        dset = disc_info(rom.get("fs_name_no_ext") or "")
+        out = []
+        try:
+            names = sorted(os.listdir(os.path.join(ROMS_ROOT, system)))
+        except OSError:
+            return out
+        for n in names:
+            stem = os.path.splitext(n)[0] if not os.path.isdir(os.path.join(ROMS_ROOT, system, n)) else n
+            low = stem.lower()
+            if low == mine or n.lower().endswith((".m3u", ".xml", ".txt")) or strip_tags(low) != title:
+                continue
+            other = disc_info(stem)
+            if dset and other and other[0].lower() == dset[0].lower():
+                continue                               # another disc of the same set
+            out.append(n)
+        return out
+
+    def adopt(self, rom, system, group):
+        """A disc that is already on the box joins a set being downloaded:
+        record it (keeping an existing record's details) with the group."""
+        paths = [p for p in self.paths_for(rom, system) if not p.lower().endswith(".m3u")]
+        if not paths:
+            return False
+
+        def put(inst):
+            rec = inst.get(str(rom["id"])) or {
+                "system": system, "name": rom.get("name"), "fs_name": rom.get("fs_name"),
                 "when": time.strftime("%Y-%m-%d %H:%M:%S")}
-            self._stems.pop(system, None)
-            os.makedirs(DATA_DIR, exist_ok=True)
-            tmp = STATE_PATH + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(self.installed, f, indent=1)
-            os.replace(tmp, STATE_PATH)
+            rec["paths"] = list(dict.fromkeys([p for p in rec.get("paths", []) if os.path.exists(p)] + paths))
+            rec["group"] = group
+            rec.setdefault("meta", gamelist_entry(rom, system, paths))
+            inst[str(rom["id"])] = rec
+        self.update(put)
+        self._stems.pop(system, None)
+        return True
+
+    def rename_paths(self, rename, extra=()):
+        """A CHD conversion replaced files: point records at the new ones
+        (keeping their other paths, e.g. a set's .m3u)."""
+        def fix(inst):
+            for rec in inst.values():
+                ps = rec.get("paths", [])
+                if not any(p in rename for p in ps):
+                    continue
+                out = []
+                for p in ps:
+                    for q in ([rename[p]] + list(extra)) if p in rename else [p]:
+                        if q not in out:
+                            out.append(q)
+                rec["paths"] = out
+        self.update(fix)
 
     def rescan(self, system):
         with self.lock:
@@ -473,6 +746,8 @@ class Library:
         record, else a filename match in roms/<system>; an .m3u brings its
         discs. Only ever paths inside roms/<system>."""
         sysdir = os.path.join(ROMS_ROOT, system)
+        with self.lock:
+            self._reload()
         rec = self.installed.get(str(rom["id"])) or {}
         out = [p for p in rec.get("paths", []) if os.path.exists(p)]
         if not out:
@@ -493,6 +768,19 @@ class Library:
                             out.append(q)
         return [p for p in out if _inside(p, sysdir)]
 
+    def uninstall_group(self, group, system):
+        """Delete every disc of a set (and its .m3u)."""
+        freed, paths = 0, []
+        with self.lock:
+            self._reload()
+        for rid in group.get("rom_ids", []):
+            rec = self.installed.get(str(rid)) or {}
+            p, f = self.uninstall({"id": rid, "name": rec.get("name"), "fs_name": rec.get("fs_name"),
+                                   "fs_name_no_ext": os.path.splitext(rec.get("fs_name") or "")[0]}, system)
+            paths += p
+            freed += f
+        return paths, freed
+
     def uninstall(self, rom, system):
         """Delete the rom's files (never saves/states, never outside
         roms/<system>) and queue its gamelist entries for removal."""
@@ -507,14 +795,8 @@ class Library:
                 shutil.rmtree(p)
             elif os.path.lexists(p):
                 os.remove(p)
-        with self.lock:
-            self.installed.pop(str(rom["id"]), None)
-            self._stems.pop(system, None)
-            os.makedirs(DATA_DIR, exist_ok=True)
-            tmp = STATE_PATH + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(self.installed, f, indent=1)
-            os.replace(tmp, STATE_PATH)
+        self.update(lambda inst: inst.pop(str(rom["id"]), None))
+        self._stems.pop(system, None)
         if paths:
             with open(GAMELIST_QUEUE, "a") as f:
                 f.write(json.dumps({"system": system, "remove": paths}) + "\n")
@@ -540,6 +822,296 @@ def path_size(p):
             except OSError:
                 pass
     return tot
+
+
+# ----------------------------------------------------------- multi-disc
+
+DISC_RE = re.compile(r"\s*\((?:Disc|Disk|CD|DVD)\s*([0-9]{1,2}|[A-H])(?:\s*of\s*[0-9]{1,2})?\)", re.I)
+
+
+def disc_info(name):
+    """("Base Name (USA)", n) for "Base Name (USA) (Disc 2)"; None when not a disc."""
+    m = DISC_RE.search(name or "")
+    if not m:
+        return None
+    v = m.group(1)
+    n = int(v) if v.isdigit() else ord(v.upper()) - ord("A") + 1
+    base = (name[:m.start()] + name[m.end():]).strip()
+    return re.sub(r"\s{2,}", " ", base), n
+
+
+def strip_tags(name):
+    return re.sub(r"\s*[\(\[][^\)\]]*[\)\]]", "", name or "").strip().lower()
+
+
+def find_disc_set(api, rom):
+    """Every disc of the set `rom` belongs to, in disc order: [(n, rom)].
+    Candidates come from RomM's siblings and a title search on the same
+    platform; only names that match exactly apart from the disc tag count
+    (so other regions, revisions and unrelated "siblings" are excluded).
+    Returns (discs, missing_numbers) or (None, None) if `rom` isn't a disc."""
+    me = disc_info(rom.get("fs_name_no_ext") or "")
+    if not me:
+        return None, None
+    base = me[0].lower()
+    pid = rom.get("platform_id")
+    cands = {rom["id"]: rom}
+    title = strip_tags(me[0]) or me[0]
+    try:
+        for r in api.roms(platform_ids=[pid], search=title, limit=250).get("items", []):
+            cands.setdefault(r["id"], r)
+    except RommError:
+        pass
+    try:
+        for sib in (api.rom(rom["id"]).get("sibling_roms") or []):
+            if sib.get("id") not in cands:
+                d = disc_info(sib.get("fs_name_no_ext") or "")
+                if d and d[0].lower() == base:
+                    cands[sib["id"]] = api.rom(sib["id"])
+    except RommError:
+        pass
+    # The same set is sometimes in RomM twice ("Disc 01" and "Disc 1"): prefer
+    # the copies tagged in the same style as the disc picked, never mix them.
+    style = DISC_RE.search(rom.get("fs_name_no_ext") or "").group(0).strip().lower()
+    discs = {}
+    for r in sorted(cands.values(), key=lambda r: r["id"]):
+        name = r.get("fs_name_no_ext") or ""
+        d = disc_info(name)
+        if not d or d[0].lower() != base or r.get("platform_id") != pid:
+            continue
+        same_style = DISC_RE.search(name).group(0).strip().lower().replace(str(d[1]), "#") == \
+            style.replace(str(me[1]), "#")
+        if d[1] not in discs or (same_style and not discs[d[1]][1]):
+            discs[d[1]] = (r, same_style)
+    discs = {n: v[0] for n, v in discs.items()}
+    discs[me[1]] = rom                                # always the one actually picked
+    ordered = sorted(discs.items())
+    first = 0 if 0 in discs else 1                    # some sets have a "Disc 0" (e.g. Enemy Zero)
+    missing = [n for n in range(first, max(discs) + 1) if n not in discs]
+    return ordered, missing
+
+
+def disc_group(platform_slug, discs, title=None):
+    """The group record a disc set's jobs share."""
+    base = disc_info(discs[0][1].get("fs_name_no_ext") or "")[0]
+    return {"id": "%s:%s" % (platform_slug, base.lower()), "base": base,
+            "title": title or re.sub(r"\s*[\(\[].*$", "", base) or base,
+            "rom_ids": [r["id"] for _, r in discs]}
+
+
+PRIMARY_ORDER = [".m3u", ".chd", ".gdi", ".cue", ".cdi", ".iso", ".rvz"]
+
+
+def primary_path(system, paths, es):
+    """The one file ES lists for a rom made of `paths` (files or folders)."""
+    exts = es.get(system)
+    cands = []
+    for p in paths:
+        if os.path.isdir(p):
+            for dp, _, fns in os.walk(p):
+                cands += [os.path.join(dp, f) for f in fns]
+        elif os.path.exists(p):
+            cands.append(p)
+    if exts is not None:
+        cands = [c for c in cands if os.path.splitext(c)[1].lower() in exts]
+    cands = [c for c in cands if not c.lower().endswith(".m3u")] or cands
+    if not cands:
+        return None
+
+    def key(c):
+        e = os.path.splitext(c)[1].lower()
+        return (PRIMARY_ORDER.index(e) if e in PRIMARY_ORDER else 99, len(c))
+    return sorted(cands, key=key)[0]
+
+
+# ----------------------------------------------------------- audit
+
+AUDIT_SKIP = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"}
+
+
+def sheet_sources(sheet):
+    """Track files a .cue/.gdi references (paths)."""
+    d = os.path.dirname(sheet)
+    out = []
+    try:
+        with open(sheet, errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return out
+    if sheet.lower().endswith(".cue"):
+        out = [os.path.join(d, m.group(1)) for m in re.finditer(r'FILE\s+"([^"]+)"', text, re.I)]
+    else:
+        for line in text.splitlines()[1:]:
+            m = re.match(r'\s*\d+\s+\d+\s+\d+\s+\d+\s+("([^"]+)"|(\S+))', line)
+            if m:
+                out.append(os.path.join(d, m.group(2) or m.group(3)))
+    return out
+
+
+def _sheets_in(path):
+    if os.path.isfile(path):
+        return [path] if path.lower().endswith((".cue", ".gdi")) else []
+    out = []
+    for dp, dns, fns in os.walk(path):
+        dns[:] = [x for x in dns if x not in AUDIT_SKIP]
+        out += [os.path.join(dp, f) for f in fns if f.lower().endswith((".cue", ".gdi"))]
+    return out
+
+
+def _slim(rom):
+    return {k: rom.get(k) for k in ("id", "name", "fs_name", "fs_name_no_ext", "platform_id")}
+
+
+def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdman="chdman"):
+    """Check games on the box against RomM. Quick: missing files and sizes.
+    deep: also checksums and `chdman verify`. Returns (findings, stats).
+    A finding: {"system", "path", "problem", "severity", "rom" (or None)};
+    severity "damaged" (unplayable/corrupt) or "differs" (not RomM's copy:
+    another dump, a trimmed image… — may well play)."""
+    findings, stats = [], {"checked": 0, "matched": 0, "unmatched": 0}
+
+    def add(system, path, problem, rom=None, severity="damaged"):
+        findings.append({"system": system, "path": path, "problem": problem,
+                         "severity": severity, "rom": _slim(rom) if rom else None})
+
+    def members_of(files):
+        return {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])}
+
+    def check_zip(system, path, files, rom):
+        """A zip kept as-is: judge the ROM inside, not the container (the same
+        ROM zips to different sizes)."""
+        try:
+            with zipfile.ZipFile(path) as z:
+                local = {i.filename.lower(): i for i in z.infolist() if not i.is_dir()}
+                if deep and z.testzip() is not None:
+                    add(system, path, "Damaged zip (a file inside fails its CRC)", rom)
+                    return
+        except (zipfile.BadZipFile, OSError):
+            add(system, path, "Damaged zip (can't be opened)", rom)
+            return
+        want = members_of(files)
+        if not want:                                # RomM didn't record the contents
+            if files and files[0].get("file_size_bytes") and \
+                    os.path.getsize(path) != files[0]["file_size_bytes"]:
+                add(system, path, "Differs from RomM's copy (size)", rom, "differs")
+            return
+        for name, m in want.items():
+            i = local.get(name)
+            if i is None:
+                add(system, path, "Missing inside the zip: %s" % m["name"], rom)
+            elif m.get("crc_hash") and ("%08x" % i.CRC) != m["crc_hash"].lower().zfill(8):
+                add(system, path, "Different ROM than RomM's copy (%s)" % m["name"], rom, "differs")
+
+    for system in sorted(platforms_by_system):
+        sysdir = os.path.join(ROMS_ROOT, system)
+        if not os.path.isdir(sysdir):
+            continue
+        index = {}
+        for pid in platforms_by_system[system]:
+            off = 0
+            while True:
+                page = api.roms(platform_ids=[pid], offset=off, limit=500)
+                for r in page.get("items", []):
+                    index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
+                    index.setdefault((r.get("fs_name") or "").lower(), r)
+                off += len(page.get("items", []))
+                if not page.get("items") or off >= page.get("total", 0):
+                    break
+        for n in sorted(os.listdir(sysdir)):
+            if cancel is not None and cancel.is_set():
+                return findings, stats
+            path = os.path.join(sysdir, n)
+            low = n.lower()
+            if n.startswith(".") or n in AUDIT_SKIP or low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd")):
+                continue
+            if progress:
+                progress(system, n)
+            stats["checked"] += 1
+            # 1) disc sheets must find every track (needs no RomM at all)
+            for sheet in _sheets_in(path):
+                for ref in sheet_sources(sheet):
+                    if not os.path.exists(ref):
+                        add(system, sheet, "Missing track file: %s" % os.path.basename(ref),
+                            index.get(os.path.splitext(n)[0].lower()) or index.get(low))
+            # 2) against RomM's record of the game
+            stem = n if os.path.isdir(path) else os.path.splitext(n)[0]
+            rom = index.get(low) or index.get(stem.lower())
+            if not rom:
+                stats["unmatched"] += 1
+                continue
+            stats["matched"] += 1
+            if os.path.isfile(path) and low.endswith(".chd") and \
+                    not (rom.get("fs_name") or "").lower().endswith(".chd"):
+                if deep:                                   # converted here: chdman checks itself
+                    p = subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", path],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                    if p.returncode != 0:
+                        add(system, path, "CHD failed chdman verify", rom)
+                continue
+            try:
+                detail = api.rom(rom["id"])
+            except RommError as e:
+                add(system, path, "Couldn't fetch RomM record (%s)" % e, None)
+                continue
+            files = [f for f in (detail.get("files") or []) if f.get("category") in (None, "game")]
+            if os.path.isfile(path):
+                if len(files) == 1 and files[0]["file_name"].lower() == low and low.endswith(".zip"):
+                    check_zip(system, path, files, rom)
+                    continue
+                if len(files) == 1 and files[0]["file_name"].lower() == low:
+                    want = [(path, files[0])]               # same file as RomM (iso, chd…)
+                else:
+                    members = {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])}
+                    m = members.get(low)
+                    want = [(path, {"file_size_bytes": m["size"], "sha1_hash": m.get("sha1_hash"),
+                                    "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})] if m else []
+            else:
+                if detail.get("has_multiple_files") or detail.get("has_nested_single_file"):
+                    prefix = (detail.get("full_path") or "").rstrip("/") + "/"
+                    want = []
+                    for f in files:
+                        rel = f.get("full_path", "")
+                        rel = rel[len(prefix):] if rel.startswith(prefix) else f["file_name"]
+                        want.append((os.path.join(path, *rel.split("/")), f))
+                else:
+                    want = [(os.path.join(path, *m["name"].split("/")),
+                             {"file_size_bytes": m["size"], "sha1_hash": m.get("sha1_hash"),
+                              "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})
+                            for f in files for m in (f.get("archive_members") or [])]
+                # a disc folder later turned into <folder>.chd keeps nothing to compare
+            # discs converted to CHD on the box: the tracks are gone on purpose
+            chds = {os.path.splitext(x)[0].lower(): os.path.join(path, x)
+                    for x in (os.listdir(path) if os.path.isdir(path) else []) if x.lower().endswith(".chd")}
+            converted = set()
+            for fp, f in want:
+                st = os.path.splitext(os.path.basename(fp))[0].lower()
+                st = re.sub(r"\s*\(track \d+\)$", "", st)
+                if not os.path.exists(fp) and st in chds:
+                    converted.add(chds[st])
+            for c in converted:
+                if deep and subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", c],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+                    add(system, c, "CHD failed chdman verify", rom)
+            for fp, f in want:
+                if cancel is not None and cancel.is_set():
+                    return findings, stats
+                st = re.sub(r"\s*\(track \d+\)$", "", os.path.splitext(os.path.basename(fp))[0].lower())
+                if not os.path.exists(fp):
+                    if st not in chds:
+                        add(system, fp, "Missing file: %s" % os.path.basename(fp), rom)
+                elif f.get("file_size_bytes") and os.path.getsize(fp) != f["file_size_bytes"]:
+                    small = os.path.getsize(fp) < f["file_size_bytes"]
+                    # a smaller .iso is usually a trimmed image (plays); a short
+                    # track or cart file is a broken copy
+                    trimmed = small and fp.lower().endswith((".iso", ".xiso"))
+                    add(system, fp, "%s than RomM's copy: %s vs %s%s" % (
+                        "Smaller" if small else "Bigger", human_size(os.path.getsize(fp)),
+                        human_size(f["file_size_bytes"]),
+                        " (trimmed or incomplete)" if trimmed else " (incomplete)" if small else ""),
+                        rom, "differs" if (trimmed or not small) else "damaged")
+                elif deep and file_hash_ok(fp, f)[0] is False:
+                    add(system, fp, "Checksum doesn't match RomM", rom)
+    return findings, stats
 
 
 # ----------------------------------------------------------- BIOS
@@ -644,18 +1216,22 @@ def fetch_bios(api, offers):
 # ----------------------------------------------------------- downloads
 
 class Job:
-    QUEUED, DOWNLOADING, EXTRACTING, DONE, FAILED, CANCELLED, PAUSED = (
-        "Queued", "Downloading", "Extracting", "Done", "Failed", "Cancelled", "Paused")
+    QUEUED, DOWNLOADING, VERIFYING, EXTRACTING, DONE, FAILED, CANCELLED, PAUSED = (
+        "Queued", "Downloading", "Verifying", "Extracting", "Done", "Failed", "Cancelled", "Paused")
 
-    def __init__(self, rom, system):
+    def __init__(self, rom, system, group=None):
         self.rom = rom
         self.system = system
+        self.group = group            # multi-disc set: {"id", "base", "rom_ids"}
         self.state = Job.QUEUED
         self.done_bytes = 0
         self.total_bytes = rom.get("fs_size_bytes") or 0
         self.speed = 0.0
         self.message = ""
         self.chd_queued = False
+        self.verified = None          # True once every file matched RomM's checksum
+        self.attempts = 0
+        self.retry_at = 0.0
         self.pause = False            # cancel, but keep it in the saved queue
         self.cancel = threading.Event()
 
@@ -664,16 +1240,104 @@ class Job:
         return self.rom.get("name") or self.rom.get("fs_name_no_ext") or "?"
 
     @property
+    def label(self):
+        """Name plus "Disc n" for a disc of a set (RomM often names every
+        disc of a game the same)."""
+        d = disc_info(self.rom.get("fs_name_no_ext") or "") if self.group else None
+        if d and not disc_info(self.name):
+            return "%s (Disc %d)" % (self.name, d[1])
+        return self.name
+
+    @property
     def active(self):
-        return self.state in (Job.QUEUED, Job.DOWNLOADING, Job.EXTRACTING)
+        return self.state in (Job.QUEUED, Job.DOWNLOADING, Job.VERIFYING, Job.EXTRACTING)
+
+    def requeue(self):
+        self.state, self.message, self.pause = Job.QUEUED, "", False
+        self.cancel = threading.Event()
+        self.done_bytes, self.speed, self.attempts, self.retry_at = 0, 0.0, 0, 0.0
 
 
 class Cancelled(Exception):
     pass
 
 
+class NetError(RommError):
+    """Transient: worth retrying (connection drop, timeout, 5xx/429)."""
+
+
+class ChecksumError(RommError):
+    """The file arrived but doesn't match RomM's checksum."""
+
+
+RETRY_DELAYS = (15, 60, 180)        # seconds before attempts 2, 3, 4
+
+
+# RomM hashes an archive by what's inside it (a zip's crc/md5/sha1 are its
+# member's), so these never match the file itself; zips are checked member by
+# member instead, the rest by size only.
+CONTENT_HASHED = (".zip", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz")
+
+
+def zip_matches(path, members):
+    """(True|False, "zip"): every RomM archive member is in the zip with the
+    same size and CRC, and the data inside passes its CRCs (testzip)."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            infos = [i for i in z.infolist() if not i.is_dir()]
+            by_name = {i.filename.lower(): i for i in infos}
+            by_base = {os.path.basename(i.filename).lower(): i for i in infos}
+            for m in members:
+                n = (m.get("name") or "").lower()
+                i = by_name.get(n) or by_base.get(os.path.basename(n))
+                if i is None:
+                    return False, "zip"
+                if m.get("size") is not None and i.file_size != m["size"]:
+                    return False, "zip"
+                if m.get("crc_hash") and ("%08x" % i.CRC) != m["crc_hash"].lower().zfill(8):
+                    return False, "zip"
+            if z.testzip() is not None:
+                return False, "zip"
+    except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, NotImplementedError):
+        return False, "zip"
+    return True, "zip"
+
+
+def file_hash_ok(path, f, name=None):
+    """(ok, algo) — compare a file with a RomM file record's checksums.
+    ok is None when RomM's record can't vouch for it (no hash, or an archive
+    type RomM hashes by content)."""
+    import hashlib
+    import zlib
+    f = f or {}
+    name = (name or f.get("file_name") or path).lower()
+    if name.endswith(".zip"):
+        members = f.get("archive_members") or []
+        return zip_matches(path, members) if members else (None, None)
+    if name.endswith(CONTENT_HASHED):
+        return None, None
+    for key, algo in (("sha1_hash", "sha1"), ("md5_hash", "md5"), ("crc_hash", "crc")):
+        want = f.get(key)
+        if not want:
+            continue
+        if algo == "crc":
+            c = 0
+            with open(path, "rb") as fh:
+                for b in iter(lambda: fh.read(1 << 22), b""):
+                    c = zlib.crc32(b, c)
+            return ("%08x" % c) == want.lower().zfill(8), algo
+        h = hashlib.new(algo)
+        with open(path, "rb") as fh:
+            for b in iter(lambda: fh.read(1 << 22), b""):
+                h.update(b)
+        return h.hexdigest() == want.lower(), algo
+    return None, None
+
+
 class Downloader:
-    """One worker thread; downloads are sequential (one at a time saturates a typical link)."""
+    """One worker thread; downloads are sequential (one at a time saturates a
+    typical link). The queue is the ordered list self.jobs: the worker takes
+    the first Queued job, so reordering the list reorders the queue."""
 
     SLIM_KEYS = ("id", "name", "fs_name", "fs_name_no_ext", "fs_size_bytes", "platform_id",
                  "platform_slug", "regions", "summary", "metadatum", "path_cover_small",
@@ -685,59 +1349,180 @@ class Downloader:
         self.cfg = cfg
         self.persist = persist
         self.qlock = threading.Lock()
+        self.cv = threading.Condition()
+        self.hold = False             # "Pause all": the worker starts nothing new
+        self.rate_limit = 0           # bytes/s, 0 = unlimited (rb_dl.py sets it while a game runs)
         self.es = load_es_systems()
         self.jobs = []
-        self.q = queue.Queue()
+        self._closed = False
+        Downloader.instances.append(self)
         self.t = threading.Thread(target=self._run, daemon=True)
         self.t.start()
 
-    def enqueue(self, rom, system):
-        for j in self.jobs:
-            if j.rom["id"] == rom["id"] and j.active:
-                return j
-        j = Job(rom, system)
-        self.jobs.append(j)
-        self.q.put(j)
+    instances = []
+
+    def close(self):
+        """Stop the worker (after its current job; used by tests)."""
+        self.pause_all()
+        with self.cv:
+            self._closed = True
+            self.cv.notify_all()
+        self.t.join(30)
+
+    # -- queue ------------------------------------------------------------
+    def enqueue(self, rom, system, group=None):
+        with self.cv:
+            for j in self.jobs:
+                if j.rom["id"] == rom["id"] and j.active:
+                    return j
+            for j in self.jobs:                      # re-use a paused/failed entry in place
+                if j.rom["id"] == rom["id"] and j.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
+                    j.requeue()
+                    j.group = group or j.group
+                    self.cv.notify_all()
+                    break
+            else:
+                j = Job(rom, system, group)
+                self.jobs.append(j)
+                self.cv.notify_all()
         self.save_queue()
         return j
+
+    def move(self, job, where):
+        """where: "top", "up" or "down" (among the jobs not yet finished)."""
+        with self.cv:
+            if job not in self.jobs:
+                return
+            i = self.jobs.index(job)
+            self.jobs.pop(i)
+            if where == "top":
+                first = next((k for k, j in enumerate(self.jobs) if j.state == Job.QUEUED), len(self.jobs))
+                self.jobs.insert(first, job)
+            elif where == "up":
+                self.jobs.insert(max(0, i - 1), job)
+            else:
+                self.jobs.insert(min(len(self.jobs), i + 1), job)
+        self.save_queue()
+
+    def hold_all(self):
+        """Pause the whole queue (the running transfer stops; its .part stays)."""
+        with self.cv:
+            self.hold = True
+            for j in self.jobs:
+                if j.state in (Job.DOWNLOADING, Job.VERIFYING, Job.EXTRACTING):
+                    j.pause = True
+                    j.cancel.set()
+        self.save_queue()
+
+    def release_all(self):
+        with self.cv:
+            self.hold = False
+            for j in self.jobs:
+                if j.state == Job.PAUSED:
+                    j.requeue()
+            self.cv.notify_all()
+        self.save_queue()
+
+    def pause_job(self, job):
+        """Pause one download (keeps its .part and its place in the queue)."""
+        with self.cv:
+            if job.state == Job.QUEUED:
+                job.state, job.message = Job.PAUSED, "Paused"
+            elif job.active:
+                job.pause = True
+                job.cancel.set()
+        self.save_queue()
+
+    def resume_job(self, job):
+        with self.cv:
+            if job.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
+                job.requeue()
+                self.cv.notify_all()
+        self.save_queue()
+
+    def cancel_job(self, job):
+        with self.cv:
+            if job.state in (Job.QUEUED, Job.PAUSED):
+                job.state, job.message = Job.CANCELLED, "Cancelled"
+            elif job.active:
+                job.pause = False
+                job.cancel.set()
+        self.save_queue()
+
+    def remove(self, job):
+        """Drop a finished/failed/cancelled/paused job from the list."""
+        with self.cv:
+            if job in self.jobs and not (job.active and job.state != Job.QUEUED):
+                if job.state == Job.QUEUED:
+                    job.state = Job.CANCELLED
+                self.jobs.remove(job)
+        self.save_queue()
+
+    def clear_finished(self):
+        with self.cv:
+            n = len(self.jobs)
+            self.jobs = [j for j in self.jobs if j.active or j.state == Job.PAUSED]
+            return n - len(self.jobs)
 
     # -- persistence: pending jobs survive exit, reboot, or a hand-over to rb_dl.py
     def save_queue(self):
         if not self.persist:
             return
+        try:
+            self._save_queue()
+        except OSError as e:          # e.g. disk full: never take the worker down
+            log("queue save failed: %r" % e)
+
+    def _save_queue(self):
         with self.qlock:
-            pend = [{"rom": {k: j.rom.get(k) for k in self.SLIM_KEYS}, "system": j.system}
-                    for j in self.jobs if j.state in (Job.QUEUED, Job.DOWNLOADING,
-                                                      Job.EXTRACTING, Job.PAUSED)]
+            pend = [{"rom": {k: j.rom.get(k) for k in self.SLIM_KEYS}, "system": j.system,
+                     "group": j.group}
+                    for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(DATA_DIR, exist_ok=True)
             tmp = QUEUE_PATH + ".tmp"
             with open(tmp, "w") as f:
-                json.dump(pend, f)
+                json.dump({"held": self.hold, "jobs": pend}, f)
             os.replace(tmp, QUEUE_PATH)
 
     @staticmethod
     def saved_queue():
         try:
             with open(QUEUE_PATH) as f:
-                return json.load(f)
+                data = json.load(f)
         except (OSError, ValueError):
             return []
+        return data.get("jobs", []) if isinstance(data, dict) else data   # old format: a list
+
+    @staticmethod
+    def saved_held():
+        try:
+            with open(QUEUE_PATH) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return False
+        return bool(isinstance(data, dict) and data.get("held"))
 
     def resume(self):
-        """Re-queue what a previous session (or rb_dl.py) left pending."""
+        """Re-queue what a previous session (or rb_dl.py) left pending; a queue
+        that was paused with "Pause all" stays paused."""
+        if self.saved_held():
+            with self.cv:
+                self.hold = True
         n = 0
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
-                self.enqueue(it["rom"], it["system"])
+                self.enqueue(it["rom"], it["system"], it.get("group"))
                 n += 1
         return n
 
     def pause_all(self):
         """Stop transfers but keep them queued (partials resume via Range)."""
-        for j in self.jobs:
+        for j in list(self.jobs):
             if j.active:
                 j.pause = True
                 j.cancel.set()
+        with self.cv:
+            self.cv.notify_all()
         self.save_queue()
 
     def pending_count(self):
@@ -752,18 +1537,48 @@ class Downloader:
     def active_count(self):
         return sum(1 for j in self.jobs if j.active)
 
+    # -- worker -------------------------------------------------------------
+    def _next(self):
+        with self.cv:
+            while True:
+                if self._closed:
+                    return None
+                now = time.time()
+                if not self.hold:
+                    for j in self.jobs:
+                        if j.state != Job.QUEUED:
+                            continue
+                        if j.cancel.is_set():
+                            j.state = Job.PAUSED if j.pause else Job.CANCELLED
+                            continue
+                        if j.retry_at > now:
+                            continue
+                        j.state = Job.DOWNLOADING
+                        return j
+                self.cv.wait(1.0)
+
     def _run(self):
         while True:
-            j = self.q.get()
-            if j.cancel.is_set():
-                j.state = Job.PAUSED if j.pause else Job.CANCELLED
-                self.save_queue()
-                continue
+            j = self._next()
+            if j is None:
+                return
+            self.save_queue()
             try:
                 self._process(j)
             except Cancelled:
                 j.state = Job.PAUSED if j.pause else Job.CANCELLED
                 j.message = "Paused" if j.pause else "Cancelled"
+            except (NetError, ChecksumError) as e:
+                j.attempts += 1
+                limit = 1 if isinstance(e, ChecksumError) else len(RETRY_DELAYS)
+                if j.attempts <= limit:
+                    delay = RETRY_DELAYS[j.attempts - 1]
+                    j.state, j.retry_at = Job.QUEUED, time.time() + delay
+                    j.message = "%s Retrying in %d s." % (e, delay)
+                    log("RETRY %s (%d): %s" % (j.name, j.attempts, e))
+                else:
+                    j.state, j.message = Job.FAILED, str(e)[:160]
+                    log("FAIL %s: %s" % (j.name, j.message))
             except Exception as e:  # keep the worker alive whatever happens
                 j.state = Job.FAILED
                 # our own errors are written to be shown; anything else could carry
@@ -771,11 +1586,17 @@ class Downloader:
                 j.message = (str(e) if isinstance(e, (RommError, OSError, zipfile.BadZipFile))
                              else "Error (%s)" % e.__class__.__name__)[:160]
                 log("FAIL %s: %s" % (j.name, j.message))
+            if j.state == Job.DONE and j.group:
+                try:
+                    self._finish_group(j.group, j.system)
+                except Exception as e:
+                    log("group %s: %r" % (j.group.get("base"), e))
             self.save_queue()
 
     # -- transfer ------------------------------------------------------
-    def _fetch(self, j, url_path, dest, size_hint):
-        """Resumable GET into dest (via dest.part). Updates j progress."""
+    def _fetch(self, j, url_path, dest, size_hint, record=None):
+        """Resumable GET into dest (via dest.part), then checksum against the
+        RomM file record. Updates j progress; honours self.rate_limit."""
         part = dest + ".part"
         have = os.path.getsize(part) if os.path.exists(part) else 0
         headers = {"Range": "bytes=%d-" % have} if have else {}
@@ -785,36 +1606,57 @@ class Downloader:
         except requests.exceptions.SSLError:
             raise RommError("TLS certificate rejected") from None
         except Exception as e:
-            raise RommError("Download failed (%s)" % e.__class__.__name__) from None
+            raise NetError("Download interrupted (%s)." % e.__class__.__name__) from None
         if r.status_code == 416:      # .part already complete (verified below)
             r.close()
-            if size_hint and os.path.getsize(part) != size_hint:
-                os.remove(part)
-                raise RommError("Partial file doesn't match the server's — retry")
-            os.replace(part, dest)
-            return
-        if r.status_code not in (200, 206):
+        elif r.status_code in (429, 500, 502, 503, 504):
+            raise NetError("RomM busy (HTTP %d)." % r.status_code)
+        elif r.status_code not in (200, 206):
             raise RommError("Download failed: HTTP %d" % r.status_code)
-        if r.status_code == 200:
-            have = 0
-        base = j.done_bytes
-        j.done_bytes = base + have
-        t0, b0 = time.time(), j.done_bytes
-        with open(part, "ab" if have else "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                if j.cancel.is_set():
-                    r.close()
-                    raise Cancelled()
-                f.write(chunk)
-                j.done_bytes += len(chunk)
-                dt = time.time() - t0
-                if dt >= 1.0:
-                    j.speed = (j.done_bytes - b0) / dt
-                    t0, b0 = time.time(), j.done_bytes
+        else:
+            if r.status_code == 200:
+                have = 0
+            j.done_bytes += have
+            t0, b0 = time.time(), j.done_bytes
+            lim_t0, lim_b = time.time(), 0
+            try:
+                with open(part, "ab" if have else "wb") as f:
+                    for chunk in r.iter_content(1 << 18):
+                        if j.cancel.is_set():
+                            r.close()
+                            raise Cancelled()
+                        f.write(chunk)
+                        j.done_bytes += len(chunk)
+                        dt = time.time() - t0
+                        if dt >= 1.0:
+                            j.speed = (j.done_bytes - b0) / dt
+                            t0, b0 = time.time(), j.done_bytes
+                        if self.rate_limit:
+                            lim_b += len(chunk)
+                            ahead = lim_b / self.rate_limit - (time.time() - lim_t0)
+                            if ahead > 0:
+                                time.sleep(min(ahead, 2.0))
+                        else:
+                            lim_t0, lim_b = time.time(), 0
+            except Cancelled:
+                raise
+            except Exception as e:
+                raise NetError("Download interrupted (%s)." % e.__class__.__name__) from None
         if size_hint and os.path.getsize(part) != size_hint:
             got = os.path.getsize(part)
-            os.remove(part)      # don't resume from a corrupt partial
-            raise RommError("Size mismatch (%d != %d bytes)" % (got, size_hint))
+            if got < size_hint and r.status_code != 416:
+                raise NetError("Download stopped early (%s of %s)." % (human_size(got), human_size(size_hint)))
+            os.remove(part)      # wrong size: don't resume from it
+            raise ChecksumError("Size mismatch (%d != %d bytes)." % (got, size_hint))
+        prev = j.state
+        j.state = Job.VERIFYING
+        ok, algo = file_hash_ok(part, record, name=dest)
+        j.state = prev
+        if ok is False:
+            os.remove(part)
+            raise ChecksumError(("Zip contents don't match RomM's" if algo == "zip" else
+                                 "Checksum (%s) doesn't match RomM" % algo) + " — got a damaged copy.")
+        j.verified = (j.verified is not False) and bool(ok)
         os.replace(part, dest)
 
     def _free_bytes(self, path):
@@ -825,14 +1667,20 @@ class Downloader:
         rom, system = j.rom, j.system
         sysdir = os.path.join(ROMS_ROOT, system)
         os.makedirs(sysdir, exist_ok=True)
-        detail = self.api.rom(rom["id"])
+        try:
+            detail = self.api.rom(rom["id"])
+        except RommError as e:
+            if "Can't reach" in str(e):
+                raise NetError(str(e) + ".") from None
+            raise
         j.rom = rom = dict(rom, **detail)
         files = [f for f in (detail.get("files") or [])
                  if f.get("category") in (None, "game")]
         j.total_bytes = sum(f.get("file_size_bytes") or 0 for f in files) or \
             detail.get("fs_size_bytes") or 0
+        j.done_bytes, j.verified = 0, None
         # extracted disc games are bigger than the zip; leave a margin
-        need = j.total_bytes * 3 + (2 << 30)
+        need = space_needed(detail, system) + SPACE_MARGIN
         if self._free_bytes(sysdir) < need:
             raise RommError("Not enough space (%s free, need ~%s)" % (
                 human_size(self._free_bytes(sysdir)), human_size(need)))
@@ -854,24 +1702,96 @@ class Downloader:
                 parts = [safe_name(p) for p in rel.split("/") if p not in ("", ".", "..")]
                 dest = os.path.join(folder, *parts)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                if os.path.exists(dest) and os.path.getsize(dest) == f.get("file_size_bytes"):
+                if os.path.exists(dest) and os.path.getsize(dest) == f.get("file_size_bytes") \
+                        and file_hash_ok(dest, f)[0] is not False:
                     j.done_bytes += f.get("file_size_bytes") or 0
                     continue
                 self._fetch(j, "/api/roms/%d/files/content/%s" % (
-                    f["id"], urllib.parse.quote(f["file_name"])), dest, f.get("file_size_bytes"))
+                    f["id"], urllib.parse.quote(f["file_name"])), dest, f.get("file_size_bytes"), f)
             results = self._postprocess_folder(j, folder)
         else:
             dest = os.path.join(sysdir, fs_name)
             self._fetch(j, "/api/roms/%d/content/%s" % (
-                rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes)
+                rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes,
+                files[0] if len(files) == 1 else None)
             results = self._postprocess_file(j, dest)
 
-        self.library.mark(rom, system, results)
-        self._queue_gamelist(rom, system, results)
+        entry = self._queue_gamelist(rom, system, results)
+        self.library.mark(rom, system, results, group=j.group, meta=entry)
         j.chd_queued = self._chd_queued
         j.state = Job.DONE
-        j.message = "Ready to play" + (" (CHD later)" if self._chd_queued else "")
-        log("OK %s -> %s" % (j.name, results))
+        j.message = "Ready to play" + (", checksum OK" if j.verified else "") + \
+            (" (CHD later)" if self._chd_queued else "")
+        log("OK %s -> %s%s" % (j.name, results, " [verified]" if j.verified else ""))
+
+    # -- multi-disc sets -----------------------------------------------
+    def _finish_group(self, group, system):
+        """When every disc of a set is on the box: write <base>.m3u (if the
+        system plays playlists), hide the single discs in ES and give the
+        playlist the game's metadata. Idempotent."""
+        lib = self.library
+        with lib.lock:
+            lib._reload()
+            recs = [lib.installed.get(str(rid)) for rid in group["rom_ids"]]
+        if not all(r and any(os.path.exists(p) for p in r.get("paths", [])) for r in recs):
+            return None
+        if not self._accepts(system, ".m3u"):
+            log("group %s: %s has no .m3u support; discs stay separate" % (group["base"], system))
+            return None
+        sysdir = os.path.join(ROMS_ROOT, system)
+        prims = [primary_path(system, r["paths"], self.es) for r in recs]
+        if not all(prims):
+            return None
+        m3u = os.path.join(sysdir, safe_name(group["base"]) + ".m3u")
+        lines = [os.path.relpath(p, sysdir) for p in prims]
+        if os.path.exists(m3u):
+            with open(m3u, errors="replace") as f:
+                old = [ln.strip() for ln in f if ln.strip()]
+            if old == lines:
+                return m3u
+            ours = any(m3u in r["paths"] for r in recs)     # we wrote it earlier
+            if not ours and not all(os.path.normpath(os.path.join(sysdir, ln)) in
+                       {os.path.normpath(p) for r in recs for p in r["paths"]} or
+                       any(os.path.normpath(os.path.join(sysdir, ln)).startswith(os.path.normpath(p) + os.sep)
+                           for r in recs for p in r["paths"]) for ln in old):
+                log("group %s: %s exists and isn't ours; not overwriting" % (group["base"], m3u))
+                return None
+        with open(m3u, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        ids = [str(rid) for rid in group["rom_ids"]]
+
+        def add_m3u(inst):
+            for rid in ids:
+                r = inst.get(rid)
+                if r and m3u not in r["paths"]:
+                    r["paths"].append(m3u)
+        lib.update(add_m3u)
+        first = recs[0]
+        meta = dict(first.get("meta") or {}, system=system, paths=[m3u],
+                    name=group.get("title") or group["base"])
+        with open(GAMELIST_QUEUE, "a") as f:
+            f.write(json.dumps({"system": system, "hide": prims}) + "\n")
+            f.write(json.dumps(meta) + "\n")
+        log("group %s: wrote %s (%d discs)" % (group["base"], m3u, len(prims)))
+        return m3u
+
+    def repair_groups(self):
+        """Re-check every disc set on the box (e.g. a CHD conversion finished
+        while the playlist was being written). Cheap; file checks only."""
+        lib = self.library
+        with lib.lock:
+            lib._reload()
+            seen = {}
+            for rec in lib.installed.values():
+                g = rec.get("group")
+                if g and g.get("id") not in seen:
+                    seen[g["id"]] = (g, rec["system"])
+        for g, system in seen.values():
+            try:
+                self._finish_group(g, system)
+            except Exception as e:
+                log("group %s: %r" % (g.get("base"), e))
+        return len(seen)
 
     # -- post-processing -------------------------------------------------
     _chd_queued = False
@@ -990,18 +1910,46 @@ class Downloader:
     def _queue_gamelist(self, rom, system, paths):
         """Hand gamelist metadata to the launcher's post-exit merge step
         (ES must not be written to while it runs — see rb_finalize.py)."""
-        md = rom.get("metadatum") or {}
-        entry = {
-            "system": system, "paths": paths, "rom_id": rom["id"],
-            "name": rom.get("name"), "desc": rom.get("summary"),
-            "releasedate": md.get("first_release_date"),
-            "genres": md.get("genres") or [],
-            "developer": ", ".join(md.get("developers") or md.get("companies") or []),
-            "publisher": ", ".join(md.get("publishers") or []),
-            "players": md.get("player_count"),
-            "rating": md.get("average_rating"),
-            "cover": rom.get("path_cover_large") or rom.get("path_cover_small"),
-        }
+        entry = gamelist_entry(rom, system, paths, manual=self.cfg.get("manuals", True))
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(GAMELIST_QUEUE, "a") as f:
             f.write(json.dumps(entry) + "\n")
+        return entry
+
+
+def manual_path(rom):
+    """Server path of the rom's manual PDF in RomM's assets, or None. (Never
+    url_manual: that's the upstream scraper URL, not RomM.)"""
+    p = rom.get("path_manual") if rom.get("has_manual") else None
+    if not p or not isinstance(p, str):
+        return None
+    p = p.split("?")[0].lstrip("/")
+    if p.startswith("assets/romm/resources/"):
+        p = p[len("assets/romm/resources/"):]
+    if ".." in p.split("/") or not p.lower().endswith(".pdf"):
+        return None
+    return "/assets/romm/resources/" + p
+
+
+def ra_summary(rom):
+    """(achievements, points) from RomM's RetroAchievements data, or None."""
+    if not rom.get("ra_id"):
+        return None
+    ach = (rom.get("merged_ra_metadata") or {}).get("achievements") or []
+    return len(ach), sum(int(a.get("points") or 0) for a in ach)
+
+
+def gamelist_entry(rom, system, paths, manual=True):
+    md = rom.get("metadatum") or {}
+    return {
+        "manual": manual_path(rom) if manual else None,
+        "system": system, "paths": paths, "rom_id": rom["id"],
+        "name": rom.get("name"), "desc": rom.get("summary"),
+        "releasedate": md.get("first_release_date"),
+        "genres": md.get("genres") or [],
+        "developer": ", ".join(md.get("developers") or md.get("companies") or []),
+        "publisher": ", ".join(md.get("publishers") or []),
+        "players": md.get("player_count"),
+        "rating": md.get("average_rating"),
+        "cover": rom.get("path_cover_large") or rom.get("path_cover_small"),
+    }

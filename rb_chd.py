@@ -248,13 +248,7 @@ def convert(task):
             rename[src] = primary
     with open(rommlib.GAMELIST_QUEUE, "a") as f:
         f.write(json.dumps({"system": system, "rename": rename, "hide": hide}) + "\n")
-    lib = rommlib.Library()
-    with lib.lock:
-        for rec in lib.installed.values():
-            if any(p in rename for p in rec.get("paths", [])):
-                rec["paths"] = [primary] + hide
-        with open(rommlib.STATE_PATH, "w") as f:
-            json.dump(lib.installed, f, indent=1)
+    rommlib.Library().rename_paths(rename, hide)
     rommlib.log("chd: OK %s -> %s  (%.2f GB -> %.2f GB)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),
         in_size / 1e9, out_size / 1e9))

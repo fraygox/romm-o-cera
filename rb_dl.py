@@ -32,6 +32,47 @@ def write_status(d):
     os.replace(tmp, rommlib.DL_STATUS)
 
 
+class Notes:
+    """Finished/failed downloads, shown as one EmulationStation popup once
+    ES is back in its menus (a popup during a game would go unseen)."""
+
+    def __init__(self, cfg):
+        self.on = cfg.get("notify", True)
+        self.ready, self.failed = [], []
+        self.seen = set()
+
+    def collect(self, d):
+        for j in d.jobs:
+            if id(j) in self.seen:
+                continue
+            if j.state == rommlib.Job.DONE:
+                self.ready.append(j.name)
+            elif j.state == rommlib.Job.FAILED:
+                self.failed.append(j.name)
+            else:
+                continue
+            self.seen.add(id(j))
+
+    def text(self):
+        def names(xs):
+            return ", ".join(xs[:3]) + (" +%d more" % (len(xs) - 3) if len(xs) > 3 else "")
+        parts = []
+        if self.ready:
+            parts.append("%d game%s ready: %s" % (len(self.ready), "" if len(self.ready) == 1 else "s",
+                                                  names(self.ready)))
+        if self.failed:
+            parts.append("%d failed: %s" % (len(self.failed), names(self.failed)))
+        return "RomM Browser: " + "; ".join(parts)
+
+    def flush(self, force=False):
+        if not self.on or not (self.ready or self.failed):
+            return
+        if not force and rommlib.es_running_game() != "":
+            return                      # a game is up (or ES unreachable): later
+        if rommlib.es_notify(self.text()):
+            self.ready, self.failed = [], []
+
+
 def main():
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     lockf = open(rommlib.DL_LOCK, "w")
@@ -42,10 +83,16 @@ def main():
     if os.path.exists(rommlib.DL_STOP):
         os.remove(rommlib.DL_STOP)
     cfg = rommlib.load_config()
+    if rommlib.Downloader.saved_held():
+        rommlib.log("dl-worker: queue is paused (Pause all); not starting")
+        return
     d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
     n = d.resume()
     rommlib.log("dl-worker: %d queued" % n)
+    cap = float(cfg.get("speed_while_playing") or 0) * 1e6
+    notes = Notes(cfg)
     stopped = False
+    tick = 0
     while d.active_count():
         if os.path.exists(rommlib.DL_STOP):      # the app is back: hand over
             d.pause_all()
@@ -54,6 +101,13 @@ def main():
                 time.sleep(0.2)
             stopped = True
             break
+        if tick % 5 == 0:                        # every ~5 s: game running? cap / popups
+            playing = rommlib.es_running_game()
+            d.rate_limit = cap if (cap and playing) else 0
+            notes.collect(d)
+            if playing == "":
+                notes.flush()
+        tick += 1
         write_status(d)
         time.sleep(1)
     d.save_queue()
@@ -66,14 +120,21 @@ def main():
     if os.path.exists(rommlib.DL_STOP):
         os.remove(rommlib.DL_STOP)
     lockf.close()
-    if stopped or not done:
+    if stopped:
+        return
+    notes.collect(d)
+    if not done:
+        notes.flush()
         return
     here = os.path.dirname(os.path.abspath(__file__))
     if cfg.get("chd", True) and os.path.isdir(rommlib.CHD_QUEUE_DIR) and os.listdir(rommlib.CHD_QUEUE_DIR):
         subprocess.Popen([sys.executable, os.path.join(here, "rb_chd.py")], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     import rb_finalize
-    rb_finalize.main()
+    rb_finalize.main()                           # waits until ES is idle, reloads the gamelists
+    if notes.on and (notes.ready or notes.failed):
+        rb_finalize.wait_idle()                  # (finalize may have had nothing to wait for)
+    notes.flush()                                # games are listed now: tell the player
 
 
 def handover(timeout=15):
