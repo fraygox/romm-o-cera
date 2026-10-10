@@ -573,6 +573,8 @@ class App:
         self.headless = headless
         self.api = rommlib.Api.from_config(self.cfg)
         self.loaded = False
+        self.junk = None              # filename tags hidden by "Hide prototypes, demos & hacks"
+        self.update_tag = None
         self.library = rommlib.Library()
         self.downloader = rommlib.Downloader(self.api, self.library, self.cfg)
         self.platforms = []          # mapped platforms only
@@ -734,6 +736,23 @@ class App:
         self.running = False
 
     # ---- main loop
+    def _update_found(self, tag):
+        if not tag:
+            return
+        self.update_tag = tag
+        seen = os.path.join(rommlib.DATA_DIR, ".update-notified")
+        try:
+            if open(seen).read().strip() == tag:
+                return
+        except OSError:
+            pass
+        self.toast("romm-o-cera %s is out. Settings shows how to update." % tag, BLUE)
+        try:
+            with open(seen, "w") as f:
+                f.write(tag)
+        except OSError:
+            pass
+
     def on_pad_change(self):
         if (self.cfg.get("button_style") or "auto") == "auto":
             self.resolve_style()
@@ -757,6 +776,8 @@ class App:
         self.resolve_style()
         self.take_over_downloads()
         self.load_platforms()
+        if not self.headless:
+            self.bg(lambda: rommlib.newer_release(self.cfg), self._update_found, lambda e: None)
         self.push(HomeScreen(self))
         while self.running:
             dt = clock.tick(self.fps) / 1000.0
@@ -1412,8 +1433,11 @@ class GameListScreen(Screen):
     BULK_MAX = 1000
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
-                 order_by="name"):
+                 order_by="name", static=None):
         super().__init__(app)
+        self.static = static          # a fixed list (e.g. "More like this"): no paging/filters
+        self.only_verified = False
+        self.hide_junk = False
         self.title = title
         self.platform = platform
         self.collection = collection
@@ -1451,9 +1475,16 @@ class GameListScreen(Screen):
         self.gen = getattr(self, "gen", 0) + 1
         self.bubble, self.bubble_until = None, 0.0
         self.server_off, self.server_total, self.exhausted = 0, None, False
+        if self.static is not None:
+            self.items = [r for r in self.static if not (self.hide_installed and self.installed(r))]
+            self.total = self.server_total = len(self.items)
+            self.exhausted = True
+            return
         self.fetch_page(0)
 
     def crumbs(self):
+        if self.static is not None:
+            return ["More like this"]
         out = []
         if self.platform and not self.search:
             out.append("Platforms")
@@ -1488,9 +1519,15 @@ class GameListScreen(Screen):
                  "order_by": "id", "order_dir": "desc", "platform_ids": pids}
             if self.regions:
                 p["regions"], p["regions_logic"] = self.regions, "any"
+            if self.only_verified:
+                p["verified"] = "true"
+            if self.hide_junk and app.junk:
+                p["tags"], p["tags_logic"] = app.junk, "none"
             return app.api.get("/api/roms", p)
         return app.api.roms(platform_ids=pids, search=self.search, offset=offset, limit=limit,
                             order_by=self.order_by, char_index=char_index, regions=self.regions,
+                            verified=self.only_verified,
+                            exclude_tags=app.junk if self.hide_junk else None,
                             collection=(self.collection["param"], self.collection["id"])
                             if self.collection else None)
 
@@ -1499,6 +1536,8 @@ class GameListScreen(Screen):
         return bool(system) and self.app.library.is_installed(rom, system)
 
     def fetch_page(self, offset):
+        if self.static is not None:
+            return
         if self.dense:
             return self._fetch_dense()
         if offset in self.pending:
@@ -1569,6 +1608,8 @@ class GameListScreen(Screen):
 
     def ensure(self, i):
         """Make sure the page holding row i is loaded (or loading)."""
+        if self.static is not None:
+            return
         if self.dense:
             if i >= len(self.items) - self.ROWS:
                 self._fetch_dense()
@@ -1624,11 +1665,20 @@ class GameListScreen(Screen):
     def menu_entries(self):
         app = self.app
         e = []
-        if not self.search and not self.collection:
+        cur = self.items[self.sel] if self.items and self.sel < len(self.items) else None
+        if cur is not None:
+            e.append(("More like this", cur.get("name") or cur.get("fs_name_no_ext") or "",
+                      lambda: self._more_like(cur)))
+        if self.static is None and not self.search and not self.collection:
             e.append(("Sort", "", self._toggle_sort,
                       "Newest first" if self.order_by == "id_desc" else "A to Z"))
         e.append(("Hide games on this box", "", self._toggle_hide, "On" if self.hide_installed else "Off"))
-        e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1]))
+        if self.static is None:
+            e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1]))
+            e.append(("Hide prototypes, demos & hacks", "", self._toggle_junk,
+                      "On" if self.hide_junk else "Off"))
+            e.append(("Only verified dumps", "Checksum-matched by RomM", self._toggle_verified,
+                      "On" if self.only_verified else "Off"))
         if self.mark_mode:
             e.append(("Stop picking", "", lambda: setattr(self, "mark_mode", False)))
         else:
@@ -1656,6 +1706,33 @@ class GameListScreen(Screen):
         self.order_by = "id_desc" if self.order_by == "name" else "name"
         self.reset()
 
+    def _more_like(self, rom):
+        app = self.app
+        name = rom.get("name") or rom.get("fs_name_no_ext")
+
+        def done(roms):
+            if not roms:
+                app.toast("RomM has no similar games for %s" % name, AMBER)
+                return
+            app.push(GameListScreen(app, "Games like %s" % name, static=roms))
+        app.bg(lambda: app.api.similar(rom["id"]), done)
+
+    def _toggle_junk(self):
+        app = self.app
+        if not self.hide_junk and app.junk is None:
+            def done(tags):
+                app.junk = rommlib.junk_tags(tags)
+                self.hide_junk = True
+                self.reset()
+            app.bg(app.api.all_tags, done)
+            return
+        self.hide_junk = not self.hide_junk
+        self.reset()
+
+    def _toggle_verified(self):
+        self.only_verified = not self.only_verified
+        self.reset()
+
     def _toggle_hide(self):
         self.hide_installed = not self.hide_installed
         self.reset()
@@ -1674,23 +1751,37 @@ class GameListScreen(Screen):
             app.toast("Nothing to download — all on this box already", AMBER)
             return
         size = sum(r.get("fs_size_bytes") or 0 for r in roms)
+        items = [(r, app.system_for(r)) for r in roms]
+        need = sum(rommlib.space_needed(r, sy) for r, sy in items)
         try:
             st = os.statvfs(rommlib.ROMS_ROOT)
             free = st.f_bavail * st.f_frsize
         except OSError:
             free = None
-        body = "%d games, %s download%s." % (len(roms), human_size(size),
-                                            "" if free is None else " — %s free on this box" % human_size(free))
-        if free is not None and size * 1.5 > free:
-            body += " That may not fit once disc games are extracted."
 
-        def go():
-            for r in roms:
-                app.downloader.enqueue(r, app.system_for(r))
-            app.toast("Queued %d games" % len(roms), GREEN)
+        def go(chosen):
+            for r, sy in chosen:
+                app.downloader.enqueue(r, sy)
+            app.toast("Queued %d games" % len(chosen), GREEN)
             self.marks.clear()
             self.mark_mode = False
-        app.modal = Confirm(app, title, body, "Download %d" % len(roms), go)
+
+        if free is not None and need + rommlib.SPACE_MARGIN > free:
+            fit, used = rommlib.fit_in_space(items, free)
+            entries = []
+            if fit:
+                entries.append(("Download the %d that fit" % len(fit),
+                                "About %s once extracted" % human_size(used), lambda: go(fit)))
+            entries.append(("Download all %d anyway" % len(items),
+                            "Needs about %s; %s free. Later ones will fail." % (human_size(need), human_size(free)),
+                            lambda: go(items)))
+            entries.append(("Cancel", "", lambda: None))
+            app.modal = ActionMenu(app, "Not enough space for all %d" % len(items), entries)
+            return
+        body = "%d games, %s to download (about %s once extracted)%s." % (
+            len(roms), human_size(size), human_size(need),
+            "" if free is None else ". %s free on this box" % human_size(free))
+        app.modal = Confirm(app, title, body, "Download %d" % len(roms), lambda: go(items))
 
     def _download_marked(self):
         self._queue_many(list(self.marks.values()), "Download picked games?")
@@ -2397,7 +2488,9 @@ class SettingsScreen(Screen):
 
         text(c, self.f.h1, "RomM Browser", (p.left + 28, p.top + 24), TEXT)
         text(c, self.f.body, "romm-o-cera v" + rommlib.VERSION, (p.left + 28, p.top + 72), ACCENT_HI)
-        rows = [("Status", self.app.status if not self.app.error else self.app.error),
+        rows = [("Update available", "%s is out. Re-run install.sh to update (see the README)."
+                 % self.app.update_tag)] if self.app.update_tag else []
+        rows += [("Status", self.app.status if not self.app.error else self.app.error),
                 ("Platforms here", str(len(self.app.platforms))),
                 ("Config", rommlib.CONFIG_PATH),
                 ("Data / log", rommlib.LOG_PATH),

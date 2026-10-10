@@ -202,3 +202,21 @@ def test_cover_fetch(api, busiest, tmp_path, monkeypatch):
 def test_client_token_scopes_are_enough(api):
     me = api.get("/api/users/me")
     assert me.get("username")
+
+
+def test_similar_games(api, busiest):
+    r = api.roms(platform_ids=[busiest["id"]], limit=1)["items"][0]
+    sim = api.similar(r["id"], limit=5)          # may be empty for an unidentified rom
+    assert isinstance(sim, list)
+    for x in sim:
+        assert {"id", "name", "platform_id"} <= set(x)
+
+
+def test_verified_and_tag_filters_accepted(api, busiest):
+    total = api.roms(platform_ids=[busiest["id"]], limit=1)["total"]
+    assert api.roms(platform_ids=[busiest["id"]], limit=1, verified=True)["total"] <= total
+    tags = api.all_tags()
+    assert isinstance(tags, list)
+    junk = rommlib.junk_tags(tags)
+    if junk:
+        assert api.roms(platform_ids=[busiest["id"]], limit=1, exclude_tags=junk)["total"] <= total

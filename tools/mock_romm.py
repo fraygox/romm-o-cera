@@ -120,6 +120,8 @@ def build_library(seed=7):
             "path_cover_small": "/covers/%d.png?s=1" % rid,
             "path_cover_large": "/covers/%d.png?s=2" % rid,
             "has_multiple_files": multi, "has_nested_single_file": nested,
+            "tags": rng.choice([[], [], [], [], ["Proto"], ["Beta 1"], ["Demo"], ["Hack"]]),
+            "verified": rng.random() < 0.85,
             "full_path": "roms/%s/%s" % (slug, fs_name),
         }
         if multi:
@@ -333,6 +335,11 @@ class Handler(BaseHTTPRequestHandler):
                 col = next(c for c in self.collections if c["id"] == int(q["collection_id"][0]))
                 ids = set(col["rom_ids"])
                 items = [r for r in items if r["id"] in ids]
+            if (q.get("verified") or [""])[0] == "true":
+                items = [r for r in items if r["verified"]]
+            if q.get("tags") and (q.get("tags_logic") or ["any"])[0] == "none":
+                bad = set(q["tags"])
+                items = [r for r in items if not bad & set(r["tags"])]
             term = (q.get("search_term") or [""])[0].lower()
             if term:
                 items = [r for r in items if all(t in r["name"].lower() for t in term.split())]
@@ -346,12 +353,21 @@ class Handler(BaseHTTPRequestHandler):
             lim = int((q.get("limit") or [50])[0])
             page = [{k: v for k, v in r.items() if k != "files"} for r in items[off:off + lim]]
             out = {"items": page, "total": len(items), "offset": off, "limit": lim}
+            if (q.get("with_filter_values") or ["false"])[0] == "true":
+                out["filter_values"] = {"tags": sorted({t for r in self.roms for t in r["tags"]} | {"Homebrew"})}
             if (q.get("with_char_index") or ["false"])[0] == "true" and order != "id":
                 ci = {}
                 for i, r in enumerate(items):          # like RomM: first char -> first offset
                     ci.setdefault(r["name"][:1].lower(), i)
                 out["char_index"] = ci
             return self._json(out)
+        m = re.match(r"^/api/roms/(\d+)/similar$", path)
+        if m and int(m.group(1)) in self.by_id:
+            me = self.by_id[int(m.group(1))]
+            same = [r for r in self.roms if r["platform_id"] == me["platform_id"] and r["id"] != me["id"]]
+            pick = random.Random(me["id"]).sample(same, min(int((q.get("limit") or [12])[0]), len(same), 12))
+            return self._json([{"rom": {k: v for k, v in r.items() if k != "files"}, "score": 0.9,
+                                "reasons": ["genre"]} for r in pick])
         m = re.match(r"^/api/roms/(\d+)$", path)
         if m and int(m.group(1)) in self.by_id:
             return self._json(self.by_id[int(m.group(1))])

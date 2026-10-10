@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")
@@ -35,6 +35,8 @@ DL_STOP = os.path.join(DATA_DIR, "downloads.stop")          # app asks rb_dl.py 
 DL_STATUS = os.path.join(DATA_DIR, "downloads-status.json")
 USERDATA = os.environ.get("ROMM_BROWSER_USERDATA") or os.path.dirname(ROMS_ROOT.rstrip("/"))
 BIOS_DB = os.environ.get("ROMM_BROWSER_BIOS_DB", "/usr/bin/batocera-systems")
+UPDATE_REPO = os.environ.get("ROMM_BROWSER_UPDATE_REPO", "fraygox/romm-o-cera")
+UPDATE_CACHE = os.path.join(DATA_DIR, "update-check.json")
 UA = "romm-o-cera/" + VERSION
 
 # RomM platform fs_slug -> Batocera roms/<dir>. Anything not listed (or mapped
@@ -86,6 +88,7 @@ DEFAULT_CONFIG = {
     "verify_tls": True,        # False for a self-signed cert, or a path to a CA bundle
     "swap_ab": False,          # False: south button = confirm (Batocera default)
     "button_style": "auto",    # button labels: auto | xbox | playstation | nintendo
+    "check_updates": True,     # once a day, ask GitHub if a newer release exists
     "chd": True,               # background CHD conversion of extracted disc games
     "background_downloads": True,  # keep downloading after the app exits
     "platform_map": {},        # per-slug overrides of PLATFORM_MAP (null hides)
@@ -270,7 +273,8 @@ class Api:
         return self.get("/api/collections/virtual", {"type": vtype})
 
     def roms(self, platform_ids=None, search=None, collection=None,
-             offset=0, limit=60, order_by="name", char_index=False, regions=None):
+             offset=0, limit=60, order_by="name", char_index=False, regions=None,
+             verified=None, exclude_tags=None):
         """collection: (param, id) with param one of collection_id,
         smart_collection_id, virtual_collection_id."""
         params = {"offset": offset, "limit": limit,
@@ -287,10 +291,26 @@ class Api:
         if regions:
             params["regions"] = list(regions)
             params["regions_logic"] = "any"
+        if verified:
+            params["verified"] = "true"
+        if exclude_tags:
+            params["tags"] = list(exclude_tags)
+            params["tags_logic"] = "none"
         return self.get("/api/roms", params)
 
     def rom(self, rom_id):
         return self.get("/api/roms/%d" % rom_id)
+
+    def similar(self, rom_id, limit=30):
+        """RomM's similar games, as plain rom dicts (best match first)."""
+        out = self.get("/api/roms/%d/similar" % rom_id, {"limit": limit})
+        return [x["rom"] for x in out if isinstance(x, dict) and x.get("rom")]
+
+    def all_tags(self):
+        """Every filename tag in the library (for the "hide prototypes…" filter)."""
+        page = self.get("/api/roms", {"limit": 1, "with_filter_values": "true",
+                                      "with_char_index": "false", "with_rom_id_index": "false"})
+        return (page.get("filter_values") or {}).get("tags") or []
 
     def firmware(self, platform_id):
         return self.get("/api/firmware", {"platform_id": platform_id})
@@ -317,6 +337,79 @@ class Api:
         except requests.RequestException:
             pass
         return None
+
+
+# Filename tags that mark something other than a finished release. Matched as
+# substrings against RomM's tag list, so "Proto 2", "Beta 1", "E3 demo" count.
+# Homebrew, Aftermarket, Unlicensed stay visible on purpose.
+JUNK_TAG_WORDS = ("proto", "beta", "alpha", "demo", "hack", "pirate", "sample", "kiosk",
+                  "debug", "preview", "sampler", "bootleg")
+
+
+def junk_tags(tags):
+    return [t for t in tags if any(w in t.lower() for w in JUNK_TAG_WORDS)
+            and "homebrew" not in t.lower()]
+
+
+# Systems whose downloads are usually archives of disc images: extracting
+# roughly doubles them on disk (before any CHD compression).
+EXPANDS = {"psx", "ps2", "ps3", "psp", "saturn", "dreamcast", "megacd", "pcenginecd", "neogeocd",
+           "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "gamecube", "wii", "wiiu", "xbox",
+           "xbox360", "3ds", "jaguarcd", "fmtowns"}
+SPACE_MARGIN = 2 << 30
+
+
+def space_needed(rom, system):
+    """Rough bytes on disk once downloaded and extracted."""
+    size = rom.get("fs_size_bytes") or 0
+    return int(size * (2.2 if system in EXPANDS else 1.0))
+
+
+def fit_in_space(items, free):
+    """Greedy, keeping the given order: (that_fit, total_needed_for_them)."""
+    fit, used = [], 0
+    for rom, system in items:
+        need = space_needed(rom, system)
+        if used + need + SPACE_MARGIN <= free:
+            fit.append((rom, system))
+            used += need
+    return fit, used
+
+
+# ----------------------------------------------------------- updates
+
+def _vtuple(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3]) or (0,)
+
+
+def newer_release(cfg, force=False):
+    """Latest release tag on GitHub if it is newer than VERSION, else None.
+    Checked at most once a day (cached); never raises."""
+    if not cfg.get("check_updates", True):
+        return None
+    now = time.time()
+    cache = {}
+    try:
+        with open(UPDATE_CACHE) as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        pass
+    if force or now - cache.get("checked", 0) > 86400:
+        try:
+            r = requests.get("https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO,
+                             timeout=6, headers={"User-Agent": UA,
+                                                 "Accept": "application/vnd.github+json"})
+            if r.status_code == 200:
+                cache = {"checked": now, "latest": r.json().get("tag_name", "")}
+            else:
+                cache = {"checked": now, "latest": cache.get("latest", "")}
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(UPDATE_CACHE, "w") as f:
+                json.dump(cache, f)
+        except Exception:
+            return None
+    latest = cache.get("latest") or ""
+    return latest if _vtuple(latest) > _vtuple(VERSION) else None
 
 
 # ------------------------------------------------------- installed tracking

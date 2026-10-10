@@ -92,6 +92,9 @@ STEPS = ("wait:3,act:down,act:ok,wait:2,act:right,act:down,act:ok,wait:2,act:r2,
          "act:x,act:down,act:down,act:down,act:ok,act:ok,act:down,act:ok,act:x,wait:0.3,"
          "act:down,act:down,act:down,act:down,act:ok,wait:0.3,act:ok,wait:2,"
          "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:ok,wait:0.3,act:back,"
+         # list menu: more like this, junk + verified filters
+         "act:start,act:down,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:2,act:back,"
+         "act:x,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,"
          "shot:end")
 
 
@@ -165,3 +168,18 @@ def test_queue_survives_restart_and_background_handover(isolated, mock_url):
     assert big["id"] in left                    # still queued for the app to resume
     part = os.path.join(rommlib.ROMS_ROOT, "ps2", big["fs_name"] + ".part")
     assert os.path.getsize(part) > 8 << 20      # and its partial kept growing in the background
+
+
+def test_similar_and_filters_against_mock(isolated, mock_url):
+    api = rommlib.Api(mock_url, "demo")
+    pid = {p["fs_slug"]: p["id"] for p in api.platforms()}["snes"]
+    first = api.roms(platform_ids=[pid], limit=1)["items"][0]
+    sim = api.similar(first["id"])
+    assert sim and all(r["platform_id"] == pid and r["id"] != first["id"] for r in sim)
+    total = api.roms(platform_ids=[pid], limit=1)["total"]
+    junk = rommlib.junk_tags(api.all_tags())
+    assert "Homebrew" not in junk and junk
+    clean = api.roms(platform_ids=[pid], limit=500, exclude_tags=junk)
+    assert clean["total"] < total and not any(set(r["tags"]) & set(junk) for r in clean["items"])
+    ver = api.roms(platform_ids=[pid], limit=1, verified=True)["total"]
+    assert 0 < ver < total

@@ -286,3 +286,34 @@ def test_controller_styles(rb):
     assert rb.style_from_names(["Nintendo Switch Pro Controller"]) == "nintendo"
     assert rb.style_from_names(["8BitDo Ultimate 2C", "Xbox Wireless Controller"]) == "xbox"
     assert rb.GLYPH_RE.split("Press {START} now") == ["Press ", "START", " now"]
+
+
+def test_junk_tags_keep_homebrew():
+    tags = ["Proto 2", "Beta", "E3 2011 demo", "Hack", "Homebrew", "Homebrew Demo", "Aftermarket",
+            "USA", "Kiosk", "Rev 1", "Unlicensed"]
+    assert sorted(rommlib.junk_tags(tags)) == ["Beta", "E3 2011 demo", "Hack", "Kiosk", "Proto 2"]
+
+
+def test_space_estimate_and_fit():
+    gb = 1 << 30
+    cart = ({"fs_size_bytes": 1 * gb}, "snes")
+    disc = ({"fs_size_bytes": 1 * gb}, "psx")
+    assert rommlib.space_needed(*cart) == gb and rommlib.space_needed(*disc) == int(2.2 * gb)
+    fit, used = rommlib.fit_in_space([disc, cart, disc], free=5 * gb)
+    assert fit == [disc] and used == int(2.2 * gb)          # 2 GB margin kept free; order kept
+    fit, _ = rommlib.fit_in_space([cart, cart, cart], free=10 * gb)
+    assert len(fit) == 3
+
+
+def test_update_check_uses_cache(isolated, monkeypatch):
+    import time as _t
+    monkeypatch.setattr(rommlib, "UPDATE_CACHE", os.path.join(rommlib.DATA_DIR, "update-check.json"))
+    os.makedirs(rommlib.DATA_DIR)
+    with open(rommlib.UPDATE_CACHE, "w") as f:
+        json.dump({"checked": _t.time(), "latest": "v9.9.9"}, f)
+    assert rommlib.newer_release({"check_updates": True}) == "v9.9.9"       # no network: cache is fresh
+    with open(rommlib.UPDATE_CACHE, "w") as f:
+        json.dump({"checked": _t.time(), "latest": "v" + rommlib.VERSION}, f)
+    assert rommlib.newer_release({"check_updates": True}) is None
+    assert rommlib.newer_release({"check_updates": False}) is None
+    assert rommlib._vtuple("v0.10.0") > rommlib._vtuple("0.9.9")

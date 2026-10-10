@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.3.1).** It works on the author's box every day, but it
+**Early software (v0.4.0).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -28,9 +28,13 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   own, smart collections, and RomM's virtual ones: genre, franchise, series,
   company, game mode), and recently added. **Search** with an on-screen
   keyboard and live top matches. **L2/R2** jump letter by letter.
-- **List menu (X)**: hide games already on the box, filter by region, pick
-  several games, or download a whole list (up to 1,000 games) with the total
-  size shown first.
+- **List menu (X)**: more games like the selected one, hide games already on
+  the box, filter by region, hide prototypes/demos/hacks, show only
+  checksum-verified dumps, pick several games, or download a whole list (up to
+  1,000). Bulk downloads estimate the space they'll need once extracted and
+  offer to download only what fits.
+- **Update notice**: once a day it asks GitHub whether a newer release exists
+  and says so in Settings (turn off with `"check_updates": false`).
 - **On this box**: everything RomM Browser installed, biggest first, with
   delete. Any game marked ✓ (including ones you copied over before) can be
   deleted from its list; saves and states are always kept.
@@ -96,6 +100,7 @@ On the box: **Main Menu → Game Settings → Update Gamelists**, then open
 | `verify_tls` | `true` | `false` or a CA-bundle path for self-signed certs |
 | `swap_ab` | `false` | `false`: south button confirms (Batocera's default) |
 | `button_style` | `auto` | `auto`, `xbox`, `playstation` or `nintendo` button labels |
+| `check_updates` | `true` | daily check of GitHub for a newer release (sends no data beyond the request) |
 | `chd` | `true` | background CHD compression of extracted disc games |
 | `background_downloads` | `true` | keep downloading after the app exits |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
