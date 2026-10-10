@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ROMM_BROWSER_DATA", "/userdata/system/romm-browser")

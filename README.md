@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.1).** It works on the author's box every day, but it
+**Early software (v0.6.2).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -170,7 +170,7 @@ page · L2/R2 previous/next letter · Select downloads · Start home · **Hotkey
 Start exits**. `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard
 mapping for this app.
 
-**Keyboard:** arrows move · Enter confirm · Esc back · X menu · Y (or S) search ·
+**Keyboard:** arrows move · Enter confirm · Esc back · X menu · Y search ·
 PgUp/PgDn page · `[` `]` letter jump · Tab downloads · Home home. Search and text
 fields take typing directly (Enter runs the search / saves). The hint bar
 switches to key names while you use the keyboard. A keyboard and a pad work

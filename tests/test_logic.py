@@ -331,27 +331,48 @@ def test_palette_cover_does_not_crash(rb):
     assert rb.smooth_scale(pal, (20, 30)).get_size() == (20, 30)      # fallback path
 
 
-def test_keyboard_alongside_pad_and_typing(rb):
-    """Keyboard works even after a pad was used; only a pad press's echo
-    (same action within 0.3 s) is dropped; text fields take typed text."""
+def test_keyboard_alongside_pad_and_typing(rb, monkeypatch):
+    """A real keyboard works next to a pad; Batocera's evmapy echoes of pad
+    presses (arriving before OR after the pad event, any key) are dropped and
+    never flip the hints to keyboard labels; text fields take typed text."""
     import pygame
+    clock = [1000.0]
+    monkeypatch.setattr(rb.time, "time", lambda: clock[0])
     inp = rb.Input(False)
-    out = []
+    rb.INPUT_MODE["kb"] = False
+    K = lambda key: pygame.event.Event(pygame.KEYDOWN, key=key, mod=0)
     pad = pygame.event.Event(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_DPAD_DOWN,
                              instance_id=0)
-    inp.handle(pad, out)
-    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DOWN, mod=0), out)   # evmapy echo
-    assert out == ["down"]
-    inp.last["down"] = (0, "pad")                      # later: a real key press counts
-    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DOWN, mod=0), out)
-    assert out == ["down", "down"] and rb.INPUT_MODE["kb"]
-    assert rb.pad_face("A")[1] == "Enter"
+    out = []
+    inp.handle(pad, out)                          # pad first, echo 20 ms later
+    clock[0] += 0.02
+    inp.handle(K(pygame.K_DOWN), out)
+    clock[0] += 0.2
+    inp.flush(out)
+    assert out == ["down"] and not rb.INPUT_MODE["kb"]
+    clock[0] += 1
+    out = []
+    inp.handle(K(pygame.K_SPACE), out)            # echo first (Select -> Space), pad 30 ms later
+    clock[0] += 0.03
+    inp.handle(pygame.event.Event(pygame.CONTROLLERBUTTONDOWN, button=pygame.CONTROLLER_BUTTON_BACK,
+                                  instance_id=0), out)
+    clock[0] += 0.2
+    inp.flush(out)
+    assert out == ["select"] and not rb.INPUT_MODE["kb"] and rb.pad_face("A")[1] == "A"
+    clock[0] += 1                                 # a real key press, no pad around
+    out = []
+    inp.handle(K(pygame.K_DOWN), out)
+    clock[0] += 0.1
+    inp.flush(out)
+    assert out == ["down"] and rb.INPUT_MODE["kb"] and rb.pad_face("A")[1] == "Enter"
     inp.text_mode = True
     out = []
-    inp.handle(pygame.event.Event(pygame.TEXTINPUT, text="z"), out)
-    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_x, mod=0), out)      # letter: no action
-    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_BACKSPACE, mod=0), out)
-    inp.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0), out)
+    clock[0] += 1
+    for ev in (pygame.event.Event(pygame.TEXTINPUT, text="z"), K(pygame.K_x), K(pygame.K_BACKSPACE),
+               K(pygame.K_RETURN)):
+        inp.handle(ev, out)
+    clock[0] += 0.1
+    inp.flush(out)
     assert out == ["text:z", "x", "start"]
     rb.INPUT_MODE["kb"] = False
 

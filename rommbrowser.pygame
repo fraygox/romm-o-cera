@@ -485,6 +485,8 @@ class Input:
     def __init__(self, swap_ab):
         self.set_swap(swap_ab)
         self.last = {}          # action -> (time, "pad"|"key"): drops evmapy's key echoes of pad presses
+        self.pad_t = 0.0        # last pad activity of any kind
+        self.pending = []       # keyboard actions held back briefly: an echo can arrive before its pad event
         self.text_mode = False  # a text field has focus: letters type instead of acting
         self.controllers = {}
         self.joysticks = {}
@@ -540,6 +542,31 @@ class Input:
         return {"west": "x", "north": "y"}.get(name)
 
     ECHO = 0.3
+    KEY_HOLD = 0.06             # keyboard actions wait this long for a pad event they'd be the echo of
+
+    def _key(self, action, out):
+        """Queue a keyboard action; flush() commits it unless pad activity
+        happened within ECHO of it (Batocera's evmapy echoes pad presses as
+        keys; which one arrives first varies)."""
+        now = time.time()
+        if now - self.pad_t < self.ECHO:
+            return
+        self.pending.append((now, action))
+
+    def flush(self, out):
+        now = time.time()
+        keep = []
+        for t, action in self.pending:
+            if abs(self.pad_t - t) < self.ECHO:
+                continue                  # a pad event turned up: it was an echo
+            if now - t < self.KEY_HOLD:
+                keep.append((t, action))
+            elif action.startswith("text:"):
+                INPUT_MODE["kb"] = True
+                out.append(action)
+            else:
+                self._press(action, out, "key")
+        self.pending = keep
 
     def _press(self, action, out, src="pad"):
         now = time.time()
@@ -557,10 +584,14 @@ class Input:
 
     def handle(self, ev, out):
         t = ev.type
+        if t in (pygame.CONTROLLERBUTTONDOWN, pygame.CONTROLLERBUTTONUP, pygame.JOYBUTTONDOWN,
+                 pygame.JOYBUTTONUP, pygame.JOYHATMOTION) or \
+                (t in (pygame.CONTROLLERAXISMOTION, pygame.JOYAXISMOTION) and abs(ev.value) > 0.5 *
+                 (32767 if t == pygame.CONTROLLERAXISMOTION else 1)):
+            self.pad_t = time.time()
         if t == pygame.TEXTINPUT:
             if self.text_mode and ev.text and ev.text.isprintable():
-                out.append("text:" + ev.text)
-                INPUT_MODE["kb"] = True
+                self._key("text:" + ev.text, out)
             return
         if t == pygame.KEYDOWN:
             if ev.key == pygame.K_F4 and ev.mod & pygame.KMOD_ALT:
@@ -575,10 +606,10 @@ class Input:
                       pygame.K_RIGHT: "right", pygame.K_RETURN: "ok", pygame.K_KP_ENTER: "ok",
                       pygame.K_SPACE: "ok", pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "back",
                       pygame.K_x: "x", pygame.K_y: "y", pygame.K_PAGEUP: "l1", pygame.K_PAGEDOWN: "r1",
-                      pygame.K_TAB: "select", pygame.K_HOME: "start", pygame.K_s: "y",
+                      pygame.K_TAB: "select", pygame.K_HOME: "start",
                       pygame.K_LEFTBRACKET: "l2", pygame.K_RIGHTBRACKET: "r2"}
             if ev.key in km:
-                self._press(km[ev.key], out, "key")
+                self._key(km[ev.key], out)
         elif t == pygame.KEYUP:
             for a in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
                 if self.last.get(a, (0, ""))[1] == "key":
@@ -672,6 +703,7 @@ class Input:
         self.axis_dir[key] = d
 
     def repeats(self, out):
+        self.flush(out)
         now = time.time()
         for a, due in list(self.held.items()):
             if now >= due:
@@ -1024,11 +1056,13 @@ class App:
         True if the event was a pointer event."""
         t = ev.type
         if t == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            # show the cursor for a real mouse click only (evmapy maps the right
+            # stick to a mouse, which must not make it pop up; touch needs none)
+            if not getattr(ev, "touch", False) and not self.headless:
+                pygame.mouse.set_visible(True)
             p = self.to_logical(ev.pos)
             self.ptr = {"start": p, "y": p[1], "moved": False}
         elif t == pygame.MOUSEMOTION:
-            if not getattr(ev, "touch", False) and not self.headless:
-                pygame.mouse.set_visible(True)
             if self.ptr and ev.buttons and ev.buttons[0]:
                 p = self.to_logical(ev.pos)
                 if abs(p[1] - self.ptr["start"][1]) > 14 or abs(p[0] - self.ptr["start"][0]) > 14:

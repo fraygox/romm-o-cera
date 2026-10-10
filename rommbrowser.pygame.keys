@@ -1,10 +1,184 @@
 {
     "actions_player1": [
         {
-            "trigger": ["hotkey", "start"],
+            "trigger": [
+                "hotkey",
+                "start"
+            ],
             "type": "key",
-            "target": ["KEY_LEFTALT", "KEY_F4"],
-            "description": "Exit RomM Browser"
+            "target": [
+                "KEY_LEFTALT",
+                "KEY_F4"
+            ],
+            "description": "Exit RomM-o-Cera"
+        },
+        {
+            "trigger": "start",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "select",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "hotkey",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "a",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "b",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "x",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "y",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "pageup",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "pagedown",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "l2",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "r2",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "l3",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "r3",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "left",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "right",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "up",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "down",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "joystick1left",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "joystick1right",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "joystick1up",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
+        },
+        {
+            "trigger": "joystick1down",
+            "type": "key",
+            "target": [
+                "KEY_F15"
+            ],
+            "description": "claimed so Batocera's pygame.keys doesn't echo it (the app reads the pad itself)"
         }
     ]
 }
