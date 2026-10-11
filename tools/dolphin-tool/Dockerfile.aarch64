@@ -1,0 +1,9 @@
+# Cross-build dolphin-tool for Batocera aarch64 (Pi 4/5, ARM handhelds) on an
+# x86_64 host. qemu-user-static runs the result for a smoke test.
+FROM debian:bookworm
+RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-install-recommends \
+        build-essential crossbuild-essential-arm64 cmake ninja-build git pkg-config ca-certificates python3 \
+        libudev-dev:arm64 libegl-dev:arm64 libgl-dev:arm64 qemu-user-static binutils-aarch64-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
+COPY build.sh /build.sh
+ENTRYPOINT ["/build.sh"]

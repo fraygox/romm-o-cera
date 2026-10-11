@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.5"            # changes only for a real GitHub release
+VERSION = "0.6.6"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -37,7 +37,7 @@ DL_STOP = os.path.join(DATA_DIR, "downloads.stop")          # app asks rb_dl.py 
 DL_STATUS = os.path.join(DATA_DIR, "downloads-status.json")
 USERDATA = os.environ.get("ROMM_BROWSER_USERDATA") or os.path.dirname(ROMS_ROOT.rstrip("/"))
 BIOS_DB = os.environ.get("ROMM_BROWSER_BIOS_DB", "/usr/bin/batocera-systems")
-RELEASE_DATE = "2026-10-10"   # bump with VERSION (tools/build-release.sh refuses a stale one)
+RELEASE_DATE = "2026-10-11"   # bump with VERSION (tools/build-release.sh refuses a stale one)
 AUTHOR = "fraygox"
 PROJECT_URL = "https://github.com/fraygox/romm-o-cera"
 UPDATE_REPO = os.environ.get("ROMM_BROWSER_UPDATE_REPO", "fraygox/romm-o-cera")
@@ -82,10 +82,16 @@ ARCHIVE_EXTS = {".zip", ".7z", ".rar"}
 # Systems where the zip IS the rom (romset name = zip name) — never extract.
 ZIP_NATIVE = {"fbneo", "mame", "neogeo", "gameandwatch"}
 # Systems whose extracted cue/gdi (createcd) or iso (createdvd) the background
-# worker turns into CHD. GC/Wii (rvz), PSP, PS3, Xbox stay as-is.
+# worker turns into CHD. PSP: PPSSPP (1.15+) reads CHD; made with 2048-byte
+# hunks as PPSSPP recommends. GC/Wii (rvz needs dolphin-tool, not on Batocera),
+# PS3, Xbox stay as-is.
 CHD_CD_SYSTEMS = {"psx", "saturn", "dreamcast", "megacd", "pcenginecd", "neogeocd",
                   "3do", "amigacd32", "amigacdtv", "cdi", "pcfx"}
-CHD_DVD_SYSTEMS = {"ps2"}
+CHD_DVD_SYSTEMS = {"ps2", "psp"}
+# GameCube / Wii images the worker turns into RVZ with dolphin-tool (downloaded
+# on demand: Settings, "GameCube and Wii to RVZ").
+RVZ_SYSTEMS = {"gamecube", "wii"}
+RVZ_SOURCES = (".iso", ".gcm", ".wbfs", ".ciso", ".gcz")
 
 DEFAULT_CONFIG = {
     "url": "",                 # your RomM, e.g. https://romm.example.com
@@ -97,6 +103,10 @@ DEFAULT_CONFIG = {
     "check_updates": True,     # once a day, ask GitHub if a newer release exists
     "chd": True,               # background CHD conversion of extracted disc games
     "chd_threads": "auto",     # chdman threads: "auto" or a number (see chd_threads())
+    "chd_low_memory": "auto",  # CDs without chdman's leaky FLAC codec: "auto" (on under 4 GB RAM), true, false
+    "keep_free_gb": 20,        # downloads and CHD conversions never leave less than this free (GB)
+    "extract_parallel": True,  # the next download starts while the last one is being extracted
+    "rvz": False,              # convert GameCube/Wii images to RVZ (downloads dolphin-tool when turned on)
     "cache_limit_mb": 1024,    # cover cache size cap; least recently used covers go first (0 = no cap)
     "download_hours": "any",   # "any", or "S-E" local hours (e.g. "1-7"): downloads only run then
     "background_downloads": True,  # keep downloading after the app exits
@@ -130,6 +140,575 @@ def es_running_game():
     except (ValueError, AttributeError):
         return ""
     return "" if path.endswith("rommbrowser.pygame") else path
+
+
+def _es_json(path, timeout=10):
+    import urllib.request
+    with urllib.request.urlopen(ES_API + path, timeout=timeout) as r:
+        return json.loads(r.read() or b"null")
+
+
+def es_game_list(systems=None):
+    """Every game EmulationStation lists (not hidden ones: discs behind a
+    playlist), as dicts with system, path, name, playcount, lastplayed
+    ("YYYYmmddTHHMMSS" or "" if never). Raises RommError if ES can't be asked."""
+    try:
+        if systems is None:
+            systems = [x["name"] for x in _es_json("/systems") or []
+                       if x.get("gamesystem") == "true" and x.get("collection") != "true"
+                       and int(x.get("totalGames") or 0) > 0]
+        out = []
+        for sysname in systems:
+            try:
+                games = _es_json("/systems/%s/games" % urllib.parse.quote(sysname)) or []
+            except Exception:
+                continue
+            for g in games:
+                if g.get("hidden") == "true" or not g.get("path", "").startswith(ROMS_ROOT + "/"):
+                    continue
+                lp = g.get("lastplayed") or ""
+                out.append({"system": sysname, "path": g["path"], "name": g.get("name") or
+                            os.path.splitext(os.path.basename(g["path"]))[0],
+                            "playcount": int(float(g.get("playcount") or 0)),
+                            "lastplayed": lp if lp[:1].isdigit() and lp != "0" else ""})
+        return out
+    except RommError:
+        raise
+    except Exception as e:
+        raise RommError("EmulationStation didn't answer (%s)" % e.__class__.__name__)
+
+
+def game_files(path):
+    """Everything that makes up the game ES lists at `path`: a playlist's
+    discs, a cue/gdi's tracks — never anything outside its system folder."""
+    out, seen = [], set()
+
+    def add(p):
+        p = os.path.normpath(p)
+        if p in seen or not os.path.lexists(p):
+            return
+        seen.add(p)
+        out.append(p)
+        low = p.lower()
+        if low.endswith(".m3u") and os.path.isfile(p):
+            with open(p, errors="replace") as f:
+                for ln in f:
+                    if ln.strip() and not ln.startswith("#"):
+                        add(os.path.join(os.path.dirname(p), ln.strip()))
+        elif low.endswith((".cue", ".gdi")) and os.path.isfile(p):
+            for q in sheet_sources(p):
+                add(q)
+    add(path)
+    rel = os.path.relpath(path, ROMS_ROOT).split(os.sep)
+    sysdir = os.path.join(ROMS_ROOT, rel[0]) if len(rel) > 1 else None
+    return [p for p in out if sysdir and _inside(p, sysdir)]
+
+
+def delete_game(system, path, library=None):
+    """Delete a game ES lists (any game, not only ours): its files, then any
+    game folder left empty. Saves and states live elsewhere and are kept.
+    Returns (deleted paths, bytes freed)."""
+    sysdir = os.path.join(ROMS_ROOT, system)
+    files = game_files(path)
+    freed = 0
+    for p in files:
+        if not _inside(p, sysdir):
+            continue
+        freed += path_size(p)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        elif os.path.lexists(p):
+            os.remove(p)
+    for p in sorted({os.path.dirname(p) for p in files}, key=len, reverse=True):
+        d = p
+        while _inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
+    if library is not None and files:
+        gone = {os.path.normpath(p) for p in files}
+
+        def drop(inst):
+            for rid, rec in list(inst.items()):
+                paths = [os.path.normpath(x) for x in rec.get("paths", [])]
+                if paths and all(x in gone or not os.path.exists(x) for x in paths):
+                    inst.pop(rid, None)
+        library.update(drop)
+    if files:
+        append_gamelist({"system": system, "remove": files})
+    log("DELETE %s: %s (%s)" % (system, files, human_size(freed)))
+    return files, freed
+
+
+# ---------------------------------------------------------- incomplete disc images
+
+def _pvd_volume(sector16):
+    """ISO9660 volume size (sectors) from the 2048-byte sector 16, or None."""
+    if len(sector16) >= 88 and sector16[1:6] == b"CD001":
+        return int.from_bytes(sector16[80:84], "little")
+    return None
+
+
+class _Beyond(Exception):
+    """A sector past what was read (and, for a CHD head, maybe past the end)."""
+    def __init__(self, lba):
+        self.lba = lba
+
+
+def _files_end(read, limit=4_300_000, have=None):
+    """Walk an ISO9660 directory tree: (end, boot_end) — the highest sector
+    any entry reaches (exclusive), and the highest the game needs to start
+    (root directory, SYSTEM.CNF and the boot program it names). None if
+    there's no ISO9660 filesystem. read(lba) returns 2048 bytes or raises
+    _Beyond; sectors at/after `have` (the image's end) count as unreadable
+    and are recorded rather than raised. Entries past `limit` (no disc is
+    that big) are garbage and ignored."""
+    pvd = read(16)
+    if pvd[1:6] != b"CD001":
+        return None
+    root = pvd[156:190]
+    rlba, rsize = int.from_bytes(root[2:6], "little"), int.from_bytes(root[10:14], "little")
+    todo = [("", rlba, rsize)]
+    seen, end, files = set(), 0, {}
+    boot_end = rlba + (rsize + 2047) // 2048
+    while todo and len(seen) < 5000:
+        path, lba, size = todo.pop()
+        if lba in seen or size <= 0 or lba + (size + 2047) // 2048 > limit:
+            continue
+        seen.add(lba)
+        nsec = (size + 2047) // 2048
+        end = max(end, lba + nsec)
+        for k in range(nsec):
+            if have is not None and lba + k >= have:
+                break                                   # past the image: can't be read
+            sec = read(lba + k)
+            i = 0
+            while i < 2048 and sec[i]:
+                rec = sec[i:i + sec[i]]
+                i += sec[i]
+                if len(rec) < 34:
+                    break
+                name = rec[33:33 + rec[32]]
+                if name in (b"\x00", b"\x01"):
+                    continue
+                flba, fsize = int.from_bytes(rec[2:6], "little"), int.from_bytes(rec[10:14], "little")
+                fend = flba + (fsize + 2047) // 2048
+                if fend > limit:
+                    continue
+                full = path + "/" + name.decode("ascii", "replace").split(";")[0].upper()
+                if rec[25] & 2:
+                    todo.append((full, flba, fsize))
+                elif fsize:
+                    end = max(end, fend)
+                    files[full] = (flba, fsize, fend)
+    cnf = files.get("/SYSTEM.CNF")
+    if cnf:
+        boot_end = max(boot_end, cnf[2])
+        if have is None or cnf[0] < have:
+            m = re.search(rb"BOOT2?\s*=\s*cdrom0?:\\?([^\s;]+)", read(cnf[0])[:cnf[1]], re.I)
+            if m:
+                exe = "/" + m.group(1).decode("ascii", "replace").replace("\\", "/").lstrip("/").upper()
+                if exe in files:
+                    boot_end = max(boot_end, files[exe][2])
+    return end, boot_end
+
+
+def _verdict(have, r, vol=None):
+    """(have, need, certain) from _files_end's (end, boot_end): certain only
+    when what the game needs to start lies past the end of the image. Then
+    the directory tree couldn't be read, so the header's size says how big
+    the disc should be."""
+    if not r:
+        return None
+    end, boot_end = r
+    sure = boot_end > have
+    need = max(end, boot_end, vol or 0) if sure else max(end, boot_end)
+    return (have, need, sure)
+
+
+def _sector_reader(f, raw, base=0):
+    """read(lba) over an open image (raw 2352-byte or plain 2048-byte sectors)."""
+    def read(lba):
+        if raw:
+            f.seek(base + lba * 2352)
+            sec = f.read(2352)
+            if len(sec) < 2352:
+                raise _Beyond(lba)
+            off = 16 if sec[15] == 1 else 24
+            return sec[off:off + 2048]
+        f.seek(base + lba * 2048)
+        sec = f.read(2048)
+        if len(sec) < 2048:
+            raise _Beyond(lba)
+        return sec
+    return read
+
+
+def _chd_head(path, nbytes, chdman):
+    """First nbytes of a CHD's track data (chdman extract*, stopped early),
+    plus chdman info's text and whether it's a DVD CHD."""
+    import tempfile
+    tmpdir = os.path.join(DATA_DIR, "tmp")
+    os.makedirs(tmpdir, exist_ok=True)
+    t = tempfile.mkdtemp(prefix="head-", dir=tmpdir)
+    try:
+        info = subprocess.run([chdman, "info", "-i", path], capture_output=True, text=True, timeout=30).stdout
+        dvd = "Tag='DVD" in info
+        b = os.path.join(t, "x.bin")
+        cmd = [chdman, "extractdvd", "-i", path, "-o", b, "-f"] if dvd else \
+            [chdman, "extractcd", "-i", path, "-o", os.path.join(t, "x.cue"), "-ob", b, "-f"]
+        pr = subprocess.Popen(["nice", "-n", "19"] + cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        end = time.time() + 120
+        while pr.poll() is None and time.time() < end:
+            if os.path.exists(b) and os.path.getsize(b) >= nbytes:
+                break
+            time.sleep(0.05)
+        pr.kill()
+        pr.wait()
+        with open(b, "rb") as f:
+            head = f.read(nbytes)
+        return head, info, dvd
+    except (OSError, subprocess.SubprocessError):
+        return None, "", False
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
+
+def _quick_ok(read, have):
+    """The header says the filesystem fits in the image: complete, no walk needed."""
+    vol = _pvd_volume(read(16))
+    return vol is not None and vol <= have + 16
+
+
+def disc_sectors(path, chdman="chdman"):
+    """(sectors in the image, sectors its files need, certain) for a
+    .cue/.iso/.chd whose first track is ISO9660 data; None when that can't be
+    told (audio first track, GDI, unreadable). Header within the image:
+    complete. Else the whole directory tree is walked: the root directory,
+    SYSTEM.CNF or its boot program past the end is certain proof it's cut
+    short (the game can't start); anything else past the end is only a hint
+    (some discs list dummy files and directories past their end)."""
+    low = path.lower()
+    try:
+        if low.endswith(".iso"):
+            with open(path, "rb") as f:
+                have = os.path.getsize(path) // 2048
+                read = _sector_reader(f, False)
+                try:
+                    vol = _pvd_volume(read(16))
+                    if _quick_ok(read, have):
+                        return (have, vol, False)
+                    r = _files_end(read, 4_300_000, have)
+                except _Beyond:
+                    return None                         # no header at all: not a disc image we can judge
+            return _verdict(have, r, vol)
+        if low.endswith(".cue"):
+            tracks = sheet_sources(path)
+            if not tracks or not all(os.path.isfile(t) for t in tracks):
+                return None
+            with open(tracks[0], "rb") as f:
+                raw = f.read(12) == b"\x00" + b"\xff" * 10 + b"\x00"
+                size = 2352 if raw else 2048
+                have = sum(os.path.getsize(t) for t in tracks) // size
+                read = _sector_reader(f, raw)
+                try:
+                    vol = _pvd_volume(read(16))
+                    if _quick_ok(read, have):
+                        return (have, vol, False)
+                    # a multi-file cue: only the first (data) track's file is read
+                    r = _files_end(read, 450_000 if raw else 4_300_000,
+                                   os.path.getsize(tracks[0]) // size)
+                except _Beyond:
+                    return None
+            return _verdict(have, r, vol)
+        if low.endswith(".chd"):
+            want = 64 << 10                             # header first; the tree only if it's in doubt
+            while True:
+                head, info, dvd = _chd_head(path, want, chdman)
+                if not head:
+                    return None
+                if dvd:
+                    m = re.search(r"Logical size:\s*([\d,]+)", info)
+                    have = int(m.group(1).replace(",", "")) // 2048 if m else 0
+                else:
+                    have = sum(int(x) for x in re.findall(r"FRAMES:(\d+)", info))
+                raw = not dvd and head[:12] == b"\x00" + b"\xff" * 10 + b"\x00"
+                import io
+                read = _sector_reader(io.BytesIO(head), raw)
+                try:
+                    if _quick_ok(read, have):
+                        return (have, _pvd_volume(read(16)), False)
+                    if want < 8 << 20:
+                        want = 8 << 20
+                        continue
+                    return _verdict(have, _files_end(read, 4_300_000 if dvd else 450_000, have),
+                                    _pvd_volume(read(16))) if have else None
+                except _Beyond as b:
+                    if b.lba <= 16 or len(head) < want or want >= 256 << 20:
+                        return None                     # no header, or can't reach it cheaply: don't guess
+                    want *= 4                           # a directory further in: read more
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def disc_incomplete(path, chdman="chdman"):
+    """None if complete (or can't tell); else (sectors present, sectors
+    needed, certain) — see disc_sectors."""
+    r = disc_sectors(path, chdman)
+    if not r:
+        return None
+    have, need, sure = r
+    return r if sure or need > have + 16 else None
+
+
+# ---------------------------------------------------------- dolphin-tool (GameCube / Wii -> RVZ)
+
+# Built from the same Dolphin commit Batocera 43.1 ships (its dolphin-emu.mk
+# turns the CLI tool off), by tools/dolphin-tool/make.sh; published as its own
+# release on GitHub with Dolphin's license and the exact source it came from.
+_DT_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/dolphin-tool-2603a/"
+DOLPHIN_TOOLS = {           # per CPU: the archive RomM-o-Cera downloads, and its pinned SHA-256
+    "x86_64": {"url": _DT_BASE + "dolphin-tool-2603a-x86_64.tar.gz",
+               "sha256": "19eab07e5ac5658fed51d56af5ed475831519fc28961ac95d1b43c4fb7d04ea7", "size": 7990471},
+    "aarch64": {"url": _DT_BASE + "dolphin-tool-2603a-aarch64.tar.gz",
+                "sha256": "655cb5520ea3742505ae30ec6100165a8f05c67ceacf6c52e68ba27b75162b06", "size": 7298926},
+}
+
+
+def _machine():
+    """The CPU dolphin-tool must be built for. uname says what the kernel is;
+    a 64-bit kernel can run 32-bit programs only (some ARM boards), and the
+    tool must match the programs, so a 32-bit Python means "not supported"."""
+    import platform
+    import struct
+    m = platform.machine()
+    m = {"AMD64": "x86_64", "arm64": "aarch64"}.get(m, m)
+    if struct.calcsize("P") != 8:                  # 32-bit userland
+        return {"x86_64": "i686", "aarch64": "armv7l"}.get(m, m)
+    return m
+
+
+DOLPHIN_TOOL = dict({"version": "2603a", "commit": "5e7cc91d8c9a43ca189b288937f65c9763af9c22"},
+                    **DOLPHIN_TOOLS.get(_machine(), {"url": "", "sha256": "", "size": 0}))
+TOOLS_DIR = os.path.join(DATA_DIR, "tools")
+RVZ_ARGS = ["-f", "rvz", "-c", "zstd", "-l", "5", "-b", "131072"]   # Dolphin's recommended RVZ settings
+
+
+def dolphin_tool_dir():
+    return os.path.join(os.environ.get("ROMM_BROWSER_TOOLS", TOOLS_DIR), "dolphin-tool-" + DOLPHIN_TOOL["version"])
+
+
+def dolphin_tool_path():
+    """The installed dolphin-tool, or None."""
+    p = os.path.join(dolphin_tool_dir(), "dolphin-tool")
+    return p if os.path.isfile(p) and os.access(p, os.X_OK) else None
+
+
+def rvz_supported():
+    return _machine() in DOLPHIN_TOOLS
+
+
+def rvz_enabled(cfg):
+    return bool((cfg or {}).get("rvz")) and dolphin_tool_path() is not None
+
+
+def rvz_state(cfg):
+    """{"label", "help"} for the Settings row."""
+    if not rvz_supported():
+        return {"label": "Not on this CPU", "help": "dolphin-tool is built for x86_64 and 64-bit ARM only"}
+    if (cfg or {}).get("rvz") and dolphin_tool_path():
+        return {"label": "On", "help": "Lossless, usually much smaller (dolphin-tool %s)" % DOLPHIN_TOOL["version"]}
+    if (cfg or {}).get("rvz"):
+        return {"label": "Tool missing", "help": "{A} downloads dolphin-tool again"}
+    return {"label": "Off", "help": "Turning it on downloads dolphin-tool once"}
+
+
+def install_dolphin_tool(progress=None, url=None, sha256=None):
+    """Download, check and unpack dolphin-tool into DATA_DIR/tools. Returns
+    its path. The archive holds the binary, Dolphin's license and SOURCE.txt."""
+    import hashlib
+    import tarfile
+    if not rvz_supported():
+        raise RommError("dolphin-tool isn't built for this CPU (%s)." % _machine())
+    url = url or os.environ.get("ROMM_BROWSER_DOLPHIN_URL") or DOLPHIN_TOOL["url"]
+    want = (sha256 or os.environ.get("ROMM_BROWSER_DOLPHIN_SHA256") or DOLPHIN_TOOL["sha256"]).lower()
+    if not want:
+        raise RommError("This version doesn't know dolphin-tool's checksum yet.")
+    dest = dolphin_tool_dir()
+    tmpdir = os.path.join(DATA_DIR, "tmp")
+    os.makedirs(tmpdir, exist_ok=True)
+    tgz = os.path.join(tmpdir, "dolphin-tool.tar.gz")
+    h = hashlib.sha256()
+    try:
+        with requests.get(url, stream=True, timeout=30) as r:
+            if r.status_code != 200:
+                raise RommError("Couldn't download dolphin-tool (HTTP %d)." % r.status_code)
+            total = int(r.headers.get("Content-Length") or 0)
+            got = 0
+            with open(tgz, "wb") as f:
+                for chunk in r.iter_content(1 << 16):
+                    f.write(chunk)
+                    h.update(chunk)
+                    got += len(chunk)
+                    if progress:
+                        progress(got, total)
+    except requests.RequestException as e:
+        raise RommError("Couldn't download dolphin-tool (%s)." % e.__class__.__name__) from None
+    if h.hexdigest() != want:
+        os.remove(tgz)
+        raise RommError("dolphin-tool's download didn't match its checksum; not installed.")
+    staging = dest + ".new"
+    shutil.rmtree(staging, ignore_errors=True)
+    os.makedirs(staging)
+    with tarfile.open(tgz) as t:
+        for m in t.getmembers():
+            if not (m.isfile() or m.isdir()) or m.name.startswith(("/", "..")) or "/../" in m.name:
+                raise RommError("Unexpected file in the dolphin-tool archive: %s" % m.name)
+        try:
+            t.extractall(staging, filter="data")       # Python 3.12+: tarfile's own safety net too
+        except TypeError:
+            t.extractall(staging)
+    os.remove(tgz)
+    exe = os.path.join(staging, "dolphin-tool")
+    if not os.path.isfile(exe):
+        raise RommError("The dolphin-tool archive has no dolphin-tool in it.")
+    os.chmod(exe, 0o755)
+    try:
+        out = subprocess.run([exe, "--help"], capture_output=True, text=True, timeout=30)
+    except OSError as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RommError("dolphin-tool doesn't run on this box (%s)." % e.strerror) from None
+    if "convert" not in (out.stdout + out.stderr):
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RommError("dolphin-tool doesn't run on this box.")
+    shutil.rmtree(dest, ignore_errors=True)
+    os.replace(staging, dest)
+    log("dolphin-tool %s installed (%s)" % (DOLPHIN_TOOL["version"], DOLPHIN_TOOL["commit"][:10]))
+    return os.path.join(dest, "dolphin-tool")
+
+
+# ---------------------------------------------------------- leftovers
+
+def chd_worker_busy():
+    """True while rb_chd.py holds its lock (a conversion may be writing)."""
+    import fcntl
+    try:
+        fd = os.open(os.path.join(DATA_DIR, "chd.lock"), os.O_RDONLY | os.O_CREAT, 0o644)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
+
+
+# Systems whose games are folders full of data (or that aren't games at all):
+# their empty folders can be part of a game — never offered for cleanup.
+FOLDER_GAME_SYSTEMS = {"ps3", "psvita", "xbox360", "wiiu", "switch", "windows", "windows_installers",
+                       "steam", "flatpak", "ports", "pygame", "lutris", "epic", "heroic", "vita3k"}
+
+
+def _leftover_folder(sysdir, d):
+    """An empty folder RomM-o-Cera could have left: a game folder directly in
+    the system folder, or a "(Disc N)" folder a CHD conversion emptied —
+    never a folder inside a game's own data (".ps3" etc.)."""
+    if os.path.splitext(d)[1].lower() in (".ps3", ".xbox360", ".wiiu", ".pc", ".psvita", ".nsp"):
+        return False
+    rel = os.path.relpath(d, sysdir).split(os.sep)
+    if any(os.path.splitext(x)[1].lower() in (".ps3", ".xbox360", ".wiiu", ".pc", ".psvita") for x in rel):
+        return False
+    return len(rel) == 1 or bool(DISC_RE.search(os.path.basename(d)))
+
+
+def find_leftovers(pending_roms=(), chd_busy=None):
+    """Files and folders interrupted downloads/conversions left behind:
+    [{"path", "kind", "size"}]. Never a partial download that's still
+    queued or paused (it resumes from it), never a CHD being written."""
+    busy = chd_worker_busy() if chd_busy is None else chd_busy
+    keep = set()
+    for rom, system in pending_roms:
+        name = safe_name(rom.get("fs_name") or "")
+        if name:
+            keep.add(os.path.normpath(os.path.join(ROMS_ROOT, system, name)))
+    out = []
+
+    def kept(p):
+        q = os.path.normpath(p)
+        return any(q == k or q == k + ".part" or q.startswith(k + os.sep) for k in keep)
+    try:
+        systems = sorted(os.listdir(ROMS_ROOT))
+    except OSError:
+        systems = []
+    for system in systems:
+        sysdir = os.path.join(ROMS_ROOT, system)
+        if not os.path.isdir(sysdir) or os.path.islink(sysdir):
+            continue
+        for dp, dns, fns in os.walk(sysdir, topdown=False):
+            if any(part in AUDIT_SKIP for part in os.path.relpath(dp, sysdir).split(os.sep)):
+                continue
+            for fn in fns:
+                p = os.path.join(dp, fn)
+                low = fn.lower()
+                if low.endswith((".chd.part", ".tmp.chd")):
+                    kind = "Unfinished CHD"
+                    if busy:
+                        continue
+                elif low.endswith(".part"):
+                    kind = "Partial download"
+                elif low.endswith(".tmp") and fn.startswith("."):
+                    kind = "Temporary file"
+                else:
+                    continue
+                if kept(p):
+                    continue
+                try:
+                    out.append({"path": p, "kind": kind, "size": os.path.getsize(p)})
+                except OSError:
+                    pass
+            if dp != sysdir and not kept(dp) and system not in FOLDER_GAME_SYSTEMS \
+                    and _leftover_folder(sysdir, dp):
+                try:
+                    if not os.listdir(dp):
+                        out.append({"path": dp, "kind": "Empty folder", "size": 0})
+                except OSError:
+                    pass
+    tmp = os.path.join(DATA_DIR, "tmp")
+    if os.path.isdir(tmp) and not busy:
+        for n in sorted(os.listdir(tmp)):
+            p = os.path.join(tmp, n)
+            out.append({"path": p, "kind": "RomM-o-Cera scratch", "size": path_size(p)})
+    return out
+
+
+def delete_leftovers(items):
+    """Delete find_leftovers() entries; returns bytes freed."""
+    freed = 0
+    for it in items:
+        p = it["path"]
+        if not (_inside(p, ROMS_ROOT) or _inside(p, DATA_DIR)):
+            continue
+        try:
+            if os.path.isdir(p) and not os.path.islink(p):
+                if it["kind"] == "Empty folder":
+                    os.rmdir(p)                      # only if still empty
+                else:
+                    shutil.rmtree(p)
+            elif os.path.lexists(p):
+                os.remove(p)
+            freed += it.get("size") or 0
+        except OSError:
+            continue
+        d = os.path.dirname(p)                          # a game folder only the leftover kept
+        while _inside(d, ROMS_ROOT) and os.path.dirname(d) != os.path.normpath(ROMS_ROOT) \
+                and os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
+    log("LEFTOVERS: removed %d (%s)" % (len(items), human_size(freed)))
+    return freed
 
 
 def es_notify(msg):
@@ -229,6 +808,38 @@ def chd_threads(cfg):
     except (TypeError, ValueError):
         return auto_chd_threads()
     return max(1, min(v, cpu_threads()))
+
+
+# chdman's FLAC codecs leak memory on some builds (Batocera 43's chdman 0.285):
+# DVDs always skip FLAC (rb_chd.DVD_CODECS); a CD's cdfl leak is bounded by the
+# disc (~1-1.3 GB), harmless with 4 GB+, too much for a 1-2 GB box. A "4 GB"
+# machine reports ~3.7-3.9 GiB (firmware/GPU reservations), hence 3.5 GiB.
+LOW_RAM_BYTES = int(3.5 * 2 ** 30)
+
+
+def total_ram():
+    """Installed RAM in bytes (0 if unknown)."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def low_ram(total=None):
+    t = total_ram() if total is None else total
+    return 0 < t < LOW_RAM_BYTES
+
+
+def chd_low_memory(cfg):
+    """True: compress CDs without FLAC (cdlz,cdzl). Default: on for low-RAM boxes."""
+    v = (cfg or {}).get("chd_low_memory", "auto")
+    if isinstance(v, bool):
+        return v
+    return low_ram()
 
 
 class queue_lock:
@@ -458,6 +1069,21 @@ class Api:
             params["tags_logic"] = "none"
         return self.get("/api/roms", params)
 
+    def by_hash(self, **hashes):
+        """RomM's game with this hash (crc_hash / md5_hash / sha1_hash / ra_hash), or None."""
+        params = {k: v for k, v in hashes.items() if v}
+        if not params:
+            return None
+        try:
+            r = self.get("/api/roms/by-hash", params)
+        except RommError as e:
+            if "HTTP 404" in str(e) or "HTTP 422" in str(e):
+                return None
+            raise
+        if isinstance(r, list):
+            r = r[0] if r else None
+        return r if isinstance(r, dict) and r.get("id") else None
+
     def rom(self, rom_id):
         return self.get("/api/roms/%d" % rom_id)
 
@@ -607,6 +1233,31 @@ EXPANDS = {"psx", "ps2", "ps3", "psp", "saturn", "dreamcast", "megacd", "pcengin
            "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "gamecube", "wii", "wiiu", "xbox",
            "xbox360", "3ds", "jaguarcd", "fmtowns"}
 SPACE_MARGIN = 2 << 30
+KEEP_FREE_CHOICES = (0, 5, 10, 20, 50, 100)     # GB, Settings cycles these
+
+
+def keep_free_bytes(cfg):
+    """Space downloads and conversions must leave free (Settings, default 20 GB)."""
+    v = (cfg or {}).get("keep_free_gb", DEFAULT_CONFIG["keep_free_gb"])
+    try:
+        return max(0, int(float(v) * (1 << 30)))
+    except (TypeError, ValueError):
+        return DEFAULT_CONFIG["keep_free_gb"] << 30
+
+
+def free_bytes(path=None):
+    try:
+        st = os.statvfs(path or ROMS_ROOT)
+    except OSError:
+        return 0
+    return st.f_bavail * st.f_frsize
+
+
+class NoSpace(Exception):
+    """A download doesn't fit (with the keep-free reserve): it waits, it doesn't fail."""
+    def __init__(self, short):
+        super().__init__("Waiting for space: free %s more" % human_size(short))
+        self.short = short
 
 
 def space_needed(rom, system):
@@ -615,12 +1266,31 @@ def space_needed(rom, system):
     return int(size * (2.2 if system in EXPANDS else 1.0))
 
 
-def fit_in_space(items, free):
+def queue_forecast(jobs, free, keep, chd=True):
+    """Space the unfinished downloads still need, and whether it fits.
+    Each job: what's left of its download (done bytes are already on disk);
+    plus, for disc games the CHD worker converts, the biggest one's working
+    space (original and CHD side by side until the CHD is verified)."""
+    need, chd_peak, n = 0, 0, 0
+    for j in jobs:
+        if not (j.active or j.state == Job.PAUSED):
+            continue
+        n += 1
+        size = space_needed(j.rom, j.system)
+        need += max(0, size - (j.done_bytes or 0))
+        if chd and j.system in CHD_CD_SYSTEMS | CHD_DVD_SYSTEMS:
+            chd_peak = max(chd_peak, size)
+    total = need + chd_peak
+    return {"jobs": n, "need": total, "free": free, "keep": keep,
+            "fits": free - total >= keep, "short": max(0, total + keep - free)}
+
+
+def fit_in_space(items, free, reserve=SPACE_MARGIN):
     """Greedy, keeping the given order: (that_fit, total_needed_for_them)."""
     fit, used = [], 0
     for rom, system in items:
         need = space_needed(rom, system)
-        if used + need + SPACE_MARGIN <= free:
+        if used + need + reserve <= free:
             fit.append((rom, system))
             used += need
     return fit, used
@@ -629,7 +1299,10 @@ def fit_in_space(items, free):
 # ----------------------------------------------------------- updates
 
 def _vtuple(v):
-    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3]) or (0,)
+    """(major, minor, patch) for a RomM-o-Cera version/tag ("v0.6.5", "0.6.5+abc");
+    anything else (e.g. the "dolphin-tool-2603a" release) is (0,): never an update."""
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?(?:[+-].*)?$", (v or "").strip())
+    return tuple(int(x or 0) for x in m.groups()) if m else (0,)
 
 
 def newer_release(cfg, force=False):
@@ -1185,6 +1858,126 @@ def _sheets_in(path):
     return out
 
 
+def es_hashes(system):
+    """{path: RetroAchievements hash} EmulationStation computed for a system's
+    games (hidden ones too). Empty if ES can't be asked."""
+    try:
+        games = _es_json("/systems/%s/games" % urllib.parse.quote(system)) or []
+    except Exception:
+        return {}
+    return {g["path"]: g["cheevosHash"] for g in games if g.get("path") and g.get("cheevosHash")}
+
+
+TAG_RE = re.compile(r"\(([^)]*)\)")
+NOT_THE_GAME = ("demo", "beta", "proto", "sample", "kiosk", "unl", "pirate", "hack")
+
+
+def _tags(name):
+    return {t.strip().lower() for g in TAG_RE.findall(name) for t in g.split(",")}
+
+
+def find_in_romm(api, system, platform_ids, path, ra_hash=None):
+    """RomM's copy of a game on the box whose file name RomM doesn't use:
+    (rom, how) with how "ra" (same RetroAchievements hash: the same game data)
+    or "name" (the one RomM title with the same name, disc and region — another
+    revision or region spelling), else (None, None)."""
+    if ra_hash and ra_hash.strip("0") and re.fullmatch(r"[0-9a-fA-F]{32}", ra_hash):
+        # games without RetroAchievements: no hash in ES, or RomM has none -> the title match below
+        try:
+            r = api.by_hash(ra_hash=ra_hash.lower())
+        except RommError:
+            r = None
+        if r and (not platform_ids or r.get("platform_id") in platform_ids):
+            return r, "ra"
+    stem = os.path.splitext(os.path.basename(path))[0]
+    title = strip_tags(stem).lower()
+    disc = disc_info(stem)
+    want_regions = _tags(stem) & {"usa", "europe", "japan", "world", "canada", "australia", "korea",
+                                  "asia", "germany", "france", "spain", "italy", "brazil"}
+    try:
+        items = api.roms(platform_ids=platform_ids, search=strip_tags(stem), limit=100).get("items", [])
+    except RommError:
+        return None, None
+    cands = []
+    for r in items:
+        n = r.get("fs_name_no_ext") or ""
+        tags = _tags(n)
+        if strip_tags(n).lower() != title or any(any(b in t for b in NOT_THE_GAME) for t in tags):
+            continue
+        d = disc_info(n)
+        if (d[1] if d else None) != (disc[1] if disc else None):
+            continue
+        if want_regions and not (want_regions & tags):
+            continue
+        cands.append(r)
+    if len(cands) == 1:
+        return cands[0], "name"
+    if cands:                                   # several revisions: the latest one
+        revs = sorted(cands, key=lambda r: [int(x) for x in re.findall(r"\(Rev (\d+)\)",
+                                                                       r.get("fs_name_no_ext") or "")] or [0])
+        top = revs[-1]
+        if sum(1 for r in cands if _tags(r.get("fs_name_no_ext") or "") == _tags(top.get("fs_name_no_ext") or "")) == 1:
+            return top, "name"
+    return None, None
+
+
+def _pct(cut):
+    have, need = cut[0], cut[1]
+    return (round(100 * (1 - have / need)), "{:,}".format(have), "{:,}".format(need))
+
+
+def _chd_frames(path, chdman):
+    try:
+        info = subprocess.run([chdman, "info", "-i", path], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if "Tag='DVD" in info:
+        m = re.search(r"Logical size:\s*([\d,]+)", info)
+        return ("dvd", int(m.group(1).replace(",", "")) // 2048) if m else None
+    f = re.findall(r"FRAMES:(\d+)", info)
+    return ("cd", sum(int(x) for x in f)) if f else None
+
+
+def _chd_vs_romm(api, chd, rom, chdman):
+    """A CHD converted on the box against RomM's original (zip of cue/bin, or
+    iso): None if it can't be compared; False if complete; else (have, need)."""
+    try:
+        detail = api.rom(rom["id"])
+    except RommError:
+        return None
+    sizes = {}
+    for f in detail.get("files") or []:
+        if f.get("category") not in (None, "game"):
+            continue
+        for m in f.get("archive_members") or [{"name": f.get("file_name"), "size": f.get("file_size_bytes")}]:
+            ext = os.path.splitext((m.get("name") or "").lower())[1]
+            if m.get("size"):
+                sizes.setdefault(ext, 0)
+                sizes[ext] += m["size"]
+    got = _chd_frames(chd, chdman)
+    if not got:
+        return None
+    kind, have = got
+    if kind == "cd" and sizes.get(".bin"):
+        need = sizes[".bin"] // 2352
+    elif kind == "dvd" and sizes.get(".iso"):
+        need = sizes[".iso"] // 2048
+    else:
+        return None
+    return (have, need) if have + 300 < need else False
+
+
+def _images_in(path):
+    """Disc images (.cue, .iso, .chd) at or under path, skipping media folders."""
+    if os.path.isfile(path):
+        return [path] if path.lower().endswith((".cue", ".iso", ".chd")) else []
+    out = []
+    for dp, dns, fns in os.walk(path):
+        dns[:] = [x for x in dns if x not in AUDIT_SKIP]
+        out += [os.path.join(dp, f) for f in fns if f.lower().endswith((".cue", ".iso", ".chd"))]
+    return out
+
+
 def _slim(rom):
     return {k: rom.get(k) for k in ("id", "name", "fs_name", "fs_name_no_ext", "platform_id")}
 
@@ -1200,6 +1993,22 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
     def add(system, path, problem, rom=None, severity="damaged"):
         findings.append({"system": system, "path": path, "problem": problem,
                          "severity": severity, "rom": _slim(rom) if rom else None})
+
+    def identify(system):
+        """Damaged games RomM doesn't list under their file name: find RomM's copy
+        by RetroAchievements hash, or the one matching title/disc/region."""
+        hashes = None
+        for f in findings:
+            if f["system"] != system or f["rom"] or f["severity"] != "damaged":
+                continue
+            if hashes is None:
+                hashes = es_hashes(system)
+            rom, how = find_in_romm(api, system, platforms_by_system.get(system) or [], f["path"],
+                                    hashes.get(f["path"]))
+            if rom:
+                f["rom"], f["via"] = dict(_slim(rom), fs_name_no_ext=rom.get("fs_name_no_ext")), how
+                f["problem"] += " · RomM has it as %s%s" % (rom.get("fs_name") or rom.get("name"),
+                                                           " (same RetroAchievements hash)" if how == "ra" else "")
 
     def members_of(files):
         return {m["name"].lower(): m for f in files for m in (f.get("archive_members") or []) if m.get("name")}
@@ -1261,6 +2070,27 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                     if not os.path.exists(ref):
                         add(system, sheet, "Missing track file: %s" % os.path.basename(ref),
                             index.get(os.path.splitext(n)[0].lower()) or index.get(low))
+            # 1b) disc images cut short (an interrupted copy): the game can't
+            # load what's past the end. Converted CHDs are compared with RomM's
+            # original exactly (below); here, the disc's own filesystem says so
+            for img in _images_in(path):
+                st = os.path.splitext(os.path.basename(img))[0].lower()
+                irom = index.get(st) or index.get(os.path.splitext(n)[0].lower()) or index.get(low)
+                if img.lower().endswith(".chd") and irom and \
+                        not (irom.get("fs_name") or "").lower().endswith(".chd"):
+                    exact = _chd_vs_romm(api, img, irom, chdman)
+                    if exact is not None:
+                        if exact:
+                            add(system, img, "Incomplete disc image: %d%% missing (%s of %s sectors in RomM's "
+                                "copy)" % _pct(exact), irom)
+                        continue
+                cut = disc_incomplete(img, chdman)
+                if cut and cut[2]:
+                    add(system, img, "Incomplete disc image: %d%% missing (%s of %s sectors)" % _pct(cut), irom)
+                elif cut:
+                    add(system, img, "May be cut short: a file on the disc reaches past its end (%s of %s "
+                        "sectors; some discs list dummy files)" % ("{:,}".format(cut[0]), "{:,}".format(cut[1])),
+                        irom, "differs")
             # 2) against RomM's record of the game
             stem = n if os.path.isdir(path) else os.path.splitext(n)[0]
             rom = index.get(low) or index.get(stem.lower())
@@ -1340,6 +2170,13 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                         rom, "differs" if (trimmed or not small) else "damaged")
                 elif deep and file_hash_ok(fp, f)[0] is False:
                     add(system, fp, "Checksum doesn't match RomM", rom)
+    for system in {f["system"] for f in findings}:
+        if cancel is not None and cancel.is_set():
+            break
+        try:
+            identify(system)
+        except RommError:
+            pass
     return findings, stats
 
 
@@ -1640,12 +2477,15 @@ class Job:
         self.speed = 0.0
         self.message = ""
         self.chd_queued = False
+        self.chd_task = None
         self.verified = None          # True once every file matched RomM's checksum
         self.attempts = 0
         self.retry_at = 0.0
         self.pause = False            # cancel, but keep it in the saved queue
         self.force = False            # "Download now": ignore the download hours
         self.user_paused = False      # paused by the user (not by "Pause all" / exit)
+        self.short_space = 0          # waiting for space: bytes still to free
+        self.replace = None           # broken copy under another name, removed once this one is in
         self.cancel = threading.Event()
 
     @property
@@ -1667,6 +2507,7 @@ class Job:
 
     def requeue(self):
         self.state, self.message, self.pause = Job.QUEUED, "", False
+        self.short_space = 0
         self.user_paused, self.force = False, False
         self.cancel = threading.Event()
         self.done_bytes, self.speed, self.attempts, self.retry_at = 0, 0.0, 0, 0.0
@@ -1689,6 +2530,7 @@ class ChecksumError(RommError):
 
 
 RETRY_DELAYS = (15, 60, 180)        # seconds before attempts 2, 3, 4
+SPACE_RECHECK = 30                  # seconds between free-space checks for a waiting download
 
 
 # RomM hashes an archive by what's inside it (a zip's crc/md5/sha1 are its
@@ -1804,6 +2646,7 @@ class Downloader:
         self.cv = threading.Condition()
         self.hold = False             # "Pause all": the worker starts nothing new
         self.rate_limit = 0           # bytes/s, 0 = unlimited (rb_dl.py sets it while a game runs)
+        self.unpacking_bytes = 0      # space games handed to the post thread will still take
         self.es = load_es_systems()
         self.jobs = []
         self._closed = False
@@ -1822,10 +2665,14 @@ class Downloader:
         self.t.join(30)
 
     # -- queue ------------------------------------------------------------
-    def enqueue(self, rom, system, group=None):
+    def enqueue(self, rom, system, group=None, replace=None):
+        """replace: paths of a broken copy under another name (Check games): once
+        RomM's copy is in, saves move over, playlists follow, and they're deleted."""
         with self.cv:
             for j in self.jobs:
                 if j.rom["id"] == rom["id"] and j.active:
+                    if replace:
+                        j.replace = sorted(set(j.replace or []) | set(replace))
                     return j
             for j in self.jobs:                      # re-use a paused/failed entry in place
                 if j.rom["id"] == rom["id"] and j.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
@@ -1837,6 +2684,8 @@ class Downloader:
                 j = Job(rom, system, group)
                 self.jobs.append(j)
                 self.cv.notify_all()
+            if replace:
+                j.replace = sorted(set(j.replace or []) | set(replace))
         self.save_queue()
         return j
 
@@ -1963,7 +2812,7 @@ class Downloader:
     def _save_queue(self):
         with self.qlock:
             pend = [{"rom": {k: j.rom.get(k) for k in self.SLIM_KEYS}, "system": j.system,
-                     "group": j.group, "paused": bool(j.user_paused)}
+                     "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(DATA_DIR, exist_ok=True)
             tmp = QUEUE_PATH + ".tmp"
@@ -1998,7 +2847,7 @@ class Downloader:
         n = 0
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
-                j = self.enqueue(it["rom"], it["system"], it.get("group"))
+                j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"))
                 if it.get("paused"):
                     with self.cv:
                         j.user_paused = True
@@ -2059,39 +2908,101 @@ class Downloader:
                 return
             self.save_queue()
             try:
-                self._process(j)
-            except Cancelled:
-                if not j.pause:
-                    self._drop_parts(j)        # before the state flips: "Cancelled" means cleaned up
-                j.state = Job.PAUSED if j.pause else Job.CANCELLED
-                j.message = "Paused" if j.pause else "Cancelled"
-            except OutsideHours:
-                j.state, j.message, j.speed = Job.QUEUED, "Waiting for download hours", 0.0
-                log("HOURS %s: paused until %s" % (j.name, hours_label(self.cfg.get("download_hours"))))
-            except (NetError, ChecksumError) as e:
-                j.attempts += 1
-                limit = 1 if isinstance(e, ChecksumError) else len(RETRY_DELAYS)
-                if j.attempts <= limit:
-                    delay = RETRY_DELAYS[j.attempts - 1]
-                    j.state, j.retry_at = Job.QUEUED, time.time() + delay
-                    j.message = "%s Retrying in %d s." % (e, delay)
-                    log("RETRY %s (%d): %s" % (j.name, j.attempts, e))
-                else:
-                    j.state, j.message = Job.FAILED, str(e)[:160]
-                    log("FAIL %s: %s" % (j.name, j.message))
-            except Exception as e:  # keep the worker alive whatever happens
-                j.state = Job.FAILED
-                # our own errors are written to be shown; anything else could carry
-                # request details, so only its type goes on screen / in the log
-                j.message = (str(e) if isinstance(e, (RommError, OSError, zipfile.BadZipFile))
-                             else "Error (%s)" % e.__class__.__name__)[:160]
+                post = self._process(j)
+                if post is not None:
+                    if self._overlap(post):
+                        self._hand_off(j, post)       # unpacks in the post thread; next download starts
+                        continue
+                    self._post(j, post)
+            except Exception as e:                # every outcome is recorded on the job
+                self._failed(j, e)
+            self._settled(j)
+
+    def _failed(self, j, e):
+        """Record how a job ended when it didn't finish (shared by both threads)."""
+        if isinstance(e, Cancelled):
+            if not j.pause:
+                self._drop_parts(j)        # before the state flips: "Cancelled" means cleaned up
+            j.state = Job.PAUSED if j.pause else Job.CANCELLED
+            j.message = "Paused" if j.pause else "Cancelled"
+        elif isinstance(e, NoSpace):
+            if not j.short_space:
+                log("SPACE %s: %s (keeping %s free)" % (j.name, e, human_size(keep_free_bytes(self.cfg))))
+            j.state, j.message, j.speed = Job.QUEUED, str(e), 0.0
+            j.short_space, j.retry_at = e.short, time.time() + SPACE_RECHECK
+        elif isinstance(e, OutsideHours):
+            j.state, j.message, j.speed = Job.QUEUED, "Waiting for download hours", 0.0
+            log("HOURS %s: paused until %s" % (j.name, hours_label(self.cfg.get("download_hours"))))
+        elif isinstance(e, (NetError, ChecksumError)):
+            j.attempts += 1
+            limit = 1 if isinstance(e, ChecksumError) else len(RETRY_DELAYS)
+            if j.attempts <= limit:
+                delay = RETRY_DELAYS[j.attempts - 1]
+                j.state, j.retry_at = Job.QUEUED, time.time() + delay
+                j.message = "%s Retrying in %d s." % (e, delay)
+                log("RETRY %s (%d): %s" % (j.name, j.attempts, e))
+            else:
+                j.state, j.message = Job.FAILED, str(e)[:160]
                 log("FAIL %s: %s" % (j.name, j.message))
-            if j.state == Job.DONE and j.group:
-                try:
-                    self._finish_group(j.group, j.system)
-                except Exception as e:
-                    log("group %s: %r" % (j.group.get("base"), e))
-            self.save_queue()
+        else:  # keep the worker alive whatever happens
+            j.state = Job.FAILED
+            # our own errors are written to be shown; anything else could carry
+            # request details, so only its type goes on screen / in the log
+            j.message = (str(e) if isinstance(e, (RommError, OSError, zipfile.BadZipFile))
+                         else "Error (%s)" % e.__class__.__name__)[:160]
+            log("FAIL %s: %s" % (j.name, j.message))
+
+    def _settled(self, j):
+        if j.state == Job.DONE and j.group:
+            try:
+                self._finish_group(j.group, j.system)
+            except Exception as e:
+                log("group %s: %r" % (j.group.get("base"), e))
+        self.save_queue()
+
+    # -- unpacking while the next download runs ------------------------------
+    allow_overlap = True          # rb_dl.py (background, mostly while a game runs) turns it off
+    POST_BACKLOG = 2              # one unpacking + one waiting; the next download waits beyond that
+
+    def _overlap(self, post):
+        return self.allow_overlap and self.cfg.get("extract_parallel", True) and post.get("heavy")
+
+    def _hand_off(self, j, post):
+        with self.cv:
+            if not hasattr(self, "_post_q"):
+                self._post_q, self._post_busy = [], 0
+                threading.Thread(target=self._post_run, daemon=True).start()
+            while len(self._post_q) + self._post_busy >= self.POST_BACKLOG and not self._closed:
+                self.cv.wait(1.0)                  # disk is busy enough: wait before downloading more
+            j.state, j.message, j.speed = Job.EXTRACTING, "Waiting to unpack", 0.0
+            self._post_q.append((j, post))
+            self.unpacking_bytes += post.get("extra", 0)
+            self.cv.notify_all()
+
+    def _post_run(self):
+        while True:
+            with self.cv:
+                while not self._post_q:
+                    if self._closed:
+                        return
+                    self.cv.wait(1.0)
+                j, post = self._post_q.pop(0)
+                self._post_busy += 1
+            try:
+                self._post(j, post)
+            except Exception as e:
+                self._failed(j, e)
+            finally:
+                with self.cv:
+                    self._post_busy -= 1
+                    self.unpacking_bytes = max(0, self.unpacking_bytes - post.get("extra", 0))
+                    self.cv.notify_all()
+            self._settled(j)
+
+    def unpacking(self):
+        """Jobs waiting for or in the post thread."""
+        with self.cv:
+            return [j for j, _ in getattr(self, "_post_q", [])]
 
     # -- transfer ------------------------------------------------------
     def _fetch(self, j, url_path, dest, size_hint, record=None):
@@ -2179,6 +3090,20 @@ class Downloader:
         st = os.statvfs(path)
         return st.f_bavail * st.f_frsize
 
+    @staticmethod
+    def _part_bytes(sysdir, detail):
+        """Bytes of this rom's partial download already on disk."""
+        name = safe_name(detail.get("fs_name") or "")
+        if not name:
+            return 0
+        p = os.path.join(sysdir, name)
+        if os.path.isfile(p + ".part"):
+            return os.path.getsize(p + ".part")
+        if os.path.isdir(p):
+            return sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(p) for f in fs
+                       if f.endswith(".part") or not f.startswith("."))
+        return 0
+
     def _process(self, j):
         rom, system = j.rom, j.system
         sysdir = os.path.join(ROMS_ROOT, system)
@@ -2195,11 +3120,16 @@ class Downloader:
         j.total_bytes = sum(f.get("file_size_bytes") or 0 for f in files) or \
             detail.get("fs_size_bytes") or 0
         j.done_bytes, j.verified = 0, None
-        # extracted disc games are bigger than the zip; leave a margin
-        need = space_needed(detail, system) + SPACE_MARGIN
-        if self._free_bytes(sysdir) < need:
-            raise RommError("Not enough space (%s free, need ~%s)" % (
-                human_size(self._free_bytes(sysdir)), human_size(need)))
+        # extracted disc games are bigger than the zip; what's already
+        # downloaded (.part) is on disk; and the keep-free reserve stays free
+        need = max(0, space_needed(detail, system) - self._part_bytes(sysdir, detail)) + \
+            (keep_free_bytes(self.cfg) or SPACE_MARGIN)       # keep-free 0: still a small margin
+        free = self._free_bytes(sysdir) - self.unpacking_bytes
+        if free < need:
+            raise NoSpace(need - free)
+        if j.short_space:
+            log("SPACE %s: enough space now" % j.name)
+        j.short_space = 0
 
         j.state = Job.DOWNLOADING
         fs_name = safe_name(detail["fs_name"])
@@ -2224,7 +3154,7 @@ class Downloader:
                     continue
                 self._fetch(j, "/api/roms/%d/files/content/%s" % (
                     f["id"], urllib.parse.quote(f["file_name"])), dest, f.get("file_size_bytes"), f)
-            results = self._postprocess_folder(j, folder)
+            return {"kind": "folder", "path": folder, "heavy": False}
         else:
             dest = os.path.join(sysdir, fs_name)
             rec = files[0] if len(files) == 1 else None
@@ -2234,12 +3164,26 @@ class Downloader:
             else:
                 self._fetch(j, "/api/roms/%d/content/%s" % (
                     rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes, rec)
-            results = self._postprocess_file(j, dest)
+            heavy = self._will_extract(j, dest)
+            return {"kind": "file", "path": dest, "heavy": heavy,
+                    "extra": max(0, space_needed(detail, system) - j.total_bytes) if heavy else 0}
 
+    def _post(self, j, post):
+        """After the download: extract / queue conversion, hand the game to ES, done."""
+        rom, system = j.rom, j.system
+        if post["kind"] == "folder":
+            results = self._postprocess_folder(j, post["path"])
+        else:
+            if post.get("heavy"):
+                j.state, j.message = Job.EXTRACTING, ""
+                if j.cancel.is_set():
+                    raise Cancelled()
+            results = self._postprocess_file(j, post["path"])
+        if j.replace:
+            self._replace_old(j, results)
         entry = self._queue_gamelist(rom, system, results)
         self.library.mark(rom, system, results, group=j.group, meta=entry)
-        j.chd_queued = self._chd_queued
-        j.chd_task = self._chd_task if self._chd_queued else None
+        j.chd_queued = bool(j.chd_task)
         j.state = Job.DONE
         j.message = "Ready to play" + (", checksum OK" if j.verified else "")
         log("OK %s -> %s%s" % (j.name, results, " [verified]" if j.verified else ""))
@@ -2311,20 +3255,50 @@ class Downloader:
                 log("group %s: %r" % (g.get("base"), e))
         return len(seen)
 
-    # -- post-processing -------------------------------------------------
-    _chd_queued = False
+    def _replace_old(self, j, results):
+        """The broken copy (another file name) goes now that RomM's is here:
+        saves are copied to the new name, playlists pointed at it, then the
+        old files are deleted (never the new ones)."""
+        import rb_chd                                  # save/playlist helpers live with the converter
+        sysdir = os.path.join(ROMS_ROOT, j.system)
+        new = primary_path(j.system, results, self.es) or results[0]
+        new_set = {os.path.normpath(p) for r in results for p in ([r] + game_files(r))}
+        for old in j.replace or []:
+            if not os.path.exists(old) or os.path.normpath(old) in new_set or not _inside(old, sysdir):
+                continue
+            try:
+                rb_chd.migrate_saves(j.system, old, new)
+                rb_chd.fix_m3us(sysdir, {os.path.normpath(old): new})
+            except Exception as e:
+                log("replace %s: %r" % (old, e))
+            delete_game(j.system, old, self.library)
+            log("REPLACED %s -> %s" % (old, new))
+        j.replace = None
 
-    _chd_task = None
+    # -- post-processing -------------------------------------------------
+    def _will_extract(self, j, path):
+        """True when post-processing will unpack this file (the slow part)."""
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in ARCHIVE_EXTS or j.system in ZIP_NATIVE:
+            return False
+        try:
+            members = self._list_archive(path)
+        except Exception:
+            return False
+        has_disc = any(os.path.splitext(m)[1].lower() in DISC_EXTS for m in members)
+        return bool(members) and not (self._accepts(j.system, ext) and not has_disc)
 
     def _accepts(self, system, ext):
         exts = self.es.get(system)
         return True if exts is None else ext.lower() in exts
 
     def _postprocess_file(self, j, path):
-        self._chd_queued = False
+        j.chd_task = None
         ext = os.path.splitext(path)[1].lower()
         system = j.system
         if ext not in ARCHIVE_EXTS or system in ZIP_NATIVE:
+            if ext in DISC_EXTS:                   # a bare .iso/.cue/...: convert it like an extracted one
+                self._maybe_chd(j, system, [path], [path])
             return [path]
         members = self._list_archive(path)
         if not members:
@@ -2350,12 +3324,12 @@ class Downloader:
         else:
             out = [os.path.join(sysdir, list(top)[0])]
         playable = self._playable_paths(system, out)
-        self._maybe_chd(system, playable, out)
+        self._maybe_chd(j, system, playable, out)
         return out
 
     def _postprocess_folder(self, j, folder):
-        self._chd_queued = False
-        self._maybe_chd(j.system, self._playable_paths(j.system, [folder]), [folder])
+        j.chd_task = None
+        self._maybe_chd(j, j.system, self._playable_paths(j.system, [folder]), [folder])
         return [folder]
 
     def _playable_paths(self, system, roots):
@@ -2419,7 +3393,14 @@ class Downloader:
             if rc != 0:
                 raise RommError("7z extract failed (rc %d)" % rc)
 
-    def _maybe_chd(self, system, playable, roots):
+    def _maybe_chd(self, j, system, playable, roots):
+        if system in RVZ_SYSTEMS:
+            if not rvz_enabled(self.cfg) or not self._accepts(system, ".rvz"):
+                return
+            srcs = [p for p in playable if p.lower().endswith(RVZ_SOURCES)]
+            if srcs:
+                self._queue_conversion(j, system, "rvz", srcs, roots)
+            return
         if not self.cfg.get("chd"):
             return
         if system in CHD_CD_SYSTEMS:
@@ -2432,14 +3413,16 @@ class Downloader:
             return
         if not srcs or not self._accepts(system, ".chd"):
             return
+        self._queue_conversion(j, system, mode, srcs, roots)
+
+    def _queue_conversion(self, j, system, mode, srcs, roots):
         os.makedirs(CHD_QUEUE_DIR, exist_ok=True)
         task = {"system": system, "mode": mode, "sources": srcs, "roots": roots,
                 "queued": time.time()}
-        name = "%d-%s.json" % (int(time.time() * 1000), re.sub(r"\W+", "_", system))
-        self._chd_task = name
+        name = "%d-%d-%s.json" % (int(time.time() * 1000), j.rom.get("id") or 0, re.sub(r"\W+", "_", system))
+        j.chd_task = name
         with open(os.path.join(CHD_QUEUE_DIR, name), "w") as f:
             json.dump(task, f)
-        self._chd_queued = True
 
     def _queue_gamelist(self, rom, system, paths):
         """Hand gamelist metadata to the launcher's post-exit merge step

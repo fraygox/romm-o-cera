@@ -44,12 +44,12 @@ def _rom(api, stem):
 # ------------------------------------------------------------ naming
 
 @pytest.mark.parametrize("name,expected", [
-    ("Final Fantasy VII (USA) (Disc 1)", ("Final Fantasy VII (USA)", 1)),
+    ("Fugiat Fantasy VII (USA) (Disc 1)", ("Fugiat Fantasy VII (USA)", 1)),
     ("Game (Europe) (Disc 2 of 3) (Rev 1)", ("Game (Europe) (Rev 1)", 2)),
     ("Riven (USA) (Disc 05)", ("Riven (USA)", 5)),
     ("Enemy Zero (Japan) (Disc 0)", ("Enemy Zero (Japan)", 0)),
     ("Policenauts (Japan) (Disk B)", ("Policenauts (Japan)", 2)),
-    ("Metal Gear Solid (USA) (CD 1)", ("Metal Gear Solid (USA)", 1)),
+    ("Ipsum Gear Solid (USA) (CD 1)", ("Ipsum Gear Solid (USA)", 1)),
     ("Discworld (Europe)", None),
     ("Disc Jockey (USA)", None),
 ])

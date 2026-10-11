@@ -9,6 +9,7 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
 - POST /systems/<sys>/games/<id>/media/<tag>   bytes -> images/<stem>-<tag>.ext
 - GET  /reloadgames                 save in-memory lists, then reload from disk
 - GET  /runningGame                 {"msg": "NO GAME RUNNING"} unless .running set
+- GET  /systems                     systems with games (name, gamesystem, totalGames)
 
 `save()` writes the in-memory lists over gamelist.xml whenever a test wants —
 the way ES's background saves overwrote edits made behind its back.
@@ -55,6 +56,11 @@ class FakeES:
                 if p == "/runningGame":
                     body = json.dumps({"path": fake.running} if fake.running else {"msg": "NO GAME RUNNING"})
                     return self._send(200 if fake.running else 201, body.encode())
+                if p == "/systems":
+                    with fake.lock:
+                        body = [{"name": k, "gamesystem": "true", "collection": "false",
+                                 "totalGames": len(v)} for k, v in fake.mem.items()]
+                    return self._send(200, json.dumps(body).encode())
                 if p == "/reloadgames":
                     fake.save()
                     fake.reload()

@@ -61,6 +61,10 @@ class ChdmanMissing(Exception):
     """chdman isn't installed: stop, keeping the queue."""
 
 
+class ToolMissing(Exception):
+    """A converter other than chdman (dolphin-tool) isn't installed."""
+
+
 class MemoryGuard(Exception):
     """chdman was stopped to protect the box's memory. .retry: try again later
     (a game needed the RAM) rather than give up on this disc."""
@@ -73,9 +77,20 @@ class MemoryGuard(Exception):
 # chdman's FLAC codec (in createdvd's default list) leaks ~4 MB of RAM per MB of
 # output on Batocera 43's chdman 0.285 — an 8 GB DVD needed ~30 GB and took the
 # box down (2026-10-10). FLAC is for audio and useless on DVD data: leave it out.
-# (CDs keep their defaults: cdfl helps audio tracks and its leak is bounded by
-# the ~800 MB disc size.)
+# CDs keep their defaults (cdfl helps audio tracks and its leak is bounded by
+# the disc, ~1-1.3 GB) unless the low-memory setting is on (default on boxes
+# under 4 GB RAM): then cdfl is left out too.
 DVD_CODECS = "lzma,zlib,huff"
+CD_CODECS_LOW_MEMORY = "cdlz,cdzl"
+def codecs_for(mode, cfg, system=None):
+    if mode == "createdvd":
+        # PPSSPP reads CHDs made with 2048-byte hunks (one sector) much faster
+        return ["-c", DVD_CODECS] + (["-hs", "2048"] if system == "psp" else [])
+    if rommlib.chd_low_memory(cfg):
+        return ["-c", CD_CODECS_LOW_MEMORY]
+    return []
+
+
 MEM_SHARE_MAX = 0.5          # chdman may use at most this share of the box's RAM
 MEM_FREE_MIN = 0.10          # ... and never push free memory below this share
 
@@ -118,21 +133,96 @@ def memory_check(pid, busy):
     return None
 
 
+CURRENT = os.path.join(rommlib.DATA_DIR, "chd-current.json")
+RESULTS = os.path.join(rommlib.DATA_DIR, "chd-results.jsonl")
+RESULTS_KEEP = 200
+_state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "last": ""}
+
+
+def status(**kw):
+    """What the worker is doing, for the app's Conversions screen."""
+    _state.update(kw)
+    try:
+        tmp = CURRENT + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({k: _state[k] for k in ("task", "since", "file", "step", "pct")}, f)
+        os.replace(tmp, CURRENT)
+    except OSError:
+        pass
+
+
+def note(msg):
+    """Log a line and remember it as the reason this task ended the way it did."""
+    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(("chd: ", "rvz: ")) else msg
+    rommlib.log(msg)
+
+
+def record(task_name, task, result):
+    """Append one finished task to chd-results.jsonl (kept short)."""
+    entry = {"time": time.time(), "task": task_name, "result": result, "message": _state["last"][:300],
+             "system": task.get("system"), "mode": task.get("mode"), "sources": task.get("sources"),
+             "retry": task if result == "failed" else None}
+    try:
+        lines = []
+        if os.path.exists(RESULTS):
+            with open(RESULTS) as f:
+                lines = f.readlines()[-(RESULTS_KEEP - 1):]
+        lines.append(json.dumps(entry) + "\n")
+        tmp = RESULTS + ".tmp"
+        with open(tmp, "w") as f:
+            f.writelines(lines)
+        os.replace(tmp, RESULTS)
+    except OSError:
+        pass
+
+
+PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)%")
+
+
 def chdman(*args):
     """Run chdman at nice 19; pause it (SIGSTOP) whenever a game starts."""
-    cmd = ["nice", "-n", "19", "chdman"] + list(args)   # no ionice in Batocera
+    return run_tool(["chdman"] + list(args))
+
+
+def dolphin_tool(*args):
+    """Run dolphin-tool like chdman, with its own throwaway Dolphin user folder
+    (it would otherwise create one in Batocera's Dolphin config area)."""
+    exe = rommlib.dolphin_tool_path()
+    if not exe:
+        raise ToolMissing("dolphin-tool")
+    user = os.path.join(rommlib.DATA_DIR, "tmp", "dolphin-user")
+    os.makedirs(user, exist_ok=True)
+    args = list(args)
+    if args and args[0] in ("convert", "verify"):
+        args[1:1] = ["-u", user]
+    return run_tool([exe] + args, keep_stdout=True)
+
+
+def run_tool(argv, keep_stdout=False):
+    """Run a converter at nice 19; pause it (SIGSTOP) whenever a game starts;
+    stop it if memory runs out (MemoryGuard). Returns (rc, last output)."""
+    cmd = ["nice", "-n", "19"] + list(argv)   # no ionice in Batocera
     # stderr goes to a file, never a pipe: chdman prints progress all the way
     # through, and a pipe nobody drains until exit fills up (64 KB) and blocks
-    # it forever — that froze long DVD conversions (2026-10-10, Ratchet).
+    # it forever — that froze long DVD conversions (2026-10-10).
     import tempfile
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     errf = tempfile.TemporaryFile(mode="w+", dir=rommlib.DATA_DIR)
-    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=errf, text=True)
+    p = subprocess.Popen(cmd, stdout=errf if keep_stdout else subprocess.DEVNULL, stderr=errf, text=True)
     paused = False
     guard = None
     try:
         while p.poll() is None:
             time.sleep(3)
+            try:                                  # progress for the Conversions screen
+                errf.flush()
+                errf.seek(0, 2)
+                errf.seek(max(0, errf.tell() - 400))
+                m = PCT_RE.findall(errf.read())
+                if m:
+                    status(pct=min(100.0, float(m[-1])))
+            except (OSError, ValueError):
+                pass
             busy = running_game() != ""
             guard = memory_check(p.pid, busy)
             if guard:
@@ -140,11 +230,11 @@ def chdman(*args):
             if busy and not paused:
                 p.send_signal(signal.SIGSTOP)
                 paused = True
-                rommlib.log("chd: paused (game running)")
+                note("chd: paused (game running)")
             elif not busy and paused:
                 p.send_signal(signal.SIGCONT)
                 paused = False
-                rommlib.log("chd: resumed")
+                note("chd: resumed")
     finally:
         if p.poll() is None:          # we're going down (killed, error): never leave chdman frozen
             try:
@@ -157,12 +247,12 @@ def chdman(*args):
         errf.close()
         raise guard
     if p.returncode == 127:
-        raise ChdmanMissing()
+        raise ChdmanMissing() if argv[0] == "chdman" else ToolMissing(argv[0])
     errf.seek(0, 2)
     errf.seek(max(0, errf.tell() - 4000))
     err = errf.read().replace("\r", "\n")
     errf.close()
-    return p.returncode, err.strip()[-300:]
+    return p.returncode, err.strip()[-600 if keep_stdout else -300:]
 
 
 def sources_of(cue_or_gdi):
@@ -205,7 +295,7 @@ def migrate_saves(system, old_path, new_path):
                         copied += 1
                     break
     if copied:
-        rommlib.log("chd: copied %d save file(s) %s -> %s" % (copied, ob, nb))
+        note("chd: copied %d save file(s) %s -> %s" % (copied, ob, nb))
     return copied
 
 
@@ -238,15 +328,53 @@ def fix_m3us(sysdir, old_to_new):
     return touched
 
 
+def _crc32(out):
+    m = re.search(r"CRC32:\s*([0-9a-f]{8})", out) or re.search(r"(?m)^([0-9a-f]{8})\s*$", out)
+    return m.group(1) if m else None
+
+
+def convert_rvz(src, tmp):
+    """GameCube/Wii image -> RVZ with dolphin-tool. dolphin-tool's convert
+    succeeds even on junk or a cut-short file, so the source is verified
+    first (a non-disc fails), and the RVZ must hash to the source's CRC32
+    before the caller deletes anything. Returns (rc, message)."""
+    status(step="Checking the original", pct=None)
+    rc, out = dolphin_tool("verify", "-i", src)
+    if rc != 0:
+        return 2, "not a GameCube/Wii disc image (dolphin-tool verify failed)"
+    want = _crc32(out)
+    if "Problems Found: Yes" in out:
+        note("rvz: note %s: %s" % (os.path.basename(src),
+                    " ".join(out.split("Problems Found: Yes", 1)[1].split())[:200]))
+    if not want:
+        rc, out = dolphin_tool("verify", "-i", src, "-a", "crc32")
+        want = _crc32(out)
+    if not want:
+        return 3, "couldn't read the source's CRC32"
+    status(step="Converting", pct=None)
+    rc, out = dolphin_tool("convert", "-i", src, "-o", tmp, *rommlib.RVZ_ARGS)
+    if rc != 0 or not os.path.exists(tmp):
+        return rc or 4, out
+    status(step="Verifying", pct=None)
+    rc, out = dolphin_tool("verify", "-i", tmp, "-a", "crc32")
+    got = _crc32(out)
+    if rc != 0 or got != want:
+        return 5, "RVZ doesn't match the original (CRC32 %s vs %s)" % (got, want)
+    return 0, "CRC32 %s" % want
+
+
 def convert(task):
     system, mode = task["system"], task["mode"]
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
     srcs = sorted(s for s in task["sources"] if os.path.exists(s))
     if not srcs:
         return False
+    if mode == "rvz" and not rommlib.rvz_enabled(rommlib.load_config()):
+        note("chd: SKIP rvz %s (turned off, or dolphin-tool isn't installed)" % os.path.basename(srcs[0]))
+        return False
     playing = running_game()
     if playing and playing in srcs:
-        rommlib.log("chd: SKIP in use %s" % playing)
+        note("chd: SKIP in use %s" % playing)
         return False
     roots = task["roots"]
     folder_root = next((r.rstrip("/") for r in roots if os.path.isdir(r)), None)
@@ -255,33 +383,61 @@ def convert(task):
     out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
     multi = len(srcs) > 1
     plan = []
+    out_ext = ".rvz" if mode == "rvz" else ".chd"
     for src in srcs:
         if multi or not folder_root:
             stem = os.path.splitext(os.path.basename(src))[0]
         else:
             stem = os.path.basename(folder_root)      # game name, not track name
-        plan.append((src, os.path.join(out_dir, stem + ".chd")))
+        plan.append((src, os.path.join(out_dir, stem + out_ext)))
     if len({out for _, out in plan}) != len(plan):
         # two sources would become the same .chd: converting would overwrite
         # one with the other and then delete both originals
-        rommlib.log("chd: SKIP name clash (%s)" % ", ".join(os.path.basename(s) for s in srcs))
+        note("chd: SKIP name clash (%s)" % ", ".join(os.path.basename(s) for s in srcs))
         return False
+    for src in srcs:
+        cut = rommlib.disc_incomplete(src)
+        if cut and cut[2]:
+            # an interrupted copy: a CHD of it would be just as broken (chdman's
+            # verify only proves the CHD matches its source)
+            note("chd: SKIP incomplete disc image %s (%d of %d sectors); "
+                        "Check games can download it again" % (src, cut[0], cut[1]))
+            return False
+        if cut:          # only a file entry past the end (could be a dummy): convert, but say so
+            note("chd: note %s may be cut short (a file reaches sector %d of %d)" % (src, cut[1], cut[0]))
     for _, out in plan:
         if os.path.exists(out):
-            rommlib.log("chd: SKIP exists %s" % out)
+            if rommlib.disc_incomplete(out):
+                note("chd: replacing incomplete %s" % out)   # a fresh copy came down
+                continue
+            note("chd: SKIP exists %s" % out)
             return False
+    cfg = rommlib.load_config()
+    need = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
+    free, keep = rommlib.free_bytes(out_dir), rommlib.keep_free_bytes(cfg)
+    if free - need < keep:
+        # the CHD sits next to the original until it's verified: wait for room
+        note("chd: WAIT for space %s (needs ~%s, %s free, keeping %s free)" % (
+            os.path.basename(srcs[0]), rommlib.human_size(need), rommlib.human_size(free),
+            rommlib.human_size(keep)))
+        return None
     made = []
     for src, out in plan:
         tmp = out + ".part"                    # not a name ES lists as a game while it's written
         t0 = time.time()
         threads = str(rommlib.chd_threads(rommlib.load_config()))    # read per disc: Settings apply next disc
-        codecs = ["-c", DVD_CODECS] if mode == "createdvd" else []
+        codecs = codecs_for(mode, rommlib.load_config(), system)
         try:
-            rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
-            if rc == 0:
-                rc, err = chdman("verify", "-i", tmp)
+            status(file=os.path.basename(src), step="Converting", pct=None)
+            if mode == "rvz":
+                rc, err = convert_rvz(src, tmp)
+            else:
+                rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
+                if rc == 0:
+                    status(step="Verifying", pct=None)
+                    rc, err = chdman("verify", "-i", tmp)
         except MemoryGuard as g:
-            rommlib.log("chd: STOPPED %s: %s; %s" % (os.path.basename(src), g,
+            note("chd: STOPPED %s: %s; %s" % (os.path.basename(src), g,
                         "will try again later" if g.retry else "leaving it as it is"))
             for m in made + [tmp]:
                 if os.path.exists(m):
@@ -290,14 +446,14 @@ def convert(task):
                 return None
             return False
         if rc != 0:
-            rommlib.log("chd: FAIL %s rc=%d %s" % (src, rc, err))
+            note("chd: FAIL %s rc=%d %s" % (src, rc, err))
             for m in made + [tmp]:
                 if os.path.exists(m):
                     os.remove(m)
             return False
         os.replace(tmp, out)
         made.append(out)
-        rommlib.log("chd: disc done %s (%.0fs)" % (os.path.basename(out), time.time() - t0))
+        note("chd: disc done %s (%.0fs)" % (os.path.basename(out), time.time() - t0))
 
     old_to_new = {os.path.normpath(s): o for s, o in plan}
     in_size = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
@@ -316,7 +472,7 @@ def convert(task):
             if os.path.exists(primary):
                 # a playlist of that name belongs to another copy of the game:
                 # never overwrite it — leave these discs listed individually
-                rommlib.log("chd: m3u exists, not overwriting %s" % primary)
+                note("chd: m3u exists, not overwriting %s" % primary)
                 primary = None
             else:
                 with open(primary, "w") as f:
@@ -363,8 +519,8 @@ def convert(task):
             shutil.rmtree(folder_root, ignore_errors=True)
         else:
             # other games / files stay in it: only the converted files were renamed
-            rommlib.log("chd: kept folder (non-junk leftovers) %s" % folder_root)
-    rommlib.log("chd: OK %s -> %s  (%.2f GB -> %.2f GB)" % (
+            note("chd: kept folder (non-junk leftovers) %s" % folder_root)
+    note("chd: OK %s -> %s  (%.2f GB -> %.2f GB)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),
         in_size / 1e9, out_size / 1e9))
     return True
@@ -430,26 +586,34 @@ def work(lockf):
         try:
             with open(path) as f:
                 task = json.load(f)
-            with open(cur, "w") as f:         # lets the app show "compressing…" for this download
-                json.dump({"task": tasks[0], "since": time.time()}, f)
+            _state["last"] = ""
+            status(task=tasks[0], since=time.time(), file=os.path.basename((task.get("sources") or [""])[0]),
+                   step="Starting", pct=None)
             res = convert(task)
-            if res is None:                   # stopped for memory while a game ran: keep it, try later
+            if res is None:                   # memory needed by a game, or no room: keep it, try later
+                record(tasks[0], task, "waiting")
                 try:
                     os.remove(cur)
                 except OSError:
                     pass
                 break
+            record(tasks[0], task, "ok" if res else ("skipped" if "SKIP" in _state["last"] or
+                                                     "skip" in _state["last"].lower() else "failed"))
             if res:
                 since_finalize += 1
+        except ToolMissing as e:
+            note("chd: %s isn't installed; dropping %s (Settings, GameCube and Wii to RVZ)"
+                        % (e, tasks[0]))
         except ChdmanMissing:
-            rommlib.log("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
+            note("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
             try:
                 os.remove(cur)
             except OSError:
                 pass
             break
         except Exception as e:
-            rommlib.log("chd: error on %s: %r" % (tasks[0], e))
+            note("chd: error on %s: %r" % (tasks[0], e))
+            record(tasks[0], locals().get("task") or {}, "failed")
         os.remove(path)
         try:
             os.remove(cur)

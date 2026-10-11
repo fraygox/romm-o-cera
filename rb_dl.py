@@ -89,6 +89,7 @@ def main():
         after_downloads(cfg, None)           # earlier games' CHD + game info still go ahead
         return
     d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
+    d.allow_overlap = False      # mostly runs while a game plays: one disk job at a time
     n = d.resume()
     rommlib.log("dl-worker: %d queued" % n)
     cap = float(cfg.get("speed_while_playing") or 0) * 1e6

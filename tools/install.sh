@@ -11,7 +11,9 @@ VERSION=${VERSION:-latest}
 DEST=/userdata/roms/pygame/rommbrowser
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-if [ "$VERSION" = latest ]; then
+if [ -n "${ROMM_O_CERA_BASE:-}" ]; then          # testing: install from another place
+    BASE="$ROMM_O_CERA_BASE"
+elif [ "$VERSION" = latest ]; then
     BASE="https://github.com/$REPO/releases/latest/download"
 else
     BASE="https://github.com/$REPO/releases/download/$VERSION"

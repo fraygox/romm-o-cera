@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.5).** It works on the author's box every day, but it
+**Early software (v0.6.6).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -14,11 +14,13 @@ issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 
 | | |
 |---|---|
-| ![Platforms](screenshots/platforms.png) | ![A collection](screenshots/game-list.png) |
+| ![Platforms](screenshots/platforms.png) | ![A platform's games](screenshots/game-list.png) |
 | ![List menu: filters, pick, download all](screenshots/menu.png) | ![Search](screenshots/search.png) |
-| ![Manage a game on the box](screenshots/manage.png) | ![On this box](screenshots/on-this-box.png) |
-| ![Downloads](screenshots/downloads.png) | ![Settings](screenshots/settings.png) |
-| ![BIOS files](screenshots/bios.png) | |
+| ![Collections: download a whole collection](screenshots/collections.png) | ![Downloads: queue, unpacking, waiting for space](screenshots/downloads.png) |
+| ![Conversions: CHD and RVZ in the background](screenshots/conversions.png) | ![Settings in sections, with help](screenshots/settings.png) |
+| ![On this box](screenshots/on-this-box.png) | ![Manage a game on the box](screenshots/manage.png) |
+| ![Storage by system](screenshots/storage.png) | ![Free up space](screenshots/free-up.png) |
+| ![Credits and licenses](screenshots/credits.png) | |
 
 <sub>Screenshots come from `tools/mock_romm.py`: freely distributed homebrew /
 open-source games plus invented "lorem ipsum" titles, with generated covers.</sub>
@@ -34,6 +36,8 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   checksum-verified dumps, pick several games, or download a whole list (up to
   1,000). Bulk downloads estimate the space they'll need once extracted and
   offer to download only what fits.
+- **Download a whole collection** straight from Collections: X on a
+  collection (up to 1,000 games), with the same space check.
 - **Updates from the box**: Settings → Updates checks GitHub, then downloads,
   verifies and installs a new release in place, keeping the previous version
   for one-step rollback. A daily check flags new releases (turn off with
@@ -52,7 +56,9 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   member by member), retried on network errors, and **keep going after you
   exit** (and while you play — optionally speed-capped), with a popup in
   EmulationStation when they're done. In Downloads: reorder, pause, cancel,
-  pause/resume everything, clear finished.
+  pause/resume everything, clear finished. **Download while extracting**
+  (Settings, on by default): the next game downloads while the last one
+  unpacks; turn it off for slow storage (SD cards, USB sticks).
 - **Fill in game info** for games already on the box (a platform's list menu,
   or On this box → X for every system): names, descriptions, covers and
   manuals from RomM, matched by file name, added only where missing — your
@@ -66,14 +72,43 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   and opens from the game's menu in EmulationStation; the detail panel shows
   how many RetroAchievements it has.
 - **Sounds**: soft clicks and chimes while you browse (Settings: on, quiet, off).
-- **Check games** (On this box → X): finds missing tracks, damaged zips and
-  files that don't match RomM, and downloads damaged ones again.
+- **Check games** (On this box → X): finds missing tracks, damaged zips,
+  disc images cut short (an interrupted copy: shorter than the disc's own
+  filesystem says) and files that don't match RomM, and downloads damaged
+  ones again — a fresh copy replaces a cut-short CHD.
+- **Disk space** (On this box → X):
+  - **Storage by system**: where the space went, split into RomM-o-Cera's
+    games, other games and media.
+  - **Free up space**: every game EmulationStation lists, including ones
+    copied over another way, least played and biggest first. Mark several,
+    or let it pick enough to free 10–100 GB, and delete them in one go.
+    Saves and states are kept.
+  - **Clean up leftovers**: partial files and empty folders that interrupted
+    downloads or CHD runs left behind. Partial downloads still queued are
+    kept so they can resume.
+- **Keep free on disk** (Settings, default 20 GB): downloads and CHD
+  conversions never leave less than this free. A download that doesn't fit
+  waits ("Waiting for space") and starts once there's room; smaller ones
+  behind it keep going. Downloads shows what the whole queue still needs
+  against what's free, and adding a game the queue can't fit warns you.
 - **Post-processing**: cartridge zips stay zipped when the system reads them,
   disc archives are extracted, and disc games can be **CHD-compressed in the
-  background** while nothing is running (verified before anything is deleted).
+  background** while nothing is running (verified before anything is deleted):
+  CD systems, PS2 and PSP (PPSSPP-friendly 2048-byte hunks).
+- **GameCube and Wii to RVZ** (Settings → Disc compression, off by default):
+  turning it on downloads Dolphin's `dolphin-tool` once (about 8 MB; x86_64 and
+  64-bit ARM such as Pi 4/5; checked by SHA-256), built from the same Dolphin commit Batocera 43.1 uses.
+  Each image is verified by dolphin-tool first (anything that isn't a
+  GameCube/Wii disc is left alone) and the RVZ must hash to the original's
+  CRC32 before the original is deleted. Lossless; usually much smaller.
 - **Button labels match your controller**: Xbox, PlayStation (✕ ○ □ △) or
   Nintendo, picked automatically from the controller's name or set in
-  Settings — the hint bar and on-screen text use the same symbols.
+  Settings; key names while you use a keyboard. Every control on screen —
+  hint bar, menus, dialogs, messages — is drawn by one helper, so they always
+  match.
+- **Settings in sections** (RomM server, Controller, Downloads, Disc
+  compression, This app, Updates), with a full explanation of the selected
+  setting beside the list, and **Credits and licenses**.
 - **EmulationStation metadata**: name, description, date, genre, developer,
   players, rating and cover go into `gamelist.xml` once ES is idle.
 
@@ -140,6 +175,10 @@ On the box: **Main Menu → Game Settings → Update Gamelists**, then open
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
 | `download_hours` | `any` | `any`, or a local-time window like `1-7` / `22-6` |
 | `chd_threads` | `auto` | chdman threads: `auto` (N−2 with 6+ threads, N−1 with 3–5) or a number |
+| `keep_free_gb` | `20` | downloads and CHD conversions leave at least this much free (GB); a download that doesn't fit waits for space (`0` = no reserve beyond a small margin) |
+| `extract_parallel` | `true` | start the next download while the last one is extracted (`false` for slow storage) |
+| `rvz` | `false` | convert GameCube/Wii images to RVZ (turning it on in Settings downloads dolphin-tool) |
+| `chd_low_memory` | `auto` | compress CDs without chdman's FLAC codec, which leaks up to ~1.3 GB per CD in some chdman builds: `auto` (on with less than 4 GB RAM), `true`, `false`. CD audio tracks come out a bit bigger. DVDs never use FLAC |
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
@@ -240,7 +279,9 @@ memory runs low (the originals are kept; it's tried again later).
 | `fonts/` | Rubik (SIL Open Font License) |
 | `deploy.sh` | copy to a box + write config |
 | `tools/mock_romm.py` | fake RomM API with a demo library, for development |
-| `tools/shoot.py` | headless screenshot driver |
+| `tools/shoot.py` | headless screenshot driver (one scripted path) |
+| `tools/shots.py` | screenshot harness: every screen and dialog in every control style + contact sheet |
+| `tools/dolphin-tool/` | builds and packages dolphin-tool for Batocera x86_64 (`make.sh`, `package.sh`) |
 | `tools/build-release.sh`, `tools/install.sh` | build the release zip / the on-box installer |
 | `tools/publish.sh` | maintainer: publish this folder from a monorepo (history replay, or `--snapshot` one commit on top of the remote) |
 
@@ -258,6 +299,21 @@ ROMM_BROWSER_DATA=/tmp/rb/data ROMM_BROWSER_ROMS=/tmp/rb/roms \
 `type:<text>` (search/edit fields), `shot:<name>`. Add `ROMM_BROWSER_SCALE=3`
 to render at 4K.
 
+The whole UI at once — every screen and dialog, in the Xbox, PlayStation,
+Nintendo and keyboard styles, with a contact sheet (`index.html`); it starts
+its own mock RomM and fake EmulationStation, and fails on a hint that
+bypasses the glyph helper:
+
+```sh
+.venv/bin/python tools/shots.py /tmp/shots [--styles xbox,kb] [--scenes settings,downloads]
+```
+
+dolphin-tool (for the RVZ setting) is built in a container from the Dolphin
+commit Batocera ships: `tools/dolphin-tool/make.sh [x86_64|aarch64]` then
+`tools/dolphin-tool/package.sh [x86_64|aarch64]`. The ARM build is a cross-build;
+test it on real ARM hardware — under qemu-user it hangs at startup (Dolphin's
+udev hot-plug listener waits on a real-time signal qemu-user uses itself).
+
 ## Tests
 
 ```sh
@@ -270,6 +326,16 @@ python tests/contract/disposable.py --tag 5.3.1   # same, against a throwaway Ro
 
 The contract tests are read-only and download only the smallest file they find.
 `disposable.py` is handy before upgrading RomM: run it with the new tag first.
+
+## Credits
+
+RomM-o-Cera uses or downloads: Dolphin's **dolphin-tool** (GPL-2.0-or-later,
+optional download; its license, the licenses of code it bundles and its
+exact source are on the same GitHub release), **chdman** from MAME (BSD-3-Clause /
+GPL-2.0-or-later), **pygame**/**SDL** (LGPL-2.1 / zlib), **Requests**
+(Apache-2.0) and **7-Zip** (LGPL-2.1) as shipped by Batocera, and the
+**Rubik** font (OFL-1.1). It talks to **RomM** (AGPL-3.0). The same list is in
+Settings → Credits and licenses.
 
 ## License
 

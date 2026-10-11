@@ -20,13 +20,20 @@ import rommlib  # noqa: E402
 import rb_chd  # noqa: E402
 
 ORDER = ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
-         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx"]
+         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii"]
 SKIP_DIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"}
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 
 def games_for(system):
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+    if system in rommlib.RVZ_SYSTEMS:                # GameCube/Wii: every image on its own
+        out = []
+        for dp, dns, fns in os.walk(sysdir):
+            dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
+            out += [(os.path.join(dp, f), [os.path.join(dp, f)], None) for f in fns
+                    if f.lower().endswith(rommlib.RVZ_SOURCES)]
+        return sorted(out, key=lambda x: x[0])
     dvd = system in rommlib.CHD_DVD_SYSTEMS
     found = []
     for dp, dns, fns in os.walk(sysdir):
@@ -108,7 +115,12 @@ def main():
         if not os.path.isdir(os.path.join(rommlib.ROMS_ROOT, system)):
             continue
         for root, files, name in games_for(system):
-            mode = "createdvd" if files[0].lower().endswith(".iso") else "createcd"
+            if system in rommlib.RVZ_SYSTEMS:
+                if not rommlib.rvz_enabled(rommlib.load_config()):
+                    continue                     # needs Settings, GameCube and Wii to RVZ
+                mode = "rvz"
+            else:
+                mode = "createdvd" if files[0].lower().endswith(".iso") else "createcd"
             if a.only and a.only.lower() not in root.lower():
                 continue
             if any(x.lower() in root.lower() for x in a.exclude):

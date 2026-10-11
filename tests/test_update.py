@@ -41,7 +41,7 @@ def fake_github(tmp_path, monkeypatch):
     monkeypatch.setattr(rommlib, "GITHUB_API", base)
     monkeypatch.setattr(rommlib, "UPDATE_REPO", "someone/romm-o-cera")
     out = tmp_path / "dist"
-    subprocess.run([os.path.join(APP, "tools", "build-release.sh")], env=dict(os.environ, OUT=str(out)),
+    subprocess.run([os.path.join(APP, "tools", "build-release.sh")], env=dict(os.environ, OUT=str(out), ALLOW_OLD_DATE="1"),
                    check=True, capture_output=True)
     zipdata = (out / "romm-o-cera.zip").read_bytes()
 

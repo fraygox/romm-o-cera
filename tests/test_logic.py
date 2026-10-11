@@ -74,7 +74,7 @@ def test_cover_paths_must_be_server_relative(isolated):
 def test_letter_of(rb):
     assert rb.letter_of("Alpha") == "A"
     assert rb.letter_of("'Allo 'Allo") == "A"
-    assert rb.letter_of("~Hack~ Kirby") == "H"
+    assert rb.letter_of("~Hack~ Labore") == "H"
     assert rb.letter_of("[BIOS] x") == "B"
     assert rb.letter_of("007 Racing") == "#"
     assert rb.letter_of("ゼルダ") == "ゼ"
@@ -91,17 +91,17 @@ def test_letter_jump(rb):
 
 
 def test_collection_kinds(rb):
-    kinds = rb.collection_kinds(["Zelda: Best Of", "Theme: X", "Top 25: Y", "Series: S",
+    kinds = rb.collection_kinds(["Lorem: Best Of", "Theme: X", "Top 25: Y", "Series: S",
                                  "Favs: a", "Favs: b", "Favs: c", "Plain"])
     assert kinds == {"theme", "top 25", "series", "favs"}
-    assert rb.collection_kinds(["Zelda: Best Of", "Road trip: cars"]) == set()
+    assert rb.collection_kinds(["Lorem: Best Of", "Road trip: cars"]) == set()
 
 
 def test_rank_search_prefers_real_titles(rb):
-    items = [{"name": "~Hack~ Zelda Thing", "regions": ["World"]},
+    items = [{"name": "~Hack~ Lorem Thing", "regions": ["World"]},
              {"name": "BS ゼルダの伝説", "regions": ["Japan"]},
-             {"name": "The Legend of Zelda", "regions": ["USA"]}]
-    assert rb.rank_search("zelda", items)[0]["name"] == "The Legend of Zelda"
+             {"name": "The Legend of Lorem", "regions": ["USA"]}]
+    assert rb.rank_search("lorem", items)[0]["name"] == "The Legend of Lorem"
 
 
 # ------------------------------------------------------------ CHD worker helpers
@@ -174,9 +174,10 @@ def test_postprocess_keeps_cart_zip_extracts_disc(isolated):
     with zipfile.ZipFile(disc, "w") as f:
         f.writestr("Disc (USA).cue", 'FILE "Disc (USA).bin" BINARY\n')
         f.writestr("Disc (USA).bin", b"\0" * 64)
-    out = d._postprocess_file(rommlib.Job({"id": 2}, "psx"), disc)
+    j = rommlib.Job({"id": 2}, "psx")
+    out = d._postprocess_file(j, disc)
     assert out == [os.path.join(roms, "psx", "Disc (USA)")]
-    assert not os.path.exists(disc) and d._chd_queued
+    assert not os.path.exists(disc) and j.chd_task
     task = json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, os.listdir(rommlib.CHD_QUEUE_DIR)[0])))
     assert task["mode"] == "createcd" and task["sources"][0].endswith("Disc (USA).cue")
 
@@ -407,13 +408,13 @@ def test_no_move_sound_at_list_edges(isolated, rb, monkeypatch):
 
 def test_single_member_zip_without_member_list(tmp_path):
     """RomM records some zips with no archive_members; their file hashes are
-    the single member's content (e.g. Kirby Super Star Ultra)."""
+    the single member's content (e.g. a DS game)."""
     import hashlib
     rom = bytes(range(256)) * 300
-    zp = tmp_path / "Kirby (USA).zip"
+    zp = tmp_path / "Labore (USA).zip"
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("Kirby (USA).nds", rom)
-    rec = {"file_name": "Kirby (USA).zip", "sha1_hash": hashlib.sha1(rom).hexdigest(), "archive_members": []}
+        z.writestr("Labore (USA).nds", rom)
+    rec = {"file_name": "Labore (USA).zip", "sha1_hash": hashlib.sha1(rom).hexdigest(), "archive_members": []}
     assert rommlib.file_hash_ok(str(zp), rec) == (True, "zip")
     assert rommlib.file_hash_ok(str(zp), dict(rec, sha1_hash="0" * 40)) == (False, "zip")
     assert rommlib.file_hash_ok(str(zp), {"file_name": "x.zip", "crc_hash": "%08x" % zlib.crc32(rom)}) == (True, "zip")
@@ -445,6 +446,28 @@ def test_chdman_with_huge_progress_output_does_not_hang(isolated, tmp_path, monk
     t.start()
     t.join(30)
     assert res and res[0][0] == 0 and res[0][1].endswith("done")
+
+
+def test_chd_low_memory_setting(monkeypatch):
+    """CDs skip chdman's leaky FLAC codec on boxes under 4 GB (a "4 GB" box
+    reports ~3.7-3.9 GiB); the setting overrides either way; DVDs always skip it."""
+    import rb_chd
+    GiB = 2 ** 30
+    assert [rommlib.low_ram(int(g * GiB)) for g in (1, 1.9, 3.4, 3.7, 7.6, 31)] == \
+        [True, True, True, False, False, False]
+    assert rommlib.low_ram(0) is False                       # unknown: don't guess
+    monkeypatch.setattr(rommlib, "total_ram", lambda: 2 * GiB)
+    assert rommlib.chd_low_memory({}) is True and rommlib.chd_low_memory({"chd_low_memory": "auto"}) is True
+    assert rommlib.chd_low_memory({"chd_low_memory": False}) is False
+    assert rb_chd.codecs_for("createcd", {}) == ["-c", "cdlz,cdzl"]
+    assert rb_chd.codecs_for("createcd", {"chd_low_memory": False}) == []
+    monkeypatch.setattr(rommlib, "total_ram", lambda: int(3.8 * GiB))
+    assert rommlib.chd_low_memory({}) is False and rommlib.chd_low_memory({"chd_low_memory": True}) is True
+    assert rb_chd.codecs_for("createcd", {}) == []
+    assert rb_chd.codecs_for("createcd", {"chd_low_memory": True}) == ["-c", "cdlz,cdzl"]
+    assert rb_chd.codecs_for("createdvd", {}) == rb_chd.codecs_for("createdvd", {"chd_low_memory": False}) == \
+        ["-c", "lzma,zlib,huff"]
+    assert rommlib.total_ram() > 0 or not os.path.exists("/proc/meminfo")
 
 
 def test_chd_threads_auto_and_setting(monkeypatch):
@@ -634,28 +657,28 @@ def test_repair_restores_lost_info_strictly(isolated, fake_es, capsys):
     import rb_repair
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     os.makedirs(os.path.join(sysdir, "images"))
-    os.makedirs(os.path.join(sysdir, "51. Alundra (USA)"))
-    open(os.path.join(sysdir, "images", "Alundra (USA)-image.png"), "wb").write(b"\x89PNG x")
-    for n in ("Alundra (USA).chd", "51. Alundra (USA)/Alundra (USA).cue", "Game (Disc 2).chd"):
+    os.makedirs(os.path.join(sysdir, "51. Aliqua (USA)"))
+    open(os.path.join(sysdir, "images", "Aliqua (USA)-image.png"), "wb").write(b"\x89PNG x")
+    for n in ("Aliqua (USA).chd", "51. Aliqua (USA)/Aliqua (USA).cue", "Game (Disc 2).chd"):
         open(os.path.join(sysdir, n), "w").close()
     bak = ('<gameList>'
-           '<game><path>./Alundra (USA)/Alundra (USA).cue</path><name>Alundra</name><desc>dream</desc>'
-           '<playcount>1</playcount><image>./images/Alundra (USA)-image.png</image></game>'
+           '<game><path>./Aliqua (USA)/Aliqua (USA).cue</path><name>Aliqua</name><desc>dream</desc>'
+           '<playcount>1</playcount><image>./images/Aliqua (USA)-image.png</image></game>'
            '<game><path>./Game (Disc 1).cue</path><name>Game</name><desc>disc one only</desc></game>'
            '</gameList>')
     open(os.path.join(sysdir, "gamelist.xml.bak-rommbrowser"), "w").write(bak)
-    _gl(sysdir, '<gameList><game><path>./Alundra (USA).chd</path><name>Alundra (USA)</name>'
+    _gl(sysdir, '<gameList><game><path>./Aliqua (USA).chd</path><name>Aliqua (USA)</name>'
                 '<cheevosHash>38</cheevosHash></game>'
-                '<game><path>./51. Alundra (USA)/Alundra (USA).cue</path><name>Alundra</name>'
+                '<game><path>./51. Aliqua (USA)/Aliqua (USA).cue</path><name>Aliqua</name>'
                 '<desc>the TOP copy</desc></game></gameList>')
     es = fake_es({"psx": {".chd", ".cue"}})
     assert rb_repair.main(["--dry-run"]) == 0
-    assert es.game("psx", "Alundra (USA).chd").get("desc") is None          # dry run: untouched
+    assert es.game("psx", "Aliqua (USA).chd").get("desc") is None          # dry run: untouched
     out = capsys.readouterr().out
     assert "TOTAL: 1 games" in out
     assert rb_repair.main([]) == 0
-    g = es.game("psx", "Alundra (USA).chd")
-    assert g["name"] == "Alundra" and g["desc"] == "dream" and g["playcount"] == "1" and g.get("image")
+    g = es.game("psx", "Aliqua (USA).chd")
+    assert g["name"] == "Aliqua" and g["desc"] == "dream" and g["playcount"] == "1" and g.get("image")
     assert g["cheevosHash"] == "38"                                        # ES's own data kept
     assert es.game("psx", "Game (Disc 2).chd").get("desc") is None         # disc 1's info is not disc 2's
     assert [d for d in os.listdir(rommlib.DATA_DIR) if d.startswith("repair-backup-")]
@@ -681,7 +704,7 @@ def test_chd_plan_never_merges_different_games(isolated):
 
 
 def test_chd_one_folder_two_releases_two_playlists(isolated, monkeypatch, fake_es):
-    """Box regression (Resident Evil 2, 2026-10-10 02:30): RomM's game folder
+    """Box regression (Dolor Evil 2, 2026-10-10 02:30): RomM's game folder
     held the original and the Dual Shock release; the old planner made one
     4-disc set with one playlist. Now: one set and one playlist per release."""
     import rb_chd_plan, rb_chd
