@@ -577,7 +577,7 @@ def test_fill_entries_never_replace_existing_info(isolated, fake_es):
 
 
 def test_chd_rename_carries_info_media_and_play_history(isolated, fake_es):
-    """The v0.6.6 loss: a CHD conversion renames the game; ES's own save of
+    """The v0.6.3 loss: a CHD conversion renames the game; ES's own save of
     the new file's bare entry overwrote the info we had moved in the file.
     Now the old entry's info goes into ES itself, so ES's saves keep it."""
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
@@ -651,7 +651,7 @@ def test_corrupt_gamelist_is_never_touched(isolated, fake_es):
 
 
 def test_repair_restores_lost_info_strictly(isolated, fake_es, capsys):
-    """rb_repair: the v0.6.6 loss (bare CHD entry, rich entry only in the
+    """rb_repair: the v0.6.3 loss (bare CHD entry, rich entry only in the
     backup) is restored through ES; other copies and other discs are never
     used; a dry run changes nothing."""
     import rb_repair
@@ -960,3 +960,19 @@ def test_memory_guard_stops_chdman_and_keeps_originals(isolated, tmp_path, monke
     # memory ran low while a game was up: kept for later (None), not given up
     monkeypatch.setattr(rb_chd, "memory_check", lambda pid, busy: rb_chd.MemoryGuard("low", True))
     assert rb_chd.convert({"system": "ps2", "mode": "createdvd", "sources": [iso], "roots": [iso]}) is None
+
+
+
+def test_rom_is_folder_also_with_files_only_in_subfolders():
+    """RomM counts only files directly in a game's folder, so a set kept in
+    per-disc subfolders reports has_multiple_files False (5.3 and 5.4 alike):
+    it's still a folder to download file by file."""
+    single = {"full_path": "roms/gba/Game (USA).zip", "has_multiple_files": False, "has_nested_single_file": False,
+              "files": [{"full_path": "roms/gba/Game (USA).zip"}]}
+    flat = {"full_path": "roms/psx/Set", "has_multiple_files": True, "files": []}
+    nested = {"full_path": "roms/psx/Set (USA)", "has_multiple_files": False, "has_nested_single_file": False,
+              "files": [{"full_path": "roms/psx/Set (USA)/Set (USA) (Disc 1)/Set (USA) (Disc 1).cue"},
+                        {"full_path": "roms/psx/Set (USA)/Set (USA) (Disc 1)/Set (USA) (Disc 1).bin"}]}
+    assert not rommlib.rom_is_folder(single)
+    assert rommlib.rom_is_folder(flat) and rommlib.rom_is_folder(nested)
+    assert not rommlib.rom_is_folder({"full_path": "roms/x/y.zip", "files": []})

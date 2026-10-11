@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.6"            # changes only for a real GitHub release
+VERSION = "0.6.7"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -1726,6 +1726,19 @@ def path_size(p):
 DISC_RE = re.compile(r"\s*\((?:Disc|Disk|CD|DVD)\s*([0-9]{1,2}|[A-H])(?:\s*of\s*[0-9]{1,2})?\)", re.I)
 
 
+def rom_is_folder(detail, files=None):
+    """True when a RomM game is a folder (cue/bin set, GDI, a folder holding
+    one file, per-disc subfolders...): some file of it lives at another path
+    than the game itself. RomM's has_multiple_files / has_nested_single_file
+    only count files directly in the folder, so a game whose files all sit in
+    subfolders (Game/Game (Disc 1)/...) reports neither."""
+    if detail.get("has_multiple_files") or detail.get("has_nested_single_file"):
+        return True
+    files = files if files is not None else (detail.get("files") or [])
+    gp = (detail.get("full_path") or "").rstrip("/")
+    return bool(files) and bool(gp) and any((f.get("full_path") or "").rstrip("/") != gp for f in files)
+
+
 def disc_info(name):
     """("Base Name (USA)", n) for "Base Name (USA) (Disc 2)"; None when not a disc."""
     m = DISC_RE.search(name or "")
@@ -2125,7 +2138,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                     want = [(path, {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
                                     "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})] if m else []
             else:
-                if detail.get("has_multiple_files") or detail.get("has_nested_single_file"):
+                if rom_is_folder(detail, files):
                     prefix = (detail.get("full_path") or "").rstrip("/") + "/"
                     want = []
                     for f in files:
@@ -3137,8 +3150,7 @@ class Downloader:
         # holding a single file) is pulled file by file, keeping its layout; the
         # whole-rom /content endpoint would hand back a zip or an extensionless
         # file named after the folder.
-        is_folder = files and (detail.get("has_multiple_files")
-                               or detail.get("has_nested_single_file"))
+        is_folder = files and rom_is_folder(detail, files)
         if is_folder:
             folder = os.path.join(sysdir, fs_name)
             prefix = (detail.get("full_path") or "").rstrip("/") + "/"

@@ -5,10 +5,11 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.6).** It works on the author's box every day, but it
+**Early software (v0.6.7).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
-issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
-**RomM 5.3**. Draws natively at any resolution, 720p to 4K.
+issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested
+against **RomM 5.4** (5.3 works too). Draws natively at any resolution, 720p
+to 4K.
 
 ![Home: recently added shelf](screenshots/home.png)
 
@@ -75,7 +76,9 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
 - **Check games** (On this box → X): finds missing tracks, damaged zips,
   disc images cut short (an interrupted copy: shorter than the disc's own
   filesystem says) and files that don't match RomM, and downloads damaged
-  ones again — a fresh copy replaces a cut-short CHD.
+  ones again — a fresh copy replaces a cut-short CHD. A damaged game RomM
+  names differently is found by its RetroAchievements hash, else by the
+  matching title, disc and region.
 - **Disk space** (On this box → X):
   - **Storage by system**: where the space went, split into RomM-o-Cera's
     games, other games and media.
@@ -86,19 +89,23 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   - **Clean up leftovers**: partial files and empty folders that interrupted
     downloads or CHD runs left behind. Partial downloads still queued are
     kept so they can resume.
+  - **Conversions** (also L2/R2 in Downloads): the CHD or RVZ conversion
+    running now with time left, the queue, and recent results; retry a failed
+    one.
 - **Keep free on disk** (Settings, default 20 GB): downloads and CHD
   conversions never leave less than this free. A download that doesn't fit
   waits ("Waiting for space") and starts once there's room; smaller ones
   behind it keep going. Downloads shows what the whole queue still needs
   against what's free, and adding a game the queue can't fit warns you.
+  Conversions waiting for room start as soon as you free some.
 - **Post-processing**: cartridge zips stay zipped when the system reads them,
   disc archives are extracted, and disc games can be **CHD-compressed in the
   background** while nothing is running (verified before anything is deleted):
   CD systems, PS2 and PSP (PPSSPP-friendly 2048-byte hunks).
 - **GameCube and Wii to RVZ** (Settings → Disc compression, off by default):
-  turning it on downloads Dolphin's `dolphin-tool` once (about 8 MB; x86_64 and
-  64-bit ARM such as Pi 4/5; checked by SHA-256), built from the same Dolphin commit Batocera 43.1 uses.
-  Each image is verified by dolphin-tool first (anything that isn't a
+  turning it on downloads Dolphin's `dolphin-tool` once (about 8 MB, checked
+  by SHA-256; x86_64 and 64-bit ARM such as the Pi 4/5), built from the same
+  Dolphin commit Batocera 43.1 uses. Each image is verified by dolphin-tool first (anything that isn't a
   GameCube/Wii disc is left alone) and the RVZ must hash to the original's
   CRC32 before the original is deleted. Lossless; usually much smaller.
 - **Button labels match your controller**: Xbox, PlayStation (✕ ○ □ △) or
@@ -110,7 +117,8 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   compression, This app, Updates), with a full explanation of the selected
   setting beside the list, and **Credits and licenses**.
 - **EmulationStation metadata**: name, description, date, genre, developer,
-  players, rating and cover go into `gamelist.xml` once ES is idle.
+  players, rating and cover are handed to EmulationStation through its own API
+  once it's idle (never by editing `gamelist.xml` behind its back).
 
 ## Install
 
@@ -229,11 +237,11 @@ side by side.
 menu entries, keys, buttons and the hint bar; tap the logo for Home and the
 breadcrumbs to go back; drag or scroll the wheel to move through lists.
 
-## Game info lost after CHD conversion (versions up to v0.6.6)
+## Game info lost after CHD conversion (v0.6.3 and earlier)
 
-Up to v0.6.6, a game converted to CHD could lose its EmulationStation info
+Up to v0.6.3, a game converted to CHD could lose its EmulationStation info
 (description, cover, play count) because EmulationStation saved its own lists
-over ours. v0.6.7 hands all game info to EmulationStation through its own API
+over ours. Since v0.6.4 the app hands all game info to EmulationStation through its own API
 instead, and ships a one-time repair that finds the lost info in the gamelist
 backups and gives it back (only empty fields are filled; play history is
 merged; your gamelists are backed up first):
@@ -245,7 +253,7 @@ python3 rb_repair.py --dry-run     # what would be restored
 python3 rb_repair.py
 ```
 
-## Converting an existing library to CHD
+## Converting an existing library to CHD / RVZ
 
 ```sh
 ssh root@<box>
@@ -256,12 +264,14 @@ python3 rb_chd_plan.py                                   # queue the rest
 setsid nohup python3 rb_chd.py >/dev/null 2>&1 &
 ```
 
-It only converts while no game is running. Progress:
-`/userdata/system/romm-browser/romm-browser.log` (`chd: OK … (X GB -> Y GB)`).
+With **GameCube and Wii to RVZ** turned on, those images are queued for RVZ
+too. It only converts while no game is running. Progress: **On this box → X →
+Conversions**, or `/userdata/system/romm-browser/romm-browser.log`
+(`chd: OK … (X GB -> Y GB)`).
 A folder holding two releases of a game (say the original and a "Dual Shock
-Ver.") becomes one playlist per release. DVD images (PS2) are compressed
-without chdman's FLAC codec, which leaks memory in some chdman builds, and
-any conversion is stopped if chdman takes more than half the RAM or free
+Ver.") becomes one playlist per release. DVD images (PS2, PSP) are
+compressed without chdman's FLAC codec, which leaks memory in some chdman
+builds (CDs too with `chd_low_memory`), and any conversion is stopped if chdman takes more than half the RAM or free
 memory runs low (the originals are kept; it's tried again later).
 
 ## Files
@@ -272,16 +282,16 @@ memory runs low (the originals are kept; it's tried again later).
 | `rommbrowser.pygame.keys` | evmapy override: only Hotkey+Start (exit) |
 | `rommlib.py` | RomM API client, platform map, download/extract pipeline, config |
 | `rb_finalize.py` | hands game info to EmulationStation through its API once ES is idle |
-| `rb_repair.py` | one-time restore of game info lost after CHD conversion (≤ v0.6.6) |
-| `rb_chd.py` | background CHD worker |
-| `rb_chd_plan.py` | queue an existing library for CHD |
+| `rb_repair.py` | one-time restore of game info lost after CHD conversion (≤ v0.6.3) |
+| `rb_chd.py` | background CHD / RVZ worker |
+| `rb_chd_plan.py` | queue an existing library for CHD / RVZ |
 | `rb_dl.py` | background downloader (finishes the queue after exit) |
 | `fonts/` | Rubik (SIL Open Font License) |
 | `deploy.sh` | copy to a box + write config |
 | `tools/mock_romm.py` | fake RomM API with a demo library, for development |
 | `tools/shoot.py` | headless screenshot driver (one scripted path) |
 | `tools/shots.py` | screenshot harness: every screen and dialog in every control style + contact sheet |
-| `tools/dolphin-tool/` | builds and packages dolphin-tool for Batocera x86_64 (`make.sh`, `package.sh`) |
+| `tools/dolphin-tool/` | builds and packages dolphin-tool for Batocera x86_64 and aarch64 (`make.sh`, `package.sh`) |
 | `tools/build-release.sh`, `tools/install.sh` | build the release zip / the on-box installer |
 | `tools/publish.sh` | maintainer: publish this folder from a monorepo (history replay, or `--snapshot` one commit on top of the remote) |
 
@@ -321,7 +331,7 @@ pip install -r tests/requirements.txt
 python -m pytest tests                       # logic + downloads/UI vs the mock RomM
 ROMM_CONTRACT_URL=https://romm.example.com ROMM_CONTRACT_TOKEN=rmm_… \
   python -m pytest tests/test_contract.py    # your RomM still has the API the app uses
-python tests/contract/disposable.py --tag 5.3.1   # same, against a throwaway RomM (needs docker)
+python tests/contract/disposable.py --tag 5.4.0   # same, against a throwaway RomM (needs docker)
 ```
 
 The contract tests are read-only and download only the smallest file they find.
@@ -334,12 +344,13 @@ optional download; its license, the licenses of code it bundles and its
 exact source are on the same GitHub release), **chdman** from MAME (BSD-3-Clause /
 GPL-2.0-or-later), **pygame**/**SDL** (LGPL-2.1 / zlib), **Requests**
 (Apache-2.0) and **7-Zip** (LGPL-2.1) as shipped by Batocera, and the
-**Rubik** font (OFL-1.1). It talks to **RomM** (AGPL-3.0). The same list is in
-Settings → Credits and licenses.
+**Rubik** font (OFL-1.1). It runs on **Batocera.linux** and talks to **RomM**
+(AGPL-3.0). The same list is in Settings → Credits and licenses.
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE). The bundled Rubik font is © The Rubik
-Project Authors, under the SIL Open Font License ([fonts/OFL-Rubik.txt](fonts/OFL-Rubik.txt)). Game names in the demo library are
+GPL-3.0-or-later — see [LICENSE](LICENSE). The bundled Rubik font is © The
+Rubik Project Authors, under the SIL Open Font License
+([fonts/OFL-Rubik.txt](fonts/OFL-Rubik.txt)). Game names in the demo library are
 freely distributed homebrew / open-source titles credited to their authors
 (descriptions written for the mock) or invented placeholders.

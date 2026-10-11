@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run tests/test_contract.py against a throwaway RomM of a given version.
 
-  python tests/contract/disposable.py --tag 5.3.1 [--keep] [--image rommapp/romm]
+  python tests/contract/disposable.py --tag 5.4.0 [--keep] [--image rommapp/romm]
 
 Starts MariaDB + rommapp/romm:<tag> in their own docker network (RomM
 published on 127.0.0.1 only), generates a small library (carts across A–Z,
@@ -140,7 +140,7 @@ def scan(base, user, pw):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tag", required=True, help="rommapp/romm image tag, e.g. 5.3.1")
+    ap.add_argument("--tag", required=True, help="rommapp/romm image tag, e.g. 5.4.0")
     ap.add_argument("--image", default="rommapp/romm")
     ap.add_argument("--db-image", default="mariadb:11.4")
     ap.add_argument("--keep", action="store_true", help="leave containers running (debug)")

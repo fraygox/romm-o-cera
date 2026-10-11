@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore game info that RomM-o-Cera <= v0.6.6 could lose after CHD conversions.
+"""Restore game info that RomM-o-Cera <= v0.6.3 could lose after CHD conversions.
 
 Those versions moved a converted game's gamelist entry to its new file by
 editing gamelist.xml; EmulationStation, saving its own lists in the

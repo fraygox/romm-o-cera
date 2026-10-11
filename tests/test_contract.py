@@ -178,7 +178,8 @@ def test_download_single_file_with_range(api, platforms):
 
 
 def test_download_folder_file(api, platforms):
-    r = _smallest_rom(api, platforms, lambda r: r["has_multiple_files"] or r["has_nested_single_file"])
+    r = _smallest_rom(api, platforms, lambda r: r["has_multiple_files"] or r["has_nested_single_file"]
+                      or "." not in r["fs_name"][-6:])        # folders named without an extension
     if not r:
         pytest.skip("no folder rom on this server")
     f = min(api.rom(r["id"])["files"], key=lambda f: f["file_size_bytes"])
@@ -236,3 +237,26 @@ def test_manual_and_achievement_fields(api, busiest):
         if r.get("ra_id") and r.get("merged_ra_metadata"):
             ach = r["merged_ra_metadata"].get("achievements")
             assert ach is None or isinstance(ach, list)
+
+
+def test_rom_by_hash(api, busiest):
+    """Check games' repair finds RomM's copy by hash (/api/roms/by-hash): a
+    known file's hash gives that game; an unknown one is a clean 'none'."""
+    r = api.roms(platform_ids=[busiest["id"]], limit=1)["items"][0]
+    d = api.rom(r["id"])
+    f = next((x for x in d.get("files") or [] if x.get("sha1_hash") or x.get("md5_hash") or x.get("crc_hash")), None)
+    if not f:
+        pytest.skip("no hashed files")
+    got = api.by_hash(sha1_hash=f.get("sha1_hash"), md5_hash=f.get("md5_hash"), crc_hash=f.get("crc_hash"))
+    assert got and got["id"] == d["id"], got
+    assert api.by_hash(sha1_hash="0" * 39 + "1") is None
+    assert api.by_hash(ra_hash="0" * 31 + "1") is None
+
+
+def test_firmware_list(api, platforms):
+    """BIOS files screen: /api/firmware?platform_id= answers with a list."""
+    for p in platforms[:5]:
+        fw = api.firmware(p["id"])
+        assert isinstance(fw, list)
+        for x in fw:
+            assert {"id", "file_name"} <= set(x)

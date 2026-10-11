@@ -6,7 +6,7 @@ Spawned detached by the app on exit (and by the CHD / download workers).
 EmulationStation owns its gamelists: it saves them by itself at any time (its
 RetroAchievements hasher writes entries for new files in the background), so
 editing gamelist.xml behind its back can always be overwritten — that lost
-game info after CHD conversions up to v0.6.6. Since v0.6.7 nothing here
+game info after CHD conversions up to v0.6.3. Since v0.6.4 nothing here
 writes gamelist.xml. Instead:
 
   1. wait until no game (and not this app) is running;
