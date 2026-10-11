@@ -743,6 +743,7 @@ class App:
         self.input = Input(self.cfg.get("swap_ab"))
         self.headless = headless
         self.api = rommlib.Api.from_config(self.cfg)
+        self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
         self.loaded = False
         self.junk = None              # filename tags hidden by "Hide prototypes, demos & hacks"
         self.update_tag = None
@@ -835,8 +836,21 @@ class App:
             self.covers.pop(old, None)
 
         def load():
-            path = self.api.fetch_cover(rom, large=K > 1.5)
-            return as_rgba(pygame.image.load(path)) if path else None
+            for attempt in (1, 2):
+                path = self.api.fetch_cover(rom, large=K > 1.5)
+                if not path:
+                    return None
+                try:
+                    return as_rgba(pygame.image.load(path))
+                except (pygame.error, OSError):
+                    # trimmed from the cache between finding and reading it
+                    # (or unreadable): drop it and fetch once more
+                    if attempt == 2:
+                        raise
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
 
         def done(img):
             self.covers[rid] = img
@@ -855,6 +869,7 @@ class App:
         self.resolve_style()
         if reconnect:
             self.api = rommlib.Api.from_config(self.cfg)
+            self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
             self.downloader.api = self.api
             self.covers.clear()
             self.scaled_covers.clear()
@@ -1037,6 +1052,9 @@ class App:
         clock = pygame.time.Clock()
         self.resolve_style()
         self.take_over_downloads()
+        lim = rommlib.cache_limit_bytes(self.cfg)
+        if lim:                                   # trim the cover cache once per start
+            self.bg(lambda: rommlib.prune_cache(lim), lambda r: None, lambda e: None)
         self.load_platforms()
         if not self.headless:
             self.bg(lambda: rommlib.newer_release(self.cfg), self._update_found, lambda e: None)
@@ -3015,6 +3033,9 @@ class SettingsScreen(Screen):
                 cfg.get("sounds", "normal"), "On"), "Clicks and chimes in this app"),
             ("arcade", "Arcade games go to", "roms/" + arcade, "fbneo (forgiving) or mame (exact sets)"),
             ("bios", "BIOS files", "Open", "What each system needs, and what RomM can fill"),
+            ("cachelimit", "Cover cache limit",
+             rommlib.human_size(rommlib.cache_limit_bytes(cfg)) if rommlib.cache_limit_bytes(cfg) else "No limit",
+             "Least recently seen covers are removed first"),
             ("cache", "Clear cover cache",
              human_size(self.cache_bytes) if self.cache_bytes is not None else "…",
              "Covers re-download as you browse"),
@@ -3164,6 +3185,16 @@ class SettingsScreen(Screen):
                                     "Go back", lambda: self._swap(rommlib.rollback), danger=True)
             elif key == "bios" and a == "ok":
                 app.push(BiosScreen(app))
+            elif key == "cachelimit":
+                opts = rommlib.CACHE_LIMITS_MB
+                cur = cfg.get("cache_limit_mb", 1024)
+                i = opts.index(cur) if cur in opts else opts.index(1024)
+                cfg["cache_limit_mb"] = opts[(i + (-1 if a == "left" else 1)) % len(opts)]
+                app.apply_config()
+                lim = rommlib.cache_limit_bytes(cfg)
+                app.api.cache_limit = lim
+                if lim:
+                    app.bg(lambda: rommlib.prune_cache(lim), lambda r: self._measure_cache(), lambda e: None)
             elif key == "cache" and a == "ok":
                 shutil.rmtree(rommlib.COVER_CACHE, ignore_errors=True)
                 app.covers.clear()

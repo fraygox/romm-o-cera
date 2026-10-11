@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.4).** It works on the author's box every day, but it
+**Early software (v0.6.5).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) against
 **RomM 5.3**. Draws natively at any resolution, 720p to 4K.
@@ -143,6 +143,7 @@ On the box: **Main Menu → Game Settings → Update Gamelists**, then open
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
+| `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
 
 The app also reads `ROMM_URL`, `ROMM_TOKEN` and `ROMM_VERIFY_TLS` from its
@@ -218,6 +219,11 @@ setsid nohup python3 rb_chd.py >/dev/null 2>&1 &
 
 It only converts while no game is running. Progress:
 `/userdata/system/romm-browser/romm-browser.log` (`chd: OK … (X GB -> Y GB)`).
+A folder holding two releases of a game (say the original and a "Dual Shock
+Ver.") becomes one playlist per release. DVD images (PS2) are compressed
+without chdman's FLAC codec, which leaks memory in some chdman builds, and
+any conversion is stopped if chdman takes more than half the RAM or free
+memory runs low (the originals are kept; it's tried again later).
 
 ## Files
 

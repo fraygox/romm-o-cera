@@ -3,6 +3,7 @@ import json
 import os
 import stat
 import xml.etree.ElementTree as ET
+import time
 import zipfile
 import zlib
 
@@ -671,12 +672,40 @@ def test_chd_plan_never_merges_different_games(isolated):
         os.makedirs(os.path.dirname(os.path.join(sysdir, rel)), exist_ok=True)
         open(os.path.join(sysdir, rel), "w").close()
     got = {os.path.relpath(r, sysdir): [os.path.relpath(f, sysdir) for f in fs]
-           for r, fs in rb_chd_plan.games_for("psx")}
+           for r, fs, _ in rb_chd_plan.games_for("psx")}
     assert got["TOP 100/Alpha (Disc 1)"] == ["TOP 100/Alpha (Disc 1)/x.cue"]
     assert got["TOP 100/FF7 (Disc 1)"] == ["TOP 100/FF7 (Disc 1)/x.cue"]
     assert got["Game (USA)"] == ["Game (USA)/Game (USA) (Disc 1)/Game (USA) (Disc 1).cue",
                                  "Game (USA)/Game (USA) (Disc 2)/Game (USA) (Disc 2).cue"]
     assert got["Loose (USA).cue"] == ["Loose (USA).cue"] and "TOP 100" not in got
+
+
+def test_chd_one_folder_two_releases_two_playlists(isolated, monkeypatch, fake_es):
+    """Box regression (Resident Evil 2, 2026-10-10 02:30): RomM's game folder
+    held the original and the Dual Shock release; the old planner made one
+    4-disc set with one playlist. Now: one set and one playlist per release."""
+    import rb_chd_plan, rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    rels = ["RE2 (USA)/RE2 (USA) (Disc %d)/RE2 (USA) (Disc %d).cue" % (n, n) for n in (1, 2)] + \
+           ["RE2 (USA)/RE2 - Dual Shock Ver. (USA) (Disc %d)/RE2 - Dual Shock Ver. (USA) (Disc %d).cue" % (n, n)
+            for n in (1, 2)]
+    for rel in rels:
+        os.makedirs(os.path.dirname(os.path.join(sysdir, rel)), exist_ok=True)
+        open(os.path.join(sysdir, rel), "w").write("x")
+    plan = rb_chd_plan.games_for("psx")
+    assert sorted((os.path.relpath(r, sysdir), len(fs), n) for r, fs, n in plan) == [
+        ("RE2 (USA)", 2, "RE2 (USA)"), ("RE2 (USA)", 2, "RE2 - Dual Shock Ver. (USA)")]
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rb_chd, "chdman", lambda mode, *a: (
+        mode == "verify" or open(a[a.index("-o") + 1], "w").write("chd")) and (0, ""))
+    for r, fs, n in plan:
+        assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": fs,
+                               "roots": [r], "name": n}) is True
+    assert open(os.path.join(sysdir, "RE2 (USA).m3u")).read().split("\n")[:2] == [
+        "RE2 (USA) (Disc 1).chd", "RE2 (USA) (Disc 2).chd"]
+    assert open(os.path.join(sysdir, "RE2 - Dual Shock Ver. (USA).m3u")).read().split("\n")[:2] == [
+        "RE2 - Dual Shock Ver. (USA) (Disc 1).chd", "RE2 - Dual Shock Ver. (USA) (Disc 2).chd"]
+    assert not os.path.exists(os.path.join(sysdir, "RE2 (USA)"))       # folder gone once both are done
 
 
 def test_chd_refuses_two_sources_with_one_output_name(isolated, monkeypatch):
@@ -797,3 +826,114 @@ def test_sweep_ui_sort_infodialog_clamp_and_status(isolated, rb, monkeypatch):
     app.downloader.jobs.append(j)
     app.platform_by_id = {1: {"_system": "gba"}}
     assert app.rom_status(rom)[0] == "remote"
+
+
+def test_cover_cache_lru_prune(isolated, monkeypatch):
+    """Over the limit: least recently used covers go first, down to 90%;
+    using a cached cover makes it recent (mtime, since /userdata is noatime)."""
+    import time as _t
+    root = rommlib.COVER_CACHE
+    os.makedirs(root)
+    now = _t.time()
+    for i in range(10):                                   # 10 x 100 KB, oldest = 0
+        p = os.path.join(root, "%d.img" % i)
+        open(p, "wb").write(b"x" * 100_000)
+        os.utime(p, (now - 10000 + i, now - 10000 + i))
+    open(os.path.join(root, "9.img.tmp"), "w").close()
+    os.utime(os.path.join(root, "9.img.tmp"), (now - 7200, now - 7200))
+    rommlib.touch_cached(os.path.join(root, "0.img"))     # cover 0 just used
+    assert rommlib.prune_cache(2_000_000) == (0, 0)       # under the limit: nothing
+    n, freed = rommlib.prune_cache(600_000)               # -> at most 540 KB
+    left = sorted(os.listdir(root))
+    assert n == 5 and freed == 500_000
+    assert "0.img" in left and "1.img" not in left and "9.img" in left
+    assert "9.img.tmp" not in left                         # stale partial gone too
+    assert rommlib.cache_usage()[0] <= 540_000
+    assert rommlib.cache_limit_bytes({"cache_limit_mb": 0}) == 0
+    assert rommlib.cache_limit_bytes({}) == 1024 << 20
+
+
+def test_cover_fetch_prunes_after_enough_new_covers(isolated, mock_url, monkeypatch):
+    api = rommlib.Api(mock_url, "demo")
+    api.cache_limit = 1
+    monkeypatch.setattr(rommlib, "PRUNE_EVERY", 1)
+    calls = []
+    monkeypatch.setattr(rommlib, "prune_cache", lambda lim: calls.append(lim))
+    rom = api.roms(limit=1)["items"][0]
+    assert api.fetch_cover(rom) and calls == [1]
+
+
+def test_cover_load_retries_when_cache_file_vanishes(isolated, rb, monkeypatch):
+    """A cover trimmed from the cache between being found and read is fetched
+    again instead of showing "no cover" for the rest of the session."""
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    good = os.path.join(rommlib.DATA_DIR, "good.png")
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    pygame.image.save(pygame.Surface((4, 6)), good)
+    calls = []
+
+    def fetch_cover(rom, large=False):
+        calls.append(1)
+        return os.path.join(rommlib.DATA_DIR, "gone.png") if len(calls) == 1 else good
+    app.api.fetch_cover = fetch_cover
+    app.bg = lambda fn, done=None, err=None: done(fn())
+    app.cover({"id": 5})
+    assert len(calls) == 2 and app.covers[5].get_size() == (4, 6)
+
+
+def _fake_chdman_bin(tmp_path, monkeypatch, body):
+    import stat
+    import sys as _s
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    exe = bindir / "chdman"
+    exe.write_text("#!%s\nimport sys, time, os\n%s\n" % (_s.executable, body))
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", "%s:%s" % (bindir, os.environ["PATH"]))
+
+
+def test_dvd_conversions_leave_out_flac(isolated, tmp_path, monkeypatch):
+    """chdman 0.285's FLAC codec leaks ~4 MB per MB on createdvd (an 8 GB DVD
+    took the box down): DVDs are compressed with lzma,zlib,huff."""
+    import rb_chd
+    log = tmp_path / "args.txt"
+    _fake_chdman_bin(tmp_path, monkeypatch,
+                     "open(%r, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                     "a = sys.argv[1:]\nif a[0] != 'verify': open(a[a.index('-o') + 1], 'w').write('chd')" % str(log))
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "ps2")
+    os.makedirs(sysdir)
+    iso = os.path.join(sysdir, "G (USA).iso")
+    open(iso, "w").write("x")
+    assert rb_chd.convert({"system": "ps2", "mode": "createdvd", "sources": [iso], "roots": [iso]})
+    first = open(log).read().splitlines()[0]
+    assert first.startswith("createdvd") and "-c lzma,zlib,huff" in first and "flac" not in first
+
+
+def test_memory_guard_stops_chdman_and_keeps_originals(isolated, tmp_path, monkeypatch):
+    import rb_chd
+    _fake_chdman_bin(tmp_path, monkeypatch,
+                     "a = sys.argv[1:]\nblob = bytearray(64 << 20)\n"     # holds 64 MB
+                     "for i in range(0, len(blob), 4096): blob[i] = 1\n"
+                     "time.sleep(30)")
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rb_chd, "MEM_SHARE_MAX", (32 << 20) / max(1, rb_chd._meminfo().get("MemTotal", 1)))
+    real_sleep = time.sleep
+    monkeypatch.setattr(rb_chd.time, "sleep", lambda s: real_sleep(0.3))
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "ps2")
+    os.makedirs(sysdir)
+    iso = os.path.join(sysdir, "G (USA).iso")
+    open(iso, "w").write("x")
+    t0 = time.time()
+    res = rb_chd.convert({"system": "ps2", "mode": "createdvd", "sources": [iso], "roots": [iso]})
+    assert res is False and time.time() - t0 < 20               # stopped, not waited out
+    assert sorted(os.listdir(sysdir)) == ["G (USA).iso"]          # original kept, no partial
+    assert "STOPPED" in open(rommlib.LOG_PATH).read()
+    # memory ran low while a game was up: kept for later (None), not given up
+    monkeypatch.setattr(rb_chd, "memory_check", lambda pid, busy: rb_chd.MemoryGuard("low", True))
+    assert rb_chd.convert({"system": "ps2", "mode": "createdvd", "sources": [iso], "roots": [iso]}) is None

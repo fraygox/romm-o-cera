@@ -61,6 +61,63 @@ class ChdmanMissing(Exception):
     """chdman isn't installed: stop, keeping the queue."""
 
 
+class MemoryGuard(Exception):
+    """chdman was stopped to protect the box's memory. .retry: try again later
+    (a game needed the RAM) rather than give up on this disc."""
+
+    def __init__(self, msg, retry):
+        super().__init__(msg)
+        self.retry = retry
+
+
+# chdman's FLAC codec (in createdvd's default list) leaks ~4 MB of RAM per MB of
+# output on Batocera 43's chdman 0.285 — an 8 GB DVD needed ~30 GB and took the
+# box down (2026-10-10). FLAC is for audio and useless on DVD data: leave it out.
+# (CDs keep their defaults: cdfl helps audio tracks and its leak is bounded by
+# the ~800 MB disc size.)
+DVD_CODECS = "lzma,zlib,huff"
+MEM_SHARE_MAX = 0.5          # chdman may use at most this share of the box's RAM
+MEM_FREE_MIN = 0.10          # ... and never push free memory below this share
+
+
+def _meminfo():
+    out = {}
+    try:
+        with open("/proc/meminfo") as f:
+            for ln in f:
+                k, v = ln.split(":", 1)
+                out[k] = int(v.split()[0]) * 1024
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def _rss(pid):
+    try:
+        with open("/proc/%d/status" % pid) as f:
+            for ln in f:
+                if ln.startswith("VmRSS:"):
+                    return int(ln.split()[1]) * 1024
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
+def memory_check(pid, busy):
+    """None if fine, else a MemoryGuard to stop chdman with."""
+    mi = _meminfo()
+    total, avail = mi.get("MemTotal", 0), mi.get("MemAvailable", 0)
+    if not total:
+        return None
+    rss = _rss(pid)
+    if rss > total * MEM_SHARE_MAX:
+        return MemoryGuard("chdman needed %s of RAM (over half of this box's)" % rommlib.human_size(rss), False)
+    if avail < total * MEM_FREE_MIN and rss > 256 << 20:
+        return MemoryGuard("memory ran low (%s free, chdman %s)" % (rommlib.human_size(avail), rommlib.human_size(rss)),
+                           busy)
+    return None
+
+
 def chdman(*args):
     """Run chdman at nice 19; pause it (SIGSTOP) whenever a game starts."""
     cmd = ["nice", "-n", "19", "chdman"] + list(args)   # no ionice in Batocera
@@ -68,13 +125,18 @@ def chdman(*args):
     # through, and a pipe nobody drains until exit fills up (64 KB) and blocks
     # it forever — that froze long DVD conversions (2026-10-10, Ratchet).
     import tempfile
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     errf = tempfile.TemporaryFile(mode="w+", dir=rommlib.DATA_DIR)
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=errf, text=True)
     paused = False
+    guard = None
     try:
         while p.poll() is None:
             time.sleep(3)
             busy = running_game() != ""
+            guard = memory_check(p.pid, busy)
+            if guard:
+                break                             # finally: resume + stop chdman
             if busy and not paused:
                 p.send_signal(signal.SIGSTOP)
                 paused = True
@@ -91,6 +153,9 @@ def chdman(*args):
                 p.wait(10)
             except Exception:
                 p.kill()
+    if guard:
+        errf.close()
+        raise guard
     if p.returncode == 127:
         raise ChdmanMissing()
     errf.seek(0, 2)
@@ -210,9 +275,20 @@ def convert(task):
         tmp = out + ".part"                    # not a name ES lists as a game while it's written
         t0 = time.time()
         threads = str(rommlib.chd_threads(rommlib.load_config()))    # read per disc: Settings apply next disc
-        rc, err = chdman(mode, "-np", threads, "-f", "-i", src, "-o", tmp)
-        if rc == 0:
-            rc, err = chdman("verify", "-i", tmp)
+        codecs = ["-c", DVD_CODECS] if mode == "createdvd" else []
+        try:
+            rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
+            if rc == 0:
+                rc, err = chdman("verify", "-i", tmp)
+        except MemoryGuard as g:
+            rommlib.log("chd: STOPPED %s: %s; %s" % (os.path.basename(src), g,
+                        "will try again later" if g.retry else "leaving it as it is"))
+            for m in made + [tmp]:
+                if os.path.exists(m):
+                    os.remove(m)
+            if g.retry:
+                return None
+            return False
         if rc != 0:
             rommlib.log("chd: FAIL %s rc=%d %s" % (src, rc, err))
             for m in made + [tmp]:
@@ -234,7 +310,7 @@ def convert(task):
         if outside:
             primary = outside[0]
         else:
-            name = os.path.basename(folder_root) if folder_root else \
+            name = task.get("name") or os.path.basename(folder_root) if folder_root else \
                 re.sub(r"\s*\(Disc \d+\).*$", "", os.path.splitext(os.path.basename(srcs[0]))[0])
             primary = os.path.join(out_dir, name + ".m3u")
             if os.path.exists(primary):
@@ -356,7 +432,14 @@ def work(lockf):
                 task = json.load(f)
             with open(cur, "w") as f:         # lets the app show "compressing…" for this download
                 json.dump({"task": tasks[0], "since": time.time()}, f)
-            if convert(task):
+            res = convert(task)
+            if res is None:                   # stopped for memory while a game ran: keep it, try later
+                try:
+                    os.remove(cur)
+                except OSError:
+                    pass
+                break
+            if res:
                 since_finalize += 1
         except ChdmanMissing:
             rommlib.log("chd: chdman not found; leaving %d task(s) queued" % len(tasks))

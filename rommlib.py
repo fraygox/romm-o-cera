@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.4"            # changes only for a real GitHub release
+VERSION = "0.6.5"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -97,6 +97,7 @@ DEFAULT_CONFIG = {
     "check_updates": True,     # once a day, ask GitHub if a newer release exists
     "chd": True,               # background CHD conversion of extracted disc games
     "chd_threads": "auto",     # chdman threads: "auto" or a number (see chd_threads())
+    "cache_limit_mb": 1024,    # cover cache size cap; least recently used covers go first (0 = no cap)
     "download_hours": "any",   # "any", or "S-E" local hours (e.g. "1-7"): downloads only run then
     "background_downloads": True,  # keep downloading after the app exits
     "speed_while_playing": 0,  # MB/s cap for background downloads while a game runs (0 = no cap)
@@ -485,6 +486,7 @@ class Api:
         os.makedirs(COVER_CACHE, exist_ok=True)
         dest = os.path.join(COVER_CACHE, "%d%s.img" % (rom["id"], "-L" if large else ""))
         if os.path.exists(dest):
+            touch_cached(dest)
             return dest
         try:
             r = self.s.get(self.base + path, timeout=15)
@@ -492,10 +494,99 @@ class Api:
                 tmp = dest + ".tmp"
                 write_png(r.content, tmp)
                 os.replace(tmp, dest)
+                self._cache_written = getattr(self, "_cache_written", 0) + os.path.getsize(dest)
+                if self._cache_written > PRUNE_EVERY and getattr(self, "cache_limit", 0):
+                    self._cache_written = 0
+                    prune_cache(self.cache_limit)
                 return dest
-        except requests.RequestException:
+        except (requests.RequestException, OSError):
             pass
         return None
+
+
+# ----------------------------------------------------------- cover cache (LRU)
+# /userdata is mounted noatime, so "last used" is kept in the file's mtime:
+# bumped when a cached cover is used (at most every few minutes per file).
+
+CACHE_LIMITS_MB = [256, 512, 1024, 2048, 4096, 0]     # 0 = no limit
+PRUNE_EVERY = 64 << 20                                # check after this much new cache
+_prune_lock = threading.Lock()
+
+
+def touch_cached(path, every=600):
+    try:
+        if time.time() - os.path.getmtime(path) > every:
+            os.utime(path, None)
+    except OSError:
+        pass
+
+
+def cache_limit_bytes(cfg):
+    try:
+        mb = int((cfg or {}).get("cache_limit_mb", 1024))
+    except (TypeError, ValueError):
+        mb = 1024
+    return max(0, mb) << 20
+
+
+def cache_usage(root=None):
+    """(bytes, files) in the cover cache."""
+    root = root or COVER_CACHE
+    tot = n = 0
+    for dp, _, fns in os.walk(root):
+        for f in fns:
+            try:
+                tot += os.path.getsize(os.path.join(dp, f))
+                n += 1
+            except OSError:
+                pass
+    return tot, n
+
+
+def prune_cache(limit, root=None, target=0.9):
+    """Keep the cover cache under `limit` bytes: once over it, delete the
+    least recently used covers until it's at `target` of the limit (so it
+    doesn't trim on every new cover). Returns (files deleted, bytes freed)."""
+    root = root or COVER_CACHE
+    if not limit or not _prune_lock.acquire(blocking=False):
+        return 0, 0
+    try:
+        files, total = [], 0
+        now = time.time()
+        for dp, _, fns in os.walk(root):
+            for f in fns:
+                p = os.path.join(dp, f)
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                if f.endswith(".tmp") and now - st.st_mtime > 3600:
+                    try:                                  # a download that never finished
+                        os.remove(p)
+                    except OSError:
+                        pass
+                    continue
+                files.append((st.st_mtime, st.st_size, p))
+                total += st.st_size
+        if total <= limit:
+            return 0, 0
+        goal = int(limit * target)
+        n = freed = 0
+        for _, size, p in sorted(files):                  # oldest use first
+            if total - freed <= goal:
+                break
+            try:
+                os.remove(p)
+                n += 1
+                freed += size
+            except OSError:
+                pass
+        if n:
+            log("cache: removed %d least recently used covers (%s) to stay under %s" % (
+                n, human_size(freed), human_size(limit)))
+        return n, freed
+    finally:
+        _prune_lock.release()
 
 
 # Filename tags that mark something other than a finished release. Matched as
@@ -1970,10 +2061,10 @@ class Downloader:
             try:
                 self._process(j)
             except Cancelled:
+                if not j.pause:
+                    self._drop_parts(j)        # before the state flips: "Cancelled" means cleaned up
                 j.state = Job.PAUSED if j.pause else Job.CANCELLED
                 j.message = "Paused" if j.pause else "Cancelled"
-                if not j.pause:
-                    self._drop_parts(j)
             except OutsideHours:
                 j.state, j.message, j.speed = Job.QUEUED, "Waiting for download hours", 0.0
                 log("HOURS %s: paused until %s" % (j.name, hours_label(self.cfg.get("download_hours"))))

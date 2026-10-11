@@ -55,29 +55,35 @@ def games_for(system):
             key = (os.path.dirname(d), base[0].lower())
         else:
             key = (d, None)
-        games.setdefault(key, []).append((d, files))
-    out = list(loose)
+        games.setdefault(key, []).append((d, files, base[0] if base else None))
+    out = [(r, fs, None) for r, fs in loose]
     by_root = {}
     for (root, title), parts in games.items():
         by_root.setdefault(root, []).append((title, parts))
     for root, groups in by_root.items():
         if len(groups) > 1:
-            # several titles' disc folders in one folder: each disc folder on its own
+            # several titles' disc folders in one folder (e.g. a game folder
+            # holding the original and the Dual Shock release): one set per
+            # title, its playlist named after that title — never one set of all
             for t, parts in groups:
-                for d, files in parts:
-                    out.append((d, sorted(set(files))))
+                files = sorted({f for _, fs, _ in parts for f in fs})
+                if t is not None and len(files) > 1:
+                    out.append((root, files, parts[0][2]))
+                else:
+                    for d, fs, _ in parts:
+                        out.append((d, sorted(set(fs)), None))
             continue
         title, parts = groups[0]
-        files = sorted({f for _, fs in parts for f in fs})
+        files = sorted({f for _, fs, _ in parts for f in fs})
         if title is None and len(files) > 1 and \
                 not all(DISC_DIR.search(os.path.basename(f)) for f in files):
             for f in files:                      # unrelated games sharing a folder
-                out.append((f, [f]))
+                out.append((f, [f], None))
         elif title is not None and len(parts) == 1 and len(files) == 1:
-            out.append((parts[0][0], files))    # a lone disc folder: convert it in place
+            out.append((parts[0][0], files, None))    # a lone disc folder: convert it in place
         else:
-            out.append((root, files))
-    return sorted(out)
+            out.append((root, files, None))
+    return sorted(out, key=lambda x: (x[0], x[1]))
 
 
 def main():
@@ -101,7 +107,7 @@ def main():
     for si, system in enumerate(a.systems.split(",")):
         if not os.path.isdir(os.path.join(rommlib.ROMS_ROOT, system)):
             continue
-        for root, files in games_for(system):
+        for root, files, name in games_for(system):
             mode = "createdvd" if files[0].lower().endswith(".iso") else "createcd"
             if a.only and a.only.lower() not in root.lower():
                 continue
@@ -112,12 +118,15 @@ def main():
             size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f)
                        if os.path.isfile(p))
             rel = os.path.relpath(root, rommlib.ROMS_ROOT)
-            print("%-9s %6.2f GB  %d disc%s  %s" % (system, size / 1e9, len(files),
-                                                   "" if len(files) == 1 else "s", rel))
+            print("%-9s %6.2f GB  %d disc%s  %s%s" % (system, size / 1e9, len(files),
+                                                     "" if len(files) == 1 else "s", rel,
+                                                     " [%s]" % name if name else ""))
             tot += size
             if not a.dry_run:
                 task = {"system": system, "mode": mode, "sources": files,
                         "roots": [root], "queued": seq}
+                if name:
+                    task["name"] = name      # playlist name: the folder holds other titles too
                 k = n
                 while True:   # never clobber a task from an earlier run
                     name = "%d-%02d-%05d.json" % (seq, si, k)
