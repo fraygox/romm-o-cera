@@ -20,7 +20,7 @@ to 4K.
 | ![Collections: download a whole collection](screenshots/collections.png) | ![Downloads: queue, unpacking, waiting for space](screenshots/downloads.png) |
 | ![Conversions: CHD and RVZ in the background](screenshots/conversions.png) | ![Settings in sections, with help](screenshots/settings.png) |
 | ![On this box](screenshots/on-this-box.png) | ![Manage a game on the box](screenshots/manage.png) |
-| ![Storage by system](screenshots/storage.png) | ![Free up space](screenshots/free-up.png) |
+| ![Space: the whole drive, then each system](screenshots/storage.png) | ![Free up space](screenshots/free-up.png) |
 | ![Credits and licenses](screenshots/credits.png) | |
 
 <sub>Screenshots come from `tools/mock_romm.py`: freely distributed homebrew /
@@ -37,12 +37,13 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   descriptions and manuals handed to EmulationStation. Downloads keep going
   after you exit, wait for space instead of filling the drive, and can be kept
   to overnight hours.
-- **Manage the box**: delete games (saves are kept), fetch missing BIOS files
-  from RomM, check for damaged or cut-short games and replace them, see where
-  the space went, free up space, clean up leftovers.
+- **Manage the box** from one menu that shows its state at a glance: delete
+  games (saves are kept), see where the space went, free up space, clean up
+  leftovers, fetch missing BIOS files from RomM, check for damaged or cut-short
+  games and replace them.
   → [On this box](docs/on-this-box.md)
 - **Compress discs in the background**, lossless and verified: CHD for CD
-  systems, PS2 and PSP; RVZ for GameCube and Wii; squashfs for Xbox. Xbox
+  systems, PS2 and PSP; RVZ for GameCube and Wii; squashfs for Xbox; .zcci for 3DS; .zar for Xbox 360. Xbox
   downloads are made bootable for xemu. → [Disc compression](docs/disc-compression.md)
 - **Feels native**: button labels match your controller (Xbox, PlayStation,
   Nintendo) or keyboard, settings explain themselves, updates install from the
@@ -100,8 +101,8 @@ the install one-liner works too. Your config, queue and logs are never touched.
 | | |
 |---|---|
 | [Browsing and downloading](docs/browsing-and-downloading.md) | finding games, the queue, space, download hours, game info |
-| [On this box](docs/on-this-box.md) | managing installed games, BIOS, Check games, disk space |
-| [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, converting a library you already have |
+| [On this box](docs/on-this-box.md) | installed games, space, BIOS, Check games, conversions, game info |
+| [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, 3DS, Xbox 360, converting a library you already have |
 | [Settings](docs/settings.md) | every setting and `config.json` key |
 | [Connecting to RomM](docs/connecting.md) | HTTPS, certificates, network share, auth proxies |
 | [Controls](docs/controls.md) | controller, keyboard, touch |
@@ -111,7 +112,11 @@ the install one-liner works too. Your config, queue and logs are never touched.
 
 RomM-o-Cera uses or downloads: Dolphin's **dolphin-tool** (GPL-2.0-or-later,
 optional download; its license, the licenses of code it bundles and its
-exact source are on the same GitHub release), **chdman** from MAME (BSD-3-Clause /
+exact source are on the same GitHub release), **extract-xiso** (BSD-style license;
+this product includes software developed by in <in@fishtank.com>) and
+**ZArchive**'s `zarchive` (MIT-0, with **zstd**, BSD-3-Clause), an optional download
+for Xbox 360 to .zar whose licenses and source are on the `xbox360-tools` release,
+**chdman** from MAME (BSD-3-Clause /
 GPL-2.0-or-later), **pygame**/**SDL** (LGPL-2.1 / zlib), **Requests**
 (Apache-2.0) and **7-Zip** (LGPL-2.1) as shipped by Batocera, and the
 **Rubik** font (OFL-1.1). It runs on **Batocera.linux** and talks to **RomM**

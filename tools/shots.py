@@ -158,6 +158,17 @@ def fake_conversions():
                           "sources": ["Misplaced.iso"], "mode": "rvz", "retry": {"mode": "rvz"}}) + "\n")
 
 
+def fake_audit():
+    """A finished quick check with one damaged and one differing game."""
+    stem = os.path.join(R, "psx/Tempor Legends (USA)/Tempor Legends (USA) (Disc 1).chd")
+    rommlib.save_audit([
+        {"system": "psx", "path": stem, "severity": "damaged", "rom": None,
+         "problem": "Disc image cut short: boot files missing"},
+        {"system": "psx", "path": os.path.join(R, "psx/Dolor Dash (USA).chd"), "severity": "differs", "rom": None,
+         "problem": "Smaller than RomM's copy (a trimmed image?)"}],
+        {"checked": 412, "matched": 398, "unmatched": 14}, False)
+
+
 def install_some():
     """A few games from the mock library 'on the box' (files + install records)."""
     lib = app.library
@@ -221,16 +232,22 @@ SCENES = [
     ("credits", lambda: app.push(rb.CreditsScreen(app))),
     ("url-edit", lambda: app.push(rb.TextInputScreen(app, "RomM server URL", "https://romm.example.com",
                                                      lambda v: None))),
-    ("on-this-box", lambda: (install_some(), app.push(rb.InstalledScreen(app)))),
+    ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),
+    ("on-this-box-space", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 1))),
+    ("on-this-box-bios", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 2))),
+    ("on-this-box-check", lambda: (fake_audit(), app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 3))),
+    ("on-this-box-conversions", lambda: (fake_conversions(), app.push(rb.OnThisBoxScreen(app)),
+                                         setattr(app.stack[-1], "sel", 4))),
+    ("games-from-romm", lambda: (install_some(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.InstalledScreen(app)))),
+    ("check-games", lambda: (fake_audit(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)))),
     ("manage", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                         setattr(app, "_after", lambda: setattr(app, "modal", rb.ManageMenu(app, install_some()))))),
-    ("check-menu", lambda: (app.push(rb.InstalledScreen(app)), app.stack[-1].check_menu())),
-    ("storage", lambda: app.push(rb.StorageScreen(app))),
+    ("storage", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)))),
     ("free-up", lambda: app.push(rb.FreeUpScreen(app))),
     ("free-up-menu", lambda: (app.push(rb.FreeUpScreen(app)),
                               setattr(app, "_after", lambda: app.stack[-1].menu()))),
     ("leftovers", lambda: app.push(rb.LeftoversScreen(app))),
-    ("bios", lambda: app.push(rb.BiosScreen(app))),
+    ("bios", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.BiosScreen(app)))),
     ("toast", lambda: app.toast("Marked 3 games (4.2 GB) — check the list, then {X} to delete")),
     ("confirm-danger", lambda: setattr(app, "modal", rb.Confirm(
         app, "Delete 3 games?", "Frees about 4.2 GB. Saves are kept. Press {A} to delete or {B} to keep them.",

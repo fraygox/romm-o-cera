@@ -1573,6 +1573,12 @@ class Screen:
     def crumbs(self):
         return []
 
+    def trail(self, *more):
+        """Crumbs that follow the way here: the screen below's, then ours."""
+        st = self.app.stack
+        i = next((k for k, s in enumerate(st) if s is self), len(st))
+        return (st[i - 1].crumbs() if i > 0 else []) + list(more)
+
     def hints(self):
         return [("A", "Select"), ("B", "Back")]
 
@@ -1605,7 +1611,7 @@ class HomeScreen(Screen):
              ("collections", "Collections", "Series, Top-N lists and themes"),
              ("recent", "Recently added", "Newest games in the library"),
              ("downloads", "Downloads", "Queue and progress"),
-             ("installed", "On this box", "Your games, sizes, and a check for damaged ones"),
+             ("installed", "On this box", "Your games, space, BIOS files and checks"),
              ("settings", "Settings", "Server, controller, downloads, compression"),
              ("exit", "Exit", "Back to EmulationStation")]
 
@@ -1639,7 +1645,7 @@ class HomeScreen(Screen):
             elif key == "settings":
                 app.push(SettingsScreen(app))
             elif key == "installed":
-                app.push(InstalledScreen(app))
+                app.push(OnThisBoxScreen(app))
             elif not app.platforms and key not in ("downloads",):
                 app.load_platforms()
                 msg = app.error or ("No RomM platform maps to a Batocera system"
@@ -3270,6 +3276,11 @@ class SettingsScreen(Screen):
             pr = getattr(self.app, "rvz_progress", None)
             rvz = {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
                    "help": "dolphin-tool, from RomM-o-Cera's GitHub releases"}
+        zar = rommlib.zar_state(cfg)
+        if getattr(self.app, "zar_busy", False):
+            pr = getattr(self.app, "zar_progress", None)
+            zar = {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
+                   "help": "extract-xiso and zarchive, from RomM-o-Cera's GitHub releases"}
         sec = SettingsScreen.section
         return [
             sec("RomM server"),
@@ -3309,6 +3320,9 @@ class SettingsScreen(Screen):
              "Game partition only; .xiso renamed to .iso"),
             ("squashfs", "Xbox to squashfs", onoff(cfg.get("squashfs")) if shutil.which("mksquashfs")
              else "Not available", "Packed smaller; Batocera opens it at launch"),
+            ("z3ds", "3DS to .zcci", onoff(cfg.get("z3ds")) if rommlib.z3ds_supported() else "Not available",
+             "Compressed copies Azahar opens directly"),
+            ("zar", "Xbox 360 to .zar", zar["label"], zar["help"]),
             ("chdthreads", "Compression threads",
              ("Auto (%d of %d)" % (rommlib.auto_chd_threads(), rommlib.cpu_threads()))
              if str(cfg.get("chd_threads", "auto")) == "auto" else
@@ -3490,6 +3504,15 @@ class SettingsScreen(Screen):
                     cfg["squashfs"] = not cfg.get("squashfs")
                     app.apply_config()
                     app.downloader.cfg = cfg
+            elif key == "zar":
+                self._toggle_zar()
+            elif key == "z3ds":
+                if not rommlib.z3ds_supported():
+                    app.toast("libzstd isn't on this system", AMBER)
+                else:
+                    cfg["z3ds"] = not cfg.get("z3ds")
+                    app.apply_config()
+                    app.downloader.cfg = cfg
             elif key == "credits" and a == "ok":
                 app.push(CreditsScreen(app))
             elif key == "chd":
@@ -3590,6 +3613,55 @@ class SettingsScreen(Screen):
                             "version Batocera uses, GPL-2.0-or-later, checked by SHA-256 before use. "
                             "Credits are in Settings." % (t["version"], size),
                             "Download", lambda: (app.toast("Downloading dolphin-tool…"), app.bg(install, done, failed)))
+
+    def _toggle_zar(self):
+        app, cfg = self.app, self.app.cfg
+        if not rommlib.zar_supported():
+            app.toast("Xbox 360 emulation on Batocera is x86_64 only", AMBER)
+            return
+        if getattr(app, "zar_busy", False):
+            app.toast("The Xbox 360 tools are still downloading")
+            return
+        if cfg.get("zar") and rommlib.x360_tools():
+            cfg["zar"] = False
+            app.apply_config()
+            app.downloader.cfg = cfg
+            app.toast("Xbox 360 conversion off (the tools stay installed)")
+            return
+        if rommlib.x360_tools():
+            cfg["zar"] = True
+            app.apply_config()
+            app.downloader.cfg = cfg
+            app.toast("Xbox 360 games will be converted to .zar", GREEN)
+            return
+        t = rommlib.X360_TOOLS
+
+        def install():
+            app.zar_busy = True
+
+            def prog(got, total):
+                app.zar_progress = (got / total) if total else None
+            try:
+                return rommlib.install_x360_tools(prog)
+            finally:
+                app.zar_busy = False
+
+        def done(paths):
+            cfg["zar"] = True
+            app.apply_config()
+            app.downloader.cfg = cfg
+            app.toast("Xbox 360 tools installed: Xbox 360 games convert to .zar", GREEN)
+
+        def failed(e):
+            app.toast(str(e) if isinstance(e, rommlib.RommError) else "Xbox 360 tools download failed (%s)"
+                      % e.__class__.__name__, RED)
+        size = (" (%s)" % human_size(t["size"])) if t.get("size") else ""
+        app.modal = Confirm(app, "Download the Xbox 360 tools?",
+                            "Converting to .zar needs extract-xiso and zarchive%s, built from their "
+                            "published source and checked by SHA-256 before use. A .zar holds the game's "
+                            "files, not the whole disc image. Credits are in Settings." % size,
+                            "Download", lambda: (app.toast("Downloading the Xbox 360 tools…"),
+                                                 app.bg(install, done, failed)))
 
     def _do_update(self):
         self.app.toast("Downloading and checking the update…")
@@ -3721,6 +3793,15 @@ SETTING_HELP = {
                 "the game starts. Lossless: the image inside is checked against the original before it's "
                 "deleted. Packing takes a few minutes of CPU per game. Needs Make Xbox images bootable "
                 "for full disc images (a packed one xemu can't boot would be no use).",
+    "z3ds": "Compresses 3DS games (.3ds, .cci, .cxi) to Azahar's own .zcci format, often 40-60% "
+            "smaller; Azahar opens them directly and saves stay where they are. Lossless: every block is "
+            "read back and checked against the original before it's deleted. Encrypted dumps (which "
+            "Azahar can't run anyway) are left alone. Uses the zstd library already on Batocera.",
+    "zar": "Turns Xbox 360 disc images into .zar, a compressed archive xenia-canary opens directly, "
+           "often 40-60% smaller. It keeps the game's files and leaves out the rest of the disc "
+           "(video partition, padding), so it isn't a copy of the original image. Every file is checked "
+           "against the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), "
+           "downloaded once when you turn this on. xenia (not canary) can't open .zar.",
     "xboxboot": "xemu boots only an Xbox disc's game partition: a full disc image (as Redump keeps "
                 "them) shows \"Please insert an Xbox disc\". This keeps just the game partition, in place "
                 "where the drive allows, and renames .xiso files to .iso so EmulationStation lists them. "
@@ -3749,6 +3830,14 @@ CREDITS = [
      "GPL-2.0-or-later", "dolphin-emu.org · source: github.com/dolphin-emu/dolphin (commit %s)"
      % rommlib.DOLPHIN_TOOL["commit"][:10],
      "Optional download for GameCube and Wii to RVZ. Its source, COPYING and LICENSES/ are on the same release."),
+    ("extract-xiso", "by in <in@fishtank.com>, XboxDev (commit %s)" % rommlib.X360_TOOLS["extract_xiso"][:7],
+     "BSD-style license", "github.com/XboxDev/extract-xiso",
+     "This product includes software developed by in <in@fishtank.com>. Optional download for Xbox 360 to .zar."),
+    ("ZArchive", "zarchive, by Exzap (commit %s)" % rommlib.X360_TOOLS["zarchive"][:7], "MIT-0",
+     "github.com/Exzap/ZArchive",
+     "Optional download for Xbox 360 to .zar. Licenses and source are on the xbox360-tools release."),
+    ("zstd", "Zstandard, by Meta Platforms, linked into zarchive", "BSD-3-Clause", "github.com/facebook/zstd",
+     "Also on Batocera, where 3DS to .zcci uses it."),
     ("chdman", "from MAME", "BSD-3-Clause / GPL-2.0-or-later", "mamedev.org",
      "Part of Batocera; RomM-o-Cera runs it to make CHDs."),
     ("RomM", "the game library server this app talks to", "AGPL-3.0", "romm.app", ""),
@@ -3805,6 +3894,597 @@ class CreditsScreen(Screen):
             y += self.ROW_H
 
 
+# ---- On this box: shared data and the space bar
+
+MEDIA_COL = (232, 121, 249)     # covers, videos, manuals
+SYSTEM_COL = (92, 84, 150)      # Batocera itself, saves, BIOS: everything outside the game folders
+SPACE_PARTS = (("ours", ACCENT, "From RomM-o-Cera"), ("other", BLUE, "Added another way"),
+               ("media", MEDIA_COL, "Media"))
+
+
+def installed_games(lib):
+    """Games RomM-o-Cera installed that are still on the box, biggest first.
+    A multi-disc set is one row."""
+    out, sets = [], {}
+    with lib.lock:
+        lib._reload()
+        recs = list(lib.installed.items())
+    for rid, rec in recs:
+        paths = [p for p in rec.get("paths", []) if os.path.exists(p)]
+        if not paths:
+            continue
+        g = rec.get("group")
+        if g:
+            it = sets.get(g["id"])
+            if it is None:
+                it = sets[g["id"]] = {"id": int(rid), "group": g, "paths": [],
+                                      "name": "%s (%d discs)" % (g.get("title") or g["base"],
+                                                                 len(g.get("rom_ids") or [])),
+                                      "system": rec.get("system"), "when": rec.get("when", "")}
+                out.append(it)
+            it["paths"] += [p for p in paths if p not in it["paths"]]
+            continue
+        out.append({"id": int(rid), "name": rec.get("name") or os.path.basename(paths[0]),
+                    "system": rec.get("system"), "when": rec.get("when", ""), "paths": paths})
+    for it in out:
+        it["size"] = sum(rommlib.path_size(p) for p in it.pop("paths"))
+    return sorted(out, key=lambda i: -i["size"])
+
+
+def storage_by_system(lib):
+    """Space per system: RomM-o-Cera's games, other games, and media."""
+    with lib.lock:
+        lib._reload()
+        ours = {os.path.normpath(p) for rec in lib.installed.values() for p in rec.get("paths", [])}
+    out = []
+    for system in sorted(os.listdir(rommlib.ROMS_ROOT)):
+        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+        if not os.path.isdir(sysdir) or os.path.islink(sysdir):
+            continue
+        row = {"system": system, "ours": 0, "other": 0, "media": 0}
+        for dp, dns, fns in os.walk(sysdir):
+            rel = os.path.relpath(dp, sysdir)
+            media = rel != "." and rel.split(os.sep)[0] in rommlib.AUDIT_SKIP
+            top = None if rel == "." else os.path.normpath(os.path.join(sysdir, rel.split(os.sep)[0]))
+            for fn in fns:
+                p = os.path.join(dp, fn)
+                try:
+                    n = os.lstat(p).st_size
+                except OSError:
+                    continue
+                if media:
+                    row["media"] += n
+                elif os.path.normpath(p) in ours or (top and top in ours):
+                    row["ours"] += n
+                elif fn.lower().endswith((".xml", ".txt")) or ".bak" in fn.lower():
+                    row["media"] += n
+                else:
+                    row["other"] += n
+        row["total"] = row["ours"] + row["other"] + row["media"]
+        if row["total"]:
+            out.append(row)
+    return sorted(out, key=lambda r: -r["total"])
+
+
+def disk_space(cfg):
+    """(total, free, keep-free reserve) of the roms drive; zeros if unknown."""
+    try:
+        st = os.statvfs(rommlib.ROMS_ROOT)
+        total, free = st.f_blocks * st.f_frsize, st.f_bavail * st.f_frsize
+    except OSError:
+        total = free = 0
+    return total, free, rommlib.keep_free_bytes(cfg)
+
+
+def pending_roms(app):
+    """Downloads still queued or paused: their partial files aren't leftovers."""
+    d = app.downloader
+    pend = [(j.rom, j.system) for j in list(d.jobs) if j.active or j.state == rommlib.Job.PAUSED]
+    return pend + [(it["rom"], it["system"]) for it in rommlib.Downloader.saved_queue()
+                   if it.get("rom") and it.get("system")]
+
+
+def conversion_rows():
+    """Conversions: the one running, the queue, then recent results (newest
+    first). The worker (rb_chd.py) publishes chd-current.json and chd-results.jsonl."""
+    qdir = rommlib.CHD_QUEUE_DIR
+    cur = {}
+    try:
+        with open(os.path.join(rommlib.DATA_DIR, "chd-current.json")) as f:
+            cur = json.load(f)
+    except (OSError, ValueError):
+        pass
+    rows = []
+    try:
+        names = sorted(n for n in os.listdir(qdir) if n.endswith(".json"))
+    except OSError:
+        names = []
+    for n in names:
+        try:
+            with open(os.path.join(qdir, n)) as f:
+                t = json.load(f)
+        except (OSError, ValueError):
+            continue
+        srcs = t.get("sources") or []
+        size = 0
+        for x in srcs:
+            try:
+                size += os.path.getsize(x)
+            except OSError:
+                pass
+        rows.append({"kind": "running" if n == cur.get("task") else "queued", "name": n, "task": t,
+                     "title": os.path.splitext(os.path.basename(srcs[0]))[0] if srcs else n,
+                     "discs": len(srcs), "size": size, "cur": cur if n == cur.get("task") else None})
+    rows.sort(key=lambda r: r["kind"] != "running")
+    try:
+        with open(os.path.join(rommlib.DATA_DIR, "chd-results.jsonl")) as f:
+            done = [json.loads(l) for l in f.readlines()[-60:] if l.strip()]
+    except (OSError, ValueError):
+        done = []
+    for d in reversed(done):
+        srcs = d.get("sources") or [""]
+        rows.append({"kind": d.get("result"), "name": d.get("task"), "task": d.get("retry"),
+                     "title": os.path.splitext(os.path.basename(srcs[0]))[0], "discs": len(srcs),
+                     "message": d.get("message") or "", "time": d.get("time", 0), "mode": d.get("mode")})
+    return rows
+
+
+def conversion_status(r):
+    """'Converting 42% · about 2 min left' for the running row."""
+    cu = r.get("cur") or {}
+    pct = cu.get("pct")
+    st = cu.get("step") or "Starting"
+    if pct:
+        st += " %d%%" % pct
+        if pct > 2:
+            el = time.time() - (cu.get("since") or time.time())
+            st += " · about %d min left" % max(1, round(el * (100 - pct) / pct / 60))
+    return st, (pct or 0) / 100.0
+
+
+def hatch(surf, rect, color, step=9):
+    """Diagonal stripes: space that's set aside, not used."""
+    pr = SR(rect)
+    old = surf.get_clip()
+    surf.set_clip(pr.clip(old) if old else pr)
+    for x in range(pr.left - pr.height, pr.right, max(2, S(step))):
+        pygame.draw.line(surf, color, (x, pr.bottom), (x + pr.height, pr.top), max(1, S(2)))
+    surf.set_clip(old)
+
+
+def space_parts(rows, total, free):
+    """The space bar's used parts, summed over systems; the rest of the used
+    space is Batocera itself, saves and BIOS."""
+    parts = [(key, col, lab, sum(r[key] for r in rows or [])) for key, col, lab in SPACE_PARTS]
+    rest = max(0, total - free - sum(p[3] for p in parts))
+    return parts + [("system", SYSTEM_COL, "Batocera and saves", rest)]
+
+
+def space_bar(surf, fonts, rect, parts, total, free, keep, cols=2):
+    """The whole drive as one bar: each used part in its colour, the free
+    space as an empty track whose last stretch, the keep-free reserve
+    downloads never use, is striped. Then the legend; returns its bottom."""
+    x, y, w, h = rect
+    if total <= 0:
+        return y
+    pr = SR(rect)
+    bar = pygame.Surface(pr.size, pygame.SRCALPHA)
+    bar.fill(BG2)
+    kw = int(pr.width * min(keep, total) / total)
+    kr = pygame.Rect(pr.width - kw, 0, kw, pr.height)
+    old = bar.get_clip()
+    bar.set_clip(kr)
+    for sx in range(kr.left - pr.height, kr.right, max(2, S(9))):
+        pygame.draw.line(bar, LINE, (sx, pr.height), (sx + pr.height, 0), max(1, S(2)))
+    bar.set_clip(old)
+    cx = 0
+    for key, col, lab, n in parts:
+        sw = int(pr.width * n / total)
+        if n and sw < S(3):
+            sw = S(3)
+        if sw:
+            bar.fill(col, (cx, 0, sw, pr.height))
+            cx += sw
+    mask = pygame.Surface(pr.size, pygame.SRCALPHA)
+    pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=pr.height // 2)
+    bar.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    surf.blit(bar, pr.topleft)
+    usable = max(0, free - keep)
+    items = [(lab, n, col) for key, col, lab, n in parts if n] + \
+        [("Free for downloads", usable, None), ("Kept free", min(keep, total), "hatch")]
+    colw = w // cols
+    ly = y + h + 16
+    for i, (lab, n, col) in enumerate(items):
+        lx, yy = x + (i % cols) * colw, ly + (i // cols) * 28
+        sw = pygame.Rect(lx, yy + 3, 14, 14)
+        if col == "hatch":
+            rrect(surf, BG2, sw, 4)
+            hatch(surf, sw, DIM, 5)
+        elif col is None:
+            rrect(surf, BG2, sw, 4)
+            rrect(surf, LINE, sw, 4, 1)
+        else:
+            rrect(surf, col, sw, 4)
+        size = human_size(n)
+        text(surf, fonts.small, size, (lx + colw - 28, yy), TEXT, "topright")
+        text(surf, fonts.small, lab, (lx + 24, yy), DIM, maxw=colw - 64 - measure(fonts.small, size))
+    return ly + ((len(items) + cols - 1) // cols) * 28
+
+
+def bios_rows(app):
+    """BIOS status: systems with games here first (needing attention first),
+    then the others RomM has BIOS files for."""
+    by_sys = {}
+    for p in app.platforms:
+        by_sys.setdefault(p["_system"], []).append(p["id"])
+    with_games = set()
+    try:
+        for d in os.listdir(rommlib.ROMS_ROOT):
+            full = os.path.join(rommlib.ROMS_ROOT, d)
+            if os.path.isdir(full) and any(not n.startswith(".") and n not in
+                                           ("gamelist.xml", "images", "videos", "manuals", "_info.txt")
+                                           for n in os.listdir(full)):
+                with_games.add(d)
+    except OSError:
+        pass
+    rows = rommlib.bios_status(app.api if app.platforms else None, by_sys, with_games)
+    for r in rows:
+        r["here"] = r["system"] in with_games
+    return sorted(rows, key=lambda r: (not r["here"], 0 if r["offers"] else 1 if r["missing"] else 2,
+                                       r["name"].lower()))
+
+
+def bios_pill(it):
+    """(pill text, colour, detail line) for one system's BIOS row."""
+    nmiss, noff = len(it["missing"]), len(it["offers"])
+    if not nmiss:
+        sub = "%d file%s" % (len(it["required"]), "" if len(it["required"]) == 1 else "s")
+        if it["fetched"]:
+            f, rec = sorted(it["fetched"].items(), key=lambda kv: kv[1].get("when", ""))[-1]
+            sub += " · %d fetched by RomM-o-Cera, last %s" % (len(it["fetched"]), rec.get("when", "")[:10])
+        return "Complete", GREEN, sub
+    if noff:
+        return ("RomM has %d of %d missing" % (noff, nmiss), ACCENT_HI,
+                ", ".join(os.path.basename(m["file"]) for m, _ in it["offers"][:4]))
+    return ("%d missing, not in RomM" % nmiss, AMBER,
+            ", ".join(os.path.basename(m["file"]) for m in it["missing"][:4]))
+
+
+def plural(n, word, many=None):
+    return "%d %s" % (n, word if n == 1 else (many or word + "s"))
+
+
+class OnThisBoxScreen(Screen):
+    """What's on the box, one section each: games from RomM, space, BIOS,
+    checks, conversions, game info. Each line under a section is its live
+    state, coloured only when something wants attention; the panel on the
+    right previews the selected section, A opens it."""
+    ITEMS = [("games", "Games from RomM"), ("space", "Space"), ("bios", "BIOS files"),
+             ("check", "Check games"), ("conv", "Conversions"), ("info", "Fill in game info")]
+    TILE_H, STEP = 82, 94
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.sel = 0
+        self.games = self.storage = self.leftovers = self.bios = self.counts = None
+        self.audit, self.convs, self.conv_at = None, [], 0
+
+    def enter(self):
+        app = self.app
+        app.bg(lambda: installed_games(app.library), lambda v: setattr(self, "games", v),
+               lambda e: setattr(self, "games", []))
+        app.bg(lambda: storage_by_system(app.library), lambda v: setattr(self, "storage", v),
+               lambda e: setattr(self, "storage", []))
+        app.bg(lambda: rommlib.find_leftovers(pending_roms(app)), lambda v: setattr(self, "leftovers", v),
+               lambda e: setattr(self, "leftovers", []))
+        app.bg(lambda: bios_rows(app), lambda v: setattr(self, "bios", v), lambda e: setattr(self, "bios", []))
+        app.bg(rommlib.es_counts, lambda v: setattr(self, "counts", v), lambda e: setattr(self, "counts", {}))
+        self.audit = rommlib.load_audit()
+        self.convs, self.conv_at = conversion_rows(), time.time()
+
+    def crumbs(self):
+        return ["On this box"]
+
+    def hints(self):
+        return [("A", "Open"), ("B", "Back")]
+
+    def action(self, a):
+        app = self.app
+        if a == "up":
+            self.sel = (self.sel - 1) % len(self.ITEMS)
+        elif a == "down":
+            self.sel = (self.sel + 1) % len(self.ITEMS)
+        elif a == "ok":
+            key = self.ITEMS[self.sel][0]
+            if key == "games":
+                app.push(InstalledScreen(app))
+            elif key == "space":
+                app.push(SpaceScreen(app))
+            elif key == "bios":
+                app.push(BiosScreen(app))
+            elif key == "check":
+                app.push(CheckScreen(app))
+            elif key == "conv":
+                app.push(ConversionsScreen(app))
+            elif key == "info":
+                if not app.platforms:
+                    app.load_platforms()
+                    app.toast(app.error or "Still loading platforms…", AMBER)
+                else:
+                    InfoDialog.start(app, InfoDialog.all_systems(app))
+        else:
+            super().action(a)
+
+    # -- the line under each section: (text, colour or None)
+    def verdict(self, key):
+        app = self.app
+        if key == "games":
+            if self.games is None:
+                return "Measuring…", None
+            if not self.games:
+                return "None yet", None
+            return "%s, %s" % (plural(len(self.games), "game"), human_size(sum(g["size"] for g in self.games))), None
+        if key == "space":
+            total, free, keep = disk_space(app.cfg)
+            if not total:
+                return "Can't read the drive", AMBER
+            if free < keep:
+                return "%s free: under the %s kept free" % (human_size(free), human_size(keep)), AMBER
+            return "%s free, %s for downloads" % (human_size(free), human_size(free - keep)), None
+        if key == "bios":
+            if self.bios is None:
+                return "Checking…", None
+            here = [r for r in self.bios if r.get("here")]
+            if not here:
+                return "No BIOS needed", None
+            offer = [r for r in here if r["offers"]]
+            gone = [r for r in here if r["missing"] and not r["offers"]]
+            if offer:
+                if len(offer) == 1:
+                    n = len(offer[0]["offers"])
+                    return "%s is missing %s RomM has" % (offer[0]["name"], plural(n, "file")), ACCENT_HI
+                return "%d systems are missing files RomM has" % len(offer), ACCENT_HI
+            if gone:
+                return "%s missing files, not in RomM" % plural(len(gone), "system"), AMBER
+            return "All %s complete" % plural(len(here), "system"), None
+        if key == "check":
+            a = self.audit
+            if not a:
+                return "Not checked yet", None
+            when = time.strftime("%Y-%m-%d", time.localtime(a.get("time", 0)))
+            dmg = sum(1 for f in a["findings"] if f["severity"] == "damaged")
+            dif = len(a["findings"]) - dmg
+            if not a["findings"]:
+                return "All good on %s" % when, None
+            bits = (["%d damaged" % dmg] if dmg else []) + (["%d differ from RomM" % dif] if dif else [])
+            return "%s, checked %s" % (", ".join(bits), when), RED if dmg else AMBER
+        if key == "conv":
+            run = next((r for r in self.convs if r["kind"] == "running"), None)
+            nq = sum(1 for r in self.convs if r["kind"] == "queued")
+            if run:
+                return "Converting" + (", %d waiting" % nq if nq else ""), BLUE
+            if nq:
+                return "%d waiting for a quiet moment" % nq, None
+            failed = [r for r in self.convs if r["kind"] == "failed"]
+            if failed:
+                return "%s failed: retry from here" % plural(len(failed), "conversion"), RED
+            return "Nothing waiting", None
+        return "Covers, descriptions, manuals from RomM", None
+
+    def draw(self, c):
+        if time.time() - self.conv_at > 1.0:
+            self.convs, self.conv_at = conversion_rows(), time.time()
+        y = 84
+        for i, (key, label) in enumerate(self.ITEMS):
+            r = pygame.Rect(48, y, 520, self.TILE_H)
+            self.app.hit(r, lambda i=i: self.tap_now(i))
+            on = i == self.sel
+            if on:
+                focus_box(c, r, 14)
+            else:
+                rrect(c, PANEL, r, 14)
+            text(c, self.f.h2, label, (r.left + 28, r.top + 13), TEXT if on else DIM)
+            line, col = self.verdict(key)
+            if col:
+                circle(c, col, (r.left + 33, r.top + 58), 5)
+            text(c, self.f.small, line, (r.left + (44 if col else 28), r.top + 48),
+                 col or (DIM if on else FAINT), maxw=r.width - 60)
+            y += self.STEP
+        p = pygame.Rect(616, 84, 616, self.STEP * (len(self.ITEMS) - 1) + self.TILE_H)
+        rrect(c, PANEL, p, 16)
+        getattr(self, "panel_" + self.ITEMS[self.sel][0])(c, p)
+
+    def foot(self, c, p, s, col=DIM):
+        hline(c, LINE, (p.left + 28, p.bottom - 74), (p.right - 28, p.bottom - 74))
+        rich_text(c, self.f, self.f.body, s, (p.left + 28, p.bottom - 38), col, "midleft", maxw=p.width - 56)
+
+    def head(self, c, p, title, right=""):
+        text(c, self.f.h2, title, (p.left + 28, p.top + 22), TEXT, maxw=p.width - 260)
+        if right:
+            text(c, self.f.small, right, (p.right - 28, p.top + 28), FAINT, "topright", maxw=280)
+
+    def waiting(self, c, p, s):
+        text(c, self.f.body, s, (p.left + 28, p.top + 72), DIM)
+
+    def panel_games(self, c, p):
+        x = p.left + 28
+        self.head(c, p, "Biggest first", self.verdict("games")[0] if self.games else "")
+        if self.games is None:
+            return self.waiting(c, p, "Measuring…")
+        if not self.games:
+            for i, ln in enumerate(wrap(self.f.body, "Nothing downloaded with RomM-o-Cera yet. Games copied over "
+                                        "another way are in Space, under Free up space.", p.width - 56)):
+                text(c, self.f.body, ln, (x, p.top + 72 + i * 26), DIM)
+            return
+        yy = p.top + 72
+        for g in self.games[:7]:
+            text(c, self.f.row, g["name"], (x, yy), DIM, maxw=p.width - 240)
+            tag = g["system"] or "?"
+            tw = int(measure(self.f.tiny, tag)) + 14
+            tr = pygame.Rect(p.right - 128 - tw, yy + 3, tw, 20)
+            rrect(c, BG2, tr, 6)
+            text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+            text(c, self.f.small, human_size(g["size"]), (p.right - 28, yy + 3), DIM, "topright")
+            yy += 44
+        if len(self.games) > 7:
+            text(c, self.f.small, "and %d more" % (len(self.games) - 7), (x, yy), FAINT)
+        self.foot(c, p, "Delete any of them; saves and states are kept.")
+
+    def panel_space(self, c, p):
+        x, w = p.left + 28, p.width - 56
+        total, free, keep = disk_space(self.app.cfg)
+        if not total:
+            return self.head(c, p, "Can't read the drive")
+        text(c, self.f.h1, human_size(free) + " free", (x, p.top + 20), AMBER if free < keep else TEXT)
+        text(c, self.f.small, "of " + human_size(total), (p.right - 28, p.top + 36), FAINT, "topright")
+        if self.storage is None:
+            return self.waiting(c, p, "Measuring every system…")
+        yy = space_bar(c, self.f, (x, p.top + 82, w, 26), space_parts(self.storage, total, free),
+                       total, free, keep) + 16
+        if self.storage:
+            text(c, self.f.h3, "Biggest systems", (x, yy), TEXT)
+            yy += 34
+            big = self.storage[0]["total"] or 1
+            for r in self.storage[:3]:
+                text(c, self.f.body, r["system"], (x, yy), DIM, maxw=110)
+                bx, bw = x + 120, w - 230
+                for k, col, _ in SPACE_PARTS:
+                    sw = int(bw * r[k] / big)
+                    if sw:
+                        rrect(c, col, (bx, yy + 8, max(4, sw), 8), 4)
+                        bx += sw + 2
+                text(c, self.f.small, human_size(r["total"]), (p.right - 28, yy + 1), DIM, "topright")
+                yy += 30
+        if self.leftovers:
+            n = sum(i["size"] for i in self.leftovers)
+            self.foot(c, p, "%s of leftovers from interrupted downloads" % human_size(n), AMBER)
+        elif self.leftovers is not None:
+            self.foot(c, p, "No leftovers to clean up.")
+
+    def panel_bios(self, c, p):
+        x = p.left + 28
+        self.head(c, p, "Systems with games here", "" if self.app.platforms else "RomM offline")
+        if self.bios is None:
+            return self.waiting(c, p, "Checking BIOS files…")
+        here = [r for r in self.bios if r.get("here")]
+        if not here:
+            return self.waiting(c, p, "None of the systems with games on this box needs BIOS files.")
+        yy = p.top + 70
+        for it in here[:6]:
+            pill, col, sub = bios_pill(it)
+            pw = int(measure(self.f.small, pill)) + 24
+            text(c, self.f.row, it["name"], (x, yy), DIM, maxw=p.width - 90 - pw)
+            text(c, self.f.small, sub, (x, yy + 26), FAINT, maxw=p.width - 90 - pw)
+            pr = pygame.Rect(p.right - 28 - pw, yy + 6, pw, 30)
+            rrect(c, BG2, pr, 15)
+            text(c, self.f.small, pill, pr.center, col, "center")
+            yy += 64
+        others = len(self.bios) - len(here)
+        more = (["%s more" % plural(len(here) - 6, "system")] if len(here) > 6 else []) + \
+            (["%d without games here" % others] if others else [])
+        if more:
+            text(c, self.f.small, "Also: " + ", ".join(more), (x, yy), FAINT)
+        if any(r["offers"] for r in here):
+            self.foot(c, p, "Files RomM has: get one, or all at once.")
+        else:
+            self.foot(c, p, "Files go to /userdata/bios")
+
+    def panel_check(self, c, p):
+        x, a = p.left + 28, self.audit
+        if not a:
+            self.head(c, p, "Not checked yet")
+            yy = p.top + 72
+        else:
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(a.get("time", 0)))
+            self.head(c, p, "Last check", "%s, %s" % ("Full check" if a.get("deep") else "Quick check", when))
+            yy = p.top + 66
+            for f in a["findings"][:3]:
+                col = RED if f["severity"] == "damaged" else AMBER
+                r = pygame.Rect(x, yy, p.width - 56, 70)
+                rrect(c, BG2, r, 10)
+                rrect(c, col, (r.left, r.top + 12, 4, r.height - 24), 2)
+                name = (f.get("rom") or {}).get("name") or os.path.basename(f["path"])
+                text(c, self.f.row, name, (r.left + 20, r.top + 10), TEXT, maxw=r.width - 120)
+                text(c, self.f.small, f["problem"], (r.left + 20, r.top + 40), col, maxw=r.width - 40)
+                text(c, self.f.tiny, f["system"], (r.right - 16, r.top + 14), FAINT, "topright")
+                yy += 82
+            st = a.get("stats") or {}
+            more = len(a["findings"]) - 3
+            line = ("and %d more. " % more if more > 0 else "") + \
+                "%d checked, %d matched to RomM." % (st.get("checked", 0), st.get("matched", 0))
+            text(c, self.f.body, line, (x, yy + 4), GREEN if not a["findings"] else DIM)
+            yy += 50
+        text(c, self.f.h3, "Quick check", (x, yy), TEXT)
+        text(c, self.f.small, "Missing tracks, damaged zips, cut-short discs, sizes against RomM.", (x, yy + 26),
+             FAINT, maxw=p.width - 56)
+        text(c, self.f.h3, "Full check", (x, yy + 62), TEXT)
+        text(c, self.f.small, "Also checksums every file and verifies CHDs. Hours for a big library.",
+             (x, yy + 88), FAINT, maxw=p.width - 56)
+        self.foot(c, p, "Damaged games can be downloaded again; saves follow.")
+
+    def panel_conv(self, c, p):
+        x = p.left + 28
+        run = next((r for r in self.convs if r["kind"] == "running"), None)
+        queued = [r for r in self.convs if r["kind"] == "queued"]
+        done = [r for r in self.convs if r["kind"] not in ("running", "queued")]
+        mode = lambda r: ConversionsScreen.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")  # noqa: E731
+        if not self.convs:
+            self.head(c, p, "Nothing to convert")
+            for i, ln in enumerate(wrap(self.f.body, "Disc games are compressed in the background after they "
+                                        "download, while nothing is playing.", p.width - 56)):
+                text(c, self.f.body, ln, (x, p.top + 72 + i * 26), DIM)
+            return
+        yy = p.top + 66
+        if run:
+            self.head(c, p, "Converting now", "runs while nothing is playing")
+            r = pygame.Rect(x, yy, p.width - 56, 92)
+            rrect(c, BG2, r, 12)
+            st, frac = conversion_status(run)
+            text(c, self.f.row, run["title"], (r.left + 20, r.top + 12), TEXT, maxw=r.width - 40)
+            text(c, self.f.small, "%s, %s" % (mode(run), st), (r.left + 20, r.top + 40), BLUE, maxw=r.width - 40)
+            progress_bar(c, (r.left + 20, r.bottom - 22, r.width - 40, 8), frac, BLUE)
+            yy = r.bottom + 26
+        else:
+            self.head(c, p, "Conversions", "runs while nothing is playing")
+        for title, rows in (("Waiting", queued[:3]), ("Recent", done[:3])):
+            if not rows:
+                continue
+            text(c, self.f.h3, title, (x, yy), TEXT)
+            yy += 32
+            for r in rows:
+                text(c, self.f.body, r["title"], (x, yy), DIM, maxw=p.width - 300)
+                if r["kind"] == "queued":
+                    s, col = "%s, %s" % (mode(r), human_size(r["size"])), FAINT
+                else:
+                    s = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(
+                        r["kind"], r["kind"] or "")
+                    col = {"ok": GREEN, "failed": RED}.get(r["kind"], AMBER)
+                text(c, self.f.small, s, (p.right - 28, yy + 2), col, "topright", maxw=220)
+                yy += 32
+            yy += 18
+        self.foot(c, p, "Also in Downloads: {L2 R2}")
+
+    def panel_info(self, c, p):
+        x = p.left + 28
+        self.head(c, p, "Systems RomM can fill in")
+        yy = p.top + 70
+        counts = self.counts or {}
+        romm = {pl["_system"] for pl in self.app.platforms}
+        systems = sorted(((k, v) for k, v in counts.items() if not romm or k in romm), key=lambda kv: -kv[1])
+        for sysn, n in systems[:6]:
+            text(c, self.f.row, sysn, (x, yy), DIM)
+            text(c, self.f.small, plural(n, "game"), (p.right - 28, yy + 3), FAINT, "topright")
+            yy += 38
+        if len(systems) > 6:
+            text(c, self.f.small, "and %s more" % plural(len(systems) - 6, "system"), (x, yy), FAINT)
+            yy += 26
+        for i, ln in enumerate(wrap(self.f.body, "Names, descriptions, covers and manuals from RomM, matched "
+                                    "by file name. Only empty fields are filled: your own scrapes and edits "
+                                    "are never replaced.", p.width - 56)):
+            text(c, self.f.body, ln, (x, yy + 18 + i * 26), DIM)
+        self.foot(c, p, "To do one system: its game list, then {X}")
+
+
 class InstalledScreen(Screen):
     """Games RomM Browser installed, biggest first, with delete."""
     ROWS, ROW_H = 10, 54
@@ -3816,34 +4496,7 @@ class InstalledScreen(Screen):
         self.load()
 
     def load(self):
-        lib = self.app.library
-
-        def scan():
-            out, sets = [], {}
-            with lib.lock:
-                lib._reload()
-                recs = list(lib.installed.items())
-            for rid, rec in recs:
-                paths = [p for p in rec.get("paths", []) if os.path.exists(p)]
-                if not paths:
-                    continue
-                g = rec.get("group")
-                if g:                           # a multi-disc set is one row
-                    it = sets.get(g["id"])
-                    if it is None:
-                        it = sets[g["id"]] = {"id": int(rid), "group": g, "paths": [],
-                                              "name": "%s (%d discs)" % (g.get("title") or g["base"],
-                                                                         len(g.get("rom_ids") or [])),
-                                              "system": rec.get("system"), "when": rec.get("when", "")}
-                        out.append(it)
-                    it["paths"] += [p for p in paths if p not in it["paths"]]
-                    continue
-                out.append({"id": int(rid), "name": rec.get("name") or os.path.basename(paths[0]),
-                            "system": rec.get("system"), "when": rec.get("when", ""), "paths": paths})
-            for it in out:
-                it["size"] = sum(rommlib.path_size(p) for p in it.pop("paths"))
-            return sorted(out, key=lambda i: -i["size"])
-        self.app.bg(scan, self._loaded)
+        self.app.bg(lambda: installed_games(self.app.library), self._loaded)
 
     def _loaded(self, items):
         self.items = items
@@ -3854,38 +4507,12 @@ class InstalledScreen(Screen):
         self.load()
 
     def crumbs(self):
-        return ["On this box"]
+        return self.trail("Games from RomM")
 
     def hints(self):
-        return [("A", "Delete"), ("X", "Check & disk space"), ("Y", "BIOS files"), ("L", "Page up"),
-                ("R", "Page down"), ("B", "Back")]
-
-    def check_menu(self):
-        app = self.app
-        app.modal = ActionMenu(app, "Check & disk space", [
-            ("Quick check", "Missing tracks, damaged zips, sizes against RomM",
-             lambda: app.push(AuditScreen(app, deep=False))),
-            ("Full check", "Also checksums every file and verifies CHDs. Slow: hours for a big library",
-             lambda: app.push(AuditScreen(app, deep=True))),
-            None,
-            ("Storage by system", "Where the space went: each system's games and media",
-             lambda: app.push(StorageScreen(app))),
-            ("Free up space", "Every game on the box, least played first; pick several and delete",
-             lambda: app.push(FreeUpScreen(app))),
-            ("Clean up leftovers", "Partial files and empty folders from interrupted downloads or CHD runs",
-             lambda: app.push(LeftoversScreen(app))),
-            ("Conversions", "CHD and RVZ: what's converting, queued, done or failed",
-             lambda: app.push(ConversionsScreen(app))),
-            None,
-            ("Fill in game info (all systems)", "Covers, descriptions, manuals from RomM where missing",
-             lambda: InfoDialog.start(app, InfoDialog.all_systems(app))),
-        ])
+        return ([("A", "Delete"), ("L", "Page up"), ("R", "Page down")] if self.items else []) + [("B", "Back")]
 
     def action(self, a):
-        if a == "x":
-            return self.check_menu()
-        if a == "y":
-            return self.app.push(BiosScreen(self.app))
         if not self.items:
             return super().action(a)
         n = len(self.items)
@@ -3927,8 +4554,6 @@ class InstalledScreen(Screen):
         text(c, self.f.h3, "%d game%s from RomM use%s %s. %s free." % (
             len(self.items), "" if len(self.items) == 1 else "s", "s" if len(self.items) == 1 else "",
             human_size(sum(i["size"] for i in self.items)), free), (56, 86), TEXT)
-        lab = "{X} Check & disk space"
-        rich_text(c, self.f, self.f.small, lab, (W - 56 - 250, 89), ACCENT_HI)
         if not self.items:
             text(c, self.f.body, "Nothing installed by RomM-o-Cera yet. Games copied over another way "
                  "can be deleted from their game list.", (56, 130), DIM)
@@ -3967,7 +4592,8 @@ class ConversionsScreen(Screen):
     left), the queue, and recent results (retry a failed one). The worker
     (rb_chd.py) publishes chd-current.json and chd-results.jsonl."""
     ROW_H = 60
-    MODES = {"createcd": "CHD", "createdvd": "CHD", "rvz": "RVZ", "squashfs": "squashfs"}
+    MODES = {"createcd": "CHD", "createdvd": "CHD", "rvz": "RVZ", "squashfs": "squashfs", "z3ds": "ZCCI",
+             "zar": "ZAR"}
 
     def __init__(self, app):
         super().__init__(app)
@@ -3976,50 +4602,12 @@ class ConversionsScreen(Screen):
         self.refresh()
 
     def refresh(self):
-        qdir = rommlib.CHD_QUEUE_DIR
-        cur = {}
-        try:
-            with open(os.path.join(rommlib.DATA_DIR, "chd-current.json")) as f:
-                cur = json.load(f)
-        except (OSError, ValueError):
-            pass
-        rows = []
-        try:
-            names = sorted(n for n in os.listdir(qdir) if n.endswith(".json"))
-        except OSError:
-            names = []
-        for n in names:
-            try:
-                with open(os.path.join(qdir, n)) as f:
-                    t = json.load(f)
-            except (OSError, ValueError):
-                continue
-            srcs = t.get("sources") or []
-            size = 0
-            for x in srcs:
-                try:
-                    size += os.path.getsize(x)
-                except OSError:
-                    pass
-            rows.append({"kind": "running" if n == cur.get("task") else "queued", "name": n, "task": t,
-                         "title": os.path.splitext(os.path.basename(srcs[0]))[0] if srcs else n,
-                         "discs": len(srcs), "size": size, "cur": cur if n == cur.get("task") else None})
-        rows.sort(key=lambda r: r["kind"] != "running")
-        try:
-            with open(os.path.join(rommlib.DATA_DIR, "chd-results.jsonl")) as f:
-                done = [json.loads(l) for l in f.readlines()[-60:] if l.strip()]
-        except (OSError, ValueError):
-            done = []
-        for d in reversed(done):
-            srcs = d.get("sources") or [""]
-            rows.append({"kind": d.get("result"), "name": d.get("task"), "task": d.get("retry"),
-                         "title": os.path.splitext(os.path.basename(srcs[0]))[0], "discs": len(srcs),
-                         "message": d.get("message") or "", "time": d.get("time", 0), "mode": d.get("mode")})
+        rows = conversion_rows()
         self.rows, self.at = rows, time.time()
         self.sel = max(0, min(self.sel, len(rows) - 1))
 
     def crumbs(self):
-        return ["Downloads", "Conversions"]
+        return self.trail("Conversions")
 
     def hints(self):
         h = [("A", "Options")] if self.rows else []
@@ -4109,16 +4697,8 @@ class ConversionsScreen(Screen):
             text(c, self.f.h3, title, (box.left + 20, box.top + 8), TEXT if on else DIM, maxw=box.width - 500)
             k = r["kind"]
             if k == "running":
-                cu = r["cur"] or {}
-                pct = cu.get("pct")
-                el = time.time() - (cu.get("since") or time.time())
-                st = cu.get("step") or "Starting"
-                if pct:
-                    st += " %d%%" % pct
-                    if pct > 2:
-                        left = el * (100 - pct) / pct
-                        st += " · about %d min left" % max(1, round(left / 60))
-                progress_bar(c, (box.left + 460, box.top + 40, box.width - 480, 8), (pct or 0) / 100.0, BLUE)
+                st, frac = conversion_status(r)
+                progress_bar(c, (box.left + 460, box.top + 40, box.width - 480, 8), frac, BLUE)
                 sub = "%s · %s" % (mode, human_size(r["size"]))
             elif k == "queued":
                 st = "Queued"
@@ -4132,119 +4712,118 @@ class ConversionsScreen(Screen):
             y += self.ROW_H
 
 
-class StorageScreen(Screen):
-    """Space per system: RomM-o-Cera's games, other games, and media (covers,
-    videos, manuals). A: free up space in that system."""
-    ROWS, ROW_H = 9, 58
-    PARTS = (("ours", ACCENT), ("other", BLUE), ("media", FAINT))
-    LABELS = {"ours": "From RomM-o-Cera", "other": "Added another way", "media": "Media"}
+class SpaceScreen(Screen):
+    """The whole drive as one bar (what's used, what downloads may use, the
+    keep-free reserve), the two ways to get space back, then space per
+    system. A on a system: free up space there."""
+    ROWS, ROW_H, TOP = 6, 54, 326
+    TILES = (("free", "Free up space"), ("leftovers", "Clean up leftovers"))
 
     def __init__(self, app):
         super().__init__(app)
-        self.rows = None
-        self.sel = self.scroll = 0
-        self.app.bg(self.measure, self._loaded, lambda e: (setattr(self, "rows", []), app.toast(str(e), RED)))
+        self.rows = self.leftovers = None
+        self.sel = self.scroll = 0          # 0, 1: the tiles; 2…: systems
 
-    @staticmethod
-    def owned(lib):
-        with lib.lock:
-            lib._reload()
-            return {os.path.normpath(p) for rec in lib.installed.values() for p in rec.get("paths", [])}
-
-    def measure(self):
-        ours = self.owned(self.app.library)
-        out = []
-        for system in sorted(os.listdir(rommlib.ROMS_ROOT)):
-            sysdir = os.path.join(rommlib.ROMS_ROOT, system)
-            if not os.path.isdir(sysdir) or os.path.islink(sysdir):
-                continue
-            row = {"system": system, "ours": 0, "other": 0, "media": 0}
-            for dp, dns, fns in os.walk(sysdir):
-                rel = os.path.relpath(dp, sysdir)
-                media = rel != "." and rel.split(os.sep)[0] in rommlib.AUDIT_SKIP
-                top = None if rel == "." else os.path.normpath(os.path.join(sysdir, rel.split(os.sep)[0]))
-                for fn in fns:
-                    p = os.path.join(dp, fn)
-                    try:
-                        n = os.lstat(p).st_size
-                    except OSError:
-                        continue
-                    if media:
-                        row["media"] += n
-                    elif os.path.normpath(p) in ours or (top and top in ours):
-                        row["ours"] += n
-                    elif fn.lower().endswith((".xml", ".txt")) or ".bak" in fn.lower():
-                        row["media"] += n
-                    else:
-                        row["other"] += n
-            row["total"] = row["ours"] + row["other"] + row["media"]
-            if row["total"]:
-                out.append(row)
-        return sorted(out, key=lambda r: -r["total"])
+    def enter(self):
+        app = self.app
+        app.bg(lambda: storage_by_system(app.library), self._loaded,
+               lambda e: (setattr(self, "rows", []), app.toast(str(e), RED)))
+        app.bg(lambda: rommlib.find_leftovers(pending_roms(app)), lambda v: setattr(self, "leftovers", v),
+               lambda e: setattr(self, "leftovers", []))
 
     def _loaded(self, rows):
         self.rows = rows
+        self.sel = min(self.sel, 1 + len(rows))
 
     def crumbs(self):
-        return ["On this box", "Storage"]
+        return self.trail("Space")
 
     def hints(self):
-        return ([("A", "Free up space here")] if self.rows else []) + [("L", "Page up"), ("R", "Page down"),
-                                                                      ("B", "Back")]
+        if self.sel < 2:
+            return [("A", "Open"), ("B", "Back")]
+        return [("A", "Free up space here"), ("L", "Page up"), ("R", "Page down"), ("B", "Back")]
 
     def action(self, a):
-        if not self.rows:
-            return super().action(a)
-        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
-        if a in mv:
-            self.sel = max(0, min(len(self.rows) - 1, self.sel + mv[a]))
+        app = self.app
+        n = len(self.rows or [])
+        if a in ("left", "right") and self.sel < 2:
+            self.sel = 1 - self.sel
+        elif a == "down" and n:
+            self.sel = 2 if self.sel < 2 else min(1 + n, self.sel + 1)
+        elif a == "up":
+            self.sel = 0 if self.sel == 2 else max(0, self.sel - 1) if self.sel > 2 else self.sel
+        elif a in ("l1", "r1") and self.sel >= 2:
+            self.sel = max(2, min(1 + n, self.sel + (self.ROWS if a == "r1" else -self.ROWS)))
         elif a == "ok":
-            self.app.push(FreeUpScreen(self.app, [self.rows[self.sel]["system"]]))
+            if self.sel == 0:
+                app.push(FreeUpScreen(app))
+            elif self.sel == 1:
+                app.push(LeftoversScreen(app))
+            elif n:
+                app.push(FreeUpScreen(app, [self.rows[self.sel - 2]["system"]]))
         else:
             super().action(a)
 
+    def tap_tile(self, i):
+        self.sel = i
+        self.action("ok")
+
     def draw(self, c):
-        try:
-            st = os.statvfs(rommlib.ROMS_ROOT)
-            total, free = st.f_blocks * st.f_frsize, st.f_bavail * st.f_frsize
-        except OSError:
-            total = free = 0
-        keep = rommlib.keep_free_bytes(self.app.cfg)
-        text(c, self.f.h3, "%s free of %s · keeping %s free for downloads" % (
-            human_size(free), human_size(total), human_size(keep)), (56, 86), AMBER if free < keep else TEXT)
-        if total:
-            progress_bar(c, (56, 120, W - 112, 10), 1 - free / total, AMBER if free < keep else ACCENT)
+        total, free, keep = disk_space(self.app.cfg)
+        low = free < keep
+        text(c, self.f.h1, human_size(free) + " free", (56, 78), AMBER if low else TEXT)
+        text(c, self.f.small, "of %s   Keep free on disk: %s (Settings)" % (human_size(total), human_size(keep)),
+             (W - 56, 94), FAINT, "topright")
         if self.rows is None:
             text(c, self.f.h2, "Measuring every system…", (W // 2, H // 2), DIM, "center")
             return
+        space_bar(c, self.f, (56, 128, W - 112, 26), space_parts(self.rows, total, free), total, free, keep, cols=3)
+        lo = self.leftovers
+        subs = ["Every game on the box, least played first",
+                "Looking…" if lo is None else "Nothing to clean up" if not lo else
+                "%s from interrupted downloads" % human_size(sum(i["size"] for i in lo))]
+        tw = (W - 96 - 16) // 2
+        for i, (key, label) in enumerate(self.TILES):
+            r = pygame.Rect(48 + i * (tw + 16), 240, tw, 64)
+            self.app.hit(r, lambda i=i: self.tap_tile(i))
+            on = self.sel == i
+            if on:
+                focus_box(c, r, 12)
+            else:
+                rrect(c, PANEL, r, 12)
+            text(c, self.f.h3, label, (r.left + 22, r.top + 10), TEXT if on else DIM)
+            text(c, self.f.small, subs[i], (r.left + 22, r.top + 37), AMBER if key == "leftovers" and lo else FAINT,
+                 maxw=r.width - 44)
+        hline(c, LINE, (56, 316), (W - 56, 316))
         if not self.rows:
-            text(c, self.f.body, "No games on this box yet.", (56, 150), DIM)
+            text(c, self.f.body, "No games on this box yet.", (56, self.TOP + 10), DIM)
             return
         big = self.rows[0]["total"] or 1
         rows = self.ROWS
-        if self.sel < self.scroll:
-            self.scroll = self.sel
-        elif self.sel >= self.scroll + rows:
-            self.scroll = self.sel - rows + 1
-        y = 144
+        k = max(0, self.sel - 2)
+        if k < self.scroll:
+            self.scroll = k
+        elif k >= self.scroll + rows:
+            self.scroll = k - rows + 1
+        y = self.TOP
         for i in range(self.scroll, min(len(self.rows), self.scroll + rows)):
             r_ = self.rows[i]
-            on = i == self.sel
+            on = i + 2 == self.sel
             r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
-            self.app.hit(r, lambda i=i: self.tap_row(i))
+            self.app.hit(r, lambda i=i: self.tap_row(i + 2))
             if on:
                 focus_box(c, r)
-            text(c, self.f.row, r_["system"], (r.left + 22, r.top + 6), TEXT if on else DIM)
-            x, ty = r.left + 22, r.top + 32      # each part's dot is its colour in the bar: the legend
-            for key, col in self.PARTS:
+            text(c, self.f.row, r_["system"], (r.left + 22, r.top + 4), TEXT if on else DIM)
+            x, ty = r.left + 22, r.top + 28      # each part's dot is its colour in the bar: the legend
+            for key, col, lab in SPACE_PARTS:
                 if r_[key] and x < r.left + 560:
                     circle(c, col, (x + 5, ty + 9), 5)
-                    lab = "%s %s" % (self.LABELS[key], human_size(r_[key]))
+                    lab = "%s %s" % (lab, human_size(r_[key]))
                     text(c, self.f.small, lab, (x + 13, ty), FAINT)
                     x += 13 + measure(self.f.small, lab) + 18
             bx, bw = r.left + 600, r.width - 760
             x = bx
-            for key, col in self.PARTS:
+            for key, col, _ in SPACE_PARTS:
                 w = int(bw * r_[key] / big)
                 if w:
                     rrect(c, col, (x, r.centery - 5, w, 10), 4)
@@ -4295,7 +4874,7 @@ class FreeUpScreen(Screen):
         self.sel = max(0, min(self.sel, len(self.items) - 1))
 
     def crumbs(self):
-        return ["On this box", "Free up space" + (" · " + ", ".join(self.systems) if self.systems else "")]
+        return self.trail("Free up space" + (" · " + ", ".join(self.systems) if self.systems else ""))
 
     def hints(self):
         if not self.items:
@@ -4421,10 +5000,7 @@ class LeftoversScreen(Screen):
         self.load()
 
     def load(self):
-        d = self.app.downloader
-        pend = [(j.rom, j.system) for j in list(d.jobs) if j.active or j.state == rommlib.Job.PAUSED]
-        pend += [(it["rom"], it["system"]) for it in rommlib.Downloader.saved_queue()
-                 if it.get("rom") and it.get("system")]
+        pend = pending_roms(self.app)
         self.app.bg(lambda: rommlib.find_leftovers(pend), self._loaded,
                     lambda e: (setattr(self, "items", []), self.app.toast(str(e), RED)))
 
@@ -4433,7 +5009,7 @@ class LeftoversScreen(Screen):
         self.sel = max(0, min(self.sel, len(items) - 1))
 
     def crumbs(self):
-        return ["On this box", "Leftovers"]
+        return self.trail("Leftovers")
 
     def hints(self):
         if not self.items:
@@ -4519,32 +5095,15 @@ class BiosScreen(Screen):
 
     def load(self):
         app = self.app
-        by_sys = {}
-        for p in app.platforms:
-            by_sys.setdefault(p["_system"], []).append(p["id"])
 
-        def scan():
-            with_games = set()
-            try:
-                for d in os.listdir(rommlib.ROMS_ROOT):
-                    full = os.path.join(rommlib.ROMS_ROOT, d)
-                    if os.path.isdir(full) and any(not n.startswith(".") and n not in
-                                                   ("gamelist.xml", "images", "videos", "manuals", "_info.txt")
-                                                   for n in os.listdir(full)):
-                        with_games.add(d)
-            except OSError:
-                pass
-            rows = rommlib.bios_status(app.api, by_sys, with_games)
-            order = lambda r: (0 if r["offers"] else 1 if r["missing"] else 2, r["name"].lower())
-            return sorted(rows, key=order)
         def loaded(rows):
             self.items = rows
             self.sel = max(0, min(self.sel, len(rows) - 1))
             self.scroll = min(self.scroll, self.sel)
-        app.bg(scan, loaded, lambda e: (setattr(self, "items", []), app.toast(str(e), RED)))
+        app.bg(lambda: bios_rows(app), loaded, lambda e: (setattr(self, "items", []), app.toast(str(e), RED)))
 
     def crumbs(self):
-        return ["BIOS files"]
+        return self.trail("BIOS files")
 
     def hints(self):
         h = [("A", "Get from RomM")] if self.items and self.items[self.sel]["offers"] else []
@@ -4632,19 +5191,9 @@ class BiosScreen(Screen):
             self.app.hit(r, lambda i=i: self.tap_row(i))
             if on:
                 focus_box(c, r)
-            nmiss, noff = len(it["missing"]), len(it["offers"])
-            if not nmiss:
-                pill, col = "Complete", GREEN
-                sub = "%d file%s" % (len(it["required"]), "" if len(it["required"]) == 1 else "s")
-                if it["fetched"]:
-                    f, rec = sorted(it["fetched"].items(), key=lambda kv: kv[1].get("when", ""))[-1]
-                    sub += " · %d fetched by RomM-o-Cera, last %s" % (len(it["fetched"]), rec.get("when", "")[:10])
-            elif noff:
-                pill, col = "RomM has %d of %d missing" % (noff, nmiss), ACCENT_HI
-                sub = ", ".join(os.path.basename(m["file"]) for m, _ in it["offers"][:4])
-            else:
-                pill, col = "%d missing, not in RomM" % nmiss, AMBER
-                sub = ", ".join(os.path.basename(m["file"]) for m in it["missing"][:4])
+            pill, col, sub = bios_pill(it)
+            if not it.get("here", True):
+                sub = "No games here yet · " + sub
             text(c, self.f.row, it["name"], (r.left + 22, r.top + 8), TEXT if on else DIM, maxw=r.width - 420)
             text(c, self.f.small, sub, (r.left + 22, r.top + 34), FAINT, maxw=r.width - 60)
             pw = int(measure(self.f.small, pill)) + 20
@@ -4684,12 +5233,23 @@ class AuditScreen(Screen):
 
         def done(res):
             f, self.stats = res
-            order = {"damaged": 0, "differs": 1}
-            self.findings = sorted(f, key=lambda x: (order.get(x["severity"], 2), x["system"], x["path"]))
+            self.findings = self.order(f)
+            if not self.cancel.is_set() and (self.stats or {}).get("checked"):   # nothing checked: keep the last
+                try:
+                    rommlib.save_audit(self.findings, self.stats, deep)
+                except OSError as e:
+                    rommlib.log("audit save: %s" % e)
         app.bg(run, done, lambda e: (setattr(self, "findings", []), app.toast(str(e), RED)))
 
+    base = 0            # sel of the first finding (CheckScreen puts two tiles above them)
+
+    @staticmethod
+    def order(findings):
+        rank = {"damaged": 0, "differs": 1}
+        return sorted(findings, key=lambda x: (rank.get(x["severity"], 2), x["system"], x["path"]))
+
     def crumbs(self):
-        return ["On this box", "Full check" if self.deep else "Quick check"]
+        return self.trail("Full check" if self.deep else "Quick check")
 
     def hints(self):
         if self.findings is None:
@@ -4700,7 +5260,7 @@ class AuditScreen(Screen):
         return h + [("B", "Back")]
 
     def redownloadable(self):
-        return [f for f in (self.findings or []) if f["severity"] == "damaged" and f["rom"]
+        return [f for f in (self.findings or []) if f["severity"] == "damaged" and f.get("rom")
                 and f["path"] not in self.queued]
 
     @staticmethod
@@ -4727,38 +5287,45 @@ class AuditScreen(Screen):
         if a in mv and n:
             self.sel = max(0, min(n - 1, self.sel + mv[a]))
         elif a == "ok" and n:
-            f = self.findings[self.sel]
-            if not f["rom"]:
-                app.toast("Not in RomM under this name — can't download it again", AMBER)
-            elif f["path"] in self.queued:
-                app.toast("Already queued")
-            else:
-                name = f["rom"].get("name") or os.path.basename(f["path"])
-                how = ("RomM's copy (%s) is downloaded; then saves move to its name and the broken file is "
-                       "deleted." % (f["rom"].get("fs_name") or name)) if self.renamed(f) else \
-                    "RomM's copy replaces the one on the box (saves are kept)."
-                app.modal = Confirm(app, "Download %s again?" % name, "%s. %s" % (f["problem"].split(" · ")[0], how),
-                                    "Download again", lambda: (self.redownload(f), app.toast("Queued: %s" % name, GREEN)))
+            self.open_finding(self.findings[self.sel])
         elif a == "y" and self.redownloadable():
-            todo = self.redownloadable()
-            seen, uniq = set(), []
-            for f in todo:
-                if f["rom"]["id"] not in seen:
-                    seen.add(f["rom"]["id"])
-                    uniq.append(f)
-
-            def go():
-                for f in todo:
-                    if f["rom"]["id"] in seen:
-                        self.redownload(f)
-                app.toast("Queued %d games" % len(uniq), GREEN)
-            app.modal = Confirm(app, "Download %d damaged games again?" % len(uniq),
-                                "RomM's copies replace the damaged ones. Games that only differ from RomM "
-                                "(amber) are left alone.", "Download %d" % len(uniq), go)
+            self.redownload_all()
         else:
             if a == "back":
                 self.cancel.set()
             super().action(a)
+
+    def open_finding(self, f):
+        app = self.app
+        if not f.get("rom"):
+            app.toast("Not in RomM under this name — can't download it again", AMBER)
+        elif f["path"] in self.queued:
+            app.toast("Already queued")
+        else:
+            name = f["rom"].get("name") or os.path.basename(f["path"])
+            how = ("RomM's copy (%s) is downloaded; then saves move to its name and the broken file is "
+                   "deleted." % (f["rom"].get("fs_name") or name)) if self.renamed(f) else \
+                "RomM's copy replaces the one on the box (saves are kept)."
+            app.modal = Confirm(app, "Download %s again?" % name, "%s. %s" % (f["problem"].split(" · ")[0], how),
+                                "Download again", lambda: (self.redownload(f), app.toast("Queued: %s" % name, GREEN)))
+
+    def redownload_all(self):
+        app = self.app
+        todo = self.redownloadable()
+        seen, uniq = set(), []
+        for f in todo:
+            if f["rom"]["id"] not in seen:
+                seen.add(f["rom"]["id"])
+                uniq.append(f)
+
+        def go():
+            for f in todo:
+                if f["rom"]["id"] in seen:
+                    self.redownload(f)
+            app.toast("Queued %d games" % len(uniq), GREEN)
+        app.modal = Confirm(app, "Download %d damaged games again?" % len(uniq),
+                            "RomM's copies replace the damaged ones. Games that only differ from RomM "
+                            "(amber) are left alone.", "Download %d" % len(uniq), go)
 
     def draw(self, c):
         if self.findings is None:
@@ -4785,17 +5352,19 @@ class AuditScreen(Screen):
             x = r.right + 16
         if dif:
             text(c, self.f.h3, "%d differ from RomM" % dif, (x, 86), AMBER)
-        rows = self.ROWS
-        if self.sel < self.scroll:
-            self.scroll = self.sel
-        elif self.sel >= self.scroll + rows:
-            self.scroll = self.sel - rows + 1
-        y = 124
+        self.draw_rows(c, 124, self.ROWS)
+
+    def draw_rows(self, c, y, rows):
+        k = max(0, self.sel - self.base)
+        if k < self.scroll:
+            self.scroll = k
+        elif k >= self.scroll + rows:
+            self.scroll = k - rows + 1
         for i in range(self.scroll, min(len(self.findings), self.scroll + rows)):
             f = self.findings[i]
-            on = i == self.sel
+            on = i + self.base == self.sel
             r = pygame.Rect(48, y, W - 96, self.ROW_H - 6)
-            self.app.hit(r, lambda i=i: self.tap_row(i))
+            self.app.hit(r, lambda i=i: self.tap_row(i + self.base))
             if on:
                 focus_box(c, r)
             col = RED if f["severity"] == "damaged" else AMBER
@@ -4809,6 +5378,110 @@ class AuditScreen(Screen):
             rrect(c, BG2, tr, 6)
             text(c, self.f.tiny, tag, tr.center, GREEN if f["path"] in self.queued else FAINT, "center")
             y += self.ROW_H
+
+
+class CheckScreen(AuditScreen):
+    """Check games, from On this box: start a quick or full check, and the
+    last finished check's findings (files changed since drop out), each one
+    downloadable again from here."""
+    ROWS = 7
+    TILES = (("Quick check", "Missing tracks, damaged zips, cut-short discs, sizes against RomM"),
+             ("Full check", "Also checksums every file and verifies CHDs. Hours for a big library"))
+    base = 2
+
+    def __init__(self, app):
+        Screen.__init__(self, app)
+        self.deep = False
+        self.cancel = threading.Event()
+        self.queued = set()
+        self.sel = self.scroll = 0
+        self.last = None
+        self.findings, self.stats = [], {}
+
+    def enter(self):
+        self.last = rommlib.load_audit()
+        self.findings = self.order(self.last["findings"]) if self.last else []
+        self.stats = (self.last or {}).get("stats") or {}
+        self.sel = min(self.sel, 1 + len(self.findings))
+
+    def crumbs(self):
+        return self.trail("Check games")
+
+    def hints(self):
+        if self.sel < 2:
+            h = [("A", "Start")]
+        else:
+            h = [("A", "Download again")]
+        if self.redownloadable():
+            h.append(("Y", "Download all damaged again"))
+        return h + [("B", "Back")]
+
+    def action(self, a):
+        app = self.app
+        n = len(self.findings)
+        if a in ("left", "right") and self.sel < 2:
+            self.sel = 1 - self.sel
+        elif a == "down" and n:
+            self.sel = 2 if self.sel < 2 else min(1 + n, self.sel + 1)
+        elif a == "up":
+            self.sel = 0 if self.sel == 2 else max(0, self.sel - 1) if self.sel > 2 else self.sel
+        elif a in ("l1", "r1") and self.sel >= 2:
+            self.sel = max(2, min(1 + n, self.sel + (self.ROWS if a == "r1" else -self.ROWS)))
+        elif a == "ok":
+            if self.sel < 2:
+                if not app.platforms:              # offline: a check would find nothing and say all is well
+                    app.load_platforms()
+                    app.toast(app.error or "Still loading platforms…", AMBER)
+                    return
+                app.push(AuditScreen(app, deep=self.sel == 1))
+            elif n:
+                self.open_finding(self.findings[self.sel - 2])
+        elif a == "y" and self.redownloadable():
+            self.redownload_all()
+        else:
+            Screen.action(self, a)
+
+    def tap_tile(self, i):
+        self.sel = i
+        self.action("ok")
+
+    def draw(self, c):
+        tw = (W - 96 - 16) // 2
+        for i, (label, sub) in enumerate(self.TILES):
+            r = pygame.Rect(48 + i * (tw + 16), 80, tw, 64)
+            self.app.hit(r, lambda i=i: self.tap_tile(i))
+            on = self.sel == i
+            if on:
+                focus_box(c, r, 12)
+            else:
+                rrect(c, PANEL, r, 12)
+            text(c, self.f.h3, label, (r.left + 22, r.top + 10), TEXT if on else DIM)
+            text(c, self.f.small, sub, (r.left + 22, r.top + 37), FAINT, maxw=r.width - 44)
+        hline(c, LINE, (56, 160), (W - 56, 160))
+        a = self.last
+        if not a:
+            text(c, self.f.h3, "Not checked yet.", (56, 176), TEXT)
+            text(c, self.f.body, "A quick check takes minutes; findings stay here until you check again.",
+                 (56, 212), DIM, maxw=W - 112)
+            return
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(a.get("time", 0)))
+        head = "Last %s, %s: " % ("full check" if a.get("deep") else "quick check", when)
+        st = self.stats
+        dmg = sum(1 for f in self.findings if f["severity"] == "damaged")
+        dif = len(self.findings) - dmg
+        r = text(c, self.f.h3, head, (56, 176), TEXT)
+        if not self.findings:
+            text(c, self.f.h3, "everything looks right.", (r.right + 4, 176), GREEN)
+            text(c, self.f.body, "%d checked, %d matched to RomM. Games not in RomM under the same file name "
+                 "aren't checked (%d)." % (st.get("checked", 0), st.get("matched", 0), st.get("unmatched", 0)),
+                 (56, 212), DIM, maxw=W - 112)
+            return
+        x = r.right + 4
+        if dmg:
+            x = text(c, self.f.h3, "%d damaged" % dmg, (x, 176), RED).right + 16
+        if dif:
+            text(c, self.f.h3, "%d differ from RomM" % dif, (x, 176), AMBER)
+        self.draw_rows(c, 212, self.ROWS)
 
 
 # ------------------------------------------------------------------ modals

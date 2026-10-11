@@ -7,7 +7,9 @@
 Xbox (Settings -> Make Xbox images bootable, on by default): a full redump
 image (xemu can't boot it) is cut to its game partition right away and
 "X.xiso" is renamed "X.iso" (ES lists .iso); with Xbox to squashfs on,
-images are then queued for packing.
+images are then queued for packing. 3DS (Settings -> 3DS to .zcci): decrypted
+.3ds/.cci/.cxi are queued for Z3DS; encrypted dumps are listed and skipped.
+Xbox 360 (Settings -> Xbox 360 to .zar, x86_64): .iso images are queued for .zar.
 
 Finds cue/gdi (CD systems) and iso (PS2) games that have no CHD yet, groups
 discs into games (a folder holding the disc files, with "(Disc N)" subfolders
@@ -25,15 +27,17 @@ import rommlib  # noqa: E402
 import rb_chd  # noqa: E402
 
 ORDER = ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
-         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox"]
+         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds", "xbox360"]
 SKIP_DIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"}
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 
 def games_for(system):
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
-    if system in rommlib.RVZ_SYSTEMS | rommlib.SQUASH_SYSTEMS:    # GameCube/Wii/Xbox: every image on its own
-        exts = rommlib.RVZ_SOURCES if system in rommlib.RVZ_SYSTEMS else (".iso", ".xiso")
+    if system in rommlib.RVZ_SYSTEMS | rommlib.SQUASH_SYSTEMS | rommlib.Z3DS_SYSTEMS | rommlib.ZAR_SYSTEMS:
+        exts = rommlib.RVZ_SOURCES if system in rommlib.RVZ_SYSTEMS else \
+            tuple(rommlib.Z3DS_SOURCES) if system in rommlib.Z3DS_SYSTEMS else \
+            (".iso",) if system in rommlib.ZAR_SYSTEMS else (".iso", ".xiso")     # every image on its own
         out = []
         for dp, dns, fns in os.walk(sysdir):
             dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
@@ -125,6 +129,23 @@ def main():
                 if not rommlib.rvz_enabled(rommlib.load_config()):
                     continue                     # needs Settings, GameCube and Wii to RVZ
                 mode = "rvz"
+            elif system in rommlib.ZAR_SYSTEMS:
+                if not rommlib.zar_enabled(rommlib.load_config(), system):
+                    continue                     # needs Settings, Xbox 360 to .zar (downloads its tools)
+                if os.path.exists(os.path.splitext(files[0])[0] + ".zar"):
+                    continue
+                mode = "zar"
+            elif system in rommlib.Z3DS_SYSTEMS:
+                if not rommlib.z3ds_enabled(rommlib.load_config(), system):
+                    continue                     # needs Settings, 3DS to .zcci
+                if os.path.exists(rommlib.z3ds_target(files[0])):
+                    continue                     # already packed (the original stays until verified)
+                try:
+                    rommlib.z3ds_info(files[0])
+                except (rommlib.Z3dsError, OSError) as e:
+                    print("%-9s skipped (%s): %s" % (system, e, os.path.basename(files[0])))
+                    continue
+                mode = "z3ds"
             elif system in rommlib.SQUASH_SYSTEMS:
                 if a.only and a.only.lower() not in root.lower():
                     continue

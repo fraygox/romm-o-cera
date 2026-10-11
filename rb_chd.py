@@ -153,7 +153,8 @@ def status(**kw):
 
 def note(msg):
     """Log a line and remember it as the reason this task ended the way it did."""
-    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(("chd: ", "rvz: ", "squashfs: ")) else msg
+    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(("chd: ", "rvz: ", "squashfs: ", "z3ds: ", "zar: ")) \
+        else msg
     rommlib.log(msg)
 
 
@@ -378,7 +379,7 @@ def _crc32_file(path):
     crc, n = 0, 0
     with open(path, "rb") as f:
         while True:
-            while running_game():
+            while running_game() != "":        # None: ES can't be asked, treated as busy
                 time.sleep(10)
             chunk = f.read(8 << 20)
             if not chunk:
@@ -435,6 +436,107 @@ def convert_squashfs(src, tmp, threads):
     return 0, "CRC32 %s" % want
 
 
+def _idle():
+    """Between frames of an in-process conversion: wait while a game runs
+    (the subprocess tools get SIGSTOP instead)."""
+    while running_game() != "":            # None: ES can't be asked, treated as busy
+        status(step="Paused while a game runs")
+        time.sleep(10)
+
+
+def convert_z3ds(src, tmp, threads):
+    """Decrypted 3DS cartridge image -> Z3DS (.zcci/.zcxi) that Azahar opens
+    directly. Written with the box's libzstd, then read back the way Azahar
+    reads it (seek table, every frame decoded): the result must hash to the
+    original's CRC32 before the caller deletes anything."""
+    status(step="Checking the original", pct=None)
+    try:
+        rommlib.z3ds_info(src)
+    except rommlib.Z3dsError as e:
+        return 2, str(e)
+    except OSError as e:
+        return 2, "can't read it (%s)" % e
+    def shown(step):
+        last = [-1]
+
+        def progress(frac):              # a frame is 256 KB: publish whole percents only
+            pct = int(frac * 100)
+            if pct != last[0]:
+                last[0] = pct
+                status(step=step, pct=pct)
+        return progress
+    try:
+        want = rommlib.z3ds_compress(src, tmp, threads, pause=_idle, progress=shown("Compressing"))
+        got, size = rommlib.z3ds_verify(tmp, pause=_idle, progress=shown("Verifying"))
+    except (rommlib.Z3dsError, OSError) as e:
+        return 4, str(e)
+    if got != want or size != os.path.getsize(src):
+        return 5, "the compressed copy doesn't match the original (CRC32 %s vs %s)" % (got, want)
+    return 0, "CRC32 %s" % want
+
+
+def _tree(root):
+    """{relative path: absolute path} of every file under root."""
+    out = {}
+    for dp, _, fns in os.walk(root):
+        for fn in fns:
+            p = os.path.join(dp, fn)
+            out[os.path.relpath(p, root)] = p
+    return out
+
+
+def convert_zar(src, tmp):
+    """Xbox 360 disc image -> .zar that xenia-canary opens directly: the game
+    partition's files (extract-xiso), packed with zarchive. Neither tool's exit
+    code is trusted alone: the extracted files must match the image's own file
+    list (extract-xiso exits 0 on a cut-short image), the archive's footer and
+    SHA-256 must check out (zarchive never checks them), and the archive is
+    unpacked again and every file's CRC32 compared before the caller deletes
+    the image. The .zar holds the game's files, not the disc's other
+    partitions, so it can't be turned back into the original image."""
+    tools = rommlib.x360_tools()
+    if not tools:
+        raise ToolMissing("xbox360-tools")
+    xiso, zarc = tools
+    status(step="Checking the original", pct=None)
+    want = rommlib.xiso_listing(xiso, src)
+    if not want:
+        return 2, "not an Xbox 360 disc image (extract-xiso can't read it)"
+    if not any(p.lower() == "default.xex" for p in want):
+        return 2, "no default.xex at the top of the disc: not a game disc xenia can start"
+    work = os.path.join(rommlib.DATA_DIR, "tmp", "zar-%d" % os.getpid())
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(os.path.dirname(work), exist_ok=True)
+    try:
+        status(step="Extracting", pct=None)
+        rc, out = run_tool([xiso, "-q", "-d", work, src])
+        if rc != 0:
+            return 3, "extract-xiso failed: %s" % out.strip()[-200:]
+        files = _tree(work)
+        got = {r: os.path.getsize(p) for r, p in files.items()}
+        if got != want:
+            short = sum(1 for r, n in want.items() if got.get(r) != n)
+            return 3, "the image is cut short or damaged (%d of %d files don't match its file list)" % (
+                short, len(want))
+        crcs = {r: _crc32_file(p) for r, p in files.items()}
+        status(step="Packing", pct=None)
+        rc, out = run_tool([zarc, work, tmp], keep_stdout=True)     # zarchive reports errors on stdout
+        if rc != 0 or not os.path.exists(tmp):
+            return 4, "zarchive failed (rc %d): %s" % (rc, out.strip()[-200:])
+        status(step="Verifying", pct=None)
+        bad = rommlib.zar_check(tmp, full=True)
+        if bad:
+            return 5, ".zar %s" % bad
+        shutil.rmtree(work, ignore_errors=True)
+        rc, out = run_tool([zarc, tmp, work], keep_stdout=True)
+        back = _tree(work) if rc == 0 else {}
+        if set(back) != set(crcs) or any(_crc32_file(back[r]) != c for r, c in crcs.items()):
+            return 5, ".zar doesn't unpack to the disc's files (rc %d)" % rc
+        return 0, "%d files, CRC32 of each checked" % len(crcs)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def convert(task):
     system, mode = task["system"], task["mode"]
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
@@ -447,6 +549,20 @@ def convert(task):
     if mode == "squashfs" and not rommlib.squashfs_enabled(rommlib.load_config(), system):
         note("chd: SKIP squashfs %s (turned off, or mksquashfs is missing)" % os.path.basename(srcs[0]))
         return False
+    if mode == "zar" and not rommlib.zar_enabled(rommlib.load_config(), system):
+        note("chd: SKIP zar %s (turned off, or the Xbox 360 tools aren't installed)" % os.path.basename(srcs[0]))
+        return False
+    if mode == "z3ds" and not rommlib.z3ds_enabled(rommlib.load_config(), system):
+        note("chd: SKIP z3ds %s (turned off, or libzstd is missing)" % os.path.basename(srcs[0]))
+        return False
+    if mode == "z3ds":
+        for src in srcs:
+            try:
+                rommlib.z3ds_info(src)
+            except (rommlib.Z3dsError, OSError) as e:
+                # nothing to retry: an encrypted dump stays encrypted (and Azahar can't run it either)
+                note("chd: SKIP z3ds %s: %s" % (os.path.basename(src), e))
+                return False
     playing = running_game()
     if playing and playing in srcs:
         note("chd: SKIP in use %s" % playing)
@@ -458,7 +574,7 @@ def convert(task):
     out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
     multi = len(srcs) > 1
     plan = []
-    out_ext = {"rvz": ".rvz", "squashfs": ".squashfs"}.get(mode, ".chd")
+    out_ext = {"rvz": ".rvz", "squashfs": ".squashfs", "zar": ".zar"}.get(mode, ".chd")
     for src in srcs:
         if multi or not folder_root:
             stem = os.path.splitext(os.path.basename(src))[0]
@@ -466,7 +582,8 @@ def convert(task):
             stem = os.path.basename(folder_root)      # game name, not track name
         if mode == "squashfs":
             stem += os.path.splitext(src)[1].lower()  # "X.iso.squashfs": the image's own extension stays
-        plan.append((src, os.path.join(out_dir, stem + out_ext)))
+        ext = os.path.splitext(rommlib.z3ds_target(src) or ".zcci")[1] if mode == "z3ds" else out_ext
+        plan.append((src, os.path.join(out_dir, stem + ext)))
     if len({out for _, out in plan}) != len(plan):
         # two sources would become the same .chd: converting would overwrite
         # one with the other and then delete both originals
@@ -483,6 +600,17 @@ def convert(task):
         if cut:          # only a file entry past the end (could be a dummy): convert, but say so
             note("chd: note %s may be cut short (a file reaches sector %d of %d)" % (src, cut[1], cut[0]))
     for _, out in plan:
+        if os.path.exists(out) and mode == "z3ds":
+            # a fresh copy next to an existing .zcci (Check games' download again): keep the
+            # .zcci only if it decodes cleanly to exactly this copy
+            src = next(s for s, o in plan if o == out)
+            try:
+                same = rommlib.z3ds_verify(out)[0] == _crc32_file(src)
+            except (rommlib.Z3dsError, OSError):
+                same = False
+            if not same:
+                note("chd: replacing damaged or different %s" % out)
+                continue
         if os.path.exists(out):
             if rommlib.disc_incomplete(out):
                 note("chd: replacing incomplete %s" % out)   # a fresh copy came down
@@ -491,6 +619,8 @@ def convert(task):
             return False
     cfg = rommlib.load_config()
     need = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
+    if mode == "zar":
+        need *= 2        # the extracted files and the .zar sit next to the image until it's verified
     free, keep = rommlib.free_bytes(out_dir), rommlib.keep_free_bytes(cfg)
     if free - need < keep:
         # the CHD sits next to the original until it's verified: wait for room
@@ -510,6 +640,10 @@ def convert(task):
                 rc, err = convert_rvz(src, tmp)
             elif mode == "squashfs":
                 rc, err = convert_squashfs(src, tmp, threads)
+            elif mode == "z3ds":
+                rc, err = convert_z3ds(src, tmp, threads)
+            elif mode == "zar":
+                rc, err = convert_zar(src, tmp)
             else:
                 rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
                 if rc == 0:
@@ -682,7 +816,8 @@ def work(lockf):
                 since_finalize += 1
         except ToolMissing as e:
             note("chd: %s isn't installed; dropping %s (Settings, %s)" % (
-                e, tasks[0], "Xbox to squashfs" if "squashfs" in str(e) else "GameCube and Wii to RVZ"))
+                e, tasks[0], "Xbox to squashfs" if "squashfs" in str(e) else
+                "Xbox 360 to .zar" if "xbox360" in str(e) else "GameCube and Wii to RVZ"))
         except ChdmanMissing:
             note("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
             try:

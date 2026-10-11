@@ -976,3 +976,115 @@ def test_rom_is_folder_also_with_files_only_in_subfolders():
     assert not rommlib.rom_is_folder(single)
     assert rommlib.rom_is_folder(flat) and rommlib.rom_is_folder(nested)
     assert not rommlib.rom_is_folder({"full_path": "roms/x/y.zip", "files": []})
+
+
+def test_last_check_kept_until_its_files_change(isolated):
+    """A finished check is kept for On this box; a finding whose file was
+    replaced (size/mtime differ) or deleted since drops out."""
+    a, b = isolated / "roms" / "a.chd", isolated / "roms" / "b.chd"
+    a.write_bytes(b"x" * 10)
+    b.write_bytes(b"y" * 10)
+    finds = [{"system": "psx", "path": str(a), "severity": "damaged", "problem": "cut short", "rom": None},
+             {"system": "psx", "path": str(b), "severity": "differs", "problem": "smaller", "rom": None}]
+    assert rommlib.load_audit() is None
+    rommlib.save_audit(finds, {"checked": 2, "matched": 2}, deep=True)
+    d = rommlib.load_audit()
+    assert d["deep"] and d["stats"]["checked"] == 2 and [f["path"] for f in d["findings"]] == [str(a), str(b)]
+    a.write_bytes(b"fixed copy, longer")
+    b.unlink()
+    assert rommlib.load_audit()["findings"] == []
+
+
+def test_on_this_box_sections(isolated, rb, monkeypatch):
+    """The hub: each section's line reflects its state (coloured only when it
+    wants attention), A opens the right screen, and the two-tile screens
+    move between tiles and rows."""
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    hub = rb.OnThisBoxScreen(app)
+    app.push(hub)
+    hub.games = [{"id": 1, "name": "A", "system": "psx", "when": "", "size": 2 << 30}]
+    assert hub.verdict("games") == ("1 game, 2.0 GB", None)
+    hub.bios = []
+    assert hub.verdict("bios") == ("No BIOS needed", None)
+    hub.bios = [{"name": "Saturn", "offers": [({}, {})], "missing": [{}], "required": [{}], "fetched": {}, "here": True},
+                {"name": "3DO", "offers": [({}, {})], "missing": [{}], "required": [{}], "fetched": {}, "here": False}]
+    assert hub.verdict("bios") == ("Saturn is missing 1 file RomM has", rb.ACCENT_HI)
+    hub.audit = None
+    assert hub.verdict("check")[0] == "Not checked yet"
+    hub.audit = {"time": 0, "findings": [{"severity": "damaged"}, {"severity": "differs"}]}
+    line, col = hub.verdict("check")
+    assert line.startswith("1 damaged, 1 differ from RomM") and col == rb.RED
+    hub.convs = [{"kind": "running"}, {"kind": "queued"}]
+    assert hub.verdict("conv") == ("Converting, 1 waiting", rb.BLUE)
+    hub.convs = [{"kind": "failed"}]
+    assert hub.verdict("conv")[1] == rb.RED
+    for i, cls in enumerate([rb.InstalledScreen, rb.SpaceScreen, rb.BiosScreen, rb.CheckScreen,
+                             rb.ConversionsScreen]):
+        hub.sel = i
+        hub.action("ok")
+        assert isinstance(app.stack[-1], cls)
+        assert app.stack[-1].crumbs()[0] == "On this box"
+        app.stack.pop()
+    hub.sel = 0
+    hub.action("up")
+    assert hub.sel == len(hub.ITEMS) - 1           # wraps, like Home
+    # Space: tiles side by side, then the systems
+    sp = rb.SpaceScreen(app)
+    sp.rows = [{"system": s, "ours": 0, "other": 1, "media": 0, "total": 1} for s in ("psx", "gba")]
+    sp.action("right")
+    assert sp.sel == 1
+    sp.action("down")
+    assert sp.sel == 2
+    sp.action("down")
+    sp.action("down")
+    assert sp.sel == 3                             # last system: stays
+    sp.action("up")
+    sp.action("up")
+    assert sp.sel == 0
+    # Check games: kept findings below the two tiles
+    ck = rb.CheckScreen(app)
+    app.push(ck)
+    assert ck.findings == [] and ck.hints()[0] == ("A", "Start")
+    ck.action("ok")
+    assert isinstance(app.stack[-1], rb.AuditScreen) and not app.stack[-1].deep
+    app.stack[-1].cancel.set()
+
+
+def test_kept_check_survives_odd_files_and_missing_tracks(isolated):
+    """A "Missing file" finding (its path never existed) stays until the file
+    turns up; a hand-edited or foreign audit-last.json never crashes."""
+    gone = str(isolated / "roms" / "Game (Track 2).bin")
+    rommlib.save_audit([{"system": "psx", "path": gone, "severity": "damaged",
+                         "problem": "Missing file: Game (Track 2).bin", "rom": None}], {"checked": 1}, False)
+    assert [f["path"] for f in rommlib.load_audit()["findings"]] == [gone]
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    for junk in ("[]", '{"findings": [1, {"path": "/x"}], "stats": 5}', "nope"):
+        open(rommlib.audit_path(), "w").write(junk)
+        d = rommlib.load_audit()
+        assert d is None or (d["findings"] == [] and d["stats"] == {})
+
+
+def test_check_needs_romm_and_empty_lists_stay_put(isolated, rb, monkeypatch):
+    """Offline, Quick check refuses instead of overwriting the last result with
+    "all good"; Down on the tiles with nothing below doesn't jump sideways."""
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    app.platforms = []
+    monkeypatch.setattr(app, "load_platforms", lambda: None)
+    ck = rb.CheckScreen(app)
+    app.push(ck)
+    ck.action("down")
+    assert ck.sel == 0
+    ck.action("ok")
+    assert app.stack[-1] is ck                      # no check started
+    sp = rb.SpaceScreen(app)
+    sp.rows = []
+    sp.action("down")
+    assert sp.sel == 0

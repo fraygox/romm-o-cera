@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.8"            # changes only for a real GitHub release
+VERSION = "0.6.9"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -119,6 +119,8 @@ DEFAULT_CONFIG = {
     "rvz": False,              # convert GameCube/Wii images to RVZ (downloads dolphin-tool when turned on)
     "xbox_bootable": True,     # Xbox: keep only the game partition xemu boots; "X.xiso" -> "X.iso" (ES lists .iso)
     "squashfs": False,         # pack Xbox images into zstd squashfs (Batocera mounts them at launch)
+    "z3ds": True,              # compress decrypted 3DS cartridge images to Azahar's .zcci (lossless)
+    "zar": False,              # Xbox 360 images -> .zar for xenia-canary (downloads two small tools)
     "cache_limit_mb": 1024,    # cover cache size cap; least recently used covers go first (0 = no cap)
     "download_hours": "any",   # "any", or "S-E" local hours (e.g. "1-7"): downloads only run then
     "background_downloads": True,  # keep downloading after the app exits
@@ -613,6 +615,251 @@ def rvz_enabled(cfg):
     return bool((cfg or {}).get("rvz")) and dolphin_tool_path() is not None
 
 
+# ---------------------------------------------------------- 3DS -> Z3DS (.zcci / .zcxi)
+
+# Azahar (Batocera 43.1 ships 2125.0.1) opens Z3DS files directly: a 0x20-byte
+# header, optional metadata, then a standard zstd *seekable* stream (independent
+# frames + a seek table), as Azahar's own "Compress ROM File" writes them
+# (src/common/zstd_compression.cpp). Written here with the box's libzstd through
+# ctypes: no tool to download. Decrypted dumps only (Azahar can't run encrypted
+# ones either). CIA stays as it is for now (32 MiB frames, title info from the CIA).
+Z3DS_SYSTEMS = {"3ds"}
+Z3DS_SOURCES = {".3ds": ".zcci", ".cci": ".zcci", ".cxi": ".zcxi"}
+Z3DS_EXTS = (".zcci", ".zcxi", ".zcia")
+Z3DS_FRAME = 256 << 10           # Azahar's frame size for CCI/CXI
+Z3DS_LEVEL = 3                   # zstd's default, what Azahar uses
+_ZSTD = []
+
+
+class Z3dsError(Exception):
+    pass
+
+
+def _zstd():
+    """The box's libzstd (ctypes), or None."""
+    if not _ZSTD:
+        import ctypes
+        lib = None
+        for name in ("libzstd.so.1", "libzstd.so"):
+            try:
+                lib = ctypes.CDLL(name)
+                break
+            except OSError:
+                continue
+        if lib is not None:
+            c = ctypes
+            lib.ZSTD_compressBound.restype = c.c_size_t
+            lib.ZSTD_compressBound.argtypes = [c.c_size_t]
+            lib.ZSTD_compress.restype = c.c_size_t
+            lib.ZSTD_compress.argtypes = [c.c_void_p, c.c_size_t, c.c_char_p, c.c_size_t, c.c_int]
+            lib.ZSTD_decompress.restype = c.c_size_t
+            lib.ZSTD_decompress.argtypes = [c.c_void_p, c.c_size_t, c.c_char_p, c.c_size_t]
+            lib.ZSTD_isError.restype = c.c_uint
+            lib.ZSTD_isError.argtypes = [c.c_size_t]
+            try:                                       # per-frame content checksums (zstd 1.4+)
+                lib.ZSTD_createCCtx.restype = c.c_void_p
+                lib.ZSTD_freeCCtx.argtypes = [c.c_void_p]
+                lib.ZSTD_CCtx_setParameter.restype = c.c_size_t
+                lib.ZSTD_CCtx_setParameter.argtypes = [c.c_void_p, c.c_int, c.c_int]
+                lib.ZSTD_compress2.restype = c.c_size_t
+                lib.ZSTD_compress2.argtypes = [c.c_void_p, c.c_void_p, c.c_size_t, c.c_char_p, c.c_size_t]
+                lib.has_cctx = True
+            except AttributeError:
+                lib.has_cctx = False
+        _ZSTD.append(lib)
+    return _ZSTD[0]
+
+
+def z3ds_supported():
+    return _zstd() is not None
+
+
+def z3ds_enabled(cfg, system):
+    return system in Z3DS_SYSTEMS and bool((cfg or {}).get("z3ds")) and z3ds_supported()
+
+
+def z3ds_target(path):
+    """'X.3ds' -> 'X.zcci' (None if it isn't a file Z3DS packs)."""
+    base, ext = os.path.splitext(path)
+    out = Z3DS_SOURCES.get(ext.lower())
+    return base + out if out else None
+
+
+def z3ds_info(path):
+    """(magic, title-info bytes) of a decrypted CCI/CXI; Z3dsError otherwise."""
+    with open(path, "rb") as f:
+        h = f.read(0x200)
+        if h[0x100:0x104] == b"NCSD":
+            f.seek(int.from_bytes(h[0x120:0x124], "little") * 0x200)    # partition 0: the game
+            f_ncch, magic = f.read(0x200), b"NCSD"
+        elif h[0x100:0x104] == b"NCCH":
+            f_ncch, magic = h, b"NCCH"
+        else:
+            raise Z3dsError("not a 3DS cartridge image")
+    if len(f_ncch) < 0x200 or f_ncch[0x100:0x104] != b"NCCH":
+        raise Z3dsError("not a 3DS cartridge image")
+    if not f_ncch[0x18F] & 0x04:
+        raise Z3dsError("an encrypted dump (Azahar runs decrypted ones only)")
+    unit = 0x200 << f_ncch[0x18E]
+    pid, ver = f_ncch[0x118:0x120], f_ncch[0x112:0x114]
+    size = int.from_bytes(f_ncch[0x104:0x108], "little") * unit
+    return magic, pid + size.to_bytes(8, "little") + ver + b"\0" * 6
+
+
+def _z3ds_metadata(items):
+    out = bytearray([1])                       # metadata version
+    for k, v in items:
+        out += bytes([1, len(k)]) + len(v).to_bytes(2, "little") + k + v
+    out += b"\0" * 4                           # end marker
+    out += b"\0" * ((-len(out)) % 16)
+    return bytes(out)
+
+
+def z3ds_compress(src, dst, threads=2, pause=None, progress=None):
+    """Write src (decrypted .3ds/.cci/.cxi) as Z3DS to dst. pause(): called
+    between frames, may block (a game is running). progress(fraction).
+    Returns the source's CRC32 (hex)."""
+    import ctypes
+    import zlib
+    from concurrent.futures import ThreadPoolExecutor
+    lib = _zstd()
+    if lib is None:
+        raise Z3dsError("libzstd isn't on this system")
+    magic, title = z3ds_info(src)
+    total = os.path.getsize(src)
+    md = _z3ds_metadata([(b"compressor", b"RomM-o-Cera " + VERSION.encode()),
+                         (b"date", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()).encode()),
+                         (b"maxframesize", str(Z3DS_FRAME).encode()), (b"titleinfo", title)])
+
+    def pack(chunk):                       # ctypes drops the GIL: frames compress in parallel
+        cap = lib.ZSTD_compressBound(len(chunk))
+        buf = ctypes.create_string_buffer(cap)
+        if lib.has_cctx:
+            # each frame carries zstd's content checksum: a damaged .zcci then fails to
+            # decode on its own (Check games, replacing a broken copy), not only against
+            # the original's CRC. Azahar reads such frames as usual.
+            cc = lib.ZSTD_createCCtx()
+            try:
+                lib.ZSTD_CCtx_setParameter(cc, 100, Z3DS_LEVEL)      # ZSTD_c_compressionLevel
+                lib.ZSTD_CCtx_setParameter(cc, 201, 1)               # ZSTD_c_checksumFlag
+                n = lib.ZSTD_compress2(cc, buf, cap, chunk, len(chunk))
+            finally:
+                lib.ZSTD_freeCCtx(cc)
+        else:
+            n = lib.ZSTD_compress(buf, cap, chunk, len(chunk), Z3DS_LEVEL)
+        if lib.ZSTD_isError(n):
+            raise Z3dsError("zstd couldn't compress a frame")
+        return buf.raw[:n]
+    crc, done, packed, table = 0, 0, 0, []
+    with open(src, "rb") as fi, open(dst, "wb") as fo, ThreadPoolExecutor(max(1, int(threads))) as ex:
+        fo.write(b"\0" * 0x20 + md)
+        pend = []
+
+        def drain(n):
+            nonlocal packed
+            while len(pend) > n:
+                size, fut = pend.pop(0)
+                b = fut.result()
+                fo.write(b)
+                table.append((len(b), size))
+                packed += len(b)
+        while True:
+            if pause:
+                pause()
+            chunk = fi.read(Z3DS_FRAME)
+            if not chunk:
+                break
+            crc = zlib.crc32(chunk, crc)
+            done += len(chunk)
+            pend.append((len(chunk), ex.submit(pack, chunk)))
+            drain(max(1, int(threads)) * 4)
+            if progress and total:
+                progress(done / total)
+        drain(0)
+        seek = b"".join(c.to_bytes(4, "little") + d.to_bytes(4, "little") for c, d in table)
+        seek += len(table).to_bytes(4, "little") + b"\0" + (0x8F92EAB1).to_bytes(4, "little")
+        seek = (0x184D2A5E).to_bytes(4, "little") + len(seek).to_bytes(4, "little") + seek
+        fo.write(seek)
+        packed += len(seek)
+        fo.seek(0)
+        fo.write(b"Z3DS" + magic + bytes([1, 0]) + (0x20).to_bytes(2, "little") + len(md).to_bytes(4, "little")
+                 + packed.to_bytes(8, "little") + total.to_bytes(8, "little"))
+    if done != total:
+        raise Z3dsError("the file changed while it was read")
+    return "%08x" % (crc & 0xffffffff)
+
+
+def z3ds_header(path):
+    """{"size": original size, "complete": the file is as long as its header
+    says} from a Z3DS file, or None if it isn't one."""
+    try:
+        with open(path, "rb") as f:
+            h = f.read(0x20)
+            end = os.fstat(f.fileno()).st_size
+    except OSError:
+        return None
+    if len(h) < 0x20 or h[:4] != b"Z3DS" or h[8] != 1:
+        return None
+    base = int.from_bytes(h[0x0A:0x0C], "little") + int.from_bytes(h[0x0C:0x10], "little")
+    return {"size": int.from_bytes(h[0x18:0x20], "little"),
+            "complete": end == base + int.from_bytes(h[0x10:0x18], "little")}
+
+
+def z3ds_verify(path, pause=None, progress=None):
+    """Read a Z3DS file the way Azahar does (header, seek table) and decode
+    every frame: (CRC32 hex, size) of the original; Z3dsError if it's broken."""
+    import ctypes
+    import zlib
+    lib = _zstd()
+    if lib is None:
+        raise Z3dsError("libzstd isn't on this system")
+    with open(path, "rb") as f:
+        h = f.read(0x20)
+        if len(h) < 0x20 or h[:4] != b"Z3DS" or h[8] != 1:
+            raise Z3dsError("not a Z3DS file")
+        hsize = int.from_bytes(h[0x0A:0x0C], "little")
+        base = hsize + int.from_bytes(h[0x0C:0x10], "little")
+        packed, total = int.from_bytes(h[0x10:0x18], "little"), int.from_bytes(h[0x18:0x20], "little")
+        f.seek(0, 2)
+        end = f.tell()
+        if end != base + packed:
+            raise Z3dsError("size doesn't match its header (cut short?)")
+        f.seek(end - 9)
+        n, desc, mg = int.from_bytes(f.read(4), "little"), f.read(1)[0], int.from_bytes(f.read(4), "little")
+        if mg != 0x8F92EAB1:
+            raise Z3dsError("no seek table")
+        esz = 12 if desc & 0x80 else 8
+        if n * esz + 17 > packed:
+            raise Z3dsError("damaged seek table")
+        f.seek(end - 9 - n * esz - 8)
+        if int.from_bytes(f.read(4), "little") != 0x184D2A5E:
+            raise Z3dsError("damaged seek table")
+        f.read(4)
+        tab = f.read(n * esz)
+        sizes = [(int.from_bytes(tab[i * esz:i * esz + 4], "little"),
+                  int.from_bytes(tab[i * esz + 4:i * esz + 8], "little")) for i in range(n)]
+        # the table must add up before anything is decoded (and before a buffer is sized from it)
+        if sum(c for c, _ in sizes) + n * esz + 17 != packed or sum(d for _, d in sizes) != total \
+                or any(d > (1 << 30) for _, d in sizes):
+            raise Z3dsError("damaged seek table")
+        f.seek(base)
+        crc, done = 0, 0
+        for i, (c, d) in enumerate(sizes):
+            if pause:
+                pause()
+            out = ctypes.create_string_buffer(d)
+            r = lib.ZSTD_decompress(out, d, f.read(c), c)
+            if lib.ZSTD_isError(r) or r != d:
+                raise Z3dsError("frame %d doesn't decode" % i)
+            crc = zlib.crc32(out.raw, crc)
+            done += d
+            if progress and total:
+                progress(done / total)
+    if done != total:
+        raise Z3dsError("decodes to %d bytes, header says %d" % (done, total))
+    return "%08x" % (crc & 0xffffffff), done
+
+
 def rvz_state(cfg):
     """{"label", "help"} for the Settings row."""
     if not rvz_supported():
@@ -624,26 +871,21 @@ def rvz_state(cfg):
     return {"label": "Off", "help": "Turning it on downloads dolphin-tool once"}
 
 
-def install_dolphin_tool(progress=None, url=None, sha256=None):
-    """Download, check and unpack dolphin-tool into DATA_DIR/tools. Returns
-    its path. The archive holds the binary, Dolphin's license and SOURCE.txt."""
+def _fetch_tool_archive(label, url, want, dest, progress=None):
+    """Download a tool archive, check its pinned SHA-256 and unpack it into
+    dest + ".new" (returned). Refuses links, absolute paths and "..";"""
     import hashlib
     import tarfile
-    if not rvz_supported():
-        raise RommError("dolphin-tool isn't built for this CPU (%s)." % _machine())
-    url = url or os.environ.get("ROMM_BROWSER_DOLPHIN_URL") or DOLPHIN_TOOL["url"]
-    want = (sha256 or os.environ.get("ROMM_BROWSER_DOLPHIN_SHA256") or DOLPHIN_TOOL["sha256"]).lower()
     if not want:
-        raise RommError("This version doesn't know dolphin-tool's checksum yet.")
-    dest = dolphin_tool_dir()
+        raise RommError("This version doesn't know %s's checksum yet." % label)
     tmpdir = os.path.join(DATA_DIR, "tmp")
     os.makedirs(tmpdir, exist_ok=True)
-    tgz = os.path.join(tmpdir, "dolphin-tool.tar.gz")
+    tgz = os.path.join(tmpdir, os.path.basename(dest) + ".tar.gz")
     h = hashlib.sha256()
     try:
         with requests.get(url, stream=True, timeout=30) as r:
             if r.status_code != 200:
-                raise RommError("Couldn't download dolphin-tool (HTTP %d)." % r.status_code)
+                raise RommError("Couldn't download %s (HTTP %d)." % (label, r.status_code))
             total = int(r.headers.get("Content-Length") or 0)
             got = 0
             with open(tgz, "wb") as f:
@@ -654,22 +896,36 @@ def install_dolphin_tool(progress=None, url=None, sha256=None):
                     if progress:
                         progress(got, total)
     except requests.RequestException as e:
-        raise RommError("Couldn't download dolphin-tool (%s)." % e.__class__.__name__) from None
+        raise RommError("Couldn't download %s (%s)." % (label, e.__class__.__name__)) from None
     if h.hexdigest() != want:
         os.remove(tgz)
-        raise RommError("dolphin-tool's download didn't match its checksum; not installed.")
+        raise RommError("The %s download didn't match its checksum; not installed." % label)
     staging = dest + ".new"
     shutil.rmtree(staging, ignore_errors=True)
     os.makedirs(staging)
     with tarfile.open(tgz) as t:
         for m in t.getmembers():
             if not (m.isfile() or m.isdir()) or m.name.startswith(("/", "..")) or "/../" in m.name:
-                raise RommError("Unexpected file in the dolphin-tool archive: %s" % m.name)
+                raise RommError("Unexpected file in the %s archive: %s" % (label, m.name))
         try:
             t.extractall(staging, filter="data")       # Python 3.12+: tarfile's own safety net too
         except TypeError:
             t.extractall(staging)
     os.remove(tgz)
+    return staging
+
+
+def install_dolphin_tool(progress=None, url=None, sha256=None):
+    """Download, check and unpack dolphin-tool into DATA_DIR/tools. Returns
+    its path. The archive holds the binary, Dolphin's license and SOURCE.txt."""
+    if not rvz_supported():
+        raise RommError("dolphin-tool isn't built for this CPU (%s)." % _machine())
+    url = url or os.environ.get("ROMM_BROWSER_DOLPHIN_URL") or DOLPHIN_TOOL["url"]
+    want = (sha256 or os.environ.get("ROMM_BROWSER_DOLPHIN_SHA256") or DOLPHIN_TOOL["sha256"]).lower()
+    if not want:
+        raise RommError("This version doesn't know dolphin-tool's checksum yet.")
+    dest = dolphin_tool_dir()
+    staging = _fetch_tool_archive("dolphin-tool", url, want, dest, progress)
     exe = os.path.join(staging, "dolphin-tool")
     if not os.path.isfile(exe):
         raise RommError("The dolphin-tool archive has no dolphin-tool in it.")
@@ -686,6 +942,144 @@ def install_dolphin_tool(progress=None, url=None, sha256=None):
     os.replace(staging, dest)
     log("dolphin-tool %s installed (%s)" % (DOLPHIN_TOOL["version"], DOLPHIN_TOOL["commit"][:10]))
     return os.path.join(dest, "dolphin-tool")
+
+
+# ---------------------------------------------------------- Xbox 360 -> .zar (ZArchive)
+
+# xenia-canary (Batocera 43.1, x86_64 only) opens a ".zar": a ZArchive of the
+# disc's files. Made with two small tools RomM-o-Cera downloads when the setting
+# is turned on (like dolphin-tool): extract-xiso (game partition -> folder) and
+# zarchive (folder -> .zar), built by tools/xbox360-tools/ and published as their
+# own GitHub release with their licenses and exact source. Neither tool's exit
+# code is enough on its own: extract-xiso exits 0 on a cut-short image and
+# zarchive never checks its archive's SHA-256, so the worker checks both itself.
+_X360_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/xbox360-tools-2610a/"
+X360_TOOLS_ALL = {          # per CPU (Batocera has no Xbox 360 off x86_64)
+    "x86_64": {"url": _X360_BASE + "xbox360-tools-2610a-x86_64.tar.gz",
+               "sha256": "b5b63fd0fd7b13a69b2c75c51059810df4bf89cda70cd711f0a4a267967bdd8f", "size": 757610},
+}
+X360_TOOLS = dict({"version": "2610a", "extract_xiso": "3f5b62cfe68f000b0e3c8a30104973f3a297948e",
+                   "zarchive": "b467f7aa342895e66a1a003377ed63b3c1be3de3"},
+                  **X360_TOOLS_ALL.get(_machine(), {"url": "", "sha256": "", "size": 0}))
+ZAR_SYSTEMS = {"xbox360"}
+ZAR_MAGIC, ZAR_VERSION = 0x169f52d6, 0x61bf3a01
+
+
+def x360_tools_dir():
+    return os.path.join(os.environ.get("ROMM_BROWSER_TOOLS", TOOLS_DIR), "xbox360-tools-" + X360_TOOLS["version"])
+
+
+def x360_tools():
+    """(extract-xiso, zarchive) paths when both are installed, else None."""
+    d = x360_tools_dir()
+    exe = [os.path.join(d, n) for n in ("extract-xiso", "zarchive")]
+    return tuple(exe) if all(os.path.isfile(p) and os.access(p, os.X_OK) for p in exe) else None
+
+
+def zar_supported():
+    return _machine() in X360_TOOLS_ALL
+
+
+def zar_enabled(cfg, system):
+    return system in ZAR_SYSTEMS and bool((cfg or {}).get("zar")) and x360_tools() is not None
+
+
+def zar_state(cfg):
+    """{"label", "help"} for the Settings row."""
+    if not zar_supported():
+        return {"label": "Not on this CPU", "help": "Xbox 360 emulation on Batocera is x86_64 only"}
+    if (cfg or {}).get("zar") and x360_tools():
+        return {"label": "On", "help": "Smaller files xenia-canary opens directly"}
+    if (cfg or {}).get("zar"):
+        return {"label": "Tools missing", "help": "{A} downloads them again"}
+    return {"label": "Off", "help": "Turning it on downloads two small tools once"}
+
+
+def zar_check(path, full=False):
+    """None if a .zar looks whole; else what's wrong. Always: the size and
+    magic in its footer. full: also the SHA-256 it carries over the whole file
+    (zarchive itself never checks it)."""
+    import hashlib
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size < 144:
+                return "too short to be a .zar"
+            f.seek(size - 144)
+            foot = f.read(144)
+            if int.from_bytes(foot[-4:], "big") != ZAR_MAGIC or int.from_bytes(foot[-8:-4], "big") != ZAR_VERSION:
+                return "not a .zar (no ZArchive footer)"
+            if int.from_bytes(foot[-16:-8], "big") != size:
+                return "cut short (%s of %s)" % (human_size(size), human_size(int.from_bytes(foot[-16:-8], "big")))
+            if not full:
+                return None
+            h = hashlib.sha256()
+            f.seek(0)
+            left = size - 144
+            while left:
+                chunk = f.read(min(8 << 20, left))
+                if not chunk:
+                    return "cut short"
+                h.update(chunk)
+                left -= len(chunk)
+            h.update(foot[:96] + b"\0" * 32 + foot[128:])
+            if h.digest() != foot[96:128]:
+                return "damaged (its SHA-256 doesn't match)"
+    except OSError as e:
+        return "can't read it (%s)" % e.strerror
+    return None
+
+
+def xiso_listing(exe, iso):
+    """{relative path: size} of the files on an Xbox / Xbox 360 disc image
+    (extract-xiso -l), or None if it isn't one."""
+    try:
+        # surrogateescape: names decode the way os.walk sees them on disk, even when not UTF-8
+        p = subprocess.run([exe, "-l", iso], capture_output=True, text=True, errors="surrogateescape", timeout=600)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if p.returncode != 0:
+        return None
+    out = {}
+    for line in p.stdout.splitlines():
+        m = re.match(r"^(/.*[^/]) \((\d+) bytes\)\s*$", line)
+        if m:
+            out[m.group(1).lstrip("/")] = int(m.group(2))
+    return out or None
+
+
+def install_x360_tools(progress=None, url=None, sha256=None):
+    """Download, check and unpack extract-xiso + zarchive into DATA_DIR/tools.
+    Returns the (extract-xiso, zarchive) paths."""
+    if not zar_supported():
+        raise RommError("The Xbox 360 tools aren't built for this CPU (%s)." % _machine())
+    url = url or os.environ.get("ROMM_BROWSER_X360_URL") or X360_TOOLS["url"]
+    want = (sha256 or os.environ.get("ROMM_BROWSER_X360_SHA256") or X360_TOOLS["sha256"]).lower()
+    dest = x360_tools_dir()
+    staging = _fetch_tool_archive("Xbox 360 tools", url, want, dest, progress)
+    top = os.path.join(staging, "xbox360-tools-" + X360_TOOLS["version"])
+    root = top if os.path.isdir(top) else staging
+    exe = [os.path.join(root, n) for n in ("extract-xiso", "zarchive")]
+    if not all(os.path.isfile(p) for p in exe):
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RommError("The Xbox 360 tools archive is missing a tool.")
+    for p in exe:
+        os.chmod(p, 0o755)
+    try:
+        a = subprocess.run([exe[0], "-h"], capture_output=True, text=True, timeout=30)
+        b = subprocess.run([exe[1]], capture_output=True, text=True, timeout=30)
+    except OSError as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RommError("The Xbox 360 tools don't run on this box (%s)." % e.strerror) from None
+    if "extract-xiso" not in (a.stdout + a.stderr) or "zarchive" not in (b.stdout + b.stderr).lower():
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RommError("The Xbox 360 tools don't run on this box.")
+    shutil.rmtree(dest, ignore_errors=True)
+    os.replace(root, dest)
+    shutil.rmtree(staging, ignore_errors=True)
+    log("xbox360-tools %s installed (extract-xiso %s, zarchive %s)" % (
+        X360_TOOLS["version"], X360_TOOLS["extract_xiso"][:7], X360_TOOLS["zarchive"][:7]))
+    return x360_tools()
 
 
 # ---------------------------------------------------------- leftovers
@@ -725,6 +1119,9 @@ def _leftover_folder(sysdir, d):
     return len(rel) == 1 or bool(DISC_RE.search(os.path.basename(d)))
 
 
+CONVERT_PARTS = (".rvz.part", ".squashfs.part", ".zar.part") + tuple(e + ".part" for e in Z3DS_EXTS)
+
+
 def find_leftovers(pending_roms=(), chd_busy=None):
     """Files and folders interrupted downloads/conversions left behind:
     [{"path", "kind", "size"}]. Never a partial download that's still
@@ -756,6 +1153,10 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                 low = fn.lower()
                 if low.endswith((".chd.part", ".tmp.chd")):
                     kind = "Unfinished CHD"
+                    if busy:
+                        continue
+                elif low.endswith(CONVERT_PARTS):
+                    kind = "Unfinished conversion"
                     if busy:
                         continue
                 elif low.endswith(".part"):
@@ -1995,7 +2396,7 @@ def disc_layout(detail, system, cfg, accepts=None):
     """What a download of this game is and becomes, from RomM's full record
     (files and archive members): {"label": "CUE/BIN, 3 tracks", "discs": n,
     "unpacked": bytes or None, "estimated": unpacked is a guess,
-    "convert": "CHD" | "RVZ" | "squashfs" | None}. None for a
+    "convert": "CHD" | "RVZ" | "squashfs" | "ZCCI" | "ZAR" | None}. None for a
     game that isn't a disc image (carts), or when RomM listed no files."""
     files = (detail or {}).get("files") or []
     if not files:
@@ -2024,7 +2425,8 @@ def disc_layout(detail, system, cfg, accepts=None):
         kinds.append("CUE/BIN" + (", %d tracks" % tracks if tracks > count(".cue") else ""))
     if count(".gdi"):
         kinds.append("GDI, %d tracks" % (len(exts) - count(".gdi")) if len(exts) > count(".gdi") + 1 else "GDI")
-    for e in (".iso", ".chd", ".rvz", ".wbfs", ".gcz", ".ciso", ".cso", ".pbp", ".ccd", ".cdi"):
+    for e in (".iso", ".chd", ".rvz", ".wbfs", ".gcz", ".ciso", ".cso", ".pbp", ".ccd", ".cdi", ".3ds", ".cci",
+              ".cxi", ".cia"):
         if count(e):
             kinds.append(e[1:].upper())
     discs = count(".cue") + count(".gdi") + count(".iso") + count(".chd") + count(".rvz") + count(".wbfs") \
@@ -2042,6 +2444,12 @@ def disc_layout(detail, system, cfg, accepts=None):
     elif system in SQUASH_SYSTEMS:
         if squashfs_enabled(cfg, system) and ok(system, ".squashfs") and ".iso" in exts:
             convert = "squashfs"
+    elif system in ZAR_SYSTEMS:
+        if zar_enabled(cfg, system) and ok(system, ".zar") and ".iso" in exts:
+            convert = "ZAR"
+    elif system in Z3DS_SYSTEMS:
+        if z3ds_enabled(cfg, system) and any(e in Z3DS_SOURCES and ok(system, Z3DS_SOURCES[e]) for e in exts):
+            convert = "ZCCI"
     elif (cfg or {}).get("chd", True) and ok(system, ".chd"):
         if system in CHD_CD_SYSTEMS and any(e in (".cue", ".gdi") for e in exts):
             convert = "CHD"
@@ -2196,6 +2604,33 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
     def members_of(files):
         return {m["name"].lower(): m for f in files for m in (f.get("archive_members") or []) if m.get("name")}
 
+    def check_z3ds(system, path, files, rom):
+        """A .zcci packed here: RomM has the .3ds it came from (loose or in a zip)."""
+        stem = os.path.splitext(os.path.basename(path))[0].lower()
+        orig = None
+        for f in files:
+            for name, size, crc in [(f.get("file_name"), f.get("file_size_bytes"), f.get("crc_hash"))] + \
+                    [(m.get("name"), m.get("size"), m.get("crc_hash")) for m in (f.get("archive_members") or [])]:
+                base, ext = os.path.splitext(os.path.basename(name or "").lower())
+                if base == stem and ext in Z3DS_SOURCES:
+                    orig = (size, (crc or "").lower())
+        hdr = z3ds_header(path)
+        if hdr is None:
+            add(system, path, "Not a readable .zcci (damaged header)", rom)
+        elif not hdr["complete"]:
+            add(system, path, "Compressed file cut short", rom)
+        elif orig and orig[0] and hdr["size"] != orig[0]:
+            add(system, path, "Packed from a different file than RomM's (%s vs %s)" % (
+                human_size(hdr["size"]), human_size(orig[0])), rom, "differs")
+        elif deep:
+            try:
+                got, _ = z3ds_verify(path)
+            except (Z3dsError, OSError) as e:
+                add(system, path, "Compressed file damaged: %s" % e, rom)
+                return
+            if orig and orig[1] and got != orig[1]:
+                add(system, path, "Checksum doesn't match RomM's copy", rom, "differs")
+
     def check_zip(system, path, files, rom):
         """A zip kept as-is: judge the ROM inside, not the container (the same
         ROM zips to different sizes)."""
@@ -2277,6 +2712,15 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             # 2) against RomM's record of the game
             stem = n if os.path.isdir(path) else stem_of(n)
             rom = index.get(low) or index.get(stem.lower())
+            if system in Z3DS_SYSTEMS and os.path.isfile(path) and z3ds_target(path):
+                try:
+                    z3ds_info(path)
+                except Z3dsError as e:          # whether RomM lists it or not: it won't run
+                    if "encrypted" in str(e):
+                        add(system, path, "Encrypted dump: Azahar can't run it (needs a decrypted copy)",
+                            rom, "differs")
+                except OSError:
+                    pass
             if not rom:
                 stats["unmatched"] += 1
                 continue
@@ -2295,6 +2739,15 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 add(system, path, "Couldn't fetch RomM record (%s)" % e, None)
                 continue
             files = [f for f in (detail.get("files") or []) if f.get("category") in (None, "game")]
+            if os.path.isfile(path) and low.endswith(Z3DS_EXTS):
+                check_z3ds(system, path, files, rom)
+                continue
+            if os.path.isfile(path) and low.endswith(".zar"):
+                # packed here from the disc's files: RomM's image hashes can't match by design
+                bad = zar_check(path, full=deep)
+                if bad:
+                    add(system, path, "Compressed file %s" % bad, rom)
+                continue
             if os.path.isfile(path):
                 if len(files) == 1 and files[0]["file_name"].lower() == low and low.endswith(".zip"):
                     check_zip(system, path, files, rom)
@@ -2363,6 +2816,59 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         except RommError:
             pass
     return findings, stats
+
+
+def audit_path():
+    return os.path.join(DATA_DIR, "audit-last.json")     # follows DATA_DIR (tests re-point it)
+
+
+def save_audit(findings, stats, deep):
+    """Keep the last finished check, so On this box can show it later. Each
+    finding remembers its file's size and mtime: a file changed since (fixed,
+    replaced) drops out on load."""
+    out = []
+    for f in findings:
+        try:
+            st = os.stat(f["path"])
+            sig = [st.st_size, int(st.st_mtime)]
+        except OSError:
+            sig = None
+        out.append(dict(f, sig=sig))
+    os.makedirs(DATA_DIR, exist_ok=True)
+    path = audit_path()
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump({"time": time.time(), "deep": bool(deep), "stats": stats, "findings": out}, fh)
+    os.replace(tmp, path)
+
+
+def load_audit():
+    """The last finished check, or None: {"time", "deep", "stats", "findings"},
+    without findings whose file is gone or changed since."""
+    try:
+        with open(audit_path()) as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    keep = []
+    for f in d.get("findings") or []:
+        if not isinstance(f, dict) or not all(isinstance(f.get(k), str) for k in ("path", "system", "severity",
+                                                                                  "problem")):
+            continue
+        try:
+            st = os.stat(f["path"])
+        except OSError:
+            if f.get("sig") is None:            # missing when checked, still missing ("Missing file: …")
+                keep.append(f)
+            continue
+        if f.get("sig") in (None, [st.st_size, int(st.st_mtime)]):
+            keep.append(f)
+    d["findings"] = keep
+    if not isinstance(d.get("stats"), dict):
+        d["stats"] = {}
+    return d
 
 
 # ----------------------------------------------------------- game info for games already here
@@ -3613,6 +4119,16 @@ class Downloader:
                 srcs = [p for p in playable if p.lower().endswith(".iso")]
                 if srcs:
                     self._queue_conversion(j, system, "squashfs", srcs, roots)
+            return
+        if system in ZAR_SYSTEMS:
+            srcs = [p for p in playable if p.lower().endswith(".iso")]
+            if zar_enabled(self.cfg, system) and srcs and self._accepts(system, ".zar"):
+                self._queue_conversion(j, system, "zar", srcs, roots)
+            return
+        if system in Z3DS_SYSTEMS:
+            srcs = [p for p in playable if z3ds_target(p) and self._accepts(system, os.path.splitext(z3ds_target(p))[1])]
+            if z3ds_enabled(self.cfg, system) and srcs:
+                self._queue_conversion(j, system, "z3ds", srcs, roots)
             return
         if system in RVZ_SYSTEMS:
             if not rvz_enabled(self.cfg) or not self._accepts(system, ".rvz"):

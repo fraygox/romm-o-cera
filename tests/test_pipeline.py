@@ -205,13 +205,18 @@ MULTIDISC_STEPS = (
     "act:select,wait:0.5,act:ok,wait:0.3,act:back,act:x,wait:0.3,act:x,wait:4,act:y,act:back,"
     "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
     "act:back,act:back,act:down,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
-    "act:down,act:ok,wait:0.3,act:back,act:back,act:start,act:down,act:down,act:down,act:down,act:down,"
-    "act:ok,wait:1,act:y,wait:3,act:down,act:ok,wait:1,act:x,wait:0.3,act:back,shot:end")
+    "act:down,act:ok,wait:0.3,act:back,"
+    # Home (Settings selected; one more Back would quit) -> up to On this box: every section in
+    # turn (games, space + a system, BIOS, check + quick check, conversions, game info), then out
+    "act:up,act:ok,wait:1,shot:hub,act:ok,wait:1,shot:games,act:back,act:down,act:ok,wait:2,act:right,act:down,act:down,"
+    "act:up,act:up,shot:space,act:back,act:down,act:ok,wait:2,act:back,act:down,act:ok,act:right,act:left,"
+    "act:ok,wait:4,act:back,shot:check,act:back,act:down,act:ok,wait:0.5,act:back,act:down,act:ok,wait:2,"
+    "act:back,act:back,shot:end")
 
 
 def test_ui_multidisc_queue_and_audit(isolated, mock_url, tmp_path):
     """Disc-set download menu -> queue options, pause/resume all, clear
-    finished -> On this box (set shown once) -> quick check -> settings rows."""
+    finished -> On this box: every section, a quick check (its result is kept)."""
     pytest.importorskip("pygame")
     roms = isolated / "uiroms"
     env = dict(os.environ, ROMM_URL=mock_url, ROMM_TOKEN="demo",
@@ -223,6 +228,7 @@ def test_ui_multidisc_queue_and_audit(isolated, mock_url, tmp_path):
                        env=env, capture_output=True, text=True, timeout=300)
     assert p.returncode == 0 and "Traceback" not in p.stderr, p.stderr[-2000:]
     assert sorted(n for n in os.listdir(roms / "psx") if n.endswith(".m3u")) == ["Lorem Odyssey (USA).m3u"]
+    assert (isolated / "uidata" / "audit-last.json").exists()       # the quick check's result was kept
 
 
 def test_bios_status_and_record(isolated, mock_url):
