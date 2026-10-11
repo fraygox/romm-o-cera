@@ -10,8 +10,9 @@
   Pair with tools/mock_romm.py for a fake library.
 """
 import os, sys, time, importlib.machinery
-os.environ["SDL_VIDEODRIVER"] = "dummy"
-os.environ["SDL_AUDIODRIVER"] = "dummy"
+# dummy by default; Batocera's SDL has no dummy/offscreen driver, so there pass SDL_VIDEODRIVER=x11 DISPLAY=:0
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, APP)
 import pygame

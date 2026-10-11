@@ -153,7 +153,7 @@ def status(**kw):
 
 def note(msg):
     """Log a line and remember it as the reason this task ended the way it did."""
-    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(("chd: ", "rvz: ")) else msg
+    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(("chd: ", "rvz: ", "squashfs: ")) else msg
     rommlib.log(msg)
 
 
@@ -205,17 +205,26 @@ def run_tool(argv, keep_stdout=False):
     # stderr goes to a file, never a pipe: chdman prints progress all the way
     # through, and a pipe nobody drains until exit fills up (64 KB) and blocks
     # it forever — that froze long DVD conversions (2026-10-10).
+    # The tool writes through its own append-only handle: sharing ours (one
+    # file offset) let its writes land wherever we had just seeked to read
+    # progress, overwriting text and losing the last lines.
     import tempfile
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
-    errf = tempfile.TemporaryFile(mode="w+", dir=rommlib.DATA_DIR)
-    p = subprocess.Popen(cmd, stdout=errf if keep_stdout else subprocess.DEVNULL, stderr=errf, text=True)
+    fd, path = tempfile.mkstemp(dir=rommlib.DATA_DIR, prefix="tool-", suffix=".log")
+    os.close(fd)
+    try:
+        outf = open(path, "a")
+        errf = open(path, "r", errors="replace")       # reads start at any byte offset
+    finally:
+        os.unlink(path)                           # both handles keep it until closed
+    with outf:
+        p = subprocess.Popen(cmd, stdout=outf if keep_stdout else subprocess.DEVNULL, stderr=outf, text=True)
     paused = False
     guard = None
     try:
         while p.poll() is None:
             time.sleep(3)
             try:                                  # progress for the Conversions screen
-                errf.flush()
                 errf.seek(0, 2)
                 errf.seek(max(0, errf.tell() - 400))
                 m = PCT_RE.findall(errf.read())
@@ -363,6 +372,69 @@ def convert_rvz(src, tmp):
     return 0, "CRC32 %s" % want
 
 
+def _crc32_file(path):
+    """CRC32 of a file, read the way the worker runs: paused while a game plays."""
+    import zlib
+    crc, n = 0, 0
+    with open(path, "rb") as f:
+        while True:
+            while running_game():
+                time.sleep(10)
+            chunk = f.read(8 << 20)
+            if not chunk:
+                return "%08x" % (crc & 0xffffffff)
+            crc = zlib.crc32(chunk, crc)
+            n += len(chunk)
+
+
+def convert_squashfs(src, tmp, threads):
+    """Xbox image -> zstd squashfs that Batocera mounts at launch. Inside: the
+    image (an XISO: a full redump image is cut to its game partition first,
+    as xemu needs; refused if that's turned off) and a .ROM link to it, so Batocera hands xemu the file,
+    not the folder. Mounted read-only afterwards: the image inside must hash
+    to the original's CRC32 before the caller deletes anything."""
+    status(step="Checking the original", pct=None)
+    off = rommlib.xbox_partition(src)
+    if off is None:
+        return 2, "not an Xbox disc image"
+    if off and not rommlib.load_config().get("xbox_bootable", True):
+        # packing a full redump image would only make a smaller file xemu can't boot
+        return 2, "a full disc image xemu can't boot (Settings: Make Xbox images bootable)"
+    try:
+        cut = rommlib.make_xiso(src)
+    except rommlib.NoSpace as e:
+        return 3, str(e)
+    if cut:
+        note("squashfs: %s cut to its game partition (-%s)" % (os.path.basename(src), rommlib.human_size(cut)))
+    want = _crc32_file(src)
+    status(step="Packing", pct=None)
+    name = os.path.basename(src)
+    rc, out = run_tool(["mksquashfs", src, tmp, *rommlib.SQUASH_ARGS, "-progress", "-processors", threads,
+                        "-p", ".ROM s 777 0 0 %s" % name], keep_stdout=True)
+    if rc != 0 or not os.path.exists(tmp):
+        return rc or 4, out
+    status(step="Verifying", pct=None)
+    mnt = os.path.join(rommlib.DATA_DIR, "tmp", "squashfs-check-%d" % os.getpid())
+    os.makedirs(mnt, exist_ok=True)
+    if subprocess.run(["mount", "-o", "loop,ro", tmp, mnt], capture_output=True).returncode != 0:
+        os.rmdir(mnt)
+        return 5, "couldn't mount the new squashfs"
+    try:
+        inner = os.path.join(mnt, name)
+        ok_link = os.path.realpath(os.path.join(mnt, ".ROM")) == os.path.realpath(inner)
+        got = _crc32_file(inner) if os.path.isfile(inner) else None
+    finally:
+        subprocess.run(["umount", mnt], capture_output=True)
+        try:
+            os.rmdir(mnt)
+        except OSError:
+            pass
+    if got != want or not ok_link:
+        return 5, "squashfs doesn't match the original (CRC32 %s vs %s%s)" % (
+            got, want, "" if ok_link else ", .ROM link missing")
+    return 0, "CRC32 %s" % want
+
+
 def convert(task):
     system, mode = task["system"], task["mode"]
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
@@ -371,6 +443,9 @@ def convert(task):
         return False
     if mode == "rvz" and not rommlib.rvz_enabled(rommlib.load_config()):
         note("chd: SKIP rvz %s (turned off, or dolphin-tool isn't installed)" % os.path.basename(srcs[0]))
+        return False
+    if mode == "squashfs" and not rommlib.squashfs_enabled(rommlib.load_config(), system):
+        note("chd: SKIP squashfs %s (turned off, or mksquashfs is missing)" % os.path.basename(srcs[0]))
         return False
     playing = running_game()
     if playing and playing in srcs:
@@ -383,12 +458,14 @@ def convert(task):
     out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
     multi = len(srcs) > 1
     plan = []
-    out_ext = ".rvz" if mode == "rvz" else ".chd"
+    out_ext = {"rvz": ".rvz", "squashfs": ".squashfs"}.get(mode, ".chd")
     for src in srcs:
         if multi or not folder_root:
             stem = os.path.splitext(os.path.basename(src))[0]
         else:
             stem = os.path.basename(folder_root)      # game name, not track name
+        if mode == "squashfs":
+            stem += os.path.splitext(src)[1].lower()  # "X.iso.squashfs": the image's own extension stays
         plan.append((src, os.path.join(out_dir, stem + out_ext)))
     if len({out for _, out in plan}) != len(plan):
         # two sources would become the same .chd: converting would overwrite
@@ -431,6 +508,8 @@ def convert(task):
             status(file=os.path.basename(src), step="Converting", pct=None)
             if mode == "rvz":
                 rc, err = convert_rvz(src, tmp)
+            elif mode == "squashfs":
+                rc, err = convert_squashfs(src, tmp, threads)
             else:
                 rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
                 if rc == 0:
@@ -602,8 +681,8 @@ def work(lockf):
             if res:
                 since_finalize += 1
         except ToolMissing as e:
-            note("chd: %s isn't installed; dropping %s (Settings, GameCube and Wii to RVZ)"
-                        % (e, tasks[0]))
+            note("chd: %s isn't installed; dropping %s (Settings, %s)" % (
+                e, tasks[0], "Xbox to squashfs" if "squashfs" in str(e) else "GameCube and Wii to RVZ"))
         except ChdmanMissing:
             note("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
             try:

@@ -93,6 +93,22 @@ rommlib.display_url = lambda url: "romm.example.com"     # not the mock's 127.0.
 pygame.init()
 app = rb.App(None, headless=True)
 app.downloader.hold = True               # scenes fake their own jobs; nothing really downloads
+_rom = app.api.rom
+
+
+def _rom_with_members(rid):
+    """The mock's generated disc zips list no members; real RomM usually does.
+    Give PlayStation ones a cue + bin so the detail panel shows its Format row."""
+    d = _rom(rid)
+    for f in d.get("files") or []:
+        if d.get("platform_id") == 6 and f["file_name"].endswith(".zip") and not f.get("archive_members"):
+            stem = f["file_name"][:-4]
+            f["archive_members"] = [{"name": stem + ".cue", "size": 120},
+                                    {"name": stem + ".bin", "size": int(f["file_size_bytes"] * 1.6)}]
+    return d
+
+
+app.api.rom = _rom_with_members
 LATER = time.time() + 10 ** 9            # fake queued jobs "retry" far in the future: the worker skips them
 J = rommlib.Job
 

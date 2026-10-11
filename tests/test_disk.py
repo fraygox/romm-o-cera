@@ -298,3 +298,165 @@ def test_chd_compared_exactly_with_romm(isolated, monkeypatch):
     assert rommlib._chd_vs_romm(Api(), chd, {"id": 1}, "chdman") == (150000, 310000)
     monkeypatch.setattr(rommlib, "_chd_frames", lambda p, c: ("cd", 310000))
     assert rommlib._chd_vs_romm(Api(), chd, {"id": 1}, "chdman") is False
+
+
+def _detail(files, size=1000):
+    return {"fs_size_bytes": size, "files": files}
+
+
+def _zip(members, name="Lorem Odyssey (USA).zip"):
+    return {"file_name": name, "file_size_bytes": 1000,
+            "archive_members": [{"name": n, "size": s} for n, s in members]}
+
+
+def test_disc_layout(isolated):
+    cfg = {"chd": True, "rvz": False}
+    cuebin = _detail([_zip([("Lorem.cue", 200), ("Lorem (Track 1).bin", 600_000), ("Lorem (Track 2).bin", 90_000),
+                            ("Lorem (Track 3).bin", 80_000)])])
+    assert rommlib.disc_layout(cuebin, "psx", cfg) == {
+        "label": "CUE/BIN, 3 tracks", "discs": 1, "unpacked": 770_200, "estimated": False, "convert": "CHD"}
+    two = rommlib.disc_layout(_detail([{"file_name": "Ipsum (Disc 1).cue", "file_size_bytes": 100},
+                                       {"file_name": "Ipsum (Disc 1).bin", "file_size_bytes": 9},
+                                       {"file_name": "Ipsum (Disc 2).cue", "file_size_bytes": 100},
+                                       {"file_name": "Ipsum (Disc 2).bin", "file_size_bytes": 9}]), "psx", cfg)
+    assert two["discs"] == 2 and two["label"] == "CUE/BIN" and two["unpacked"] is None   # loose: nothing to unpack
+    gdi = rommlib.disc_layout(_detail([_zip([("Dolor.gdi", 1), ("track01.bin", 5), ("track02.raw", 5),
+                                            ("track03.bin", 5)])]), "dreamcast", cfg)
+    assert gdi["label"] == "GDI, 3 tracks" and gdi["convert"] == "CHD"
+    # a zip RomM listed no members for: size is a guess, said so
+    est = rommlib.disc_layout(_detail([{"file_name": "Sit.zip", "file_size_bytes": 1000}]), "psx", cfg)
+    assert est["estimated"] and est["unpacked"] == rommlib.space_needed({"fs_size_bytes": 1000}, "psx")
+    assert est["label"] == "" and est["convert"] is None
+    # cartridges aren't disc games
+    assert rommlib.disc_layout(_detail([_zip([("Cart.gba", 10)])]), "gba", cfg) is None
+    assert rommlib.disc_layout({"files": []}, "psx", cfg) is None
+    iso = _detail([_zip([("Amet.iso", 4 * GiB)])])
+    assert rommlib.disc_layout(iso, "ps2", cfg)["convert"] == "CHD"
+    assert rommlib.disc_layout(iso, "ps2", {"chd": False})["convert"] is None
+    assert rommlib.disc_layout(iso, "ps2", cfg, accepts=lambda s, e: e != ".chd")["convert"] is None
+    assert rommlib.disc_layout(iso, "gamecube", cfg)["convert"] is None          # RVZ off
+    assert rommlib.disc_layout(iso, "xbox", cfg) == {"label": "ISO", "discs": 1, "unpacked": 4 * GiB,
+                                                     "estimated": False, "convert": None}
+
+
+def test_es_counts(isolated, fake_es, monkeypatch):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(sysdir)
+    for n in ("A (USA).chd", "B (USA).chd"):
+        open(os.path.join(sysdir, n), "w").write("x")
+    monkeypatch.setattr(rommlib, "ES_API", fake_es({"psx": {".chd"}}).url)
+    assert rommlib.es_counts()["psx"] == 2
+    monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")      # ES not running: no counts, no error
+    assert rommlib.es_counts() == {}
+
+
+def _xbox_image(path, offset, tail=b"game data"):
+    """A sparse stand-in for an Xbox image: the XDVDFS magic where an XISO has
+    it, `offset` bytes in (a redump image's game partition)."""
+    with open(path, "wb") as f:
+        f.seek(offset + 0x10000)
+        f.write(rommlib.XDVDFS_MAGIC)
+        f.seek(offset + 0x20000)
+        f.write(tail)
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_make_xiso(isolated, tmp_path, monkeypatch, in_place):
+    if not in_place:
+        monkeypatch.setattr(rommlib, "_collapse_front", lambda p, n: False)     # exFAT/btrfs: copy instead
+    off = rommlib.XBOX_PARTITIONS[2]
+    p = str(tmp_path / "Lorem Odyssey (USA).iso")
+    _xbox_image(p, off)
+    full = os.path.getsize(p)
+    assert rommlib.xbox_partition(p) == off
+    try:
+        dropped = rommlib.make_xiso(p, free=100 * GiB)
+    except Exception:
+        if in_place:
+            pytest.skip("this filesystem can't collapse ranges")
+        raise
+    if in_place and not dropped:
+        pytest.skip("this filesystem can't collapse ranges")
+    assert dropped == off and os.path.getsize(p) == full - off
+    assert rommlib.xbox_partition(p) == 0                      # an XISO now
+    with open(p, "rb") as f:
+        f.seek(0x20000)
+        assert f.read(9) == b"game data"
+    assert rommlib.make_xiso(p) == 0                            # nothing more to do
+    assert rommlib.xbox_cut("xbox", p, {"file_size_bytes": full})
+    assert not rommlib.xbox_cut("xbox", p, {"file_size_bytes": full + 1})
+    assert not rommlib.xbox_cut("ps2", p, {"file_size_bytes": full})
+
+
+def test_make_xiso_leaves_other_files(isolated, tmp_path, monkeypatch):
+    p = tmp_path / "Ipsum.iso"
+    p.write_bytes(b"\0" * 200_000)
+    assert rommlib.xbox_partition(str(p)) is None and rommlib.make_xiso(str(p)) == 0
+    monkeypatch.setattr(rommlib, "_collapse_front", lambda p, n: False)
+    big = str(tmp_path / "Dolor.iso")
+    _xbox_image(big, rommlib.XBOX_PARTITIONS[1])
+    with pytest.raises(rommlib.NoSpace):                        # a copy that doesn't fit: never half-done
+        rommlib.make_xiso(big, free=0)
+    assert rommlib.xbox_partition(big) == rommlib.XBOX_PARTITIONS[1]
+
+
+def test_stem_of():
+    assert rommlib.stem_of("Lorem (USA).iso.squashfs") == "Lorem (USA)"
+    assert rommlib.stem_of("Lorem (USA).squashfs") == "Lorem (USA)"
+    assert rommlib.stem_of("Lorem (v1.02).squashfs") == "Lorem (v1.02)"       # not a disc extension
+    assert rommlib.stem_of("Lorem (USA).chd") == "Lorem (USA)"
+
+
+def test_squashfs_layout_and_setting(isolated, monkeypatch):
+    monkeypatch.setattr(rommlib.shutil, "which", lambda n: "/usr/bin/" + n)
+    iso = _detail([_zip([("Amet.iso", 7 * GiB)])])
+    assert rommlib.disc_layout(iso, "xbox", {"squashfs": False})["convert"] is None
+    assert rommlib.disc_layout(iso, "xbox", {"squashfs": True})["convert"] == "squashfs"
+    assert not rommlib.squashfs_enabled({"squashfs": True}, "ps2")
+    monkeypatch.setattr(rommlib.shutil, "which", lambda n: None)
+    assert not rommlib.squashfs_enabled({"squashfs": True}, "xbox")             # mksquashfs missing
+
+
+def test_xbox_downloads_made_bootable(isolated, monkeypatch):
+    """Make Xbox images bootable: a bare .xiso download becomes .iso (ES lists
+    .iso only), a full redump image keeps its game partition, an XISO is left
+    as it is, and squashfs is queued only when that's on too. Off: untouched."""
+    monkeypatch.setattr(rommlib, "_collapse_front", lambda p, n: False)    # copy path: works on any fs
+    monkeypatch.setattr(rommlib.shutil, "which", lambda n: "/usr/bin/" + n)
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "xbox")
+    os.makedirs(sysdir)
+    cfg = dict(rommlib.DEFAULT_CONFIG)
+    d = rommlib.Downloader(None, rommlib.Library(), cfg, persist=False)
+    d.es = {"xbox": {".iso", ".squashfs"}}
+    monkeypatch.setattr(rommlib, "free_bytes", lambda p=None: 100 * GiB)
+
+    xiso = os.path.join(sysdir, "Lorem (USA).xiso")
+    _xbox_image(xiso, 0)
+    j = rommlib.Job({"id": 1}, "xbox")
+    out = d._postprocess_file(j, xiso)
+    assert out == [os.path.join(sysdir, "Lorem (USA).iso")] and not os.path.exists(xiso)
+    assert rommlib.xbox_partition(out[0]) == 0 and j.chd_task is None          # squashfs is off
+
+    full = os.path.join(sysdir, "Ipsum (USA).iso")
+    _xbox_image(full, rommlib.XBOX_PARTITIONS[0])
+    cfg["squashfs"] = True
+    j = rommlib.Job({"id": 2}, "xbox")
+    assert d._postprocess_file(j, full) == [full]
+    assert rommlib.xbox_partition(full) == 0                                    # cut to the game partition
+    assert json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, j.chd_task)))["mode"] == "squashfs"
+
+    cfg.update(xbox_bootable=False, squashfs=False)
+    other = os.path.join(sysdir, "Dolor (USA).xiso")
+    _xbox_image(other, 0)
+    redump = os.path.join(sysdir, "Sit (USA).iso")
+    _xbox_image(redump, rommlib.XBOX_PARTITIONS[0])
+    assert d._postprocess_file(rommlib.Job({"id": 3}, "xbox"), other) == [other]   # left as .xiso
+    d._postprocess_file(rommlib.Job({"id": 4}, "xbox"), redump)
+    assert rommlib.xbox_partition(redump) == rommlib.XBOX_PARTITIONS[0]           # left full
+
+
+def test_xiso_rename_never_overwrites(isolated, tmp_path):
+    a, b = tmp_path / "Amet.xiso", tmp_path / "Amet.iso"
+    a.write_bytes(b"x")
+    b.write_bytes(b"y")
+    assert rommlib.xiso_to_iso(str(a)) == str(a) and b.read_bytes() == b"y"

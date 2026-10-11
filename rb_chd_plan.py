@@ -4,6 +4,11 @@
   rb_chd_plan.py [--systems psx,dreamcast,...] [--only SUBSTR] [--limit N]
                  [--exclude SUBSTR]... [--dry-run]
 
+Xbox (Settings -> Make Xbox images bootable, on by default): a full redump
+image (xemu can't boot it) is cut to its game partition right away and
+"X.xiso" is renamed "X.iso" (ES lists .iso); with Xbox to squashfs on,
+images are then queued for packing.
+
 Finds cue/gdi (CD systems) and iso (PS2) games that have no CHD yet, groups
 discs into games (a folder holding the disc files, with "(Disc N)" subfolders
 folded into their parent), and writes chd-queue tasks in the given system
@@ -20,19 +25,20 @@ import rommlib  # noqa: E402
 import rb_chd  # noqa: E402
 
 ORDER = ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
-         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii"]
+         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox"]
 SKIP_DIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"}
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 
 def games_for(system):
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
-    if system in rommlib.RVZ_SYSTEMS:                # GameCube/Wii: every image on its own
+    if system in rommlib.RVZ_SYSTEMS | rommlib.SQUASH_SYSTEMS:    # GameCube/Wii/Xbox: every image on its own
+        exts = rommlib.RVZ_SOURCES if system in rommlib.RVZ_SYSTEMS else (".iso", ".xiso")
         out = []
         for dp, dns, fns in os.walk(sysdir):
             dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
             out += [(os.path.join(dp, f), [os.path.join(dp, f)], None) for f in fns
-                    if f.lower().endswith(rommlib.RVZ_SOURCES)]
+                    if f.lower().endswith(exts)]
         return sorted(out, key=lambda x: x[0])
     dvd = system in rommlib.CHD_DVD_SYSTEMS
     found = []
@@ -119,6 +125,32 @@ def main():
                 if not rommlib.rvz_enabled(rommlib.load_config()):
                     continue                     # needs Settings, GameCube and Wii to RVZ
                 mode = "rvz"
+            elif system in rommlib.SQUASH_SYSTEMS:
+                if a.only and a.only.lower() not in root.lower():
+                    continue
+                bootable = rommlib.load_config().get("xbox_bootable", True)
+                if files[0].lower().endswith(".xiso"):
+                    if not bootable:
+                        continue                 # ES doesn't list .xiso; renaming is part of the setting
+                    print("%-9s renamed to .iso: %s%s" % (system, os.path.basename(files[0]),
+                                                         " (dry run)" if a.dry_run else ""))
+                    if not a.dry_run:
+                        files = [rommlib.xiso_to_iso(files[0])]
+                        root = files[0]
+                off = rommlib.xbox_partition(files[0]) if bootable else None
+                if off:                          # a full redump image xemu can't boot
+                    print("%-9s cut to the game partition (-%s): %s%s" % (
+                        system, rommlib.human_size(off), os.path.basename(files[0]),
+                        " (dry run)" if a.dry_run else ""))
+                    if not a.dry_run:
+                        try:
+                            rommlib.make_xiso(files[0])
+                        except (rommlib.NoSpace, OSError) as e:
+                            print("          couldn't: %s" % e)
+                            continue
+                if not rommlib.squashfs_enabled(rommlib.load_config(), system):
+                    continue                     # packing needs Settings, Xbox to squashfs
+                mode = "squashfs"
             else:
                 mode = "createdvd" if files[0].lower().endswith(".iso") else "createcd"
             if a.only and a.only.lower() not in root.lower():

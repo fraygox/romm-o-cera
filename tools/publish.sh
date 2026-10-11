@@ -9,7 +9,9 @@
 # --snapshot: for a public repo with its own (clean) history — adds ONE commit
 # holding the folder's current committed state on top of the remote branch,
 # instead of replaying the monorepo history. Message from -m or $PUBLISH_MSG;
-# author from PUBLISH_AUTHOR_NAME / PUBLISH_AUTHOR_EMAIL (else git config).
+# author from PUBLISH_AUTHOR_NAME / PUBLISH_AUTHOR_EMAIL, else git config
+# publish.authorName / publish.authorEmail (set once in the monorepo so its own
+# user.name never leaks into the public history), else user.name / user.email.
 #   tools/publish.sh --snapshot -m "v1.2.1: ..." https://github.com/you/romm-o-cera.git
 set -euo pipefail
 SNAP=0; MSG=${PUBLISH_MSG:-}
@@ -33,7 +35,8 @@ if [ "$SNAP" = 1 ]; then
     BASE=$(git rev-parse FETCH_HEAD)
     TREE=$(git rev-parse "HEAD:$P")
     [ "$(git rev-parse "$BASE^{tree}")" != "$TREE" ] || { echo "remote already has this tree"; exit 0; }
-    N=${PUBLISH_AUTHOR_NAME:-$(git config user.name)}; E=${PUBLISH_AUTHOR_EMAIL:-$(git config user.email)}
+    N=${PUBLISH_AUTHOR_NAME:-$(git config publish.authorName || git config user.name)}
+    E=${PUBLISH_AUTHOR_EMAIL:-$(git config publish.authorEmail || git config user.email)}
     C=$(printf '%s\n' "$MSG" | GIT_AUTHOR_NAME="$N" GIT_AUTHOR_EMAIL="$E" GIT_COMMITTER_NAME="$N" \
         GIT_COMMITTER_EMAIL="$E" git commit-tree "$TREE" -p "$BASE")
     git log --format='%h %an <%ae> | %s' -2 "$C"

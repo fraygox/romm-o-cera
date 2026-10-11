@@ -18,7 +18,7 @@ import zipfile
 
 import requests
 
-VERSION = "0.6.7"            # changes only for a real GitHub release
+VERSION = "0.6.8"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -92,6 +92,16 @@ CHD_DVD_SYSTEMS = {"ps2", "psp"}
 # on demand: Settings, "GameCube and Wii to RVZ").
 RVZ_SYSTEMS = {"gamecube", "wii"}
 RVZ_SOURCES = (".iso", ".gcm", ".wbfs", ".ciso", ".gcz")
+# Xbox images packed into zstd squashfs (Settings, off by default). Batocera
+# mounts a .squashfs at launch and hands xemu the file inside; xz packs ~5%
+# smaller but reads ~20x slower (whole 1 MB blocks per read), so zstd.
+SQUASH_SYSTEMS = {"xbox"}
+SQUASH_ARGS = ("-comp", "zstd", "-b", "1M", "-noappend", "-quiet")
+# Redump Xbox images: a DVD-video partition, then the game's own XDVDFS
+# partition at one of these offsets (XGD1/2/3). xemu boots only the game
+# partition (an "XISO"); a full redump image shows "Please insert an Xbox disc".
+XBOX_PARTITIONS = (0x18300000, 0xFD90000, 0x2080000)
+XDVDFS_MAGIC = b"MICROSOFT*XBOX*MEDIA"
 
 DEFAULT_CONFIG = {
     "url": "",                 # your RomM, e.g. https://romm.example.com
@@ -107,6 +117,8 @@ DEFAULT_CONFIG = {
     "keep_free_gb": 20,        # downloads and CHD conversions never leave less than this free (GB)
     "extract_parallel": True,  # the next download starts while the last one is being extracted
     "rvz": False,              # convert GameCube/Wii images to RVZ (downloads dolphin-tool when turned on)
+    "xbox_bootable": True,     # Xbox: keep only the game partition xemu boots; "X.xiso" -> "X.iso" (ES lists .iso)
+    "squashfs": False,         # pack Xbox images into zstd squashfs (Batocera mounts them at launch)
     "cache_limit_mb": 1024,    # cover cache size cap; least recently used covers go first (0 = no cap)
     "download_hours": "any",   # "any", or "S-E" local hours (e.g. "1-7"): downloads only run then
     "background_downloads": True,  # keep downloading after the app exits
@@ -506,6 +518,95 @@ def dolphin_tool_path():
 
 def rvz_supported():
     return _machine() in DOLPHIN_TOOLS
+
+
+def xbox_partition(path):
+    """Where an Xbox image's game partition starts: 0 for an XISO (what xemu
+    boots), the offset for a full redump image, None if it's neither."""
+    try:
+        with open(path, "rb") as f:
+            for off in (0,) + XBOX_PARTITIONS:
+                f.seek(off + 0x10000)
+                if f.read(len(XDVDFS_MAGIC)) == XDVDFS_MAGIC:
+                    return off
+    except OSError:
+        pass
+    return None
+
+
+def _collapse_front(path, nbytes):
+    """Drop the first nbytes of a file in place (Linux fallocate collapse-range:
+    no copy, no extra space). False where the filesystem can't (exFAT, btrfs)."""
+    import ctypes
+    import ctypes.util
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        return libc.fallocate(fd, 0x08, ctypes.c_long(0), ctypes.c_long(nbytes)) == 0   # FALLOC_FL_COLLAPSE_RANGE
+    finally:
+        os.close(fd)
+
+
+def make_xiso(path, free=None):
+    """Make a full redump Xbox image bootable: keep only its game partition.
+    In place when the filesystem allows, else through a copy (needs the
+    room). Returns the bytes dropped (0 if it was already an XISO, or isn't
+    an Xbox image); raises NoSpace when a copy doesn't fit."""
+    off = xbox_partition(path)
+    if not off:
+        return 0
+    if _collapse_front(path, off):
+        return off
+    size = os.path.getsize(path)
+    free = free_bytes(os.path.dirname(path)) if free is None else free
+    if free < size - off + SPACE_MARGIN:
+        raise NoSpace(size - off + SPACE_MARGIN - free)
+    tmp = path + ".xiso.part"
+    with open(path, "rb") as src, open(tmp, "wb") as out:
+        src.seek(off)
+        shutil.copyfileobj(src, out, 4 << 20)
+    os.replace(tmp, path)
+    return off
+
+
+def xbox_cut(system, path, romm_file):
+    """An Xbox image this box cut to its game partition (make_xiso): exactly
+    one partition offset smaller than RomM's full disc, and an XISO now."""
+    want = (romm_file or {}).get("file_size_bytes")
+    try:
+        short = want - os.path.getsize(path) if want else None
+    except OSError:
+        return False
+    return system == "xbox" and short in XBOX_PARTITIONS and xbox_partition(path) == 0
+
+
+def xiso_to_iso(path):
+    """ "X.xiso" -> "X.iso" (Batocera lists Xbox games as .iso / .squashfs only).
+    Returns the path the file now has; left alone if an "X.iso" exists."""
+    if not path.lower().endswith(".xiso"):
+        return path
+    new = path[:-5] + ".iso"
+    if os.path.exists(new):
+        log("xbox: %s kept as is: %s exists" % (os.path.basename(path), os.path.basename(new)))
+        return path
+    os.rename(path, new)
+    return new
+
+
+def stem_of(name):
+    """A game file's name without extension. "X.iso.squashfs" -> "X": a disc
+    image packed into squashfs keeps its own extension inside the name."""
+    base, ext = os.path.splitext(name)
+    if ext.lower() == ".squashfs" and os.path.splitext(base)[1].lower() in DISC_EXTS:
+        base = os.path.splitext(base)[0]
+    return base
+
+
+def squashfs_enabled(cfg, system):
+    return system in SQUASH_SYSTEMS and bool((cfg or {}).get("squashfs")) and shutil.which("mksquashfs") is not None
 
 
 def rvz_enabled(cfg):
@@ -1539,7 +1640,7 @@ class Library:
         d = os.path.join(ROMS_ROOT, system)
         try:
             for n in os.listdir(d):
-                stems.add(os.path.splitext(n)[0].lower())
+                stems.add(stem_of(n).lower())
                 stems.add(n.lower())
         except OSError:
             pass
@@ -1590,7 +1691,7 @@ class Library:
         except OSError:
             return out
         for n in names:
-            stem = os.path.splitext(n)[0] if not os.path.isdir(os.path.join(ROMS_ROOT, system, n)) else n
+            stem = stem_of(n) if not os.path.isdir(os.path.join(ROMS_ROOT, system, n)) else n
             low = stem.lower()
             if low == mine or n.lower().endswith((".m3u", ".xml", ".txt")) or strip_tags(low) != title:
                 continue
@@ -1881,6 +1982,75 @@ def es_hashes(system):
     return {g["path"]: g["cheevosHash"] for g in games if g.get("path") and g.get("cheevosHash")}
 
 
+def es_counts():
+    """{system: games EmulationStation lists}; empty if ES can't be asked."""
+    try:
+        return {x["name"]: int(x.get("totalGames") or 0) for x in _es_json("/systems", timeout=3) or []
+                if x.get("name") and x.get("collection") != "true"}
+    except Exception:
+        return {}
+
+
+def disc_layout(detail, system, cfg, accepts=None):
+    """What a download of this game is and becomes, from RomM's full record
+    (files and archive members): {"label": "CUE/BIN, 3 tracks", "discs": n,
+    "unpacked": bytes or None, "estimated": unpacked is a guess,
+    "convert": "CHD" | "RVZ" | "squashfs" | None}. None for a
+    game that isn't a disc image (carts), or when RomM listed no files."""
+    files = (detail or {}).get("files") or []
+    if not files:
+        return None
+    members, sizes_known, archived = [], True, False
+    for f in files:
+        name = f.get("file_name") or ""
+        if os.path.splitext(name)[1].lower() in ARCHIVE_EXTS and system not in ZIP_NATIVE:
+            archived = True
+            inner = f.get("archive_members") or []
+            if not inner:
+                sizes_known = False
+            members += [(m.get("name") or "", m.get("size")) for m in inner]
+        else:
+            members.append((name, f.get("file_size_bytes")))
+    exts = [os.path.splitext(n)[1].lower() for n, _ in members]
+    if not any(e in DISC_EXTS for e in exts):
+        if archived and not sizes_known and system in EXPANDS:     # an archive RomM didn't list
+            return {"label": "", "discs": 0, "unpacked": space_needed(detail, system), "estimated": True,
+                    "convert": None}
+        return None
+    count = exts.count
+    kinds = []
+    if count(".cue"):
+        tracks = count(".bin")
+        kinds.append("CUE/BIN" + (", %d tracks" % tracks if tracks > count(".cue") else ""))
+    if count(".gdi"):
+        kinds.append("GDI, %d tracks" % (len(exts) - count(".gdi")) if len(exts) > count(".gdi") + 1 else "GDI")
+    for e in (".iso", ".chd", ".rvz", ".wbfs", ".gcz", ".ciso", ".cso", ".pbp", ".ccd", ".cdi"):
+        if count(e):
+            kinds.append(e[1:].upper())
+    discs = count(".cue") + count(".gdi") + count(".iso") + count(".chd") + count(".rvz") + count(".wbfs") \
+        + count(".cso") + count(".cdi")
+    unpacked, estimated = None, False
+    if archived and sizes_known and all(s for _, s in members):
+        unpacked = sum(s for _, s in members)        # loose files are in members too
+    elif archived:
+        unpacked, estimated = space_needed(detail, system), True     # RomM didn't list sizes
+    ok = accepts or (lambda s, e: True)
+    convert = None
+    if system in RVZ_SYSTEMS:
+        if rvz_enabled(cfg) and ok(system, ".rvz") and any(e in RVZ_SOURCES for e in exts):
+            convert = "RVZ"
+    elif system in SQUASH_SYSTEMS:
+        if squashfs_enabled(cfg, system) and ok(system, ".squashfs") and ".iso" in exts:
+            convert = "squashfs"
+    elif (cfg or {}).get("chd", True) and ok(system, ".chd"):
+        if system in CHD_CD_SYSTEMS and any(e in (".cue", ".gdi") for e in exts):
+            convert = "CHD"
+        elif system in CHD_DVD_SYSTEMS and ".iso" in exts:
+            convert = "CHD"
+    return {"label": ", ".join(kinds), "discs": discs, "unpacked": unpacked, "estimated": estimated,
+            "convert": convert}
+
+
 TAG_RE = re.compile(r"\(([^)]*)\)")
 NOT_THE_GAME = ("demo", "beta", "proto", "sample", "kiosk", "unl", "pirate", "hack")
 
@@ -2105,7 +2275,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                         "sectors; some discs list dummy files)" % ("{:,}".format(cut[0]), "{:,}".format(cut[1])),
                         irom, "differs")
             # 2) against RomM's record of the game
-            stem = n if os.path.isdir(path) else os.path.splitext(n)[0]
+            stem = n if os.path.isdir(path) else stem_of(n)
             rom = index.get(low) or index.get(stem.lower())
             if not rom:
                 stats["unmatched"] += 1
@@ -2171,6 +2341,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 if not os.path.exists(fp):
                     if st not in chds:
                         add(system, fp, "Missing file: %s" % os.path.basename(fp), rom)
+                elif xbox_cut(system, fp, f):
+                    continue          # cut to its game partition here: RomM's size and hashes are the full disc's
                 elif f.get("file_size_bytes") and os.path.getsize(fp) != f["file_size_bytes"]:
                     small = os.path.getsize(fp) < f["file_size_bytes"]
                     # a smaller .iso is usually a trimmed image (plays); a short
@@ -3304,8 +3476,25 @@ class Downloader:
         exts = self.es.get(system)
         return True if exts is None else ext.lower() in exts
 
+    def _xbox_names(self, system, roots):
+        """Make Xbox images bootable, part 1: "X.xiso" -> "X.iso" before anything
+        filters by extension (ES lists .iso, not .xiso). Returns the roots."""
+        if system != "xbox" or not self.cfg.get("xbox_bootable", True):
+            return roots
+        out = []
+        for r in roots:
+            if os.path.isdir(r):
+                for dp, _, fns in os.walk(r):
+                    for fn in fns:
+                        xiso_to_iso(os.path.join(dp, fn))
+                out.append(r)
+            else:
+                out.append(xiso_to_iso(r))
+        return out
+
     def _postprocess_file(self, j, path):
         j.chd_task = None
+        path = self._xbox_names(j.system, [path])[0]
         ext = os.path.splitext(path)[1].lower()
         system = j.system
         if ext not in ARCHIVE_EXTS or system in ZIP_NATIVE:
@@ -3335,12 +3524,14 @@ class Downloader:
             out = [target]
         else:
             out = [os.path.join(sysdir, list(top)[0])]
+        out = self._xbox_names(system, out)
         playable = self._playable_paths(system, out)
         self._maybe_chd(j, system, playable, out)
         return out
 
     def _postprocess_folder(self, j, folder):
         j.chd_task = None
+        self._xbox_names(j.system, [folder])
         self._maybe_chd(j, j.system, self._playable_paths(j.system, [folder]), [folder])
         return [folder]
 
@@ -3406,6 +3597,23 @@ class Downloader:
                 raise RommError("7z extract failed (rc %d)" % rc)
 
     def _maybe_chd(self, j, system, playable, roots):
+        if system == "xbox":
+            for p in playable if self.cfg.get("xbox_bootable", True) else []:
+                if p.lower().endswith(".iso"):
+                    try:
+                        cut = make_xiso(p)
+                    except (NoSpace, OSError) as e:
+                        log("xbox: %s left as a full disc image (%s); rb_chd_plan.py can fix it later"
+                            % (os.path.basename(p), e))
+                        continue
+                    if cut:
+                        log("xbox: %s: kept the game partition (xemu can't boot a full disc image), "
+                            "-%s" % (os.path.basename(p), human_size(cut)))
+            if squashfs_enabled(self.cfg, system) and self._accepts(system, ".squashfs"):
+                srcs = [p for p in playable if p.lower().endswith(".iso")]
+                if srcs:
+                    self._queue_conversion(j, system, "squashfs", srcs, roots)
+            return
         if system in RVZ_SYSTEMS:
             if not rvz_enabled(self.cfg) or not self._accepts(system, ".rvz"):
                 return

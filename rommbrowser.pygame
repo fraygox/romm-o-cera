@@ -149,6 +149,14 @@ def arc(surf, color, rect, a0, a1, width=1):
     pygame.draw.arc(surf, color, SR(rect), a0, a1, max(1, S(width)))
 
 
+def installed_mark(surf, center, radius=9):
+    """The green tick for "on this box"."""
+    x, y = center
+    k = radius / 9
+    circle(surf, GREEN, center, radius)
+    polyline(surf, BG, [(x - 4 * k, y), (x - k, y + 3 * k), (x + 4 * k, y - 3 * k)], 2)
+
+
 def _wide(ch):
     return ord(ch) >= 0x2E80        # CJK, kana, hangul, fullwidth forms
 
@@ -822,6 +830,8 @@ class App:
         self.fps = FPS if K <= 1.5 else 30   # 4K software blits: 30 fps is plenty for menus
         self.canvas = pygame.Surface((S(W), S(H)))
         self.scaled_covers = {}
+        self.details, self.detail_busy = {}, False     # RomM's full record per rom id (files, archive members)
+        self.es_count = {}                             # {system: games ES lists}, refreshed by Platforms
         self.fonts = Fonts()
         FONTS["f"] = self.fonts
         self.cfg = rommlib.load_config()
@@ -911,6 +921,62 @@ class App:
         p = self.platform_by_id.get(rom.get("platform_id"))
         return p["_system"] if p else None
 
+    def free_after_queue(self):
+        """Free space once the queue already waiting has landed (None if unknown)."""
+        try:
+            st = os.statvfs(rommlib.ROMS_ROOT)
+        except OSError:
+            return None
+        return st.f_bavail * st.f_frsize - rommlib.queue_forecast(
+            self.downloader.jobs, 0, 0, self.cfg.get("chd", True))["need"]
+
+    def plan_text(self, rom, system):
+        """One game's download in a sentence: size, unpacked size, conversion,
+        where it goes and the space left afterwards."""
+        size = rom.get("fs_size_bytes") or 0
+        lay = self.layout(rom)
+        parts, lands = ["%s to download" % human_size(size)], size
+        if lay and lay["unpacked"]:
+            lands = lay["unpacked"]
+            parts.append("%s%s once unpacked" % ("about " if lay["estimated"] else "", human_size(lands)))
+        elif (rom.get("fs_extension") or "").lower() in ("zip", "7z", "rar") and system in rommlib.EXPANDS:
+            lands = rommlib.space_needed(rom, system)
+            parts.append("about %s once unpacked" % human_size(lands))
+        if lay and lay["convert"]:
+            parts.append("then compressed to %s in the background" % lay["convert"])
+        out = ", ".join(parts) + ". Saved to roms/%s" % system
+        after, keep = self.free_after_queue(), rommlib.keep_free_bytes(self.cfg)
+        if after is not None:
+            after -= lands
+            out += ("; %s free afterwards" % human_size(after) if after >= keep else
+                    "; it waits for space (keeping %s free)" % human_size(keep))
+        return out + "."
+
+    def detail(self, rom):
+        """RomM's full record for rom ({} if it couldn't be fetched), or None
+        while it's being fetched. One fetch at a time: scrolling past a list
+        fetches only where the selection stops."""
+        rid = rom["id"]
+        if rid in self.details or self.detail_busy:
+            return self.details.get(rid)
+        self.detail_busy = True
+
+        def keep(d):
+            self.detail_busy = False
+            if len(self.details) > 400:
+                self.details.clear()
+            self.details[rid] = d or {}
+        self.bg(lambda: self.api.rom(rid), keep, lambda e: keep({}))
+        return None
+
+    def layout(self, rom):
+        """rommlib.disc_layout for rom once its record is here, else None."""
+        system = self.system_for(rom)
+        d = self.detail(rom)
+        if not (d and system):
+            return None
+        return rommlib.disc_layout(d, system, self.cfg, self.downloader._accepts)
+
     def cover(self, rom):
         rid = rom["id"]
         c = self.covers.get(rid)
@@ -960,6 +1026,7 @@ class App:
             self.downloader.api = self.api
             self.covers.clear()
             self.scaled_covers.clear()
+            self.details.clear()
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
             self.status, self.error = "Connecting…", None
             self.load_platforms()
@@ -1084,13 +1151,7 @@ class App:
         items = [(r, app.system_for(r)) for r in roms]
         need = sum(rommlib.space_needed(r, sy) for r, sy in items)
         keep = rommlib.keep_free_bytes(app.cfg)
-        try:
-            st = os.statvfs(rommlib.ROMS_ROOT)
-            # what the queue already waiting will take isn't free for these
-            free = st.f_bavail * st.f_frsize - rommlib.queue_forecast(
-                app.downloader.jobs, 0, 0, app.cfg.get("chd", True))["need"]
-        except OSError:
-            free = None
+        free = app.free_after_queue()
 
         def go(chosen):
             if after:
@@ -1439,15 +1500,7 @@ class App:
         top.draw(c)
         # footer
         hline(c, LINE, (0, H - 46), (W, H - 46))
-        fx = 24
-        for btn, label in top.hints():
-            x0 = fx
-            fx += button_glyph(c, self.fonts, btn, fx, H - 34) + 8
-            r = text(c, self.fonts.small, label, (fx, H - 23), DIM, "midleft")
-            if btn in TOKEN_ACTION:
-                self.hit((x0 - 8, H - 46, r.right - x0 + 16, 46), lambda a=TOKEN_ACTION[btn]: self.dispatch(a))
-            fx = r.right + 22
-        # right side: the two global buttons, then the version
+        # right side first (the two global buttons, then the version): the hints get what's left
         rx = W - 24
         r = text(c, self.fonts.small, "v" + rommlib.VERSION_LABEL, (rx, H - 23), FAINT, "midright")
         rx = r.left - 28
@@ -1463,6 +1516,22 @@ class App:
             self.hit((r.left - 16 - gw, H - 46, r.width + gw + 24, 46),
                      lambda a=TOKEN_ACTION[btn]: self.dispatch(a))
             rx = r.left - 8 - gw - 22
+        hints = top.hints()
+
+        def width(hs):
+            return sum(glyph_width(self.fonts, b) + 8 + measure(self.fonts.small, lab) + 22 for b, lab in hs)
+        if 24 + width(hints) > rx:                   # too long: page up/down go first (L1/R1 still work)
+            hints = [h for h in hints if h[0] not in ("L", "R")]
+        fx = 24
+        for btn, label in hints:
+            if fx + glyph_width(self.fonts, btn) + 8 + measure(self.fonts.small, label) > rx:
+                break
+            x0 = fx
+            fx += button_glyph(c, self.fonts, btn, fx, H - 34) + 8
+            r = text(c, self.fonts.small, label, (fx, H - 23), DIM, "midleft")
+            if btn in TOKEN_ACTION:
+                self.hit((x0 - 8, H - 46, r.right - x0 + 16, 46), lambda a=TOKEN_ACTION[btn]: self.dispatch(a))
+            fx = r.right + 22
         self.modal_from = len(self.targets)
         if self.modal:
             self.modal.draw(c)
@@ -1537,7 +1606,7 @@ class HomeScreen(Screen):
              ("recent", "Recently added", "Newest games in the library"),
              ("downloads", "Downloads", "Queue and progress"),
              ("installed", "On this box", "Your games, sizes, and a check for damaged ones"),
-             ("settings", "Settings", "Server, token, buttons, CHD, cache"),
+             ("settings", "Settings", "Server, controller, downloads, compression"),
              ("exit", "Exit", "Back to EmulationStation")]
 
     def __init__(self, app):
@@ -1681,6 +1750,7 @@ class PlatformScreen(Screen):
         super().__init__(app)
         self.sel = 0
         self.scroll = 0
+        app.bg(rommlib.es_counts, lambda n: setattr(app, "es_count", n), lambda e: None)
 
     def crumbs(self):
         return ["Platforms"]
@@ -1730,13 +1800,21 @@ class PlatformScreen(Screen):
             lines = wrap(self.f.h3, name, r.width - 36, 2)
             for k, ln in enumerate(lines):
                 text(c, self.f.h3, ln, (r.left + 18, r.top + 14 + k * 24), TEXT if on else DIM)
-            text(c, self.f.small, "{:,} games".format(p["rom_count"]),
-                 (r.left + 18, r.bottom - 28), DIM if on else FAINT)
             tag = "roms/" + p["_system"]
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(r.right - tw - 14, r.bottom - 30, tw, 20)
             rrect(c, BG2, tr, 6)
             text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+            room = tr.left - 10                   # the left side never runs into the tag
+            games = "{:,} games".format(p["rom_count"])
+            if r.left + 18 + measure(self.f.small, games) > room:
+                games = "{:,}".format(p["rom_count"])
+            text(c, self.f.small, games, (r.left + 18, r.bottom - 28), DIM if on else FAINT)
+            here = self.app.es_count.get(p["_system"])
+            hx = r.left + 18 + measure(self.f.small, games) + 16
+            if here and hx + 11 + measure(self.f.small, "{:,}".format(here)) <= room:
+                installed_mark(c, (hx, r.bottom - 19), 7)     # games EmulationStation lists there
+                text(c, self.f.small, "{:,}".format(here), (hx + 11, r.bottom - 28), GREEN)
         # scrollbar
         total_rows = (len(plats) + self.COLS - 1) // self.COLS
         if total_rows > rows_vis:
@@ -2496,9 +2574,7 @@ class GameListScreen(Screen):
                 if picked:
                     polyline(c, TEXT, [(ix - 4, r.centery), (ix - 1, r.centery + 3), (ix + 4, r.centery - 3)], 2)
             elif st == "installed":
-                circle(c, GREEN, (ix, r.centery), 9)
-                polyline(c, BG, [(ix - 4, r.centery), (ix - 1, r.centery + 3),
-                                                 (ix + 4, r.centery - 3)], 2)
+                installed_mark(c, (ix, r.centery))
             elif st == "active":
                 frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
                 circle(c, LINE, (ix, r.centery), 9, 2)
@@ -2583,13 +2659,22 @@ class GameListScreen(Screen):
         year = ""
         if md.get("first_release_date"):
             year = time.strftime("%Y", time.gmtime(md["first_release_date"] / 1000))
+        size, fmt = human_size(rom.get("fs_size_bytes")), ""
+        lay = app.layout(rom)
+        if lay:
+            if lay["unpacked"]:
+                size += " · %s%s unpacked" % ("~" if lay["estimated"] else "", human_size(lay["unpacked"]))
+            fmt = ("%d discs, " % lay["discs"] if lay["discs"] > 1 else "") + lay["label"]
+            if fmt and lay["convert"]:
+                fmt += " (becomes %s)" % lay["convert"]        # Rubik has no arrow glyph
         facts = [
             ("Platform", (plat.get("display_name") or plat["name"]) if plat else
              (rom.get("platform_display_name") or "?")),
             ("Released", year),
             ("Genre", ", ".join((md.get("genres") or [])[:2])),
             ("Players", md.get("player_count") or ""),
-            ("Size", human_size(rom.get("fs_size_bytes"))),
+            ("Size", size),
+            ("Format", fmt),
             ("Achievements", ("%d · %d points" % ra) if (ra := rommlib.ra_summary(rom)) and ra[0] else ""),
             ("Manual", "Included" if rommlib.manual_path(rom) else ""),
         ]
@@ -3220,6 +3305,10 @@ class SettingsScreen(Screen):
             ("chd", "Compress disc games to CHD", onoff(cfg.get("chd", True)),
              "CD systems, PS2 and PSP, in the background"),
             ("rvz", "GameCube and Wii to RVZ", rvz["label"], rvz["help"]),
+            ("xboxboot", "Make Xbox images bootable", onoff(cfg.get("xbox_bootable", True)),
+             "Game partition only; .xiso renamed to .iso"),
+            ("squashfs", "Xbox to squashfs", onoff(cfg.get("squashfs")) if shutil.which("mksquashfs")
+             else "Not available", "Packed smaller; Batocera opens it at launch"),
             ("chdthreads", "Compression threads",
              ("Auto (%d of %d)" % (rommlib.auto_chd_threads(), rommlib.cpu_threads()))
              if str(cfg.get("chd_threads", "auto")) == "auto" else
@@ -3229,7 +3318,7 @@ class SettingsScreen(Screen):
              onoff(rommlib.chd_low_memory(cfg)) +
              ((" (auto, %s RAM)" % human_size(rommlib.total_ram()) if rommlib.total_ram() else " (auto)")
               if not isinstance(cfg.get("chd_low_memory", "auto"), bool) else ""),
-             "Avoids chdman's FLAC memory leak; CD audio a bit bigger"),
+             "Skips chdman's leaky FLAC codec for CDs"),
             sec("This app"),
             ("sounds", "Sounds", {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(
                 cfg.get("sounds", "normal"), "On"), "Clicks and chimes in this app"),
@@ -3390,6 +3479,17 @@ class SettingsScreen(Screen):
                 app.downloader.cfg = cfg
             elif key == "rvz":
                 self._toggle_rvz()
+            elif key == "xboxboot":
+                cfg["xbox_bootable"] = not cfg.get("xbox_bootable", True)
+                app.apply_config()
+                app.downloader.cfg = cfg
+            elif key == "squashfs":
+                if not shutil.which("mksquashfs"):
+                    app.toast("mksquashfs isn't on this system", AMBER)
+                else:
+                    cfg["squashfs"] = not cfg.get("squashfs")
+                    app.apply_config()
+                    app.downloader.cfg = cfg
             elif key == "credits" and a == "ok":
                 app.push(CreditsScreen(app))
             elif key == "chd":
@@ -3617,6 +3717,14 @@ SETTING_HELP = {
     "rvz": "Turns GameCube and Wii images into RVZ: lossless and usually 30-60% smaller, checked "
            "against the original before it's deleted. Needs dolphin-tool (about 8 MB, GPL), downloaded "
            "once when you turn this on.",
+    "squashfs": "Packs Xbox games into a squashfs file, usually 15-45% smaller; Batocera opens it when "
+                "the game starts. Lossless: the image inside is checked against the original before it's "
+                "deleted. Packing takes a few minutes of CPU per game. Needs Make Xbox images bootable "
+                "for full disc images (a packed one xemu can't boot would be no use).",
+    "xboxboot": "xemu boots only an Xbox disc's game partition: a full disc image (as Redump keeps "
+                "them) shows \"Please insert an Xbox disc\". This keeps just the game partition, in place "
+                "where the drive allows, and renames .xiso files to .iso so EmulationStation lists them. "
+                "Images that are already bootable are left as they are.",
     "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the "
                   "menus.",
     "chdlowmem": "chdman's FLAC codec leaks memory on some builds. On boxes under 4 GB RAM this is on by "
@@ -3749,12 +3857,12 @@ class InstalledScreen(Screen):
         return ["On this box"]
 
     def hints(self):
-        return [("A", "Delete"), ("X", "Check / space"), ("Y", "BIOS files"), ("L", "Page up"),
+        return [("A", "Delete"), ("X", "Check & disk space"), ("Y", "BIOS files"), ("L", "Page up"),
                 ("R", "Page down"), ("B", "Back")]
 
     def check_menu(self):
         app = self.app
-        app.modal = ActionMenu(app, "Check games and disk space", [
+        app.modal = ActionMenu(app, "Check & disk space", [
             ("Quick check", "Missing tracks, damaged zips, sizes against RomM",
              lambda: app.push(AuditScreen(app, deep=False))),
             ("Full check", "Also checksums every file and verifies CHDs. Slow: hours for a big library",
@@ -3819,7 +3927,7 @@ class InstalledScreen(Screen):
         text(c, self.f.h3, "%d game%s from RomM use%s %s. %s free." % (
             len(self.items), "" if len(self.items) == 1 else "s", "s" if len(self.items) == 1 else "",
             human_size(sum(i["size"] for i in self.items)), free), (56, 86), TEXT)
-        lab = "{X} Check for damaged games"
+        lab = "{X} Check & disk space"
         rich_text(c, self.f, self.f.small, lab, (W - 56 - 250, 89), ACCENT_HI)
         if not self.items:
             text(c, self.f.body, "Nothing installed by RomM-o-Cera yet. Games copied over another way "
@@ -3859,7 +3967,7 @@ class ConversionsScreen(Screen):
     left), the queue, and recent results (retry a failed one). The worker
     (rb_chd.py) publishes chd-current.json and chd-results.jsonl."""
     ROW_H = 60
-    MODES = {"createcd": "CHD", "createdvd": "CHD", "rvz": "RVZ"}
+    MODES = {"createcd": "CHD", "createdvd": "CHD", "rvz": "RVZ", "squashfs": "squashfs"}
 
     def __init__(self, app):
         super().__init__(app)
@@ -4028,6 +4136,8 @@ class StorageScreen(Screen):
     """Space per system: RomM-o-Cera's games, other games, and media (covers,
     videos, manuals). A: free up space in that system."""
     ROWS, ROW_H = 9, 58
+    PARTS = (("ours", ACCENT), ("other", BLUE), ("media", FAINT))
+    LABELS = {"ours": "From RomM-o-Cera", "other": "Added another way", "media": "Media"}
 
     def __init__(self, app):
         super().__init__(app)
@@ -4125,17 +4235,16 @@ class StorageScreen(Screen):
             if on:
                 focus_box(c, r)
             text(c, self.f.row, r_["system"], (r.left + 22, r.top + 6), TEXT if on else DIM)
-            parts = []
-            if r_["ours"]:
-                parts.append("RomM-o-Cera %s" % human_size(r_["ours"]))
-            if r_["other"]:
-                parts.append("other %s" % human_size(r_["other"]))
-            if r_["media"]:
-                parts.append("media %s" % human_size(r_["media"]))
-            text(c, self.f.small, " · ".join(parts), (r.left + 22, r.top + 32), FAINT, maxw=540)
+            x, ty = r.left + 22, r.top + 32      # each part's dot is its colour in the bar: the legend
+            for key, col in self.PARTS:
+                if r_[key] and x < r.left + 560:
+                    circle(c, col, (x + 5, ty + 9), 5)
+                    lab = "%s %s" % (self.LABELS[key], human_size(r_[key]))
+                    text(c, self.f.small, lab, (x + 13, ty), FAINT)
+                    x += 13 + measure(self.f.small, lab) + 18
             bx, bw = r.left + 600, r.width - 760
             x = bx
-            for key, col in (("ours", ACCENT), ("other", BLUE), ("media", FAINT)):
+            for key, col in self.PARTS:
                 w = int(bw * r_[key] / big)
                 if w:
                     rrect(c, col, (x, r.centery - 5, w, 10), 4)
@@ -4995,7 +5104,7 @@ class DownloadConfirm(Confirm):
         if st[0] == "active":
             super().__init__(app, name, "Already downloading.", "OK", lambda: None)
             return
-        body = "%s, saved to roms/%s." % (human_size(rom.get("fs_size_bytes")), system)
+        body = app.plan_text(rom, system)
         if st[0] == "installed":
             body = "Already on this box. Download again anyway?  " + body
         var = app.library.variants(rom, system)
