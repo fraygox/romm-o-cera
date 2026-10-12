@@ -1171,7 +1171,16 @@ class App:
 
     def toast(self, msg, color=None):
         color = TEXT if color is None else color
-        self.toasts.append([msg, color, time.time() + 3.5])
+        now = time.time()
+        last = self.toasts[-1] if self.toasts else None
+        if last and last[0] == msg and last[1] == color and last[2] > now:
+            burst = last[2] - 3.5 > now - 0.5    # e.g. every load of a screen failing at once: one sound
+            last[2] = now + 3.5                  # the same message again: one toast, its time renewed, ×N
+            last[3] += 1
+            if burst:
+                return
+        else:
+            self.toasts.append([msg, color, now + 3.5, 1])
         if color == RED:
             self.sfx.play("deny")
         elif msg.startswith("Ready"):
@@ -1912,7 +1921,10 @@ class App:
         now = time.time()
         self.toasts = [t for t in self.toasts if t[2] > now][-3:]
         y = H - 64
-        for msg, color, _ in reversed(self.toasts):
+        for t in reversed(self.toasts):
+            msg, color = t[0], t[1]
+            if t[3] > 1:
+                msg = "%s  ×%d" % (msg, t[3])
             w = min(900, rich_width(self.fonts, self.fonts.body, msg) + 52)
             r = pygame.Rect(0, 0, w, 40)
             r.midbottom = (W // 2, y)
@@ -3482,17 +3494,29 @@ class DownloadsScreen(ListScreen):
             e.append(("Download now", "Start this one anyway (download hours / Pause all)", lambda: d.force_job(j)))
         if j.active:
             e.append(("Pause", "Keeps the partial file; resume any time", lambda: d.pause_job(j)))
-            e.append(("Cancel download", "", lambda: setattr(app, "modal", Confirm(
-                app, "Cancel download?", j.label, "Cancel download", lambda: d.cancel_job(j), danger=True))))
+            e.append(("Cancel download", "", lambda: self.confirm_cancel(j)))
         elif j.state == J.PAUSED:
             e.append(("Resume", "", lambda: d.resume_job(j)))
-            e.append(("Cancel download", "", lambda: d.cancel_job(j)))
+            e.append(("Cancel download", "Deletes the part downloaded so far", lambda: self.confirm_cancel(j)))
         elif j.state in (J.FAILED, J.CANCELLED):
             e.append(("Retry" if j.state == J.FAILED else "Download again", j.message, lambda: d.resume_job(j)))
             e.append(("Remove from the list", "", lambda: d.remove(j)))
         else:                                      # done
             e.append(("Remove from the list", "The game stays on the box", lambda: d.remove(j)))
         app.modal = ActionMenu(app, j.label, e)
+
+    def confirm_cancel(self, j):
+        """Cancelling deletes the partial file, paused or not: ask first, and say how much goes."""
+        app, d = self.app, self.app.downloader
+        got = max(d.part_bytes(j), j.done_bytes)
+        if got:
+            body = "%s: the %s downloaded so far%s is deleted." % (
+                j.label, human_size(got), " (of %s)" % human_size(j.total_bytes) if j.total_bytes else "")
+            if j.state == rommlib.Job.PAUSED:
+                body += " Back keeps it, to resume later."
+        else:
+            body = "%s: nothing is downloaded yet." % j.label
+        app.modal = Confirm(app, "Cancel download?", body, "Cancel download", lambda: d.cancel_job(j), danger=True)
 
     def status(self, j):
         """(text, colour) for a row."""
@@ -5107,10 +5131,27 @@ class OnThisBoxScreen(Screen):
         self.foot(c, p, "To do one system: its game list, then {X}")
 
 
-def compress_scan():
-    """Games here that could still be compressed (see rb_chd_plan.candidates)."""
+def compress_scan(skipped=None):
+    """Games here that could still be compressed (see rb_chd_plan.candidates);
+    skipped gets (system, file, reason) for the ones that can't be."""
     import rb_chd_plan
-    return rb_chd_plan.candidates()
+    return rb_chd_plan.candidates(skipped=skipped)
+
+
+def cant_convert_rows(skipped):
+    """[{"system", "n", "size", "skipped": [(file, reason)], "cant": True}] in the planner's order:
+    images a converter applies to but that can't be converted (an encrypted dump, a bad .cso…)."""
+    by = {}
+    for system, f, why in skipped:
+        r = by.setdefault(system, {"system": system, "n": 0, "size": 0, "skipped": [], "cant": True,
+                                   "enabled": False})
+        r["n"] += 1
+        try:
+            r["size"] += os.path.getsize(f)
+        except OSError:
+            pass
+        r["skipped"].append((f, why))
+    return list(by.values())
 
 
 def compress_by_system(cands):
@@ -5165,16 +5206,21 @@ class CompressScreen(ListScreen):
 
     def __init__(self, app):
         super().__init__(app)
-        self.cands = None
+        self.cands, self.rows = None, []
         self.sel = self.scroll = 0
 
     def enter(self):
         self.load_error = None
-        self.app.bg(compress_scan, self._loaded, self.load_failed("cands"))
+        failed = self.load_failed("cands")
 
-    def _loaded(self, cands):
+        def scan():
+            skipped = []
+            return compress_scan(skipped), skipped
+        self.app.bg(scan, lambda r: self._loaded(*r), lambda e: (setattr(self, "rows", []), failed(e)))
+
+    def _loaded(self, cands, skipped=()):
         self.cands = cands
-        self.rows = compress_by_system(cands)
+        self.rows = compress_by_system(cands) + cant_convert_rows(skipped)    # those it can't: last, never queued
         self.clamp()
 
     def listed(self):
@@ -5184,19 +5230,26 @@ class CompressScreen(ListScreen):
         return self.trail("Compress")
 
     def hints(self):
-        if not self.cands:
+        if not self.rows:
             return [("B", "Back")]
         r = self.rows[self.sel]
+        if r.get("cant"):
+            return [("A", "Why"), ("B", "Back")]
         return [("A", "Games")] + ([("X", "Compress all %s" % r["system"])] if r["enabled"] else []) + \
             [("B", "Back")]
 
     def action(self, a):
-        if not self.cands:
+        if not self.rows:
             return super().action(a)
         if self.nav(a):
             return
         r = self.rows[self.sel]
-        if a == "ok":
+        if r.get("cant") and a in ("ok", "x"):
+            if a == "ok":
+                self.app.push(CantConvertScreen(self.app, r["system"], r["skipped"]))
+            else:
+                self.app.toast("These can't be converted: {A} shows why", AMBER)
+        elif a == "ok":
             self.app.push(CompressSystemScreen(self.app, r["system"]))
         elif a == "x":
             if not r["enabled"]:
@@ -5216,16 +5269,24 @@ class CompressScreen(ListScreen):
         if not self.cands:
             text(c, self.f.h3, "Nothing left to compress.", (56, 86), GREEN)
             text(c, self.f.body, "Every disc game here that a converter supports is compressed already, "
-                 "or queued. Formats with a Settings switch (RVZ, squashfs, .zcci, .zar) show up once it's on.",
-                 (56, 124), DIM, maxw=W - 112)
-            return
-        ok = [r for r in self.rows if r["enabled"]]
-        text(c, self.f.h3, "%s could be smaller, %s to work through" % (
-            plural(sum(r["n"] for r in ok), "game"), human_size(sum(r["size"] for r in ok))), (56, 86), TEXT)
-        for i, r, on in self.row_rects(124):
+                 "or queued. Formats with a Settings switch (RVZ, squashfs, .zcci, .zar, PS3 folders) show "
+                 "up once it's on.", (56, 124), DIM, maxw=W - 112)
+            if not self.rows:
+                return
+        else:
+            ok = [r for r in self.rows if r["enabled"]]
+            text(c, self.f.h3, "%s could be smaller, %s to work through" % (
+                plural(sum(r["n"] for r in ok), "game"), human_size(sum(r["size"] for r in ok))), (56, 86), TEXT)
+        for i, r, on in self.row_rects(164 if not self.cands else 124):
             r_ = self.rows[i]
             if on:
                 focus_box(c, r)
+            if r_.get("cant"):
+                text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), TEXT if on else DIM)
+                text(c, self.f.small, "%s, %s · left as they are" % (plural(r_["n"], "game"),
+                     human_size(r_["size"])), (r.left + 22, r.top + 30), FAINT, maxw=r.width - 200)
+                text(c, self.f.small, "can't convert", (r.right - 20, r.centery), AMBER, "midright")
+                continue
             col = (TEXT if on else DIM) if r_["enabled"] else FAINT
             text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), col)
             sub = "%s, %s" % (plural(r_["n"], "game"), human_size(r_["size"]))
@@ -5233,6 +5294,47 @@ class CompressScreen(ListScreen):
                  (r.left + 22, r.top + 30), FAINT, maxw=r.width - 200)
             text(c, self.f.small, ("to " + r_["label"]) if r_["enabled"] else "needs a setting",
                  (r.right - 20, r.centery), ACCENT_HI if r_["enabled"] else FAINT, "midright")
+
+
+class CantConvertScreen(ListScreen):
+    """One system's images a converter applies to but can't convert (an
+    encrypted 3DS dump, a PS3 disc without its key, a damaged .cso…), each
+    with the reason. Nothing to do here: they're left as they are."""
+    ROWS, ROW_H = 9, 58
+
+    def __init__(self, app, system, skipped):
+        super().__init__(app)
+        self.system, self.items = system, list(skipped)
+        self.sel = self.scroll = 0
+
+    def crumbs(self):
+        return self.trail("%s: can't convert" % self.system)
+
+    def hints(self):
+        return [("L", "Page up"), ("R", "Page down"), ("B", "Back")] if len(self.items) > self.ROWS \
+            else [("B", "Back")]
+
+    def action(self, a):
+        if not self.nav(a):
+            super().action(a)
+
+    def draw(self, c):
+        text(c, self.f.h3, "%s in roms/%s can't be converted" % (plural(len(self.items), "game"), self.system),
+             (56, 86), TEXT)
+        text(c, self.f.small, "They're left as they are. Fix or replace the file (for example a decrypted "
+             "dump, or the disc's key in bios/ps3keys) and it shows up in Compress.", (56, 120), DIM, maxw=W - 112)
+        for i, r, on in self.row_rects(156):
+            f, why = self.items[i]
+            if on:
+                focus_box(c, r)
+            text(c, self.f.row, os.path.basename(f), (r.left + 22, r.top + 5), TEXT if on else DIM,
+                 maxw=r.width - 200)
+            text(c, self.f.small, why[:1].upper() + why[1:], (r.left + 22, r.top + 30), AMBER, maxw=r.width - 200)
+            try:
+                size = human_size(os.path.getsize(f))
+            except OSError:
+                size = ""
+            text(c, self.f.small, size, (r.right - 20, r.centery), DIM, "midright")
 
 
 class CompressSystemScreen(ListScreen):

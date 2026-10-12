@@ -213,6 +213,31 @@ def fake_unseen():
     mk("psx/Elit Notes.xyz", 1 * MB)
 
 
+ENC3DS = os.path.join(R, "3ds", "Lorem Cart (Encrypted).3ds")
+
+
+def encrypted_3ds():
+    """A 3DS dump Z3DS can't pack (its NCCH says encrypted): Compress lists it as can't convert.
+    reset() removes it, so it shows up in the Compress scenes only."""
+    os.makedirs(os.path.dirname(ENC3DS), exist_ok=True)
+    h = bytearray(0x200)
+    h[0x100:0x104] = b"NCCH"
+    with open(ENC3DS, "wb") as f:
+        f.write(bytes(h))
+        f.truncate(1800 * MB)
+
+
+def paused_cancel():
+    """The cancel prompt of a paused download (deletes the partial file)."""
+    jobs = fake_jobs()
+    j = jobs[4]
+    j.state, j.done_bytes = J.PAUSED, 230 * MB
+    app.downloader.jobs.__init__(jobs)
+    app.downloader.hold = False
+    app.push(rb.DownloadsScreen(app))
+    app.stack[-1].confirm_cancel(j)
+
+
 def install_some():
     """A few games from the mock library 'on the box' (files + install records)."""
     lib = app.library
@@ -267,6 +292,7 @@ SCENES = [
     ("downloads", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
                            app.push(rb.DownloadsScreen(app)))),
     ("conversions", lambda: (fake_conversions(), app.push(rb.ConversionsScreen(app)))),
+    ("downloads-cancel", paused_cancel),
     ("downloads-empty", lambda: (app.downloader.jobs.clear(), app.push(rb.DownloadsScreen(app)))),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
     ("settings-pair", lambda: app.push(settings_at("pair"))),
@@ -285,7 +311,10 @@ SCENES = [
     ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),
     ("on-this-box-space", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 1))),
     ("on-this-box-compress", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 2))),
-    ("compress", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.CompressScreen(app)))),
+    ("compress", lambda: (encrypted_3ds(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CompressScreen(app)))),
+    ("compress-cant", lambda: (encrypted_3ds(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CompressScreen(app)),
+                               app.push(rb.CantConvertScreen(app, "3ds", [
+                                   (ENC3DS, "an encrypted dump (Azahar runs decrypted ones only)")])))),
     ("compress-system", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.CompressScreen(app)),
                                  app.push(rb.CompressSystemScreen(app, "psx")))),
     ("on-this-box-bios", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 3))),
@@ -322,6 +351,8 @@ SCENES = [s for s in SCENES if not wanted or s[0] in wanted]
 
 
 def reset():
+    if os.path.exists(ENC3DS):
+        os.remove(ENC3DS)
     del app.stack[1:]
     app.modal = None
     app.toasts = []

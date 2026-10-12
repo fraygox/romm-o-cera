@@ -358,20 +358,33 @@ class Downloader:
                 self.cv.notify_all()
         self.save_queue()
 
-    def _drop_parts(self, job):
-        """Delete a cancelled/removed download's partial files (only .part
-        files of that rom, only inside roms/<system>)."""
+    def _part_files(self, job):
+        """A download's partial files on disk (only .part files of that rom,
+        only inside roms/<system>)."""
         sysdir = os.path.join(_core.ROMS_ROOT, job.system)
         base = os.path.join(sysdir, _core.safe_name(job.rom.get("fs_name") or ""))
         if not job.rom.get("fs_name") or not _core._inside(base, sysdir):
-            return
+            return []
         cands = [base + ".part"]
         if os.path.isdir(base):
             cands += [os.path.join(dp, f) for dp, _, fs in os.walk(base) for f in fs if f.endswith(".part")]
-        for p in cands:
+        return [p for p in cands if os.path.isfile(p) and _core._inside(p, sysdir)]
+
+    def part_bytes(self, job):
+        """Bytes of a download's partial files on disk (what cancelling deletes)."""
+        n = 0
+        for p in self._part_files(job):
             try:
-                if os.path.isfile(p) and _core._inside(p, sysdir):
-                    os.remove(p)
+                n += os.path.getsize(p)
+            except OSError:
+                pass
+        return n
+
+    def _drop_parts(self, job):
+        """Delete a cancelled/removed download's partial files."""
+        for p in self._part_files(job):
+            try:
+                os.remove(p)
             except OSError:
                 pass
 
