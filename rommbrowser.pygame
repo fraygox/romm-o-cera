@@ -1831,6 +1831,8 @@ class App:
             label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed else "")
             r = text(c, self.fonts.small, label, (rx, 33), BLUE, "midright")
         top.draw(c)
+        if isinstance(top, ListScreen):
+            top.draw_bubble(c)                 # the letter (or system) an L2/R2 jump landed on
         # footer
         hline(c, LINE, (0, H - 46), (W, H - 46))
         # right side first (the two global buttons, then the version): the hints get what's left
@@ -1982,12 +1984,211 @@ class ListScreen(Screen):
         self.sel = max(self.base, min(self.base + len(self.listed()) - 1, self.sel + d))
 
     def nav(self, a):
-        """up/down/l1/r1 move; False when `a` isn't one of them or nothing's listed."""
+        """up/down a row, L/R and left/right a page, L2/R2 to the previous or
+        next letter (or system) in a list with jumps; False when `a` isn't
+        one of them or nothing's listed."""
         step = self.STEP or self.ROWS
-        d = {"up": -1, "down": 1, "l1": -step, "r1": step}.get(a)
-        if d is None or not self.listed():
+        d = {"up": -1, "down": 1, "l1": -step, "r1": step, "left": -step, "right": step}.get(a)
+        if not self.listed():
+            return False
+        if a in ("l2", "r2") and self.JUMP:
+            if not self.jump(a == "r2") and len(self.letter_starts()) < 2 and self.JUMP_OFF:
+                self.app.toast(self.JUMP_OFF)
+            return True
+        if d is None:
             return False
         self.move(d)
+        return True
+
+    # -- L2/R2: letters in a list sorted by name, systems in one grouped by system
+    JUMP = None                  # the hint ("A–Z", "System"); None: no jumps
+    JUMP_OFF = None              # said when the list isn't in an order that jumps right now
+    BUBBLE_AT = (W // 2, H // 2)
+    bubble, bubble_until = None, 0.0
+
+    def jump_label(self, row):
+        """The run a row belongs to; None while the list isn't in an order that jumps."""
+        return letter_of(row.get("name"))
+
+    def letter_starts(self):
+        """[(sel, label)] where each run of rows with the same label starts.
+        Kept per list (and sort): hints() asks every frame."""
+        rows = self.listed()
+        key = (id(rows), len(rows), getattr(self, "sort", None))
+        got = self.__dict__.get("_starts")
+        if got and got[0] == key:
+            return got[1]
+        out = []
+        for i, r in enumerate(rows):
+            lab = self.jump_label(r) if r is not None else None
+            if lab is None:
+                out = []
+                break
+            if not out or out[-1][1] != lab:
+                out.append((i + self.base, lab))
+        self.__dict__["_starts"] = (key, out)
+        return out
+
+    def jump(self, forward):
+        """To the first row of the next/previous run, put at the top of the list."""
+        hit = letter_jump(self.letter_starts(), self.sel, forward)
+        if hit:
+            self.sel = hit[0]
+            self.scroll = max(0, min(hit[0] - self.base, len(self.listed()) - self.ROWS))
+            self.bubble, self.bubble_until = hit[1], time.time() + 0.7
+        return hit
+
+    def draw_bubble(self, c):
+        draw_bubble(c, self.f, self.bubble, self.bubble_until, self.BUBBLE_AT)
+
+    def list_hints(self, *own, back="Back"):
+        """A list's hint bar: its own buttons (while picking, A and X say what
+        they do then), L2/R2 and L/R when they do something here, then B."""
+        own = list(own)
+        if self.picking or self.PICK_ALWAYS:
+            n = self.pick_count()
+            own = [("A", "Pick"), ("X", "%d picked" % n if n else "Menu")] + \
+                [h for h in own if h[0] not in ("A", "X")]
+            if not self.PICK_ALWAYS:
+                back = "Stop picking"
+        n = len(self.listed())
+        if self.JUMP and n and len(self.letter_starts()) > 1:
+            own.append(("L2 R2", self.JUMP))
+        if n > self.ROWS:
+            own += [("L", "Page up"), ("R", "Page down")]
+        return own + [("B", back)]
+
+    # -- picking several rows: one scheme on every list that acts on more than
+    # one. X opens the list's menu, where "Pick several" starts picking. While
+    # picking, A picks or unpicks the row and moves on, X opens the menu (what
+    # to do with the picks first), B stops (the picks stay ticked until they're
+    # used or cleared). Deleting or cancelling picks still asks first.
+    PICKS = False                # this list can pick rows
+    PICK_ALWAYS = False          # a list that's only for picking (Free up space): A always picks, B goes back
+    PICK_ALL = True              # "Pick all" in the menu (not on game lists: RomM-sized)
+    PICK_WHAT = "rows"           # "Pick several <what>"
+    picking = False
+
+    @property
+    def picks(self):
+        """pick_key -> row of the picked rows (made on first use: no __init__ here)."""
+        return self.__dict__.setdefault("_picks", {})
+
+    def pick_key(self, row):
+        return row["path"]
+
+    def pickable(self, row):
+        return True
+
+    def unpickable_why(self, row):
+        return "This one can't be picked"
+
+    def picked(self):
+        """The picked rows still listed, in list order."""
+        p = self.picks
+        return [r for r in self.listed() if r is not None and self.pick_key(r) in p] if p else []
+
+    def pick_count(self):
+        return len(self.picked())
+
+    def showing_picks(self):
+        return self.PICKS and (self.picking or self.PICK_ALWAYS or bool(self.picks))
+
+    def toggle_pick(self, move=True):
+        rows, i = self.listed(), self.sel - self.base
+        if not 0 <= i < len(rows) or rows[i] is None:
+            return
+        r = rows[i]
+        k = self.pick_key(r)
+        if k in self.picks:
+            del self.picks[k]
+        elif self.pickable(r):
+            self.picks[k] = r
+        else:
+            self.app.toast(self.unpickable_why(r), AMBER)
+        if move:
+            self.move(1)
+
+    def pick_all(self):
+        """Pick every row that can be (all picked already: clear them)."""
+        rows = [r for r in self.listed() if r is not None and self.pickable(r)]
+        if rows and len(self.picked()) == len(rows):
+            self.picks.clear()
+        else:
+            self.picks.update((self.pick_key(r), r) for r in rows)
+
+    def pick_action(self, a):
+        """X: the list's menu; while picking, A picks and B stops. False when
+        `a` isn't one of those here."""
+        if a == "x":
+            self.open_menu()
+        elif a == "ok" and (self.picking or self.PICK_ALWAYS):
+            self.toggle_pick()
+        elif a == "back" and self.picking and not self.PICK_ALWAYS:
+            self.picking = False
+        else:
+            return False
+        return True
+
+    def tap_row(self, i):
+        """Touch while picking: one tap picks or unpicks the row."""
+        if self.picking or self.PICK_ALWAYS:
+            self.sel = i
+            self.toggle_pick(move=False)
+        else:
+            super().tap_row(i)
+
+    def pick_entries(self, rows):
+        """Menu rows for what to do with the picked rows (the screen's)."""
+        return []
+
+    def list_actions(self):
+        """Menu rows acting on the whole list (the screen's)."""
+        return []
+
+    def list_controls(self):
+        """Menu rows that change the list in place: sort, filters (the screen's)."""
+        return []
+
+    def menu_title(self):
+        n = self.pick_count()
+        return "%d picked" % n if n else (self.crumbs() or [""])[-1]
+
+    def menu_entries(self):
+        """What to do with the picks, the whole-list actions, picking itself,
+        then (below a line) what changes the list in place."""
+        rows = self.picked()
+        e = self.pick_entries(rows) if rows else []
+        e += self.list_actions()
+        if self.PICKS:
+            if self.picking and not self.PICK_ALWAYS:
+                e.append(("Stop picking", "", lambda: setattr(self, "picking", False)))
+            elif not self.PICK_ALWAYS:
+                e.append(("Pick several %s" % self.PICK_WHAT, "Then {A} picks, {X} acts on the picks, {B} stops",
+                          lambda: setattr(self, "picking", True)))
+            can = [r for r in self.listed() if r is not None and self.pickable(r)] if self.PICK_ALL else []
+            if can and len(rows) < len(can):
+                e.append(("Pick all %d" % len(can), "", lambda: (self.pick_all(), setattr(self, "picking", True))))
+            if rows:
+                e.append(("Clear picks", "", self.picks.clear))
+        ctl = self.list_controls()
+        return e + ([None] + ctl if ctl else [])
+
+    def open_menu(self):
+        e = self.menu_entries()
+        if e:
+            self.app.modal = ActionMenu(self.app, self.menu_title(), e, refresh=self.menu_entries)
+
+    def draw_pick(self, c, row, center):
+        """A row's tick box while picks show; True when drawn (it takes the
+        place of the row's own dot or icon)."""
+        if not self.showing_picks():
+            return False
+        x, y = center
+        on = self.pick_key(row) in self.picks
+        rrect(c, ACCENT if on else LINE, (x - 9, y - 9, 18, 18), 4, 0 if on else 2)
+        if on:
+            polyline(c, TEXT, [(x - 4, y), (x - 1, y + 3), (x + 4, y - 3)], 2)
         return True
 
     def visible(self, rows=None):
@@ -2003,8 +2204,8 @@ class ListScreen(Screen):
     def tile_nav(self, a, wrap=False):
         """The `base` tiles above the rows: left/right among them (wrap: past
         the end to the other side), down into the rows, up from the first row
-        to tile 0 (on a tile: stays), L/R page only in the rows. False when
-        `a` isn't one of those here."""
+        to tile 0 (on a tile: stays), L/R and left/right page only in the
+        rows. False when `a` isn't one of those here."""
         b, n = self.base, len(self.listed())
         if a in ("left", "right") and self.sel < b:
             d = 1 if a == "right" else -1
@@ -2013,9 +2214,9 @@ class ListScreen(Screen):
             self.sel = b if self.sel < b else min(b - 1 + n, self.sel + 1)
         elif a == "up":
             self.sel = 0 if self.sel == b else max(0, self.sel - 1) if self.sel > b else self.sel
-        elif a in ("l1", "r1") and self.sel >= b:
+        elif a in ("l1", "r1", "left", "right") and self.sel >= b:
             step = self.STEP or self.ROWS
-            self.sel = max(b, min(b - 1 + n, self.sel + (step if a == "r1" else -step)))
+            self.sel = max(b, min(b - 1 + n, self.sel + (step if a in ("r1", "right") else -step)))
         else:
             return False
         return True
@@ -2287,7 +2488,7 @@ def letter_jump(starts, sel, forward):
 
 def draw_bubble(c, f, label, until, center):
     if label and time.time() < until:
-        r = pygame.Rect(0, 0, 120, 120)
+        r = pygame.Rect(0, 0, max(120, int(measure(f.h1, label)) + 48), 120)    # a system name is wider
         r.center = center
         rrect(c, ACCENT, r, 24)
         text(c, f.h1, label, r.center, TEXT, "center")
@@ -2406,34 +2607,22 @@ class CollectionScreen(ListScreen):
     def groups(self):
         return [] if not self.items else list(dict.fromkeys(i["group"] for i in self.items))
 
-    bubble, bubble_until = None, 0.0
+    JUMP = "A–Z"
 
-    def letter_starts(self):
-        """Only for plain alphabetical lists (a Browse-by list, or one group)."""
-        if not self.items or (not self.vtype and len(self.groups()) > 1):
-            return []
-        out = []
-        for i, it in enumerate(self.items):
-            lab = letter_of(it["name"])
-            if not out or out[-1][1] != lab:
-                out.append((i, lab))
-        return out
+    def jump_label(self, it):
+        """Letters only in a plain alphabetical list (a Browse-by list, or one group)."""
+        return letter_of(it["name"]) if self.vtype or len(self.groups()) == 1 else None
 
     def action(self, a):
         if not self.items:
             return super().action(a)
-        if self.nav(a):
-            return
-        if a in ("l2", "r2"):
-            hit = letter_jump(self.letter_starts(), self.sel, a == "r2")
-            if hit:
-                self.sel = hit[0]
-                self.bubble, self.bubble_until = hit[1], time.time() + 0.7
-        elif a in ("left", "right") and len(self.groups()) > 1:
+        if a in ("left", "right") and len(self.groups()) > 1:       # left/right: groups, not pages
             gs = self.groups()
             gi = gs.index(self.items[self.sel]["group"])
             gi = max(0, min(len(gs) - 1, gi + (1 if a == "right" else -1)))
             self.sel = next(i for i, it in enumerate(self.items) if it["group"] == gs[gi])
+        elif self.nav(a):
+            return
         elif a == "ok":
             it = self.items[self.sel]
             if it.get("vtype"):
@@ -2474,10 +2663,7 @@ class CollectionScreen(ListScreen):
         h = [("A", "Open")]
         if self.items and not self.items[self.sel].get("vtype"):
             h.append(("X", "Download all"))
-        h += [("L", "Page up"), ("R", "Page down")]
-        if len(self.letter_starts()) > 1:
-            h.append(("L2 R2", "A–Z"))
-        return h + [("B", "Back")]
+        return self.list_hints(*h)
 
     def crumbs(self):
         if self.vtype:
@@ -2539,7 +2725,6 @@ class CollectionScreen(ListScreen):
             h = max(24, track.height * rows // n)
             yy = track.top + int((track.height - h) * (self.sel / max(1, n - 1)))
             rrect(c, ACCENT, (track.left, yy, 4, h), 2)
-        draw_bubble(c, self.f, self.bubble, self.bubble_until, (W // 2, H // 2))
 
 
 REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Australia": "AU",
@@ -2586,6 +2771,9 @@ class GameListScreen(ListScreen):
     REGION_CHOICES = [(None, "All regions"), (["USA", "World"], "USA + World"),
                       (["Europe", "World"], "Europe + World"), (["Japan"], "Japan")]
     BULK_MAX = 1000
+    PICKS, PICK_ALL, PICK_WHAT = True, False, "games"
+    JUMP, JUMP_OFF = "A–Z", "A–Z jump works in full lists sorted by name"
+    BUBBLE_AT = (32 + 676 // 2, H // 2)
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
                  order_by="name", static=None):
@@ -2600,8 +2788,6 @@ class GameListScreen(ListScreen):
         self.order_by = order_by
         self.region_i = 0
         self.hide_installed = False
-        self.mark_mode = False
-        self.marks = {}               # rom id -> rom
         self.bios = None              # [(missing, firmware)] RomM can supply
         self.reset()
         if platform and platform.get("_system"):
@@ -2691,6 +2877,21 @@ class GameListScreen(ListScreen):
     def installed(self, rom):
         system = self.app.system_for(rom)
         return bool(system) and self.app.library.is_installed(rom, system)
+
+    def letter_starts(self):
+        return self.starts if not self.dense else []      # RomM's char_index: rows not loaded yet jump too
+
+    def pick_key(self, rom):
+        return rom["id"]
+
+    def pickable(self, rom):
+        return bool(self.app.system_for(rom)) and self.rom_status(rom)[0] != "installed"
+
+    def unpickable_why(self, rom):
+        return "Already on this box" if self.app.system_for(rom) else "No Batocera system for this platform"
+
+    def picked(self):
+        return list(self.picks.values())        # rows far from the cursor are dropped (forget_far): picks stay
 
     def fetch_page(self, offset):
         if self.static is not None:
@@ -2806,43 +3007,27 @@ class GameListScreen(ListScreen):
     # -- actions ------------------------------------------------------------
     def action(self, a):
         n = len(self.items)
-        if self.nav({"left": "l1", "right": "r1"}.get(a, a)):     # left/right page too
+        if self.nav(a):
+            if a in ("l2", "r2"):
+                self.ensure(self.sel)              # the letter's page (the top of the list now)
             self.ensure(self.sel + self.ROWS)
-        elif a in ("l2", "r2") and n:
-            if not self.starts or self.dense:
-                self.app.toast("A–Z jump works in full lists sorted by name")
-                return
-            hit = letter_jump(self.starts, self.sel, a == "r2")
-            if hit:
-                self.sel = hit[0]
-                # put the letter at the top of the list (without scrolling past the end)
-                self.scroll = max(0, min(hit[0], len(self.items) - self.ROWS))
-                self.bubble, self.bubble_until = hit[1], time.time() + 0.7
-                self.ensure(self.sel)
+        elif self.pick_action(a):
+            if a == "ok":
                 self.ensure(self.sel + self.ROWS)
         elif a == "ok" and n and self.items[self.sel] is not None:
             rom = self.items[self.sel]
-            if self.mark_mode:
-                if rom["id"] in self.marks:
-                    del self.marks[rom["id"]]
-                elif self.app.system_for(rom):
-                    self.marks[rom["id"]] = rom
-            elif self.rom_status(rom)[0] == "installed":
+            if self.rom_status(rom)[0] == "installed":
                 self.app.modal = ManageMenu(self.app, rom)
             else:
                 self.app.modal = DownloadConfirm(self.app, rom)
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.platform))
-        elif a == "x" and self.mark_mode and self.marks:
-            self._download_marked()          # what the hint bar promises in pick mode
-        elif a == "x":
-            self.menu_rom = self.items[self.sel] if self.items and self.sel < len(self.items) else None
-            self.app.modal = ActionMenu(self.app, self.menu_title(), self.menu_entries(),
-                                        refresh=self.menu_entries)
-        elif a == "back" and self.mark_mode:
-            self.mark_mode = False
         else:
             super().action(a)
+
+    def open_menu(self):
+        self.menu_rom = self.items[self.sel] if self.items and self.sel < len(self.items) else None
+        super().open_menu()
 
     def menu_title(self):
         if self.static is not None or self.search:
@@ -2851,23 +3036,18 @@ class GameListScreen(ListScreen):
             return self.collection.get("name") or self.title
         return self.title
 
-    def menu_entries(self):
-        """Actions first (they close the menu), then view controls that change
-        the list in place while the menu stays open."""
+    def pick_entries(self, roms):
+        size = sum(r.get("fs_size_bytes") or 0 for r in roms)
+        return [("Download %d picked" % len(roms), human_size(size), self._download_marked)]
+
+    def list_actions(self):
+        """Actions first (they close the menu); list_controls() change the
+        list in place while the menu stays open."""
         e = []
         cur = getattr(self, "menu_rom", None)
         if cur is not None:
             e.append(("More like this", cur.get("name") or cur.get("fs_name_no_ext") or "",
                       lambda: self._more_like(cur)))
-        if self.mark_mode:
-            e.append(("Stop picking", "", lambda: setattr(self, "mark_mode", False)))
-        else:
-            e.append(("Pick games to download", "Then {A} marks games, and {X} downloads them",
-                      lambda: setattr(self, "mark_mode", True)))
-        if self.marks:
-            size = sum(r.get("fs_size_bytes") or 0 for r in self.marks.values())
-            e.append(("Download %d picked" % len(self.marks), human_size(size), self._download_marked))
-            e.append(("Clear picks", "", self.marks.clear))
         tot = self.server_total
         if tot is None:
             e.append(("Download every game in this list", "Counting games…", None))
@@ -2887,7 +3067,10 @@ class GameListScreen(ListScreen):
             n = len(self.bios)
             e.append(("Get BIOS for %s" % (self.platform.get("display_name") or self.platform["_system"]),
                       "%d file%s from RomM, checksum-verified" % (n, "" if n == 1 else "s"), self._fetch_bios))
-        e.append(None)
+        return e
+
+    def list_controls(self):
+        e = []
         if self.static is None and not self.search and not self.collection:
             e.append(("Sort", "", lambda d=1: self._toggle_sort(),
                       "Newest first" if self.order_by == "id_desc" else "A to Z", "choice"))
@@ -2947,12 +3130,12 @@ class GameListScreen(ListScreen):
 
     def _queue_many(self, roms, title):
         def picked():
-            self.marks.clear()
-            self.mark_mode = False
+            self.picks.clear()
+            self.picking = False
         self.app.queue_many(roms, title, picked)
 
     def _download_marked(self):
-        self._queue_many(list(self.marks.values()), "Download picked games?")
+        self._queue_many(self.picked(), "Download picked games?")
 
     def _download_all(self):
         app = self.app
@@ -2985,13 +3168,7 @@ class GameListScreen(ListScreen):
         app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
-        if self.mark_mode:
-            return [("A", "Pick"), ("X", "Download %d picked" % len(self.marks) if self.marks else "Menu"),
-                    ("B", "Stop picking")]
-        h = [("A", "Download"), ("X", "Menu"), ("Y", "Search")]
-        if self.starts and not self.dense:
-            h.append(("L2 R2", "Letter"))
-        return h + [("L", "Page up"), ("R", "Page down"), ("B", "Back")]
+        return self.list_hints(("A", "Download"), ("X", "Menu"), ("Y", "Search"))
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)
@@ -3008,7 +3185,7 @@ class GameListScreen(ListScreen):
             cnt = "{:,} games".format(self.total) if self.total else \
                 "Couldn't load: %s" % self.load_error if self.load_error else "No games found"
         flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
-                                   (self.mark_mode, "%d picked" % len(self.marks))) if on]
+                                   (self.picks, "%d picked" % len(self.picks))) if on]
         if flt:
             cnt = ", ".join(flt + [cnt])
         title = self.title if not self.search else 'Results for "%s"' % self.search
@@ -3032,11 +3209,8 @@ class GameListScreen(ListScreen):
                 continue
             st, j = self.rom_status(rom)
             ix = r.left + 24
-            if self.mark_mode and st != "installed":
-                picked = rom["id"] in self.marks
-                rrect(c, ACCENT if picked else LINE, (ix - 9, r.centery - 9, 18, 18), 4, 0 if picked else 2)
-                if picked:
-                    polyline(c, TEXT, [(ix - 4, r.centery), (ix - 1, r.centery + 3), (ix + 4, r.centery - 3)], 2)
+            if st != "installed" and self.draw_pick(c, rom, (ix, r.centery)):
+                pass
             elif st == "installed":
                 installed_mark(c, (ix, r.centery))
             elif st == "active":
@@ -3085,7 +3259,6 @@ class GameListScreen(ListScreen):
             p = pygame.Rect(728, 80, 520, 576)
             rrect(c, PANEL, p, 16)
             text(c, self.f.body, "Loading…", p.center, DIM, "center")
-        draw_bubble(c, self.f, self.bubble, self.bubble_until, (lx + lw // 2, H // 2))
 
     def draw_detail(self, c, rom):
         app = self.app
@@ -3162,6 +3335,13 @@ class GameListScreen(ListScreen):
         if not system:
             rrect(c, BG2, ar, 12)
             text(c, self.f.body, "No Batocera system for this platform", ar.center, FAINT, "center")
+        elif self.picking and st != "installed":           # A picks here
+            on = self.pick_key(rom) in self.picks
+            rrect(c, BG2 if on else ACCENT, ar, 12)
+            gx = ar.left + 18
+            gx += button_glyph(c, self.f, "A", gx, ar.centery - 11) + 12
+            text(c, self.f.h3, "Unpick" if on else "Pick", (gx, ar.centery), TEXT, "midleft")
+            text(c, self.f.small, "%d picked" % self.pick_count(), (ar.right - 20, ar.centery), DIM, "midright")
         elif st == "installed":
             rrect(c, mix(BG, GREEN, 0.18), ar, 12)
             gx = ar.left + 18
@@ -3372,9 +3552,11 @@ class SearchScreen(Screen):
 
 class DownloadsScreen(ListScreen):
     """The queue in the order it runs, then finished downloads (newest
-    first). A: per-download menu (reorder, pause, cancel, retry); X pauses or
-    resumes everything; Y clears the finished ones."""
+    first). A: per-download menu (reorder, pause, cancel, retry); X: pause
+    or resume everything, and pick several to pause, resume, cancel, retry
+    or remove at once; Y clears the finished ones."""
     ROWS, ROW_H = 7, 76
+    PICKS, PICK_WHAT = True, "downloads"
 
     def __init__(self, app):
         super().__init__(app)
@@ -3394,12 +3576,68 @@ class DownloadsScreen(ListScreen):
 
     def hints(self):
         d = self.app.downloader
-        h = [("A", "Options")]
-        if d.pending_count():
-            h.append(("X", "Resume all" if d.hold else "Pause all"))
+        h = [("A", "Options"), ("X", "Menu")] if d.jobs else []
         if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
             h.append(("Y", "Clear finished"))
-        return h + [("L2 R2", "Conversions"), ("B", "Back")]
+        return self.list_hints(*h + [("L2 R2", "Conversions")])
+
+    def pick_key(self, j):
+        return (j.rom.get("id"), j.system)
+
+    def list_actions(self):
+        d, app = self.app.downloader, self.app
+        e = []
+        if d.pending_count():
+            if d.hold:
+                e.append(("Resume all", "", lambda: (d.release_all(), app.toast("Downloads resumed", GREEN))))
+            else:
+                e.append(("Pause all", "The partial files are kept", lambda: (
+                    d.hold_all(), app.toast("Downloads paused — partial files are kept", AMBER))))
+        if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
+            e.append(("Clear finished", "Done, failed and cancelled ones leave the list", self.clear_finished))
+        return e
+
+    def clear_finished(self):
+        n = self.app.downloader.clear_finished()
+        if n:
+            self.app.toast("Cleared %d finished" % n)
+
+    def pick_entries(self, jobs):
+        """Pause, resume, cancel, retry or remove the picked downloads (each
+        only those it applies to); cancelling asks first."""
+        app, d, J = self.app, self.app.downloader, rommlib.Job
+        live = [j for j in jobs if j.active and j.state != J.PAUSED]
+        paused = [j for j in jobs if j.state == J.PAUSED]
+        again = [j for j in jobs if j.state in (J.FAILED, J.CANCELLED)]
+        over = [j for j in jobs if not (j.active or j.state == J.PAUSED)]
+
+        def each(fn, todo, msg):
+            def run():
+                for j in todo:
+                    fn(j)
+                self.picks.clear()
+                self.picking = False
+                app.toast(msg % plural(len(todo), "download"))
+            return run
+        stop = live + paused
+        cancel = each(d.cancel_job, stop, "Cancelled %s")
+        e = []
+        if live:
+            e.append(("Pause %d" % len(live), "Keeps their partial files", each(d.pause_job, live, "Paused %s")))
+        if paused:
+            e.append(("Resume %d" % len(paused), "", each(d.resume_job, paused, "Resumed %s")))
+        if stop:
+            e.append(("Cancel %d" % len(stop), "Their partial files are deleted", lambda: setattr(app, "modal", Confirm(
+                app, "Cancel %s?" % plural(len(stop), "download"),
+                "Their partial files are deleted; finished downloads in the pick stay as they are.",
+                "Cancel %d" % len(stop), cancel, danger=True))))
+        if again:
+            e.append(("Retry %d" % len(again), "Failed and cancelled ones download again",
+                      each(d.resume_job, again, "Queued %s again")))
+        if over:
+            e.append(("Remove %d from the list" % len(over), "Finished games stay on the box",
+                      each(d.remove, over, "Removed %s from the list")))
+        return e
 
     def follow(self, jobs):
         """Keep the highlight on the same download when the list reorders."""
@@ -3420,19 +3658,14 @@ class DownloadsScreen(ListScreen):
         self.follow(jobs)
         if self.nav(a):
             self.sel_job = jobs[min(self.sel, len(jobs) - 1)]
+        elif jobs and self.pick_action(a):
+            jobs = self.view()
+            if jobs:
+                self.sel_job = jobs[min(self.sel, len(jobs) - 1)]
         elif a == "ok" and jobs:
             self.menu(jobs[min(self.sel, len(jobs) - 1)])
-        elif a == "x" and d.pending_count():
-            if d.hold:
-                d.release_all()
-                app.toast("Downloads resumed", GREEN)
-            else:
-                d.hold_all()
-                app.toast("Downloads paused — partial files are kept", AMBER)
         elif a == "y":
-            n = d.clear_finished()
-            if n:
-                app.toast("Cleared %d finished" % n)
+            self.clear_finished()
         elif a in ("l2", "r2"):
             app.push(ConversionsScreen(app))
         else:
@@ -3514,7 +3747,8 @@ class DownloadsScreen(ListScreen):
         self.follow(jobs)
         y = 84
         if d.hold and d.pending_count():
-            rich_text(c, self.f, self.f.small, "Downloads are paused. {X} resumes them.", (48, y), AMBER)
+            rich_text(c, self.f, self.f.small, "Downloads are paused. Resume them from the {X} menu.", (48, y),
+                      AMBER)
             y += 28
         now = time.time()
         if now - getattr(self, "_chd_at", 0) > 1.0:   # disk reads once a second, not every frame
@@ -3554,6 +3788,8 @@ class DownloadsScreen(ListScreen):
             if on:
                 rrect(c, ACCENT, r, 12, 2)
             x = r.left + 20
+            if self.draw_pick(c, j, (x + 9, r.top + 24)):
+                x += 30
             if i < npend:                          # position in the queue
                 text(c, self.f.small, str(i + 1), (x + 10, r.top + 24), FAINT, "center")
                 x += 30
@@ -5079,8 +5315,7 @@ class CompressScreen(ListScreen):
         if not self.cands:
             return [("B", "Back")]
         r = self.rows[self.sel]
-        return [("A", "Games")] + ([("X", "Compress all %s" % r["system"])] if r["enabled"] else []) + \
-            [("B", "Back")]
+        return self.list_hints(("A", "Games"), *[("X", "Compress all %s" % r["system"])] if r["enabled"] else [])
 
     def action(self, a):
         if not self.cands:
@@ -5128,9 +5363,10 @@ class CompressScreen(ListScreen):
 
 
 class CompressSystemScreen(ListScreen):
-    """One system's games that could still be compressed: A queues one,
-    X queues them all (asks first: it can take hours)."""
+    """One system's games that could still be compressed: A queues one; the
+    X menu queues them all, or the picked ones (asks first: it can take hours)."""
     ROWS, ROW_H = 9, 58
+    PICKS, PICK_WHAT, JUMP = True, "games", "A–Z"
 
     def __init__(self, app, system):
         super().__init__(app)
@@ -5156,13 +5392,33 @@ class CompressSystemScreen(ListScreen):
     def title_of(self, c):
         return c["name"] or os.path.splitext(os.path.basename(c["root"]))[0]
 
+    def pick_key(self, c):
+        return c["root"]
+
+    def jump_label(self, c):
+        return letter_of(self.title_of(c))
+
     def hints(self):
         if not self.cands:
             return [("B", "Back")]
         if not self.cands[0]["enabled"]:
-            return [("B", "Back")]
-        return [("A", "Compress this one"), ("X", "Compress all"), ("L", "Page up"), ("R", "Page down"),
-                ("B", "Back")]
+            return self.list_hints()
+        return self.list_hints(("A", "Compress this one"), ("X", "Menu"))
+
+    def list_actions(self):
+        return [("Compress all %d" % len(self.cands), "%s · asks first: it can take hours" % human_size(
+            sum(x["size"] for x in self.cands)), lambda: compress_confirm(
+                self.app, "Compress all %s here?" % plural(len(self.cands), "%s game" % self.system),
+                list(self.cands), self.enter))]
+
+    def pick_entries(self, cands):
+        def done():
+            self.picks.clear()
+            self.picking = False
+            self.enter()
+        return [("Compress %d picked" % len(cands), human_size(sum(x["size"] for x in cands)),
+                 lambda: compress_confirm(self.app, "Compress %s?" % plural(len(cands), "picked game"),
+                                          cands, done))]
 
     def action(self, a):
         if not self.cands:
@@ -5172,11 +5428,10 @@ class CompressSystemScreen(ListScreen):
         cand = self.cands[self.sel]
         if a in ("ok", "x") and not cand["enabled"]:
             self.app.toast("Turn on %s in Settings first" % cand["setting"], AMBER)
+        elif self.pick_action(a):
+            return
         elif a == "ok":
             compress_queue(self.app, [cand], self.enter)
-        elif a == "x":
-            compress_confirm(self.app, "Compress all %s here?" % plural(len(self.cands), "%s game" % self.system),
-                             list(self.cands), self.enter)
         else:
             super().action(a)
 
@@ -5195,7 +5450,8 @@ class CompressSystemScreen(ListScreen):
             cand = self.cands[i]
             if on:
                 focus_box(c, r)
-            text(c, self.f.row, self.title_of(cand), (r.left + 22, r.top + 5), TEXT if on else DIM,
+            tx = r.left + (48 if self.draw_pick(c, cand, (r.left + 22, r.centery)) else 22)
+            text(c, self.f.row, self.title_of(cand), (tx, r.top + 5), TEXT if on else DIM,
                  maxw=r.width - 200)
             discs = len(cand["files"])
             ext = os.path.splitext(cand["files"][0])[1].lower().lstrip(".")
@@ -5207,13 +5463,24 @@ class CompressSystemScreen(ListScreen):
                 sub += " · " + where
             if cand["cut"]:
                 sub += " · made bootable first"
-            text(c, self.f.small, sub, (r.left + 22, r.top + 30), FAINT, maxw=r.width - 200)
+            text(c, self.f.small, sub, (tx, r.top + 30), FAINT, maxw=r.width - 200)
             text(c, self.f.small, human_size(cand["size"]), (r.right - 20, r.centery), DIM, "midright")
 
 
 class InstalledScreen(ListScreen):
-    """Games RomM Browser installed, biggest first, with delete."""
+    """Games RomM-o-Cera installed, biggest first (Y: by name or newest),
+    with RomM's cover and details beside them. A: the game's menu, as in a
+    game list (delete, download again, more like this); X: delete several."""
     ROWS, ROW_H = 10, 54
+    LX, LW = 32, 676                     # the list; the game panel is to its right, as in a game list
+    SORTS = (("size", "Biggest first"), ("name", "Name"), ("new", "Newest first"))
+    PICKS, PICK_WHAT = True, "games"
+    JUMP, JUMP_OFF = "A–Z", "A–Z jump works when sorted by name ({Y})"
+    BUBBLE_AT = (LX + LW // 2, H // 2)
+    sort = "size"
+    draw_detail = GameListScreen.draw_detail        # RomM's record: cover, facts, summary
+    variants = GameListScreen.variants
+    _more_like = GameListScreen._more_like
 
     def __init__(self, app):
         super().__init__(app)
@@ -5227,7 +5494,24 @@ class InstalledScreen(ListScreen):
 
     def _loaded(self, items):
         self.items = items
+        self.resort()
         self.clamp(scroll=True)
+
+    def resort(self):
+        if self.items is None:
+            return
+        if self.sort == "name":
+            self.items.sort(key=lambda i: (i.get("name") or "").lower())
+        elif self.sort == "new":
+            self.items.sort(key=lambda i: i.get("when") or "", reverse=True)
+        else:
+            self.items.sort(key=lambda i: -(i.get("size") or 0))
+
+    def cycle_sort(self, step=1):
+        keys = [k for k, _ in self.SORTS]
+        self.sort = keys[(keys.index(self.sort) + step) % len(keys)]
+        self.resort()
+        self.clamp()
 
     def enter(self):
         self.load()
@@ -5236,29 +5520,97 @@ class InstalledScreen(ListScreen):
         return self.trail("Games from RomM")
 
     def hints(self):
-        return ([("A", "Delete"), ("L", "Page up"), ("R", "Page down")] if self.items else []) + [("B", "Back")]
+        if not self.items:
+            return [("B", "Back")]
+        return self.list_hints(("A", "Options"), ("X", "Menu"), ("Y", dict(self.SORTS)[self.sort]))
+
+    def pick_key(self, it):
+        return it["id"]
+
+    def jump_label(self, it):
+        return letter_of(it.get("name")) if self.sort == "name" else None
+
+    def rom_status(self, rom):
+        return self.app.rom_status(rom)
+
+    def record(self, it):
+        """RomM's record of a row's game: a dict, {} when RomM hasn't got it
+        (or can't be reached), None while it's being asked."""
+        d = self.app.detail({"id": it["id"]})
+        return d if isinstance(d, dict) else None
+
+    def list_controls(self):
+        return [("Sort", "", self.cycle_sort, dict(self.SORTS)[self.sort], "choice")]
+
+    def pick_entries(self, items):
+        size = sum(i["size"] for i in items)
+        return [("Delete %d picked" % len(items), "Frees %s, after you confirm" % human_size(size),
+                 lambda: self.ask_delete_many(items))]
+
+    def ask_delete_many(self, items):
+        app, lib = self.app, self.app.library
+        size = sum(i["size"] for i in items)
+
+        def run():
+            freed = 0
+            for it in items:
+                if it.get("group"):
+                    freed += lib.uninstall_group(it["group"], it["system"])[1]
+                else:
+                    freed += lib.uninstall({"id": it["id"], "name": it["name"]}, it["system"])[1]
+            return freed
+
+        def done(freed):
+            self.picks.clear()
+            self.picking = False
+            app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(items), "game"), human_size(freed)),
+                      GREEN)
+            app.space_freed()
+            self.load()
+        app.modal = Confirm(app, "Delete %s?" % plural(len(items), "game"),
+                            "Frees about %s. Every file and disc of them goes from roms/; saves and states are "
+                            "kept." % human_size(size), "Delete %d" % len(items),
+                            lambda: app.bg(run, done, lambda e: (app.toast(str(e), RED), self.load())), danger=True)
+
+    def ask_delete(self, it):
+        app = self.app
+        rom = {"id": it["id"], "name": it["name"]}
+        if it.get("group"):
+            app.modal = Confirm(app, "Delete %s?" % it["name"],
+                                "Removes every disc and the playlist from roms/%s (%s). Saves and "
+                                "states are kept." % (it["system"], human_size(it["size"])), "Delete",
+                                lambda: app.uninstall_group(it["group"], it["system"], it["name"], self.load),
+                                danger=True)
+            return
+        app.modal = Confirm(app, "Delete %s?" % it["name"],
+                            "Removes it from roms/%s (%s). Saves and states are kept."
+                            % (it["system"], human_size(it["size"])), "Delete",
+                            lambda: app.uninstall(rom, it["system"], self.load), danger=True)
+
+    def menu(self, it):
+        """The game's menu from a game list, plus More like this; delete only
+        while RomM's record isn't here."""
+        app = self.app
+        d = self.record(it)
+        if d and d.get("id") is not None and app.system_for(d):
+            m = ManageMenu(app, d, then=self.load)
+            m.entries.append(("More like this", "Games RomM says are like it", lambda: self._more_like(d)))
+            app.modal = m
+            return
+        why = "Looking it up in RomM…" if d is None else "RomM doesn't have it, or can't be reached"
+        app.modal = ActionMenu(app, it["name"], [
+            ("Delete from this box", "Frees %s" % human_size(it["size"]), lambda: self.ask_delete(it)),
+            ("Download again", why, None), ("More like this", why, None)])
 
     def action(self, a):
         if not self.items:
             return super().action(a)
-        if self.nav(a):
+        if self.nav(a) or self.pick_action(a):
             return
         if a == "ok":
-            it = self.items[self.sel]
-            rom = {"id": it["id"], "name": it["name"]}
-            if it.get("group"):
-                app = self.app
-                self.app.modal = Confirm(app, "Delete %s?" % it["name"],
-                                         "Removes every disc and the playlist from roms/%s (%s). Saves and "
-                                         "states are kept." % (it["system"], human_size(it["size"])), "Delete",
-                                         lambda: app.uninstall_group(it["group"], it["system"], it["name"],
-                                                                     self.load),
-                                         danger=True)
-                return
-            self.app.modal = Confirm(self.app, "Delete %s?" % it["name"],
-                                     "Removes it from roms/%s (%s). Saves and states are kept."
-                                     % (it["system"], human_size(it["size"])), "Delete",
-                                     lambda: self.app.uninstall(rom, it["system"], self.load), danger=True)
+            self.menu(self.items[self.sel])
+        elif a == "y":
+            self.cycle_sort()
         else:
             super().action(a)
 
@@ -5273,26 +5625,52 @@ class InstalledScreen(ListScreen):
             free = human_size(st.f_bavail * st.f_frsize)
         except OSError:
             free = "?"
-        text(c, self.f.h3, "%d game%s from RomM use%s %s. %s free." % (
-            len(self.items), "" if len(self.items) == 1 else "s", "s" if len(self.items) == 1 else "",
-            human_size(sum(i["size"] for i in self.items)), free), (56, 86), TEXT)
         if not self.items:
+            text(c, self.f.h3, "No games from RomM here. %s free." % free, (56, 86), TEXT)
             text(c, self.f.body, "Nothing installed by RomM-o-Cera yet. Games copied over another way "
                  "can be deleted from their game list.", (56, 130), DIM)
             return
-        for i, r, on in self.row_rects(124):
+        lx, lw = self.LX, self.LW
+        head = "%s · %s · %s free" % (plural(len(self.items), "game"),
+                                      human_size(sum(i["size"] for i in self.items)), free)
+        n = self.pick_count()
+        if n:
+            head += " · %d picked" % n
+        text(c, self.f.h3, head, (lx + 8, 86), TEXT, maxw=lw - 170)
+        text(c, self.f.small, dict(self.SORTS)[self.sort], (lx + lw - 8, 92), FAINT, "topright")
+        for i, r, on in self.row_rects(124, x=lx, w=lw):
             it = self.items[i]
             if on:
                 focus_box(c, r)
-            text(c, self.f.row, it["name"], (r.left + 22, r.centery), TEXT if on else DIM, "midleft",
-                 maxw=r.width - 420)
-            tag = it["system"] or "?"
-            tw = int(measure(self.f.tiny, tag)) + 14
-            tr = pygame.Rect(r.right - 290 - tw, r.centery - 10, tw, 20)
-            rrect(c, BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, FAINT, "center")
-            text(c, self.f.small, it["when"][:10], (r.right - 150, r.centery), FAINT, "midright")
-            text(c, self.f.small, human_size(it["size"]), (r.right - 20, r.centery), DIM, "midright")
+            nx = r.left + (44 if self.draw_pick(c, it, (r.left + 22, r.centery)) else 18)
+            sr = text(c, self.f.small, human_size(it["size"]), (r.right - 14, r.centery), DIM, "midright")
+            text(c, self.f.row, it["name"], (nx, r.top + 4), TEXT if on else DIM, maxw=sr.left - 16 - nx)
+            sub = (it["system"] or "?") + ("  ·  added %s" % it["when"][:10] if it.get("when") else "")
+            text(c, self.f.small, sub, (nx, r.top + 29), FAINT, maxw=sr.left - 16 - nx)
+        it = self.items[self.sel]
+        d = self.record(it)
+        if d and d.get("id") is not None:
+            self.draw_detail(c, d)
+        else:
+            self.draw_local(c, it, "Looking it up in RomM…" if d is None else
+                            "RomM doesn't have this game any more, or can't be reached: only Delete works.")
+
+    def draw_local(self, c, it, note):
+        """The panel from what's on the box, while RomM's record isn't here."""
+        p = pygame.Rect(728, 80, 520, 576)
+        rrect(c, PANEL, p, 16)
+        x, y, w = p.left + 24, p.top + 24, p.width - 48
+        for ln in wrap(self.f.h3, it["name"], w, 3):
+            text(c, self.f.h3, ln, (x, y), TEXT)
+            y += 25
+        y += 12
+        for k, v in (("System", it["system"]), ("Size", human_size(it["size"])), ("Added", it.get("when", "")[:10])):
+            if v:
+                text(c, self.f.small, k, (x, y), FAINT)
+                text(c, self.f.cond, str(v), (x, y + 17), DIM, maxw=w)
+                y += 42
+        for k, ln in enumerate(wrap(self.f.small, note, w, 3)):
+            text(c, self.f.small, ln, (x, y + 12 + k * 20), FAINT)
 
 
 def _lastplayed_label(lp):
@@ -5330,7 +5708,7 @@ class ConversionsScreen(ListScreen):
             h.append(("X", "Start now"))
         if any(r["kind"] not in ("queued", "running") for r in self.rows):
             h.append(("Y", "Clear finished"))
-        return h + [("B", "Back")]
+        return self.list_hints(*h)
 
     def action(self, a):
         app = self.app
@@ -5452,7 +5830,7 @@ class SpaceScreen(ListScreen):
     def hints(self):
         if self.sel < 2:
             return [("A", "Open"), ("B", "Back")]
-        return [("A", "Free up space here"), ("L", "Page up"), ("R", "Page down"), ("B", "Back")]
+        return self.list_hints(("A", "Free up space here"))
 
     def action(self, a):
         app = self.app
@@ -5528,16 +5906,17 @@ class SpaceScreen(ListScreen):
 
 class FreeUpScreen(ListScreen):
     """Every game EmulationStation lists (ours or copied over), least played
-    and biggest first. A marks, X: delete marked / mark enough to free N GB,
-    Y: sort. Saves and states are never touched."""
+    and biggest first. Always picking: A picks, X: delete the picked / pick
+    enough to free N GB, Y: sort. Saves and states are never touched."""
     ROWS, ROW_H = 9, 56
     SORTS = (("unplayed", "Least played first"), ("size", "Biggest first"), ("name", "Name"))
+    PICKS, PICK_ALWAYS, PICK_ALL, PICK_WHAT = True, True, False, "games"
+    JUMP, JUMP_OFF = "A–Z", "A–Z jump works when sorted by name ({Y})"
 
     def __init__(self, app, systems=None):
         super().__init__(app)
         self.systems = systems
         self.items = None
-        self.marks = set()
         self.sort = "unplayed"
         self.sel = self.scroll = 0
         self.busy = False
@@ -5554,7 +5933,9 @@ class FreeUpScreen(ListScreen):
 
     def _loaded(self, items):
         self.items = items
-        self.marks &= {g["path"] for g in items}
+        keep = {g["path"]: g for g in items if g["path"] in self.picks}
+        self.picks.clear()
+        self.picks.update(keep)
         self.resort()
 
     def resort(self):
@@ -5574,24 +5955,26 @@ class FreeUpScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return [("A", "Mark"), ("X", "Delete / pick"), ("Y", dict(self.SORTS)[self.sort]), ("B", "Back")]
+        return self.list_hints(("Y", dict(self.SORTS)[self.sort]))
 
-    def marked(self):
-        return [g for g in self.items or [] if g["path"] in self.marks]
+    def jump_label(self, g):
+        return letter_of(g["name"]) if self.sort == "name" else None
 
     def suggest(self, gb):
-        """Mark the least-played, biggest games until about gb GB would be freed."""
+        """Pick the least-played, biggest games until about gb GB would be freed."""
         order = sorted(self.items, key=lambda g: (g["lastplayed"] or "0", g["playcount"], -g["size"]))
-        self.marks, tot = set(), 0
+        self.picks.clear()
+        tot = 0
         for g in order:
             if tot >= gb << 30:
                 break
-            self.marks.add(g["path"])
+            self.picks[g["path"]] = g
             tot += g["size"]
-        self.app.toast("Marked %d games (%s) — check the list, then {X} to delete" % (len(self.marks), human_size(tot)))
+        self.app.toast("Picked %d games (%s) — check the list, then {X} to delete them"
+                       % (len(self.picks), human_size(tot)))
 
     def delete_marked(self):
-        app, todo = self.app, self.marked()
+        app, todo = self.app, self.picked()
         size = sum(g["size"] for g in todo)
 
         def run():
@@ -5602,7 +5985,7 @@ class FreeUpScreen(ListScreen):
 
         def done(freed):
             self.busy = False
-            self.marks.clear()
+            self.picks.clear()
             app.toast("Deleted %d games — %s freed. Saves are kept." % (len(todo), human_size(freed)), GREEN)
             app.space_freed()
             self.load()
@@ -5612,30 +5995,33 @@ class FreeUpScreen(ListScreen):
                             "RomM-o-Cera." % human_size(size), "Delete %d" % len(todo),
                             lambda: (setattr(self, "busy", True), app.bg(run, done)), danger=True)
 
-    def menu(self):
-        app = self.app
-        n, size = len(self.marks), sum(g["size"] for g in self.marked())
-        e = ([("Delete %d marked" % n, "Frees about %s" % human_size(size), self.delete_marked), None]
-             if n else [])
-        for gb in (10, 20, 50, 100):
-            e.append(("Mark enough to free %d GB" % gb, "Least played, biggest first", lambda gb=gb: self.suggest(gb)))
-        e += [None, ("Clear marks", "", (lambda: self.marks.clear()) if n else None)]
-        app.modal = ActionMenu(app, "Free up space", e)
+    def pick_entries(self, games):
+        return [("Delete %d picked" % len(games), "Frees about %s" % human_size(sum(g["size"] for g in games)),
+                 self.delete_marked)]
+
+    def list_actions(self):
+        return [("Pick enough to free %d GB" % gb, "Least played, biggest first", lambda gb=gb: self.suggest(gb))
+                for gb in (10, 20, 50, 100)]
+
+    def list_controls(self):
+        return [("Sort", "", self.cycle_sort, dict(self.SORTS)[self.sort], "choice")]
+
+    def menu_title(self):
+        n = self.pick_count()
+        return "Free up space" + (" · %d picked" % n if n else "")
+
+    def cycle_sort(self, step=1):
+        keys = [k for k, _ in self.SORTS]
+        self.sort = keys[(keys.index(self.sort) + step) % len(keys)]
+        self.resort()
 
     def action(self, a):
         if not self.items or self.busy:
             return super().action(a)
-        if self.nav(a):
+        if self.nav(a) or self.pick_action(a):
             return
-        if a == "ok":
-            p = self.items[self.sel]["path"]
-            self.marks.symmetric_difference_update({p})
-        elif a == "x":
-            self.menu()
-        elif a == "y":
-            keys = [k for k, _ in self.SORTS]
-            self.sort = keys[(keys.index(self.sort) + 1) % len(keys)]
-            self.resort()
+        if a == "y":
+            self.cycle_sort()
         else:
             super().action(a)
 
@@ -5646,10 +6032,11 @@ class FreeUpScreen(ListScreen):
         if self.draw_load_error(c):
             return
         free = rommlib.free_bytes()
-        n, size = len(self.marks), sum(g["size"] for g in self.marked())
+        picked = self.picked()
+        n, size = len(picked), sum(g["size"] for g in picked)
         head = "%d games · %s free" % (len(self.items), human_size(free))
         if n:
-            head += " · %d marked (%s)" % (n, human_size(size))
+            head += " · %d picked (%s)" % (n, human_size(size))
         text(c, self.f.h3, head, (56, 86), TEXT)
         text(c, self.f.small, dict(self.SORTS)[self.sort], (W - 56, 90), FAINT, "topright")
         if not self.items:
@@ -5659,10 +6046,7 @@ class FreeUpScreen(ListScreen):
             g = self.items[i]
             if on:
                 focus_box(c, r)
-            box = pygame.Rect(r.left + 16, r.centery - 10, 20, 20)
-            rrect(c, BG2, box, 5)
-            if g["path"] in self.marks:
-                rrect(c, RED, box.inflate(-6, -6), 3)
+            self.draw_pick(c, g, (r.left + 26, r.centery))
             text(c, self.f.row, g["name"], (r.left + 50, r.centery), TEXT if on else DIM, "midleft",
                  maxw=r.width - 520)
             tw = int(measure(self.f.tiny, g["system"])) + 14
@@ -5677,8 +6061,10 @@ class FreeUpScreen(ListScreen):
 class LeftoversScreen(ListScreen):
     """Partial files and empty folders that interrupted downloads or
     conversions left behind, and copies of games already here converted (a
-    .7z beside its .rvz). Partial downloads still queued are kept."""
+    .7z beside its .rvz). Partial downloads still queued are kept. A deletes
+    one; the X menu deletes the picked ones or all of them (Y)."""
     ROWS, ROW_H = 9, 56
+    PICKS, PICK_WHAT, JUMP = True, "leftovers", "System"
 
     def __init__(self, app):
         super().__init__(app)
@@ -5701,12 +6087,44 @@ class LeftoversScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return [("A", "Delete"), ("Y", "Delete all"), ("B", "Back")]
+        return self.list_hints(("A", "Delete"), ("X", "Menu"), ("Y", "Delete all"))
+
+    def jump_label(self, it):
+        """Grouped by system: roms/<system>/…, then the app's own folder."""
+        p = it["path"]
+        if p.startswith(rommlib.ROMS_ROOT + "/"):
+            return os.path.relpath(p, rommlib.ROMS_ROOT).split(os.sep)[0]
+        return "other"
+
+    def list_actions(self):
+        return [("Delete all %d" % len(self.items), "%s, after you confirm" % human_size(
+            sum(i["size"] for i in self.items)), self.ask_delete_all)]
+
+    def pick_entries(self, items):
+        return [("Delete %d picked" % len(items), "%s, after you confirm" % human_size(sum(i["size"] for i in items)),
+                 lambda: setattr(self.app, "modal", Confirm(
+                     self.app, "Delete %s?" % plural(len(items), "leftover"),
+                     "Frees %s. Partial downloads that are still queued or paused are not listed and are kept."
+                     % human_size(sum(i["size"] for i in items)), "Delete %d" % len(items),
+                     lambda: self.remove(items), danger=True)))]
+
+    def ask_delete_all(self):
+        tot = sum(i["size"] for i in self.items)
+        copies = sum(1 for i in self.items if i.get("note"))
+        self.app.modal = Confirm(self.app, "Delete all %d leftovers?" % len(self.items),
+                                 "Frees %s.%s Partial downloads that are still queued or paused are not "
+                                 "listed and are kept." % (human_size(tot), (
+                                     " Includes %s of games already here converted; the converted ones "
+                                     "stay." % plural(copies, "copy", "copies")) if copies else ""),
+                                 "Delete all",
+                                 lambda: self.remove(list(self.items)), danger=True)
 
     def remove(self, items):
         app = self.app
 
         def done(freed):
+            self.picks.clear()
+            self.picking = False
             app.toast("Cleaned up %d — %s freed" % (len(items), human_size(freed)), GREEN)
             app.space_freed()
             self.load()
@@ -5715,7 +6133,7 @@ class LeftoversScreen(ListScreen):
     def action(self, a):
         if not self.items:
             return super().action(a)
-        if self.nav(a):
+        if self.nav(a) or self.pick_action(a):
             return
         if a == "ok":
             it = self.items[self.sel]
@@ -5723,15 +6141,7 @@ class LeftoversScreen(ListScreen):
                                      "%s (%s)" % (it["path"], human_size(it["size"])), "Delete",
                                      lambda: self.remove([it]), danger=True)
         elif a == "y":
-            tot = sum(i["size"] for i in self.items)
-            copies = sum(1 for i in self.items if i.get("note"))
-            self.app.modal = Confirm(self.app, "Delete all %d leftovers?" % len(self.items),
-                                     "Frees %s.%s Partial downloads that are still queued or paused are not "
-                                     "listed and are kept." % (human_size(tot), (
-                                         " Includes %s of games already here converted; the converted ones "
-                                         "stay." % plural(copies, "copy", "copies")) if copies else ""),
-                                     "Delete all",
-                                     lambda: self.remove(list(self.items)), danger=True)
+            self.ask_delete_all()
         else:
             super().action(a)
 
@@ -5757,9 +6167,10 @@ class LeftoversScreen(ListScreen):
             for root in (rommlib.ROMS_ROOT, rommlib.DATA_DIR):
                 if p.startswith(root + "/"):
                     p = os.path.relpath(p, os.path.dirname(root))
-            text(c, self.f.row, p, (r.left + 22, r.top + 6), TEXT if on else DIM, maxw=r.width - 200)
+            tx = r.left + (48 if self.draw_pick(c, it, (r.left + 22, r.centery)) else 22)
+            text(c, self.f.row, p, (tx, r.top + 6), TEXT if on else DIM, maxw=r.width - 200)
             text(c, self.f.small, it["kind"] + (" · " + it["note"] if it.get("note") else ""),
-                 (r.left + 22, r.top + 32), FAINT, maxw=r.width - 200)
+                 (tx, r.top + 32), FAINT, maxw=r.width - 200)
             text(c, self.f.small, human_size(it["size"]) if it["size"] else "", (r.right - 20, r.centery),
                  DIM, "midright")
 
@@ -5769,6 +6180,7 @@ class BiosScreen(ListScreen):
     X gets everything RomM has), or missing everywhere — plus what RomM
     Browser has fetched before."""
     ROWS, ROW_H = 8, 62
+    JUMP = "A–Z"
 
     def __init__(self, app):
         super().__init__(app)
@@ -5793,7 +6205,7 @@ class BiosScreen(ListScreen):
         h = [("A", "Get from RomM")] if self.items and self.items[self.sel]["offers"] else []
         if self.items and any(r["offers"] for r in self.items):
             h.append(("X", "Get all from RomM"))
-        return h + [("L", "Page up"), ("R", "Page down"), ("B", "Back")]
+        return self.list_hints(*h)
 
     def fetch(self, rows):
         app = self.app
@@ -5882,9 +6294,11 @@ class BiosScreen(ListScreen):
 class AuditScreen(ListScreen):
     """Check what's on the box against RomM; damaged games can be downloaded
     again. Red: damaged or incomplete. Amber: not RomM's copy (another dump,
-    a trimmed image…), which may well play."""
+    a trimmed image…), which may well play. Picked findings (amber ones
+    too) download again together from the X menu."""
     LOAD_ERROR_HEAD = "The check didn't finish"
     ROWS, ROW_H = 8, 62
+    PICKS, PICK_WHAT, JUMP = True, "findings", "System"
 
     def __init__(self, app, deep=False):
         super().__init__(app)
@@ -5932,14 +6346,39 @@ class AuditScreen(ListScreen):
     def hints(self):
         if self.findings is None:
             return [("B", "Stop")]
-        h = [("A", "Download again")] if self.findings else []
+        h = [("A", "Download again"), ("X", "Menu")] if self.findings else []
         if self.redownloadable():
             h.append(("Y", "Download all damaged again"))
-        return h + [("B", "Back")]
+        return self.list_hints(*h)
 
     def redownloadable(self):
         return [f for f in (self.findings or []) if f["severity"] == "damaged" and f.get("rom")
                 and f["path"] not in self.queued]
+
+    def jump_label(self, f):
+        return f["system"]
+
+    def pickable(self, f):
+        return bool(f.get("rom")) and f["path"] not in self.queued
+
+    def unpickable_why(self, f):
+        return "Already queued" if f["path"] in self.queued else \
+            "Not in RomM under this name — can't download it again"
+
+    def list_actions(self):
+        n = len({f["rom"]["id"] for f in self.redownloadable()})
+        return [("Download all damaged again", "%s; amber ones are left alone" % plural(n, "game"),
+                 self.redownload_all)] if n else []
+
+    def pick_entries(self, picked):
+        todo = [f for f in picked if self.pickable(f)]
+        dmg = sum(1 for f in todo if f["severity"] == "damaged")
+        sub = ", ".join(x for x in ("%d damaged" % dmg if dmg else "",
+                                    "%d differ from RomM" % (len(todo) - dmg) if len(todo) > dmg else "") if x)
+        return [("Download %d again" % len(todo), sub, (lambda: self.redownload_many(
+            todo, "Download %s again?" % plural(len({f["rom"]["id"] for f in todo}), "picked game"),
+            "RomM's copies replace the ones on the box (saves are kept), the ones that only differ "
+            "from RomM too.")) if todo else None)]
 
     @staticmethod
     def renamed(f):
@@ -5961,7 +6400,7 @@ class AuditScreen(ListScreen):
                 super().action("back")
             return
         n = len(self.findings)
-        if self.nav(a):
+        if self.nav(a) or self.pick_action(a):
             return
         if a == "ok" and n:
             self.open_finding(self.findings[self.sel])
@@ -5987,22 +6426,26 @@ class AuditScreen(ListScreen):
                                 "Download again", lambda: (self.redownload(f), app.toast("Queued: %s" % name, GREEN)))
 
     def redownload_all(self):
-        app = self.app
         todo = self.redownloadable()
-        seen, uniq = set(), []
+        n = len({f["rom"]["id"] for f in todo})
+        self.redownload_many(todo, "Download %d damaged games again?" % n,
+                             "RomM's copies replace the damaged ones. Games that only differ from RomM "
+                             "(amber) are left alone.")
+
+    def redownload_many(self, todo, title, body):
+        """Each game once (two findings can be one game), after a confirm."""
+        app = self.app
+        uniq = {}
         for f in todo:
-            if f["rom"]["id"] not in seen:
-                seen.add(f["rom"]["id"])
-                uniq.append(f)
+            uniq.setdefault(f["rom"]["id"], f)
 
         def go():
-            for f in todo:
-                if f["rom"]["id"] in seen:
-                    self.redownload(f)
+            for f in uniq.values():
+                self.redownload(f)
+            self.picks.clear()
+            self.picking = False
             app.toast("Queued %d games" % len(uniq), GREEN)
-        app.modal = Confirm(app, "Download %d damaged games again?" % len(uniq),
-                            "RomM's copies replace the damaged ones. Games that only differ from RomM "
-                            "(amber) are left alone.", "Download %d" % len(uniq), go)
+        app.modal = Confirm(app, title, body, "Download %d" % len(uniq), go)
 
     def draw(self, c):
         if self.findings is None:
@@ -6041,7 +6484,8 @@ class AuditScreen(ListScreen):
             if on:
                 focus_box(c, r)
             col = RED if f["severity"] == "damaged" else AMBER
-            circle(c, col, (r.left + 18, r.top + 20), 5)
+            if not self.draw_pick(c, f, (r.left + 18, r.top + 20)):
+                circle(c, col, (r.left + 18, r.top + 20), 5)
             name = os.path.relpath(f["path"], os.path.join(rommlib.ROMS_ROOT, f["system"]))
             text(c, self.f.row, name, (r.left + 34, r.top + 8), TEXT if on else DIM, maxw=r.width - 230)
             text(c, self.f.small, f["problem"], (r.left + 34, r.top + 34), col, maxw=r.width - 230)
@@ -6085,22 +6529,23 @@ class CheckScreen(AuditScreen):
         return self.trail("Check games")
 
     def hints(self):
-        if self.sel == 2:
-            h = [("A", "Look")]
-        elif self.sel < 2:
-            h = [("A", "Start")]
-        else:
-            h = [("A", "Download again")]
-        if self.redownloadable():
-            h.append(("Y", "Download all damaged again"))
-        return h + [("B", "Back")]
+        y = [("Y", "Download all damaged again")] if self.redownloadable() else []
+        if self.sel >= self.base:
+            return AuditScreen.hints(self)
+        return [("A", "Look" if self.sel == 2 else "Start")] + ([("X", "Menu")] if self.findings else []) + y + \
+            [("B", "Stop picking" if self.picking else "Back")]
 
     def action(self, a):
         app = self.app
         n = len(self.findings)
         if self.tile_nav(a):
             return
-        if a == "ok":
+        if a in ("l2", "r2"):
+            if self.sel >= self.base and n:
+                self.jump(a == "r2")
+        elif (a != "ok" or self.sel >= self.base) and (a != "x" or n) and self.pick_action(a):
+            return
+        elif a == "ok":
             if self.sel == 2:
                 app.push(UnseenScreen(app))
             elif self.sel < 2:
@@ -6169,17 +6614,17 @@ class UnseenScreen(ListScreen):
     EmulationStation ignores because the system doesn't list their extension
     (rommlib.find_unseen). Archives can be unpacked (as after a download),
     games in the wrong system folder moved, and anything deleted after a
-    confirmation that names what goes. {X} picks files for doing several at
-    once: unpack every picked archive, or delete them all."""
+    confirmation that names what goes. The X menu picks files for doing
+    several at once: unpack every picked archive, or delete them all."""
     ROWS, ROW_H = 9, 56
     MOVE_CHOICES = 5                   # the menu has no scrolling: the likeliest systems first
+    PICKS, PICK_WHAT, JUMP = True, "files", "System"
 
     def __init__(self, app):
         super().__init__(app)
         self.items = None
         self.sel = self.scroll = 0
         self.busy = False
-        self.marks = set()             # picked paths
         self.progress = ""             # "Unpacking 3 of 13…" while a batch runs
         self.load()
 
@@ -6190,23 +6635,21 @@ class UnseenScreen(ListScreen):
 
     def _loaded(self, items):
         self.items = items
-        self.marks &= {i["path"] for i in items}
+        keep = {i["path"]: i for i in items if i["path"] in self.picks}
+        self.picks.clear()
+        self.picks.update(keep)
         self.clamp()
 
     def crumbs(self):
         return self.trail("Games ES can't see")
 
-    def picked(self):
-        return [i for i in self.items or [] if i["path"] in self.marks]
-
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        if self.marks:
-            every = len(self.marks) == len(self.items)
-            return [("A", "Do %d picked" % len(self.marks)), ("X", "Pick"),
-                    ("Y", "Clear picks" if every else "Pick all"), ("B", "Clear picks")]
-        return [("A", "Options"), ("X", "Pick"), ("Y", "Pick all"), ("B", "Back")]
+        return self.list_hints(("A", "Options"), ("X", "Menu"))
+
+    def jump_label(self, it):
+        return it["system"]
 
     def action(self, a):
         if not self.items or self.busy:
@@ -6214,36 +6657,21 @@ class UnseenScreen(ListScreen):
                 self.app.toast("Still working on the last one…", AMBER)
                 return
             return super().action(a)
-        if self.nav(a):
+        if self.nav(a) or self.pick_action(a):
             return
         if a == "ok":
-            if self.marks:
-                self.bulk_menu()
-            else:
-                self.menu(self.items[self.sel])
-        elif a == "x":                                  # pick, then on to the next file
-            self.marks.symmetric_difference_update({self.items[self.sel]["path"]})
-            self.move(1)
-        elif a == "y":
-            every = {i["path"] for i in self.items}
-            self.marks = set() if self.marks == every else every
-        elif a == "back" and self.marks:
-            self.marks.clear()
+            self.menu(self.items[self.sel])
         else:
             super().action(a)
 
-    def bulk_menu(self):
-        todo = self.picked()
+    def pick_entries(self, todo):
         arcs = [i for i in todo if i["kind"] == "archive"]
         size = sum(i["size"] for i in todo)
-        e = [("Unpack %s" % plural(len(arcs), "archive"),
-              "%s, as after a download" % human_size(sum(i["size"] for i in arcs)) if arcs
-              else "None of the picked files is an archive", (lambda: self.ask_unpack_many(arcs)) if arcs else None),
-             ("Delete %s" % plural(len(todo), "file"), "%s, after you confirm" % human_size(size),
-              lambda: self.ask_delete_many(todo)),
-             None,
-             ("Clear picks", "", self.marks.clear)]
-        self.app.modal = ActionMenu(self.app, "%d picked" % len(todo), e)
+        return [("Unpack %s" % plural(len(arcs), "archive"),
+                 "%s, as after a download" % human_size(sum(i["size"] for i in arcs)) if arcs
+                 else "None of the picked files is an archive", (lambda: self.ask_unpack_many(arcs)) if arcs else None),
+                ("Delete %s" % plural(len(todo), "file"), "%s, after you confirm" % human_size(size),
+                 lambda: self.ask_delete_many(todo))]
 
     def ask_unpack_many(self, arcs):
         app = self.app
@@ -6295,7 +6723,8 @@ class UnseenScreen(ListScreen):
         def ok(res):
             done, failed, freed, tasks = res
             self.progress = ""
-            self.marks.clear()
+            self.picks.clear()
+            self.picking = False
             if tasks and not app.headless:
                 app.spawn_helper("rb_chd.py")          # flock'd: no-op if already running
             if what == "unpack":
@@ -6409,8 +6838,9 @@ class UnseenScreen(ListScreen):
             return
         n_sys = len({i["system"] for i in self.items})
         head = "%s ES can't see, in %s" % (plural(len(self.items), "file"), plural(n_sys, "system"))
-        if self.marks:
-            head += " · %d picked (%s)" % (len(self.marks), human_size(sum(i["size"] for i in self.picked())))
+        picked = self.picked()
+        if picked:
+            head += " · %d picked (%s)" % (len(picked), human_size(sum(i["size"] for i in picked)))
         text(c, self.f.h3, head, (56, 86), TEXT)
         if self.progress:
             text(c, self.f.small, self.progress, (W - 56, 90), AMBER, "topright")
@@ -6419,12 +6849,7 @@ class UnseenScreen(ListScreen):
             if on:
                 focus_box(c, r)
             col = FAINT if it["kind"] == "unknown" else AMBER
-            if self.marks:
-                picked, ix = it["path"] in self.marks, r.left + 18
-                rrect(c, ACCENT if picked else LINE, (ix - 9, r.top + 9, 18, 18), 4, 0 if picked else 2)
-                if picked:
-                    polyline(c, TEXT, [(ix - 4, r.top + 18), (ix - 1, r.top + 21), (ix + 4, r.top + 15)], 2)
-            else:
+            if not self.draw_pick(c, it, (r.left + 18, r.top + 18)):
                 circle(c, col, (r.left + 18, r.top + 18), 5)
             rel = os.path.relpath(it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))
             text(c, self.f.row, rel, (r.left + 34, r.top + 6), TEXT if on else DIM, maxw=r.width - 260)
@@ -6556,9 +6981,9 @@ class ActionMenu:
 
 
 class ManageMenu(ActionMenu):
-    """For a game already on the box."""
+    """For a game already on the box. then: runs after a delete (a list to reload)."""
 
-    def __init__(self, app, rom):
+    def __init__(self, app, rom, then=None):
         system = app.system_for(rom)
         lib = app.library
         paths = lib.paths_for(rom, system) if system else []
@@ -6579,7 +7004,7 @@ class ManageMenu(ActionMenu):
                 app.modal = Confirm(app, "Delete all %d discs of %s?" % (n, title),
                                     "Removes the discs and their playlist from roms/%s (%s). Saves and "
                                     "states are kept." % (system, human_size(gsize)), "Delete",
-                                    lambda: app.uninstall_group(group, system, title), danger=True)
+                                    lambda: app.uninstall_group(group, system, title, then), danger=True)
             super().__init__(app, title, [
                 ("Delete all %d discs" % n, "Frees %s" % human_size(gsize), delete_set if allp else None),
                 ("Download this disc again", "Replaces this disc only", lambda: app.start_download(rom)),
@@ -6591,7 +7016,7 @@ class ManageMenu(ActionMenu):
             app.modal = Confirm(app, "Delete %s?" % name,
                                 "Removes %s from roms/%s (%s). Saves and states are kept."
                                 % (files, system, human_size(size)),
-                                "Delete", lambda: app.uninstall(rom, system), danger=True)
+                                "Delete", lambda: app.uninstall(rom, system, then), danger=True)
         super().__init__(app, name, [
             ("Delete from this box", "Frees %s (%d file%s)" % (human_size(size), len(paths),
                                                          "" if len(paths) == 1 else "s"),

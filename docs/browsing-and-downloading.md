@@ -11,7 +11,7 @@
 - **Recently added**, on the home screen and as a full list.
 - **Search** with an on-screen keyboard and live top matches (or just type on
   a keyboard).
-- **L2/R2** jump letter by letter; **L/R** page.
+- **L2/R2** jump letter by letter; **L/R** or left/right page.
 
 ## The detail panel
 
@@ -27,7 +27,9 @@ another region or revision of the game is already on the box.
 - **More like this**: games similar to the selected one.
 - **Filters**: hide games already on the box, pick a region, hide
   prototypes/demos/hacks, show only checksum-verified dumps; sort.
-- **Pick games to download**: mark several, then download them together.
+- **Pick several games**: **A** then picks games, and **Download … picked**
+  in this menu downloads them together (see
+  [Controls](controls.md#picking-several)).
 - **Download every game in this list** (up to 1,000).
 - **Fill in game info** for this system's games already on the box (see
   [On this box](on-this-box.md#fill-in-game-info)).
@@ -73,7 +75,9 @@ download only what fits.
 
 ### The Downloads screen
 
-Reorder, pause, cancel, pause/resume everything, clear finished. Each game
+Reorder, pause, cancel, pause/resume everything (X menu), clear finished
+(Y). Pick several (X › Pick several) to pause, resume, cancel, retry or remove
+them at once; cancelling asks first, since it deletes the partial files. Each game
 shows what it's being compressed to (CHD, RVZ, squashfs, .zcci, .zar) and
 when that's done. L2/R2 opens **Conversions** (background compression). "Download now" starts one game
 outside the download hours.

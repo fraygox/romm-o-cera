@@ -369,14 +369,18 @@ def test_pick_several_then_unpack_them_all(ui, rb):
     sc = app.stack[-1]
     names = [os.path.basename(i["path"]) for i in sc.items]
     assert names == ["Mystery.xyz", "Lorem Racer.zip", "Broken.zip", "Ipsum Quest.zip"]
-    assert sc.hints()[:3] == [("A", "Options"), ("X", "Pick"), ("Y", "Pick all")]
-    sc.action("y")                                            # pick all, then drop the .xyz
-    assert len(sc.marks) == 4
-    sc.action("x")
-    assert len(sc.marks) == 3 and sc.sel == 1 and sc.hints()[0] == ("A", "Do 3 picked")
+    assert sc.hints()[:2] == [("A", "Options"), ("X", "Menu")]
+    sc.action("x")                                            # the list's menu: start picking, or pick all
+    assert [e[0] for e in app.modal.entries if e] == ["Pick several files", "Pick all 4"]
+    app.modal.action("down")
+    app.modal.action("ok")                                    # pick all (and go on picking), then drop the .xyz
+    assert sc.picking and len(sc.picks) == 4
+    sc.action("ok")                                           # A unpicks and moves on
+    assert sc.pick_count() == 3 and sc.sel == 1 and sc.hints()[:2] == [("A", "Pick"), ("X", "3 picked")]
     sc.draw(app.canvas)
-    sc.action("ok")
-    assert [e[0] for e in app.modal.entries if e] == ["Unpack 3 archives", "Delete 3 files", "Clear picks"]
+    sc.action("x")
+    assert [e[0] for e in app.modal.entries if e] == ["Unpack 3 archives", "Delete 3 files", "Stop picking",
+                                                      "Pick all 4", "Clear picks"]
     app.modal.action("ok")
     assert isinstance(app.modal, rb.Confirm) and "ps2, psp" in app.modal.body
     app.modal.action("ok")
@@ -385,7 +389,7 @@ def test_pick_several_then_unpack_them_all(ui, rb):
     assert os.path.exists(os.path.join(roms, "psp", "Ipsum Quest.iso"))
     assert os.path.exists(os.path.join(roms, "psp", "Broken.zip"))
     assert [os.path.basename(i["path"]) for i in sc.items] == ["Mystery.xyz", "Broken.zip"]
-    assert sc.marks == set() and not sc.busy and sc.progress == ""
+    assert sc.picks == {} and not sc.picking and not sc.busy and sc.progress == ""
     msg, col = app.toasts[-1][:2]
     assert msg.startswith("Unpacked 2") and "1 couldn't be: Broken.zip (can't be read" in msg and col == rb.AMBER
 
@@ -397,15 +401,14 @@ def test_pick_several_then_delete_them_all(ui, rb):
     keep = _w("ps2/Keep.zip")
     app.push(rb.UnseenScreen(app))
     sc = app.stack[-1]
-    for i in sc.items:
+    sc.picking = True
+    for k, i in enumerate(sc.items):                          # A picks every file but Keep.zip
+        sc.sel = k
         if not i["path"].endswith("Keep.zip"):
-            sc.marks.add(i["path"])
-    sc.action("back")                                         # B clears picks first
-    assert sc.marks == set() and app.stack[-1] is sc
-    for i in sc.items:
-        if not i["path"].endswith("Keep.zip"):
-            sc.marks.add(i["path"])
-    sc.action("ok")
+            sc.action("ok")
+    sc.action("back")                                         # B stops picking: the picks stay
+    assert not sc.picking and sc.pick_count() == len(sc.items) - 1 and app.stack[-1] is sc
+    sc.action("x")
     app.modal.action("down")
     app.modal.action("ok")
     assert isinstance(app.modal, rb.Confirm) and app.modal.danger
