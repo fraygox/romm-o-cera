@@ -33,7 +33,7 @@ from typing import Callable, Optional
 
 import requests
 
-VERSION = "0.8.1"            # changes only for a real GitHub release
+VERSION = "0.9.0"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
