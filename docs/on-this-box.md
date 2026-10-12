@@ -7,9 +7,14 @@ on the right previews the selected section; press A to open it.
 
 ## Games from RomM
 
-Everything RomM-o-Cera downloaded, biggest first. Delete a game from here, or
-any game marked ✓ in a list (including ones you copied over before). Saves and
-states are always kept.
+Everything RomM-o-Cera downloaded, biggest first (**Y** sorts by name or
+newest first), with the cover and details from RomM beside the list, as in a
+game list. **A** opens the same menu as a game on the box in a game list:
+**Delete**, **Download again** and **More like this** (while RomM's record
+can't be fetched, only Delete). To delete several at once, pick them (X ›
+Pick several, see [Controls](controls.md#picking-several)). Any game marked ✓
+in a list (including ones you copied over before) can also be deleted from
+its game list. Saves and states are always kept.
 
 ## Space
 
@@ -20,9 +25,9 @@ reserve (Settings) that downloads never use, so you can see how much is left
 for downloads.
 
 - **Free up space**: every game EmulationStation lists, including ones copied
-  over another way, least played and biggest first. Mark several, or let it
-  pick enough to free 10–100 GB, and delete them in one go. Saves and states
-  are kept.
+  over another way, least played and biggest first (**Y** sorts). **A**
+  picks games, or the X menu picks enough to free 10–100 GB; then X deletes
+  them in one go, after asking. Saves and states are kept.
 - **Clean up leftovers**: partial files and empty folders that interrupted
   downloads or conversions left behind (including a half-made `.ps3` game
   folder), and **copies of games already here converted**: an archive, image
@@ -32,7 +37,8 @@ for downloads.
   the converted game looks whole, never while a conversion runs, never for a
   file a queued conversion will use, and not on arcade systems (where
   `game.zip` and `game.chd` belong together). Partial downloads still queued
-  are kept so they can resume.
+  are kept so they can resume. **A** deletes one, **Y** all of them, and the
+  X menu the ones you pick; each asks first.
 - **By system**: where the space went in each system, in the same colours as
   the bar. Pick a system to free up space in just that one.
 
@@ -44,7 +50,8 @@ every system and lists each one with its game count, size and the format it
 would become (CHD, RVZ, squashfs, .zcci, .zar, a `.ps3` game folder),
 biggest first.
 
-- **A** on a system lists its games: **A** compresses one, **X** all of them.
+- **A** on a system lists its games: **A** compresses one; the **X** menu
+  compresses all of them, or the ones you pick.
 - **X** on a system compresses the whole system. You're asked first: a big
   system can take hours.
 
@@ -103,8 +110,10 @@ instead of showing an empty, all-clear list. Go back and open it again to retry.
 The last check's results stay here until you check again. A game whose file
 has changed since (replaced or deleted) drops off the list.
 
-Damaged games can be downloaded again, one at a time or all at once; a fresh
-copy replaces a cut-short CHD. A damaged game RomM names differently is found
+Damaged games can be downloaded again, one at a time (**A**) or all at once
+(**Y**); a fresh copy replaces a cut-short CHD. To download several findings
+again, amber ones included, pick them (X › Pick several) and choose
+**Download … again** from the X menu. A damaged game RomM names differently is found
 by its RetroAchievements hash, else by the matching title, disc and region;
 saves move to the new name and playlists follow.
 
@@ -138,10 +147,11 @@ game that's already here, say). It asks first, naming the size and any tracks
 a `.cue`/`.gdi` (or discs an `.m3u`) names, which go with it; saves and states
 stay. If RomM-o-Cera installed the file, it forgets it.
 
-To do several at once, **X** picks a file (and moves to the next one) and
-**Y** picks them all; **B** clears the picks. With files picked, **A** offers
-**Unpack** for every picked archive or **Delete** for all of them, each after
-one confirmation. They're done one after another; one that can't be (a damaged
+To do several at once, pick them as in any list (X › **Pick several files**
+or **Pick all**, then **A** picks; see
+[Controls](controls.md#picking-several)). The X menu then offers **Unpack**
+for every picked archive or **Delete** for all of them, each after one
+confirmation. They're done one after another; one that can't be (a damaged
 archive, say) is left as it is and named at the end, and the rest go on.
 
 Skipped: media folders, `gamelist.xml`, hidden and unfinished files, notes,

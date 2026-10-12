@@ -69,6 +69,7 @@ def _make(rb, app, name, n, monkeypatch=None):
         return scr, lambda m: scr._loaded(_leftovers(rb, app, m))
     if name == "InstalledScreen":
         app.feed = _installed(rb, app, n)
+        app.detail = lambda rom: {}                   # RomM hasn't got them: the panel from what's on the box
         scr = rb.InstalledScreen(app)
         return scr, lambda m: scr._loaded(_installed(rb, app, m))
     if name == "CompressSystemScreen":
@@ -122,6 +123,8 @@ GEOMETRY = {
     "ConversionsScreen": (8, 124, 60, 6),             # no ROWS today: pages by 8, (H - 60 - 124) // 60 shown
     "AuditScreen": (8, 124, 62, 6),
 }
+# the list's x and width where it isn't the whole screen (a game panel beside it)
+XW = {"InstalledScreen": (32, 676)}
 
 
 def _script(rows):
@@ -157,11 +160,12 @@ def _frame(app, scr):
 @pytest.mark.parametrize("name", sorted(GEOMETRY))
 def test_moves_pages_and_scroll_follow(app, rb, name, monkeypatch):
     rows, y0, rh, gap = GEOMETRY[name]
+    x, w = XW.get(name, (48, rb.W - 96))
     n = 3 * rows + 2
     scr, _ = _make(rb, app, name, n, monkeypatch)
     app.push(scr)
     assert getattr(scr, "ROWS", rows) == rows and scr.ROW_H == rh
-    assert _frame(app, scr) == [(48, y0 + k * rh, rb.W - 96, rh - gap) for k in range(rows)]
+    assert _frame(app, scr) == [(x, y0 + k * rh, w, rh - gap) for k in range(rows)]
     seen = []
     for a in _script(rows):
         scr.action(a)
@@ -170,11 +174,11 @@ def test_moves_pages_and_scroll_follow(app, rb, name, monkeypatch):
         assert 0 <= scr.sel <= n - 1
         assert scr.scroll <= scr.sel < scr.scroll + rows
         vis = min(rows, n - scr.scroll)
-        assert rects == [(48, y0 + k * rh, rb.W - 96, rh - gap) for k in range(vis)]
+        assert rects == [(x, y0 + k * rh, w, rh - gap) for k in range(vis)]
     assert seen == TRACE[rows]
 
 
-@pytest.mark.parametrize("name", sorted(GEOMETRY))
+@pytest.mark.parametrize("name", sorted(set(GEOMETRY) - {"FreeUpScreen"}))     # Free up space: a tap picks
 def test_first_tap_selects_second_opens(app, rb, name, monkeypatch):
     rows, y0, rh, gap = GEOMETRY[name]
     scr, _ = _make(rb, app, name, 2 * rows, monkeypatch)
@@ -342,11 +346,11 @@ TILED = {"SpaceScreen": (2, 6, 326, 54, 4), "CheckScreen": (3, 7, 212, 62, 6)}
 # (sel, scroll) after each step of _tile_script, on 3 * ROWS + 2 rows
 TRACE_TILED = {
     "SpaceScreen": [(1, 0), (0, 0), (1, 0), (1, 0), (1, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0),
-                    (7, 0), (8, 1), (9, 2), (15, 8), (21, 14), (21, 14), (21, 14), (15, 13), (14, 12),
-                    (13, 11), (12, 10), (6, 4), (2, 0), (2, 0), (2, 0), (0, 0), (0, 0), (1, 0), (2, 0), (0, 0)],
+                    (7, 0), (8, 1), (9, 2), (15, 8), (21, 14), (21, 14), (15, 13), (9, 7), (8, 6),
+                    (7, 5), (6, 4), (2, 0), (2, 0), (2, 0), (2, 0), (0, 0), (0, 0), (1, 0), (2, 0), (0, 0)],
     "CheckScreen": [(0, 0), (0, 0), (1, 0), (1, 0), (1, 0), (1, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0),
-                    (8, 0), (9, 0), (10, 1), (11, 2), (18, 9), (25, 16), (25, 16), (25, 16), (18, 15),
-                    (17, 14), (16, 13), (15, 12), (8, 5), (3, 0), (3, 0), (3, 0), (0, 0), (0, 0), (1, 0),
+                    (8, 0), (9, 0), (10, 1), (11, 2), (18, 9), (25, 16), (25, 16), (18, 15), (11, 8),
+                    (10, 7), (9, 6), (8, 5), (3, 0), (3, 0), (3, 0), (3, 0), (0, 0), (0, 0), (1, 0),
                     (3, 0), (0, 0)],
 }
 
@@ -354,8 +358,9 @@ TRACE_TILED = {
 @pytest.mark.parametrize("name", sorted(TILED))
 def test_tiles_then_rows_move_page_and_scroll(app, rb, name, monkeypatch):
     """Left/right among the tiles (Space's two swap, Check's three stop at the
-    ends), down into the rows, up from the first row to tile 0, L/R page only
-    in the rows; rows tap at i + tiles, the first tap selecting."""
+    ends), down into the rows, up from the first row to tile 0, L/R (and
+    left/right in the rows) page only in the rows; rows tap at i + tiles,
+    the first tap selecting."""
     tiles, rows, y0, rh, gap = TILED[name]
     n = 3 * rows + 2
     scr = _space(rb, app, n) if name == "SpaceScreen" else _check(rb, app, n, monkeypatch)
@@ -516,7 +521,8 @@ def test_collections_move_page_jump_groups_and_open_on_tap(app, rb, monkeypatch)
 
 
 def test_collections_letter_jump_in_one_list(app, rb):
-    """A Browse-by list: L2/R2 jump to the next or previous letter."""
+    """A Browse-by list: L2/R2 jump to the next or previous letter, put at the
+    top of the list (as in a game list)."""
     scr = rb.CollectionScreen(app, "genre", "Genre")
     scr.items = [dict(it, name=chr(65 + i // 4) + it["name"]) for i, it in enumerate(_collections([("Genre", 30)]))]
     app.push(scr)
@@ -525,7 +531,7 @@ def test_collections_letter_jump_in_one_list(app, rb):
         scr.action(a)
         _frame(app, scr)
         seen.append((scr.sel, scr.scroll))
-    assert seen == [(4, 0), (8, 0), (9, 0), (8, 0), (4, 0), (14, 5), (24, 15), (28, 19), (24, 19)]
+    assert seen == [(4, 4), (8, 8), (9, 8), (8, 8), (4, 4), (14, 5), (24, 15), (28, 20), (24, 20)]
 
 
 # (sel, scroll, rows asked to be fetched) on a 40-row list: _script(12), left/right paging, then A–Z jumps
@@ -570,3 +576,248 @@ def test_game_list_moves_pages_jumps_and_fetches_ahead(app, rb, monkeypatch):
     assert scr.sel == scr.scroll + 2 and opened == []
     app.tap(pt)
     assert opened == ["ok"]
+
+
+# -- one way to pick several rows, A-Z / system jumps and paging on every list ----------------
+
+def _picking(rb, app, name, n, monkeypatch):
+    """A list that can pick rows, with n of them."""
+    if name == "DownloadsScreen":
+        _jobs(rb, app, n, paused=n)
+        return rb.DownloadsScreen(app)
+    if name == "GameListScreen":
+        app.platform_by_id = {1: {"_system": "gba", "id": 1, "name": "GBA"}}
+        roms = [{"id": i, "name": "Game %02d" % i, "fs_name": "G%02d.gba" % i, "platform_id": 1,
+                 "fs_size_bytes": 1 << 20} for i in range(n)]
+        return rb.GameListScreen(app, "Games", static=roms)
+    if name == "AuditScreen":
+        app.feed = ([dict(f, rom={"id": k, "name": "G%02d" % k}, severity="damaged" if k % 2 else "differs")
+                     for k, f in enumerate(_findings(n))], {"checked": n})
+        return rb.AuditScreen(app)
+    return _make(rb, app, name, n, monkeypatch)[0]
+
+
+PICKING = ["AuditScreen", "CompressSystemScreen", "DownloadsScreen", "GameListScreen", "InstalledScreen",
+           "LeftoversScreen", "UnseenScreen"]
+# what the first entry of the X menu says with two rows picked
+PICKED_FIRST = {"AuditScreen": "Download 2 again", "CompressSystemScreen": "Compress 2 picked",
+                "DownloadsScreen": "Resume 2", "GameListScreen": "Download 2 picked",
+                "InstalledScreen": "Delete 2 picked", "LeftoversScreen": "Delete 2 picked",
+                "UnseenScreen": "Unpack 2 archives"}
+
+
+@pytest.mark.parametrize("name", PICKING)
+def test_every_list_picks_several_the_same_way(app, rb, name, monkeypatch):
+    """X opens the list's menu, whose "Pick several" starts picking; then A
+    picks and moves on, X's menu starts with what to do with the picks, B
+    stops picking (the picks stay ticked) and a second B goes back."""
+    app.push(rb.Screen(app))
+    scr = _picking(rb, app, name, 12, monkeypatch)
+    app.push(scr)
+    _frame(app, scr)
+    assert ("X", "Menu") in scr.hints() and not scr.picking
+    scr.action("x")
+    labels = [e[0] for e in app.modal.entries if e]
+    k = next(i for i, e in enumerate(app.modal.entries) if e and e[0].startswith("Pick several"))
+    app.modal.sel = k
+    app.modal.action("ok")
+    assert app.modal is None and scr.picking
+    h = scr.hints()
+    assert h[:2] == [("A", "Pick"), ("X", "Menu")] and h[-1] == ("B", "Stop picking")
+    scr.action("ok")
+    scr.action("ok")
+    assert scr.pick_count() == 2 and scr.sel == 2 and scr.hints()[1] == ("X", "2 picked")
+    _frame(app, scr)                                      # tick boxes drawn
+    scr.action("x")
+    assert app.modal.title.startswith("2 picked") or name == "GameListScreen"
+    assert app.modal.entries[0][0] == PICKED_FIRST[name] and app.modal.entries[0][2]
+    assert "Stop picking" in [e[0] for e in app.modal.entries if e]
+    app.modal = None
+    scr.action("back")
+    assert not scr.picking and scr.pick_count() == 2 and app.stack[-1] is scr
+    scr.action("back")
+    assert app.stack[-1] is not scr
+    assert "Pick several" in " ".join(labels)
+
+
+@pytest.mark.parametrize("name", PICKING)
+def test_a_tap_picks_while_picking(app, rb, name, monkeypatch):
+    scr = _picking(rb, app, name, 12, monkeypatch)
+    app.push(scr)
+    scr.picking = True
+    _frame(app, scr)
+    rect = app.targets[0][0]                              # the first row
+    app.tap(rect.center)
+    assert scr.pick_count() == 1 and scr.sel == scr.base
+    app.tap(rect.center)
+    assert scr.pick_count() == 0
+
+
+@pytest.mark.parametrize("name, entry, title", [
+    ("InstalledScreen", 0, "Delete 2 games?"), ("LeftoversScreen", 0, "Delete 2 leftovers?"),
+    ("UnseenScreen", 1, "Delete 2 files?"), ("DownloadsScreen", 1, "Cancel 2 downloads?")])
+def test_deleting_or_cancelling_picks_asks_first(app, rb, name, entry, title, monkeypatch):
+    scr = _picking(rb, app, name, 6, monkeypatch)
+    app.push(scr)
+    scr.picking = True
+    scr.action("ok")
+    scr.action("ok")
+    scr.action("x")
+    app.modal.sel = entry
+    app.modal.action("ok")
+    assert isinstance(app.modal, rb.Confirm) and app.modal.danger and app.modal.title == title
+
+
+def test_free_up_space_is_always_picking(app, rb, monkeypatch):
+    """Free up space only picks: A picks from the start, B goes back, a tap
+    picks; X deletes the picks after a confirm, or picks enough to free N GB."""
+    app.push(rb.Screen(app))
+    scr = _make(rb, app, "FreeUpScreen", 12, monkeypatch)[0]
+    app.push(scr)
+    assert scr.hints()[:3] == [("A", "Pick"), ("X", "Menu"), ("Y", "Least played first")]
+    scr.action("ok")
+    assert scr.pick_count() == 1 and scr.sel == 1
+    scr.action("x")
+    assert app.modal.entries[0][0] == "Delete 1 picked"
+    assert "Pick several games" not in [e[0] for e in app.modal.entries if e]
+    app.modal.action("ok")
+    assert isinstance(app.modal, rb.Confirm) and app.modal.danger
+    app.modal = None
+    scr.action("x")
+    app.modal.sel = 1
+    app.modal.action("ok")                                # pick enough to free 10 GB: all 12 (78 MB)
+    assert scr.pick_count() == 12
+    scr.action("back")
+    assert app.stack[-1] is not scr
+
+
+def test_check_findings_amber_ones_download_again_together(app, rb, monkeypatch):
+    """Picked findings download again together, the amber "differs" ones too;
+    a finding RomM hasn't got can't be picked."""
+    found = [dict(f, rom={"id": k, "name": "G%02d" % k}, severity="damaged" if k == 0 else "differs")
+             for k, f in enumerate(_findings(3))]
+    found.append(dict(_findings(4)[3], severity="differs"))           # rom None
+    monkeypatch.setattr(rb.rommlib, "load_audit", lambda: {"findings": found, "stats": {}, "time": 0})
+    scr = rb.CheckScreen(app)
+    app.push(scr)
+    queued = []
+    monkeypatch.setattr(app.downloader, "enqueue", lambda rom, system, **kw: queued.append(rom["id"]))
+    scr.picking = True
+    scr.sel = scr.base
+    for _ in range(4):
+        scr.action("ok")
+    assert scr.pick_count() == 3 and "can't download it again" in app.toasts[-1][0]
+    scr.action("x")
+    assert app.modal.entries[0][:2] == ("Download 3 again", "1 damaged, 2 differ from RomM")
+    app.modal.action("ok")
+    app.modal.action("ok")
+    assert sorted(queued) == [0, 1, 2] and scr.picks == {} and not scr.picking
+
+
+def test_downloads_menu_pauses_all_and_picks_cancel_several(app, rb, monkeypatch):
+    jobs = _jobs(rb, app, 5, paused=3)
+    scr = rb.DownloadsScreen(app)
+    app.push(scr)
+    scr.action("x")
+    assert app.modal.entries[0][0] == "Pause all"
+    app.modal.action("ok")
+    assert app.downloader.hold
+    scr.picking = True
+    scr.action("ok")
+    scr.action("ok")
+    scr.action("x")
+    labels = [e[0] for e in app.modal.entries if e]
+    assert labels[:2] == ["Resume 2", "Cancel 2"]
+    app.modal.sel = 1
+    app.modal.action("ok")
+    app.modal.action("ok")
+    J = rb.rommlib.Job
+    assert [j.state for j in jobs[:3]] == [J.CANCELLED, J.CANCELLED, J.PAUSED] and not scr.picking
+
+
+@pytest.mark.parametrize("name, label", [("FreeUpScreen", "A–Z"), ("InstalledScreen", "A–Z"),
+                                         ("LeftoversScreen", "System"), ("UnseenScreen", "System"),
+                                         ("BiosScreen", "A–Z"), ("CompressSystemScreen", "A–Z")])
+def test_letter_or_system_jumps(app, rb, name, label, monkeypatch):
+    """L2/R2 on every list in name (or system) order; the jump puts the run
+    at the top of the list. Free up space and Games from RomM jump only
+    when sorted by name, and say so."""
+    scr = _make(rb, app, name, 30, monkeypatch)[0]
+    app.push(scr)
+    rows = scr.listed()
+    for k, r in enumerate(rows):                          # three runs of ten: A…, B…, C…
+        ch = "ABC"[k // 10]
+        if name in ("LeftoversScreen", "UnseenScreen"):
+            sy = "s" + ch
+            r["path"] = "%s/%s/f%02d" % (rb.rommlib.ROMS_ROOT, sy, k)
+            r["system"] = sy
+        elif name == "CompressSystemScreen":
+            r["name"] = ch + r["name"]
+        else:
+            r["name"] = ch + "%02d" % k
+    if name in ("FreeUpScreen", "InstalledScreen"):
+        scr.action("r2")
+        assert scr.sel == 0 and "sorted by name" in app.toasts[-1][0]
+        assert ("L2 R2", label) not in scr.hints()
+        while scr.sort != "name":
+            scr.action("y")
+    scr.__dict__.pop("_starts", None)                     # names changed in place
+    rows = scr.listed()
+    first = {k: rows[k] for k in (0, 10, 20)}
+    assert ("L2 R2", label) in scr.hints()
+    scr.action("r2")
+    assert scr.listed()[scr.sel] is first[10] and scr.scroll == 10 and scr.bubble
+    scr.action("r2")
+    assert scr.listed()[scr.sel] is first[20] and scr.scroll == min(20, 30 - scr.ROWS)
+    scr.action("down")
+    scr.action("l2")                                      # back to the start of its own run first
+    assert scr.listed()[scr.sel] is first[20]
+    scr.action("l2")
+    assert scr.listed()[scr.sel] is first[10]
+
+
+def test_page_hints_and_left_right_on_every_list(app, rb, monkeypatch):
+    """L/R are shown only when there's more than a page; left/right page too."""
+    for name in sorted(GEOMETRY):
+        rows = GEOMETRY[name][0]
+        scr, _ = _make(rb, app, name, rows, monkeypatch)
+        assert ("L", "Page up") not in scr.hints(), name
+        scr, _ = _make(rb, app, name, 2 * rows + 1, monkeypatch)
+        assert ("L", "Page up") in scr.hints() and ("R", "Page down") in scr.hints(), name
+        scr.action("right")
+        assert scr.sel == rows, name
+        scr.action("left")
+        assert scr.sel == 0, name
+
+
+def test_games_from_romm_sorts_and_offers_the_game_list_menu(app, rb, monkeypatch):
+    """Games from RomM: Y sorts (biggest, name, newest); A opens the menu a
+    game opened from a game list has, plus More like this, once RomM's
+    record is here (else Delete only); the panel shows RomM's record."""
+    app.platform_by_id = {1: {"_system": "gba", "id": 1, "name": "GBA"}}
+    recs = {}
+    monkeypatch.setattr(app, "detail", lambda rom: recs.get(rom["id"]))
+    items = [{"id": i, "name": "Game %s" % c, "system": "gba", "when": "2026-01-%02d" % (10 - i), "size": s}
+             for i, (c, s) in enumerate([("B", 5), ("C", 9), ("A", 1)])]
+    app.feed = items
+    scr = rb.InstalledScreen(app)
+    app.push(scr)
+    assert [i["name"] for i in scr.items] == ["Game C", "Game B", "Game A"]
+    scr.action("y")
+    assert [i["name"] for i in scr.items] == ["Game A", "Game B", "Game C"]
+    scr.action("y")
+    assert [i["id"] for i in scr.items] == [0, 1, 2] and ("Y", "Newest first") in scr.hints()
+    scr.action("ok")                                      # RomM's record not here yet: delete only
+    m = app.modal
+    assert [(e[0], bool(e[2])) for e in m.entries] == [("Delete from this box", True), ("Download again", False),
+                                                       ("More like this", False)]
+    assert m.entries[1][1] == "Looking it up in RomM…"
+    app.modal = None
+    _frame(app, scr)
+    recs[0] = {"id": 0, "name": "Game B", "fs_name": "Game B.gba", "platform_id": 1, "fs_size_bytes": 5}
+    scr.action("ok")
+    assert isinstance(app.modal, rb.ManageMenu)
+    assert [e[0] for e in app.modal.entries] == ["Delete from this box", "Download again", "More like this"]
+    app.modal = None
+    rects = _frame(app, scr)
+    assert (752, 580, 472, 52) in rects                   # the game panel's action area (as in a game list)
