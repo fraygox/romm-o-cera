@@ -98,7 +98,7 @@ def _make(rb, app, name, n, monkeypatch=None):
         return scr, lambda m: scr._loaded(_unseen(rb, app, m))
     if name == "ConversionsScreen":
         have = [_conversions(n)]
-        monkeypatch.setattr(rb, "conversion_rows", lambda: have[0])
+        rb.patch(monkeypatch, "conversion_rows", lambda: have[0])
         scr = rb.ConversionsScreen(app)
 
         def reload(m):
@@ -278,8 +278,8 @@ def test_list_base_moves_pages_and_offsets_taps_past_tiles(app, rb):
 
 def test_credits_pages_by_five_shows_six_and_a_tap_only_selects(app, rb, monkeypatch):
     """Credits: L/R page by 5 while 6 rows show; a tap selects and never opens."""
-    monkeypatch.setattr(rb, "CREDITS", [("Name %02d" % i, "what", "MIT", "https://x/%d" % i, "" if i % 2 else "a note")
-                                        for i in range(20)])
+    monkeypatch.setattr(rb.about, "CREDITS", [("Name %02d" % i, "what", "MIT", "https://x/%d" % i,
+                                               "" if i % 2 else "a note") for i in range(20)])
     scr = rb.CreditsScreen(app)
     app.push(scr)
     n, rh = len(rb.CREDITS), 96

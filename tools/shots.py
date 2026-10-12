@@ -57,11 +57,11 @@ mock = subprocess.Popen([sys.executable, os.path.join(APP, "tools", "mock_romm.p
 os.environ["ROMM_URL"] = "http://127.0.0.1:%d" % port
 os.environ["ROMM_TOKEN"] = "demo"
 
-import importlib.machinery  # noqa: E402
 import pygame  # noqa: E402
 import requests  # noqa: E402
 import rommlib  # noqa: E402
 from fake_es import FakeES  # noqa: E402
+import uifacade  # noqa: E402  (tests/uifacade.py)
 
 for _ in range(100):
     try:
@@ -98,7 +98,7 @@ es = FakeES(R, {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba":
 es.mem["psx"][os.path.join(R, "psx/Dolor Dash (USA).chd")].update(lastplayed="20261003T200000", playcount="4")
 rommlib.ES_API = es.url
 
-rb = importlib.machinery.SourceFileLoader("rb", os.path.join(APP, "rommbrowser.pygame")).load_module()
+rb = uifacade.load(APP, "rb")             # rommbrowser.pygame, every UI name readable as rb.X
 _real_statvfs = os.statvfs
 
 

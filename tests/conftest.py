@@ -7,7 +7,6 @@
                           tests/contract/disposable.py runs it against a throwaway
                           RomM of any version.
 """
-import importlib.machinery
 import os
 import socket
 import subprocess
@@ -79,10 +78,13 @@ def isolated(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="session")
 def rb():
-    """The UI module (rommbrowser.pygame); skipped where pygame isn't installed."""
+    """The UI: rommbrowser.pygame loaded as Batocera runs it, and every name in
+    it and the rbui package readable as rb.X (tests/uifacade.py: patch the
+    module that defines a name, rb.theme.K, or use rb.patch()); skipped where
+    pygame isn't installed."""
     pytest.importorskip("pygame")
-    return importlib.machinery.SourceFileLoader(
-        "rommbrowser", os.path.join(APP, "rommbrowser.pygame")).load_module()
+    import uifacade
+    return uifacade.load(APP)
 
 
 def _free_port():

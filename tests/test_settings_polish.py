@@ -209,7 +209,7 @@ def test_known_vectors_from_the_standard():
 @pytest.mark.parametrize("k", [1.0, 1.5, 3.0])
 def test_the_code_is_drawn_crisp_with_a_quiet_zone(rb, monkeypatch, k):
     import pygame
-    monkeypatch.setattr(rb, "K", k)
+    monkeypatch.setattr(rb.theme, "K", k)
     c = pygame.Surface((rb.S(rb.W), rb.S(rb.H)))
     c.fill((40, 30, 60))
     m = rb.docs_qr()

@@ -13,7 +13,7 @@ def fonts(rb, monkeypatch):
     pygame.font.init()
     rubik = os.path.join(rb.APP_DIR, "fonts", "Rubik-Regular.ttf")
     free = os.path.join(os.path.dirname(pygame.__file__), pygame.font.get_default_font())
-    monkeypatch.setattr(rb, "_HAS", {})
+    monkeypatch.setattr(rb.draw, "_HAS", {})
     main, fb = pygame.font.Font(rubik, 20), pygame.font.Font(free, 20)
     rb.FONT_PATH.update({main: rubik, fb: free})
     rb.FALLBACK[main] = [fb]
@@ -44,7 +44,7 @@ def test_each_character_goes_to_the_first_font_that_has_it(fonts):
 def test_the_korean_font_is_used_for_hangul_only(fonts, monkeypatch):
     """Its other glyphs don't match Rubik (an emoji drew as a wrong symbol)."""
     rb, main, fb, free = fonts
-    monkeypatch.setattr(rb, "HANGUL_FONTS", [free])
+    monkeypatch.setattr(rb.draw, "HANGUL_FONTS", [free])
     assert not rb._has_glyph(free, "Λ") and rb._runs(main, "Λ") == [(main, "Λ")]
     assert rb._runs(main, "한") == [(main, "한")]      # FreeSans has no Hangul either
 

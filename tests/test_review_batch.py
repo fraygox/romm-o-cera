@@ -42,7 +42,7 @@ def _drawn(rb, monkeypatch, scr):
     def text(surf, font, s, *a, **k):
         seen.append(s)
         return real(surf, font, s, *a, **k)
-    monkeypatch.setattr(rb, "text", text)
+    rb.patch(monkeypatch, "text", text)
     scr.draw(scr.app.canvas)
     return " | ".join(str(s) for s in seen)
 
@@ -68,7 +68,10 @@ CASES = [
 @pytest.mark.parametrize("name,args,breaks,all_good", CASES, ids=[c[0] for c in CASES])
 def test_a_failed_load_says_so_instead_of_nothing_here(app, rb, monkeypatch, name, args, breaks, all_good):
     for where, attr in breaks:
-        monkeypatch.setattr({"rommlib": rommlib, "rb": rb, "api": app.api}[where], attr, _boom)
+        if where == "rb":
+            rb.patch(monkeypatch, attr, _boom)
+        else:
+            monkeypatch.setattr({"rommlib": rommlib, "api": app.api}[where], attr, _boom)
     monkeypatch.setattr(rb.time, "sleep", lambda s: None)
     scr = getattr(rb, name)(app, *args)
     app.push(scr)

@@ -210,10 +210,11 @@ def stage_release(info, staging=None):
                     raise UpdateError("Unexpected path in release: %s" % n)
             z.extractall(staging)
         app = os.path.join(staging, "rommbrowser")
-        for need in ("rommbrowser.pygame", "rommlib.py", "romm/__init__.py", "romm/core.py"):
+        for need in ("rommbrowser.pygame", "rommlib.py", "romm/__init__.py", "romm/core.py", "rbui/__init__.py",
+                     "rbui/app.py"):
             if not os.path.isfile(os.path.join(app, need)):
                 raise UpdateError("Release is missing %s" % need)
-        for root, _dirs, files in os.walk(app):         # romm/ too: most of the engine lives there
+        for root, _dirs, files in os.walk(app):         # romm/ and rbui/ too: the engine and the UI live there
             for fn in files:
                 if fn.endswith((".py", ".pygame")):
                     path = os.path.join(root, fn)

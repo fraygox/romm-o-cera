@@ -31,7 +31,7 @@ def _run(app):
 def test_text_is_kept_by_size_and_the_newest_stays(app, rb, monkeypatch):
     rb._TEXT_CACHE.clear()
     rb._TEXT_BYTES[0] = 0
-    monkeypatch.setattr(rb, "TEXT_BUDGET", 300 << 10)
+    monkeypatch.setattr(rb.draw, "TEXT_BUDGET", 300 << 10)
     f = app.fonts.body
     first = rb.render_cached(f, "kept on screen", (255, 255, 255))
     for i in range(800):
@@ -62,7 +62,7 @@ def test_covers_stay_in_budget_and_what_is_drawn_stays(app, rb, monkeypatch):
     pygame.image.save(pygame.Surface((150, 200)), path)
     app.api.fetch_cover = lambda rom, large=False: path
     one = 150 * 200 * 4
-    monkeypatch.setattr(rb, "COVER_BUDGET", 5 * one)
+    monkeypatch.setattr(rb.draw, "COVER_BUDGET", 5 * one)
     for rid in range(40):
         app.cover({"id": rid})
         app.cover({"id": 0})                                   # on screen the whole time
@@ -119,8 +119,8 @@ def test_check_games_keeps_only_the_games_on_the_box(isolated, monkeypatch):
 
 
 def test_a_small_box_keeps_half_as_much(rb, monkeypatch):
-    monkeypatch.setattr(rb, "TEXT_BUDGET", 64 << 20)
-    monkeypatch.setattr(rb, "COVER_BUDGET", 64 << 20)
+    monkeypatch.setattr(rb.draw, "TEXT_BUDGET", 64 << 20)
+    monkeypatch.setattr(rb.draw, "COVER_BUDGET", 64 << 20)
     monkeypatch.setattr(rommlib, "total_ram", lambda: 8 << 30)
     rb.fit_memory_budgets()
     assert rb.TEXT_BUDGET == rb.COVER_BUDGET == 64 << 20

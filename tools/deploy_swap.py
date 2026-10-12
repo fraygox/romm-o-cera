@@ -18,7 +18,7 @@ import os
 import shutil
 import sys
 
-NEED = ("rommbrowser.pygame", "rommlib.py", "romm/__init__.py", "romm/core.py")
+NEED = ("rommbrowser.pygame", "rommlib.py", "romm/__init__.py", "romm/core.py", "rbui/__init__.py", "rbui/app.py")
 
 
 class DeployError(Exception):

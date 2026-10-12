@@ -345,8 +345,8 @@ def test_a_burst_of_the_same_error_sounds_once(app, rb, monkeypatch):
 def test_a_repeated_toast_draws_its_count(app, rb, monkeypatch):
     seen = []
     real = rb.rich_text
-    monkeypatch.setattr(rb, "rich_text", lambda c, fonts, font, s, *a, **k: (seen.append(s),
-                                                                            real(c, fonts, font, s, *a, **k))[1])
+    rb.patch(monkeypatch, "rich_text", lambda c, fonts, font, s, *a, **k: (seen.append(s),
+                                                                          real(c, fonts, font, s, *a, **k))[1])
     app.toast("Queued: Lorem")
     app.toast("Queued: Lorem")
     app.toast("Queued: Lorem")
@@ -403,7 +403,7 @@ def test_a_failed_compress_scan_lists_nothing(app, rb, monkeypatch):
     app.push(sc)
     sc._loaded([], [("3ds", "/r/3ds/x.3ds", "an encrypted dump")])
     assert sc.rows
-    monkeypatch.setattr(rb, "compress_scan", lambda skipped=None: 1 / 0)
+    rb.patch(monkeypatch, "compress_scan", lambda skipped=None: 1 / 0)
     sc.enter()
     assert sc.rows == [] and sc.load_error
     sc.action("ok")
@@ -456,7 +456,7 @@ def test_a_key_tapped_after_a_tapped_match_types_instead_of_reopening_it(isolate
     sc.preview_total = 5
     monkeypatch.setattr(app, "rom_status", lambda rom: ("remote", None))
     opened = []
-    monkeypatch.setattr(rb, "DownloadConfirm", lambda a, rom: opened.append(rom["id"]) or "dl")
+    rb.patch(monkeypatch, "DownloadConfirm", lambda a, rom: opened.append(rom["id"]) or "dl")
     sc.tap_pick(1)                                  # a Top match tapped: its prompt opens
     assert opened == [1] and app.modal == "dl"
     app.modal = None                                # and is closed

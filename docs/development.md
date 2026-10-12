@@ -269,11 +269,50 @@ is bounded too: `chd-results.jsonl` keeps its last entries, the cover cache
 its size limit, and queue lines rb_finalize can't read (`*.bad`) their
 newest 1 MB.
 
+## The rbui package
+
+The UI is the `rbui/` package; `rommbrowser.pygame` only puts the app folder
+on `sys.path`, imports it and runs `main()`. The modules, in import order
+(each uses only the ones above it):
+
+| Module | Holds |
+|---|---|
+| `rbui/__init__.py` | `APP_DIR` (the app folder) and `APP_NAME` |
+| `rbui/theme.py` | scaling (`W`, `H`, `K`, `S()`, `SR()`, `LR()`), the palette, `THEMES` and `apply_theme()`, the space bar's derived colours |
+| `rbui/pads.py` | controller styles: the glyph and label each hint token shows, `PAD_STYLE`, `INPUT_MODE` |
+| `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, covers' scaling |
+| `rbui/sfx.py` | the UI's sounds |
+| `rbui/input.py` | keyboard, game controllers and raw joysticks to actions |
+| `rbui/modals.py` | menus and dialogs: `ActionMenu`, `ManageMenu`, `Confirm`, `InfoDialog`, `DownloadConfirm` |
+| `rbui/screens/` | the screens, a module per family (`base.py`: `Screen`, `ListScreen`; `box_data.py`: what the On this box screens share) |
+| `rbui/startup.py` | start-up chores: markers, registering with ES, memory budgets, malloc tuning |
+| `rbui/app.py` | the `App` (screen stack, modal, toasts, main loop, background work) and the cover loader |
+
+The rules (`tests/test_ui_package.py` checks them):
+
+- Names that change while the app runs live in one module and the others read
+  them through it: `theme.BG` (every palette colour: `apply_theme()` rebinds
+  them), `theme.K`, `draw.TEXT_BUDGET` / `draw.COVER_BUDGET`, `draw.FONTS`,
+  `pads.INPUT_MODE` / `pads.PAD_STYLE`. A `from rbui.theme import BG` would
+  keep the colour of the theme at import. Everything else (functions,
+  classes, constants) is imported by name.
+- Everything is imported at start-up: no rbui import inside a function, so
+  nothing loads later from a folder an update swapped in. The workers
+  (rb_*) never import rbui.
+
+In tests, the `rb` fixture loads `rommbrowser.pygame` and reads every UI name
+as `rb.X` from the module that defines it (`tests/uifacade.py`; the
+screenshot harness uses it too). It is read-only: patch the defining module
+(`monkeypatch.setattr(rb.theme, "K", 3)`), or for a function or class other
+modules import by name, `rb.patch(monkeypatch, "text", fake)`, which replaces
+it in every module that holds it.
+
 ## Files
 
 | File | Role |
 |---|---|
-| `rommbrowser.pygame` | the UI (Batocera's pygame system runs it) |
+| `rommbrowser.pygame` | the entry point Batocera's pygame system runs: starts the UI |
+| `rbui/` | the UI (see [The rbui package](#the-rbui-package)) |
 | `rommbrowser.pygame.keys` | evmapy override: only Hotkey+Start (exit) |
 | `rommlib.py` | the engine's front: VERSION, BUILD and APP_DIR, then imports the `romm/` package and makes every name in it readable and settable as `rommlib.X` |
 | `romm/` | the engine (see [The romm package](#the-romm-package)) |

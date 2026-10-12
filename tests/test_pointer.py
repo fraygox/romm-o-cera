@@ -20,7 +20,7 @@ def make_app(isolated, rb, monkeypatch):
         app.bg = lambda fn, done=None, err=None: None       # no network
         return app
     yield make
-    rb.K = 1.0                                             # what the other tests' headless Apps draw at
+    rb.theme.K = 1.0                                       # what the other tests' headless Apps draw at
 
 
 def ev(kind, pos=None, **kw):
@@ -260,8 +260,8 @@ def _search(rb, app, monkeypatch, installed=()):
     sc.preview_total = 5
     monkeypatch.setattr(app, "rom_status", lambda rom: ("installed" if rom["id"] in installed else "remote", None))
     opened = []
-    monkeypatch.setattr(rb, "ManageMenu", lambda a, rom: opened.append(("manage", rom["id"])) or "menu")
-    monkeypatch.setattr(rb, "DownloadConfirm", lambda a, rom: opened.append(("download", rom["id"])) or "dl")
+    rb.patch(monkeypatch, "ManageMenu", lambda a, rom: opened.append(("manage", rom["id"])) or "menu")
+    rb.patch(monkeypatch, "DownloadConfirm", lambda a, rom: opened.append(("download", rom["id"])) or "dl")
     return sc, opened
 
 
@@ -366,7 +366,7 @@ class FakeJoy:
 def _raw(rb, monkeypatch, joy):
     import pygame
     pygame.init()
-    monkeypatch.setattr(rb, "sdlcontroller", None)
+    monkeypatch.setattr(rb.input, "sdlcontroller", None)
     monkeypatch.setattr(pygame.joystick, "get_count", lambda: 0)
     inp = rb.Input(False)
     monkeypatch.setattr(pygame.joystick, "Joystick", lambda i: joy)
