@@ -40,7 +40,8 @@ Settings theme) draws them in that theme; `screenshots/themes/` comes from it.
 ## The documentation site
 
 <https://fraygox.github.io/romm-o-cera/> is built from README.md and docs/ by
-`.github/workflows/docs.yml` on every push to main. `tools/docs_site.py`
+`.github/workflows/docs.yml` for each stable release (it describes what Stable
+users have), or now with `tools/release.py docs`. `tools/docs_site.py`
 reshapes the GitHub Markdown into pages (README.md becomes Home, Install and
 Credits), and `mkdocs.yml` lists them. Edit README.md and docs/, never
 build/. To preview:
@@ -51,6 +52,60 @@ python3 tools/docs_site.py && pip install -r tools/docs-requirements.txt && mkdo
 
 `mkdocs build --strict` fails on a broken link or anchor, so the site never
 publishes one.
+
+## Releasing
+
+Every commit goes to GitHub's `main`; GitHub Actions builds from there, and
+`tools/release.py` drives it. There are two channels, picked on the box in
+Settings → Update channel:
+
+- **Nightly** follows `main`. Each push that changes the app is tested and
+  built as `VERSION+nYYYYMMDD.HHMM.<commit>` (UTC) and replaces the rolling
+  `nightly` prerelease (`.github/workflows/nightly.yml`). It's never GitHub's
+  "latest", so Stable installs and older versions don't see it.
+- **Stable** is a tagged release, `vX.Y.Z`, with its notes in `CHANGELOG.md`
+  (`.github/workflows/release.yml`; the docs site updates with it).
+
+A nightly sorts after the release it was built on and before the next:
+0.8.1 < 0.8.1+n20261012.1903.ab12cd3 < 0.8.2. Back on Stable, a box keeps
+its nightly until a release is newer (never a downgrade).
+
+```sh
+tools/release.py setup                    # once per clone (git hooks; see below)
+tools/release.py push                     # ship new commits; the nightly builds itself
+tools/release.py nightly --wait           # build the nightly now and watch it
+tools/release.py changelog                # what the next release's notes would say
+tools/release.py stable --dry-run         # preview: version, title, notes
+tools/release.py stable [--bump minor] [--notes notes.md] [--summary "…"] [--no-screenshots] [--wait]
+tools/release.py screenshots              # refresh the README screenshots (commits them)
+tools/release.py docs                     # publish main's docs site now
+```
+
+`stable` bumps `VERSION` and `RELEASE_DATE`, adds the CHANGELOG section
+(written from the commits since the last release, grouped by Conventional
+Commit type, unless `--notes` gives it), refreshes the README screenshots,
+commits `chore: vX.Y.Z`, tags it and pushes. The release workflow tests the
+tag, builds it and publishes the release; nothing is published if a test
+fails. Screenshots need Python with pygame: `ROMM_PY` names it (for example
+a docker image). Commit subjects become the notes, so write them for users:
+`fix: covers that didn't load are fetched again`.
+
+On a box, `VERSION=nightly` installs the nightly from the shell:
+`curl -fsSL https://github.com/fraygox/romm-o-cera/releases/latest/download/install.sh | VERSION=nightly sh`.
+
+### Public commits
+
+Commits are public once pushed. `tools/release.py setup` turns on the hooks in
+`tools/hooks/`, which run `tools/check_public.py` before each commit and push:
+the author and committer must be `public.email`, and no message or added line
+may match a `public.deny` pattern. Both are set per clone in git config, never
+in the repo:
+
+```sh
+git config public.email you@users.noreply.github.com
+git config user.email you@users.noreply.github.com
+git config --add public.deny 'your-name|your-domain\.example'
+```
 
 ## dolphin-tool
 
@@ -199,6 +254,8 @@ the single-use pairing POST don't go through it.
 | `tools/dolphin-tool/` | builds and packages dolphin-tool for Batocera x86_64 and aarch64 (`make.sh`, `package.sh`) |
 | `tools/xbox360-tools/` | builds and packages extract-xiso and zarchive for Batocera x86_64 (`make.sh`, `package.sh`) |
 | `tools/settle.py` | tells the screenshot drivers when the app has settled (`SHOOT_SETTLE`) |
-| `tools/build-release.sh`, `tools/install.sh` | build the release zip / the on-box installer |
-| `tools/publish.sh` | maintainer: publish this folder from a monorepo (history replay, or `--snapshot` one commit on top of the remote) |
+| `tools/build-release.sh`, `tools/install.sh` | build the release zip (`NIGHTLY=…` for a nightly) / the on-box installer |
+| `tools/release.py` | push, nightly and stable releases, screenshots, docs ([Releasing](#releasing)) |
+| `tools/check_public.py`, `tools/hooks/` | keep private details out of public commits (git hooks) |
+| `CHANGELOG.md` | every stable release's notes (the GitHub release shows its section) |
 | `docs/` | these pages |

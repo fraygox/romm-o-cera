@@ -1,0 +1,33 @@
+# A stable release: `tools/release.py stable` pushes the vX.Y.Z tag; this
+# tests that commit, builds it and publishes the GitHub release with its
+# CHANGELOG.md section as the notes.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+  publish:
+    needs: tests
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          ver=$(ALLOW_OLD_DATE=1 OUT=dist tools/build-release.sh)
+          [ "v$ver" = "$TAG" ] || { echo "tag $TAG but rommlib.VERSION is $ver"; exit 1; }
+          python3 tools/release.py notes "$TAG" > notes.md
+          python3 tools/release.py title "$TAG" > title.txt
+      - name: Publish
+        run: |
+          gh release create "$TAG" --verify-tag --latest --title "$(cat title.txt)" --notes-file notes.md \
+              dist/romm-o-cera.zip dist/SHA256SUMS dist/install.sh

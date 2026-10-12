@@ -1,10 +1,11 @@
 # The documentation website: https://fraygox.github.io/romm-o-cera/
-# Built from README.md and docs/ (tools/docs_site.py + mkdocs.yml) on every push to main.
+# Built from README.md and docs/ (tools/docs_site.py + mkdocs.yml) for each
+# stable release (it describes what Stable users have), or on demand:
+# `tools/release.py docs` publishes main's docs now.
 name: docs
 on:
   push:
-    branches: [main]
-    paths: [README.md, "docs/**", "screenshots/**", mkdocs.yml, tools/docs_site.py, tools/docs-requirements.txt, .github/workflows/docs.yml]
+    tags: ["v*"]
   workflow_dispatch:
 permissions:
   contents: read

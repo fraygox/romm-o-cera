@@ -1,0 +1,75 @@
+# The nightly channel follows main: each push that changes the app is
+# tested, built as VERSION+nYYYYMMDD.HHMM.commit and replaces the rolling
+# "nightly" prerelease (never GitHub's "latest": stable installs ignore it).
+# A burst of pushes builds once, for the newest. `tools/release.py nightly`
+# (or Run workflow on GitHub) builds now.
+name: nightly
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "README.md", "CHANGELOG.md", "screenshots/**", "mkdocs.yml", "tests/**",
+                   "tools/docs_site.py", "tools/docs-requirements.txt", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if main hasn't changed
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.c.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: c
+        run: |
+          head=$(git rev-parse HEAD)
+          last=$(git rev-parse -q --verify 'refs/tags/nightly^{commit}' || true)
+          if [ "${{ inputs.force }}" = true ] || [ "$head" != "$last" ]; then
+              echo build=true >> "$GITHUB_OUTPUT"
+          else
+              echo "main is still the last nightly ($head)"; echo build=false >> "$GITHUB_OUTPUT"
+          fi
+  tests:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    uses: ./.github/workflows/tests.yml
+  publish:
+    needs: [check, tests]
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          stamp="n$(date -u +%Y%m%d.%H%M).$(git rev-parse --short=7 HEAD)"
+          label=$(NIGHTLY="$stamp" OUT=dist tools/build-release.sh)
+          echo "LABEL=$label" >> "$GITHUB_ENV"
+          python3 tools/release.py notes --nightly > notes.md
+      - name: Publish
+        run: |
+          git tag -f nightly HEAD
+          git push -f origin refs/tags/nightly
+          if gh release view nightly >/dev/null 2>&1; then
+              # the files first, the title (which the app reads) last
+              gh release upload nightly dist/romm-o-cera.zip dist/SHA256SUMS dist/install.sh --clobber
+              gh release edit nightly --prerelease --title "Nightly v$LABEL" --notes-file notes.md
+          else
+              gh release create nightly --prerelease --latest=false --title "Nightly v$LABEL" \
+                  --notes-file notes.md dist/romm-o-cera.zip dist/SHA256SUMS dist/install.sh
+          fi

@@ -1,0 +1,3 @@
+#!/bin/sh
+# checks every commit about to be pushed (author, message, added lines)
+exec python3 "$(git rev-parse --show-toplevel)/tools/check_public.py" --push

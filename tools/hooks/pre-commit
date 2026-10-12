@@ -1,0 +1,3 @@
+#!/bin/sh
+# every commit is public once pushed: refuse private details (tools/check_public.py)
+exec python3 "$(git rev-parse --show-toplevel)/tools/check_public.py" --staged
