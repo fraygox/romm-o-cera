@@ -193,19 +193,43 @@ def _slim(rom):
     return {k: rom.get(k) for k in ("id", "name", "fs_name", "fs_name_no_ext", "platform_id")}
 
 
+def _original(path, files, conv):
+    """RomM's copy of what a file converted here was made from: the game file or
+    archive member with its name and one of the converter's source extensions,
+    as {"name", "size", "crc", "sha1"}; None if RomM has none."""
+    stem = _core.stem_of(os.path.basename(path)).lower()
+    exts = set(conv.sources) | set(conv.renamed_sources)
+    orig = None
+    for f in files:
+        for name, m in [(f.get("file_name"), f)] + [(m.get("name"), m) for m in (f.get("archive_members") or [])]:
+            base, ext = os.path.splitext(os.path.basename(name or "").lower())
+            if base == stem and ext in exts:            # an archive's member wins over the archive
+                crc = (m.get("crc_hash") or "").lower()
+                orig = {"name": os.path.basename(name), "size": m.get("file_size_bytes") or m.get("size"),
+                        "crc": crc.zfill(8) if crc else "", "sha1": (m.get("sha1_hash") or "").lower()}
+    return orig
+
+
 def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdman="chdman"):
     """Check games on the box against RomM. Quick: missing files and sizes.
-    deep: also checksums and `chdman verify`. Returns (findings, stats).
-    A finding: {"system", "path", "problem", "severity", "rom" (or None)};
-    severity "damaged" (unplayable/corrupt) or "differs" (not RomM's copy:
-    another dump, a trimmed image… — may well play)."""
+    deep: also checksums, `chdman verify` and the converters' full checks.
+    Returns (findings, stats). A finding: {"system", "path", "problem",
+    "severity", "rom" (or None)}; severity "damaged" (unplayable/corrupt) or
+    "differs" (not RomM's copy: another dump, a trimmed image… — may well
+    play). stats["unverified"]: games a missing tool left unchecked, named in
+    stats["unverified_tools"]."""
     findings, stats = [], {"checked": 0, "matched": 0, "unmatched": 0}
+
+    def unverified(tool):
+        stats["unverified"] = stats.get("unverified", 0) + 1
+        if tool not in stats.setdefault("unverified_tools", []):
+            stats["unverified_tools"].append(tool)
 
     def verified(system, path, rom):
         """A converted CHD in a full check: flagged only when chdman says it's bad."""
         ok = _chd_verify(chdman, path)
         if ok is None:
-            stats["unverified"] = stats.get("unverified", 0) + 1
+            unverified("chdman")
         elif not ok:
             add(system, path, "CHD failed chdman verify", rom)
 
@@ -231,33 +255,6 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
 
     def members_of(files):
         return {m["name"].lower(): m for f in files for m in (f.get("archive_members") or []) if m.get("name")}
-
-    def check_z3ds(system, path, files, rom):
-        """A .zcci packed here: RomM has the .3ds it came from (loose or in a zip)."""
-        stem = os.path.splitext(os.path.basename(path))[0].lower()
-        orig = None
-        for f in files:
-            for name, size, crc in [(f.get("file_name"), f.get("file_size_bytes"), f.get("crc_hash"))] + \
-                    [(m.get("name"), m.get("size"), m.get("crc_hash")) for m in (f.get("archive_members") or [])]:
-                base, ext = os.path.splitext(os.path.basename(name or "").lower())
-                if base == stem and ext in _convert.Z3DS_SOURCES:
-                    orig = (size, (crc or "").lower())
-        hdr = _convert.z3ds_header(path)
-        if hdr is None:
-            add(system, path, "Not a readable .zcci (damaged header)", rom)
-        elif not hdr["complete"]:
-            add(system, path, "Compressed file cut short", rom)
-        elif orig and orig[0] and hdr["size"] != orig[0]:
-            add(system, path, "Packed from a different file than RomM's (%s vs %s)" % (
-                _core.human_size(hdr["size"]), _core.human_size(orig[0])), rom, "differs")
-        elif deep:
-            try:
-                got, _ = _convert.z3ds_verify(path)
-            except (_convert.Z3dsError, OSError) as e:
-                add(system, path, "Compressed file damaged: %s" % e, rom)
-                return
-            if orig and orig[1] and got != orig[1]:
-                add(system, path, "Checksum doesn't match RomM's copy", rom, "differs")
 
     def check_zip(system, path, files, rom):
         """A zip kept as-is: judge the ROM inside, not the container (the same
@@ -345,7 +342,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                             "sectors; some discs list dummy files)" % ("{:,}".format(cut[0]), "{:,}".format(cut[1])),
                             irom, "differs")
                 # 2) against RomM's record of the game
-                stem = n if os.path.isdir(path) else _core.stem_of(n)
+                conv = _convert.output_converter(path)
+                stem = _core.stem_of(n) if conv or not os.path.isdir(path) else n     # "X.ps3": RomM's X.zip
                 rom = index.get(low) or index.get(stem.lower())
                 if system in _convert.Z3DS_SYSTEMS and os.path.isfile(path) and _convert.z3ds_target(path):
                     try:
@@ -371,14 +369,15 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                     add(system, path, "Couldn't fetch RomM record (%s)" % e, None)
                     continue
                 files = [f for f in (detail.get("files") or []) if f.get("category") in (None, "game")]
-                if os.path.isfile(path) and low.endswith(_convert.Z3DS_EXTS):
-                    check_z3ds(system, path, files, rom)
-                    continue
-                if os.path.isfile(path) and low.endswith(".zar"):
-                    # packed here from the disc's files: RomM's image hashes can't match by design
-                    bad = _convert.zar_check(path, full=deep)
+                if conv and (rom.get("fs_name") or "").lower() != low:
+                    # converted here from RomM's copy: its converter knows how to check what it made
+                    try:
+                        bad = conv.audit(path, _original(path, files, conv), deep)
+                    except _convert.NotVerified as e:
+                        unverified(str(e))
+                        continue
                     if bad:
-                        add(system, path, "Compressed file %s" % bad, rom)
+                        add(system, path, bad[0], rom, bad[1])
                     continue
                 if os.path.isfile(path):
                     if len(files) == 1 and files[0]["file_name"].lower() == low and low.endswith(".zip"):
@@ -518,6 +517,8 @@ def _names_here(sysdir, names):
             out.add(os.path.splitext(n)[0].lower())
         else:                               # discs kept in a game's folder are looked up by their own names
             out.update(os.path.splitext(os.path.basename(i))[0].lower() for i in _images_in(path))
+            if _convert.output_converter(n):            # a game folder made here ("X.ps3"): RomM's X.zip
+                out.add(_core.stem_of(n).lower())
     return out
 
 

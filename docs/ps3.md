@@ -17,6 +17,10 @@ runs in the background like disc compression, and is paused while a game runs.
   zip's own checksum is checked by reading it to the end. Only then does the
   image go.
 
+[Check games](on-this-box.md#check-games) matches a `Game.ps3` folder with
+RomM's `Game.zip` or `Game.iso` and checks the files RPCS3 boots it by; a full
+check reads every file.
+
 A disc that can't become a folder (encrypted with no key, damaged, or one with
 no game to boot) is left exactly as it is, and ES doesn't list it.
 
