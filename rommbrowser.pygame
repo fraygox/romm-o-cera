@@ -5684,8 +5684,9 @@ class CantConvertScreen(ListScreen):
     def draw(self, c):
         text(c, self.f.h3, "%s in roms/%s can't be converted" % (plural(len(self.items), "game"), self.system),
              (56, 86), TEXT)
-        text(c, self.f.small, "They're left as they are. Fix or replace the file (for example a decrypted "
-             "dump, or the disc's key in bios/ps3keys) and it shows up in Compress.", (56, 120), DIM, maxw=W - 112)
+        fix = {"3ds": "a decrypted dump", "ps3": "the disc's key in bios/ps3keys"}.get(self.system, "a good copy")
+        text(c, self.f.small, "They're left as they are. Fix or replace the file (%s) and it shows up in "
+             "Compress." % fix, (56, 120), DIM, maxw=W - 112)
         for i, r, on in self.row_rects(156):
             f, why = self.items[i]
             if on:
