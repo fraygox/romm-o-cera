@@ -481,6 +481,22 @@ def test_forecast_reserves_every_converters_working_space():
     assert rommlib.queue_forecast([ps3], 0, 0)["need"] == rommlib.space_needed(ps3.rom, "ps3")   # no cfg: CHD only
 
 
+def test_forecast_asks_every_converter_for_its_working_space(monkeypatch):
+    """Every system a converter works on reserves that converter's working space
+    while it's on (the biggest space_factor among them), and none while it's off."""
+    for name, key in (("squashfs_enabled", "squashfs"), ("z3ds_enabled", "z3ds"), ("zar_enabled", "zar")):
+        monkeypatch.setattr(rommlib, name, lambda cfg, system=None, key=key: bool(cfg.get(key)))
+    monkeypatch.setattr(rommlib, "rvz_enabled", lambda cfg: bool(cfg.get("rvz")))
+    on = dict(rommlib.DEFAULT_CONFIG, **{c.setting: True for c in rommlib.CONVERTERS})
+    off = dict(rommlib.DEFAULT_CONFIG, **{c.setting: False for c in rommlib.CONVERTERS})
+    for system in sorted(set().union(*(c.systems for c in rommlib.CONVERTERS))):
+        j = rommlib.Job({"id": 1, "fs_size_bytes": 4 * GiB}, system)
+        size = rommlib.space_needed(j.rom, system)
+        factor = max(c.space_factor for c in rommlib.converters_for(system))
+        assert rommlib.queue_forecast([j], 0, 0, on["chd"], on)["need"] == size + factor * size, system
+        assert rommlib.queue_forecast([j], 0, 0, off["chd"], off)["need"] == size, system
+
+
 def test_leftovers_offer_copies_of_converted_games_and_unfinished_folders(isolated):
     R = rommlib.ROMS_ROOT
 
