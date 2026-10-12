@@ -4,6 +4,7 @@
 # Downloads the latest release, installs it to /userdata/roms/pygame/rommbrowser/
 # (config, queue and logs in /userdata/system/romm-browser/ are kept), and
 # tells you how to finish. Set REPO=owner/name to install from a fork,
+# VERSION=nightly for the newest build of main (the nightly channel),
 # VERSION=v0.3.0 to pin a release.
 set -eu
 REPO=${REPO:-fraygox/romm-o-cera}

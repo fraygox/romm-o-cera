@@ -3721,10 +3721,11 @@ class SettingsScreen(Screen):
             ("resetcfg", "Reset settings", "Can't be read" if rommlib.config_unreadable() else "Reset",
              "Start over from the defaults; the old file is kept"),
             sec("Updates"),
+            table("channel"),
             ("update", "Updates", ("%s available" % self.app.update_tag) if self.app.update_tag
              else "v" + rommlib.VERSION,
              ("Download, check and install %s" % self.app.update_tag) if self.app.update_tag
-             else "Check GitHub for a newer release"),
+             else "Check GitHub for a newer " + ("build" if cfg["update_channel"] == "nightly" else "release")),
         ] + ([("rollback", "Go back to the previous version", "v" + self.prev, "Undo the last update")]
              if self.prev else [])
 
@@ -3768,6 +3769,7 @@ class SettingsScreen(Screen):
         "keepfree": lambda cfg: "%d GB" % float(cfg["keep_free_gb"]) if cfg["keep_free_gb"] else "Nothing (fill the disk)",
         "speed": lambda cfg: "%g MB/s" % float(cfg["speed_while_playing"]) if cfg["speed_while_playing"] else "No limit",
         "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(cfg["sounds"], "On"),
+        "channel": lambda cfg: {"stable": "Stable", "nightly": "Nightly"}.get(cfg["update_channel"], "Stable"),
         "cachelimit": lambda cfg: (rommlib.human_size(rommlib.cache_limit_bytes(cfg))
                                    if rommlib.cache_limit_bytes(cfg) else "No limit"),
     }
@@ -3786,12 +3788,24 @@ class SettingsScreen(Screen):
         if lim:
             app.bg(lambda: rommlib.prune_cache(lim), lambda r: self._measure_cache(), lambda e: None)
 
+    def _update_channel(self, app):
+        """A new channel: forget what the old one offered and ask GitHub again."""
+        app.update_tag = None
+
+        def found(tag):
+            app.update_tag = tag
+            if tag:
+                app.toast("%s is available" % tag, BLUE)
+        app.bg(lambda: rommlib.newer_release(dict(app.cfg, check_updates=True), force=True), found,
+               lambda e: None)
+
     # what a change to a generic row sets off, by name (rommlib.Setting.effects): (screen, app)
     EFFECTS = {
         "downloader": lambda screen, app: setattr(app.downloader, "cfg", app.cfg),
         "wake": _wake,
         "sounds": _sounds,
         "cache_limit": _cache_limit,
+        "update_channel": _update_channel,
     }
 
     def _available(self, st):
@@ -4093,7 +4107,8 @@ class SettingsScreen(Screen):
 
     def _do_update(self):
         self.app.toast("Downloading and checking the update…")
-        self._swap(lambda: rommlib.install_staged(rommlib.stage_release(rommlib.release_info())))
+        tag = self.app.update_tag
+        self._swap(lambda: rommlib.install_staged(rommlib.stage_release(rommlib.release_info(tag))))
 
     def _swap(self, fn):
         app = self.app

@@ -107,6 +107,11 @@ previous version ("Go back to the previous version" appears below Updates).
 Re-running the install one-liner works too, and puts back an app folder that
 went missing. Your config, queue and logs are never touched.
 
+**Update channel** (Settings, Updates): *Stable* gets releases. *Nightly* also
+gets builds of the newest changes as they land: fixes sooner, less tested.
+Press Updates to get the newest one now. Back on Stable you keep the nightly
+until a release is newer. From the shell: `… install.sh | VERSION=nightly sh`.
+
 ## Documentation
 
 Easiest to read on the **[documentation site](https://fraygox.github.io/romm-o-cera/)**, with search.

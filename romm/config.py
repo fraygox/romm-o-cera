@@ -181,6 +181,14 @@ SETTINGS = (
                  "red. Each has an OLED version with a pure black background, which keeps black areas dark on "
                  "OLED TVs. High contrast is black and white with a yellow highlight; High contrast light is "
                  "black on white. Left and right change it, and the app repaints straight away."),
+    Setting("update_channel", "stable",  # stable: releases only; nightly: also the nightly build
+            row="channel", label="Update channel", sub="Stable releases, or nightly builds",
+            kind="choice", choices=("stable", "nightly"), effects=("update_channel",),
+            valid=lambda v: v in ("stable", "nightly"),
+            help="Stable gets tested releases. Nightly also gets builds of the newest changes, made as they "
+                 "land: new fixes sooner, less tested. Updates finds the newest straight away. Going back to "
+                 "Stable keeps the nightly you have until a release is newer; Go back to the previous version "
+                 "undoes an update."),
     Setting("platform_map", {},         # per-slug overrides of PLATFORM_MAP (null hides)
             valid=_parses(lambda v: dict(v or {}))),
 )

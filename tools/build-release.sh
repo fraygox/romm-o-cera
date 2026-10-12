@@ -2,6 +2,9 @@
 # Build the user-facing release: dist/romm-o-cera.zip (only what runs on the
 # box, in a rommbrowser/ folder) + dist/install.sh. No tests, tools or screenshots.
 #   tools/build-release.sh            -> prints the version it built
+# A nightly build: NIGHTLY=n<YYYYMMDD>.<HHMM>.<commit> (UTC) stamps that as
+# BUILD in the packaged rommlib.py only (the app then shows 0.8.1+n…, and
+# orders it after 0.8.1 and before 0.8.2); RELEASE_DATE isn't checked.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${OUT:-$HERE/dist}
@@ -10,7 +13,10 @@ VER=$(cd "$HERE" && python3 -B -c 'import rommlib; print(rommlib.VERSION)')
 REL=$(cd "$HERE" && python3 -B -c 'import rommlib; print(rommlib.RELEASE_DATE)')
 BLD=$(cd "$HERE" && python3 -B -c 'import rommlib; print(rommlib.BUILD)')
 [ -z "$BLD" ] || { echo "rommlib.BUILD must be empty in a release (is '$BLD')" >&2; exit 1; }
-if [ "$REL" != "$(date +%F)" ] && [ -z "${ALLOW_OLD_DATE:-}" ]; then
+NIGHTLY=${NIGHTLY:-}
+if [ -n "$NIGHTLY" ]; then
+    [[ "$NIGHTLY" =~ ^n[0-9]{8}\.[0-9]{4}\.[0-9a-f]{7,40}$ ]] || { echo "NIGHTLY must look like n20261012.1903.ab12cd3" >&2; exit 1; }
+elif [ "$REL" != "$(date +%F)" ] && [ -z "${ALLOW_OLD_DATE:-}" ]; then
     echo "rommlib.RELEASE_DATE is $REL, not today ($(date +%F)): bump it (or ALLOW_OLD_DATE=1)" >&2
     exit 1
 fi
@@ -19,6 +25,11 @@ for f in rommbrowser.pygame rommbrowser.pygame.keys rommlib.py rb_finalize.py rb
          rb_chd_plan.py rb_dl.py rb_repair.py icon.png LICENSE; do
     cp "$HERE/$f" "$OUT/stage/rommbrowser/"
 done
+if [ -n "$NIGHTLY" ]; then
+    sed -i "s/^BUILD = \"\" /BUILD = \"$NIGHTLY\" /" "$OUT/stage/rommbrowser/rommlib.py"
+    grep -q "^BUILD = \"$NIGHTLY\"" "$OUT/stage/rommbrowser/rommlib.py" || { echo "couldn't stamp BUILD" >&2; exit 1; }
+    VER="$VER+$NIGHTLY"
+fi
 mkdir -p "$OUT/stage/rommbrowser/romm"
 cp "$HERE"/romm/*.py "$OUT/stage/rommbrowser/romm/"
 mkdir -p "$OUT/stage/rommbrowser/fonts"

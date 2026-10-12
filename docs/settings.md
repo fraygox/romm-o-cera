@@ -38,6 +38,7 @@ including the server address and token. The old file is kept beside it as
 | `swap_ab` | `false` | `false`: south button confirms (Batocera's default) |
 | `button_style` | `auto` | `auto`, `xbox`, `playstation` or `nintendo` button labels |
 | `check_updates` | `true` | daily check of GitHub for a newer release (sends no data beyond the request) |
+| `update_channel` | `stable` | `stable`: releases; `nightly`: also builds of the newest changes ([Updating](../README.md#updating)) |
 | `background_downloads` | `true` | keep downloading after the app exits |
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
 | `download_hours` | `any` | `any`, or a local-time window like `1-7` / `22-6` |

@@ -26,11 +26,60 @@ def _vtuple(v):
     return tuple(int(x or 0) for x in m.groups()) if m else (0,)
 
 
+NIGHTLY_TAG = "nightly"      # the rolling prerelease the nightly channel follows
+_NIGHTLY = re.compile(r"\bv?(\d+\.\d+\.\d+\+n\d{8}\.\d{4}\.[0-9a-f]+)\b")
+
+
+def version_key(label):
+    """How versions order, release channels included: 0.8.1 < a nightly built
+    after it (0.8.1+n20261012.1903.ab12cd3, ordered by its UTC stamp) < 0.8.2.
+    An internal build (0.8.1+ab12cd3, deploy.sh) sorts after 0.8.1 and before
+    any nightly of it. Anything else is (0,): never an update."""
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?(?:\+(\S+))?$", (label or "").strip())
+    if not m:
+        return (0,)
+    base = tuple(int(x or 0) for x in m.groups()[:3])
+    build = m.group(4) or ""
+    if not build:
+        return base + (0, "")
+    if re.match(r"^n\d{8}\.\d{4}\.", build):
+        return base + (2, build)
+    return base + (1, "")
+
+
+def _gh_json(path):
+    r = _net.plain_get("%s/repos/%s/%s" % (GITHUB_API, UPDATE_REPO, path), timeout=6,
+                       headers={"User-Agent": _core.UA, "Accept": "application/vnd.github+json"})
+    if r.status_code != 200:
+        _net.discard(r)
+        return None
+    return r.json()
+
+
+def _latest_on(channel):
+    """The newest version labels the channel offers: the latest release's tag,
+    plus on nightly the nightly build's label (from its release title)."""
+    out = []
+    rel = _gh_json("releases/latest")
+    if rel and rel.get("tag_name"):
+        out.append(rel["tag_name"])
+    if channel == "nightly":
+        nightly = _gh_json("releases/tags/" + NIGHTLY_TAG)
+        m = _NIGHTLY.search((nightly or {}).get("name") or "")
+        if m:
+            out.append("v" + m.group(1))
+    return out
+
+
 def newer_release(cfg, force=False):
-    """Latest release tag on GitHub if it is newer than VERSION, else None.
-    Checked at most once a day (cached); never raises."""
+    """The newest version on the configured channel (update_channel) if it is
+    newer than this one, else None: a release tag ("v0.8.2"), or a nightly's
+    label ("v0.8.1+n20261012.1903.ab12cd3"). The nightly channel offers a
+    release too when it's newer. Checked at most once a day, and again when
+    the channel changes (cached); never raises."""
     if not _config.config_value(cfg, "check_updates"):
         return None
+    channel = _config.config_value(cfg, "update_channel")
     now = time.time()
     cache = {}
     try:
@@ -38,25 +87,23 @@ def newer_release(cfg, force=False):
             cache = json.load(f)
     except (OSError, ValueError):
         pass
+    if not isinstance(cache, dict):
+        cache = {}
     checked = cache.get("checked", 0)
-    if force or now - checked > 86400 or checked > now + 3600:
+    if force or now - checked > 86400 or checked > now + 3600 or cache.get("channel", "stable") != channel:
         try:
-            r = _net.plain_get("%s/repos/%s/releases/latest" % (GITHUB_API, UPDATE_REPO),
-                             timeout=6, headers={"User-Agent": _core.UA,
-                                                 "Accept": "application/vnd.github+json"})
-            if r.status_code == 200:
-                cache = {"checked": now, "latest": r.json().get("tag_name", "")}
-            else:
-                cache = {"checked": now, "latest": cache.get("latest", "")}
+            found = _latest_on(channel)
+            latest = max(found, key=version_key) if found else cache.get("latest", "")
         except Exception:
-            cache = {"checked": now, "latest": cache.get("latest", "")}    # offline: try again tomorrow
+            latest = cache.get("latest", "") if cache.get("channel", "stable") == channel else ""
+        cache = {"checked": now, "latest": latest, "channel": channel}      # offline: try again tomorrow
         try:
             os.makedirs(_core.DATA_DIR, exist_ok=True)
             _core.atomic_write_json(UPDATE_CACHE, cache)
         except OSError:
             pass
     latest = cache.get("latest") or ""
-    return latest if _vtuple(latest) > _vtuple(rommlib.VERSION) else None
+    return latest if version_key(latest) > version_key(rommlib.VERSION_LABEL) else None
 
 
 # ----------------------------------------------------------- self-update
@@ -90,23 +137,38 @@ def _gh_get(url, **kw):
 
 
 def release_info(tag=None):
-    """{"tag", "zip", "sums"} for the latest (or a given) release."""
+    """{"tag", "zip", "sums", "label"} for the latest (or a given) release.
+    A nightly label ("v0.8.1+n…") or the nightly tag means the nightly
+    build; its "label" is what its zip must hold (stage_release checks it),
+    since the nightly is replaced in place by the next one."""
+    if tag and (tag == NIGHTLY_TAG or _NIGHTLY.search(tag)):
+        tag = NIGHTLY_TAG
     path = "releases/tags/%s" % tag if tag else "releases/latest"
     data = _gh_get("%s/repos/%s/%s" % (GITHUB_API, UPDATE_REPO, path)).json()
     assets = {a.get("name"): a.get("browser_download_url") for a in data.get("assets") or []}
     if not assets.get("romm-o-cera.zip") or not assets.get("SHA256SUMS"):
         raise UpdateError("Release %s has no romm-o-cera.zip / SHA256SUMS" % data.get("tag_name"))
-    return {"tag": data.get("tag_name") or "", "zip": assets["romm-o-cera.zip"],
-            "sums": assets["SHA256SUMS"]}
+    info = {"tag": data.get("tag_name") or "", "zip": assets["romm-o-cera.zip"], "sums": assets["SHA256SUMS"]}
+    if info["tag"] == NIGHTLY_TAG:
+        m = _NIGHTLY.search(data.get("name") or "")
+        if not m:
+            raise UpdateError("The nightly build has no version in its title")
+        info["label"] = m.group(1)
+    return info
 
 
-def _version_in(app_dir):
+def _version_in(app_dir, label=False):
+    """The app's VERSION, or with label=True its VERSION_LABEL (VERSION+BUILD)."""
     try:
         with open(os.path.join(app_dir, "rommlib.py")) as f:
-            m = re.search(r'^VERSION = "([^"]+)"', f.read(), re.M)
-        return m.group(1) if m else None
+            src = f.read()
     except OSError:
         return None
+    m = re.search(r'^VERSION = "([^"]+)"', src, re.M)
+    if not m or not label:
+        return m.group(1) if m else None
+    b = re.search(r'^BUILD = "([^"]*)"', src, re.M)
+    return m.group(1) + ("+" + b.group(1) if b and b.group(1) else "")
 
 
 def stage_release(info, staging=None):
@@ -156,6 +218,12 @@ def stage_release(info, staging=None):
                     path = os.path.join(root, fn)
                     with open(path, encoding="utf-8") as f:
                         compile(f.read(), os.path.relpath(path, app), "exec")
+        if info.get("label"):
+            got = _version_in(app, label=True)
+            if got != info["label"]:
+                raise UpdateError("The nightly build changed while it downloaded (%s, not %s); try again"
+                                  % (got, info["label"]))
+            return app
         ver = _version_in(app)
         if not ver or _vtuple(ver) != _vtuple(info["tag"]):
             raise UpdateError("Release %s contains version %s" % (info["tag"], ver))
