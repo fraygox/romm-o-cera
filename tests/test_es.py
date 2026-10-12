@@ -86,3 +86,123 @@ def test_old_names_still_work(es, monkeypatch):
     assert rommlib.es_counts() == {}
     with pytest.raises(rommlib.RommError, match="didn't answer"):
         rommlib.es_game_list()
+
+
+# ------------------------------------------------------------ /addgames (idea 28)
+
+def _rom(system, name):
+    p = os.path.join(rommlib.ROMS_ROOT, system, name)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "w").close()
+    return p
+
+
+def _reloads(es):
+    return [c for c in es.calls if c == ("GET", "/reloadgames")]
+
+
+def test_download_is_added_without_a_full_reload(es):
+    import rb_finalize
+    _rom("gba", "Old.zip")
+    es.reload()
+    rom = _rom("gba", "Lorem & Ipsum (World).zip")
+    left = rb_finalize.process([{"system": "gba", "paths": [rom], "name": "Lorem & Ipsum", "desc": "Dolor",
+                                 "players": "2"}], None, {"gba": {".zip"}})
+    assert left == []
+    assert ("POST", "/addgames/gba") in es.calls and not _reloads(es)
+    g = es.game("gba", "Lorem & Ipsum (World).zip")
+    assert g["name"] == "Lorem & Ipsum" and g["desc"] == "Dolor" and g["players"] == "2"
+
+
+def test_batocera_43_1_addgames_falls_back_to_a_reload(es):
+    """Batocera 43.1's ES answers 204 to every /addgames body."""
+    import rb_finalize
+    _rom("gba", "Old.zip")
+    es.reload()
+    es.addgames_bug = True
+    rom = _rom("gba", "Sit Amet (World).zip")
+    assert rb_finalize.process([{"system": "gba", "paths": [rom], "name": "Sit Amet"}], None, {"gba": {".zip"}}) == []
+    assert ("POST", "/addgames/gba") in es.calls and len(_reloads(es)) == 1
+    assert es.game("gba", "Sit Amet (World).zip")["name"] == "Sit Amet"
+
+
+def test_unreachable_addgames_falls_back_to_a_reload(es, monkeypatch):
+    import rb_finalize
+    _rom("gba", "Old.zip")
+    es.reload()
+    monkeypatch.setattr(rb_finalize.EsApi, "add_games", lambda self, system, body: None)
+    rom = _rom("gba", "Consectetur (World).zip")
+    assert rb_finalize.process([{"system": "gba", "paths": [rom], "name": "Consectetur"}], None,
+                               {"gba": {".zip"}}) == []
+    assert len(_reloads(es)) == 1 and es.game("gba", "Consectetur (World).zip")["name"] == "Consectetur"
+
+
+def test_first_game_of_a_system_es_reloads_by_itself(isolated, fake_es, monkeypatch):
+    """A system with no games yet: ES loads it, answers 201 and reloads every
+    list itself — we don't ask for another reload."""
+    import rb_finalize
+    es = fake_es({"gba": {".zip"}, "nes": {".zip"}})
+    _rom("gba", "Old.zip")
+    es.reload()
+    rom = _rom("nes", "Adipiscing.zip")
+    assert rb_finalize.process([{"system": "nes", "paths": [rom], "name": "Adipiscing", "desc": "Elit"}], None,
+                               {"nes": {".zip"}}) == []
+    assert ("POST", "/addgames/nes") in es.calls and not _reloads(es)
+    assert es.game("nes", "Adipiscing.zip")["desc"] == "Elit"
+    assert es.game("gba", "Old.zip") is not None
+
+
+def test_multi_disc_set_is_added_with_its_discs_hidden(isolated, fake_es):
+    import rb_finalize
+    exts = {"psx": {".chd", ".m3u"}}
+    es = fake_es(exts)
+    _rom("psx", "Old.chd")
+    es.reload()
+    d1, d2 = _rom("psx", "Sed/Sed (Disc 1).chd"), _rom("psx", "Sed/Sed (Disc 2).chd")
+    m3u = _rom("psx", "Sed.m3u")
+    assert rb_finalize.process([{"system": "psx", "paths": [m3u], "name": "Sed"},
+                                {"system": "psx", "hide": [d1, d2]}], None, exts) == []
+    assert not _reloads(es)
+    assert es.game("psx", "Sed.m3u")["name"] == "Sed" and not es.game("psx", "Sed.m3u").get("hidden")
+    assert es.game("psx", "Sed (Disc 1).chd")["hidden"] == "true"
+    assert es.game("psx", "Sed (Disc 2).chd")["hidden"] == "true"
+
+
+def test_listed_games_are_not_sent_again(es):
+    """A game ES already lists isn't re-added (that would reset what ES keeps
+    beyond our tags), and nothing new means no reload either."""
+    import rb_finalize
+    rom = _rom("gba", "Do.zip")
+    es.reload()
+    assert rb_finalize.process([{"system": "gba", "paths": [rom], "name": "Do", "fill": True}], None,
+                               {"gba": {".zip"}}) == []
+    assert not [c for c in es.calls if c[1].startswith("/addgames")] and not _reloads(es)
+    assert es.game("gba", "Do.zip")["name"] == "Do"
+
+
+def test_renames_and_removals_still_reload(es):
+    """ES must also forget the old files: /addgames can't do that."""
+    import rb_finalize
+    _rom("gba", "Old.zip")
+    es.reload()
+    rom = _rom("gba", "Eiusmod (World).zip")
+    rb_finalize.process([{"system": "gba", "paths": [rom], "name": "Eiusmod"},
+                         {"system": "gba", "remove": [os.path.join(rommlib.ROMS_ROOT, "gba", "Gone.zip")]}],
+                        None, {"gba": {".zip"}})
+    assert not [c for c in es.calls if c[1].startswith("/addgames")] and len(_reloads(es)) == 1
+    assert es.game("gba", "Eiusmod (World).zip")["name"] == "Eiusmod"
+
+
+def test_app_side_add_games(es, monkeypatch):
+    _rom("gba", "Old.zip")
+    es.reload()
+    rom = _rom("gba", "Tempor <Beta>.zip")
+    assert b"<path>./Tempor &lt;Beta&gt;.zip</path>" in rommlib.gamelist_xml("gba", {rom: {"name": "T & U"}})
+    assert rommlib.es_add_games("gba", {rom: {"name": "T & U"}}) == 200
+    assert es.game("gba", "Tempor <Beta>.zip")["name"] == "T & U"
+    assert rommlib.es_add_games("gba", {os.path.join(rommlib.ROMS_ROOT, "gba", "Absent.zip"): {}}) == 204
+    assert rommlib.es_add_games("nope", {rom: {}}) == 404
+    es.addgames_bug = True
+    assert rommlib.es_add_games("gba", {rom: {}}) == 204
+    monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
+    assert rommlib.es_add_games("gba", {rom: {}}) is None

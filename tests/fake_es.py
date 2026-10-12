@@ -11,6 +11,18 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
 - GET  /runningGame                 {"msg": "NO GAME RUNNING"} unless .running set
 - GET  /systems                     systems with games (name, gamesystem, totalGames)
 - POST /notify                      text/plain popup: 200, empty body; 400 if no body
+- POST /addgames/<sys>              partial gamelist.xml: games ES lists get the given
+                                    tags; files on disk with a valid extension are added.
+                                    200 "OK"; 204 nothing taken; 404 unknown system; 400 no
+                                    body; a system with no games yet is loaded, saved and
+                                    every list reloaded: 201. `addgames_bug` = Batocera
+                                    43.1, whose ES answers 204 to every body.
+- GET  /isIdle                      200 "[ true ]", or 201 "[ false ]" while a game runs or
+                                    `busy` (scraping, hashing, installing, updating);
+                                    `has_isidle = False` = before Batocera 36: 404
+- POST /messagebox                  text/plain message box: 200, empty body; 400 if no body
+
+All of it as in batocera-emulationstation's es-app/src/services/HttpServerThread.cpp.
 
 Unknown GET paths fall through to ES's static-file route: 404 "404 not found"
 (text/html); unknown POST paths get httplib's bare 404.
@@ -23,6 +35,7 @@ import json
 import os
 import re
 import threading
+import urllib.parse
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -41,6 +54,11 @@ class FakeES:
         self.running = None
         self.posts = []
         self.notes = []                                  # /notify texts
+        self.messages = []                               # /messagebox texts
+        self.calls = []                                  # (method, path) of every request
+        self.busy = False                                # scraping, hashing, installing...
+        self.has_isidle = True                           # False: an ES before /isIdle
+        self.addgames_bug = False                        # True: Batocera 43.1's /addgames
         self.lock = threading.Lock()
         self.reload()
         fake = self
@@ -58,6 +76,12 @@ class FakeES:
 
             def do_GET(self):
                 p = self.path.split("?")[0]
+                fake.calls.append(("GET", p))
+                if p == "/isIdle":
+                    if not fake.has_isidle:
+                        return self._send(404, b"404 not found", "text/html")
+                    idle = not fake.running and not fake.busy
+                    return self._send(200 if idle else 201, b"[ true ]" if idle else b"[ false ]")
                 if p == "/runningGame":
                     body = json.dumps({"path": fake.running} if fake.running else {"msg": "NO GAME RUNNING"})
                     return self._send(200 if fake.running else 201, body.encode())
@@ -86,11 +110,16 @@ class FakeES:
             def do_POST(self):
                 p = self.path.split("?")[0]
                 body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-                if p == "/notify":
+                fake.calls.append(("POST", p))
+                if p in ("/notify", "/messagebox") or p.startswith("/addgames/"):
                     if not body:
                         return self._send(400, b"400 bad request - body is missing", "text/html")
-                    fake.notes.append(body.decode("utf-8"))
+                if p in ("/notify", "/messagebox"):
+                    (fake.notes if p == "/notify" else fake.messages).append(body.decode("utf-8"))
                     return self._send(200, b"")
+                if p.startswith("/addgames/"):
+                    code, text = fake.add_games(urllib.parse.unquote(p[len("/addgames/"):]), body)
+                    return self._send(code, text.encode(), "text/html")
                 m = re.match(r"^/systems/([^/]+)/games/([0-9a-f]+)/media/([a-z]+)$", p)
                 if m:
                     path = fake.find(m.group(1), m.group(2))
@@ -199,6 +228,39 @@ class FakeES:
                     for k, v in md.items():
                         ET.SubElement(g, k).text = v
                 ET.ElementTree(root).write(gl, encoding="utf-8", xml_declaration=True)
+
+    def add_games(self, system, body):
+        """ES's /addgames: (status, text)."""
+        if self.addgames_bug:
+            return 204, "204 No game added / updated"
+        exts = self.systems.get(system)
+        if exts is None:
+            return 404, "404 System not found"
+        sysdir = os.path.join(self.roms, system)
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError:
+            root = None
+        added = {}
+        with self.lock:
+            games = self.mem.get(system, {})
+            for g in root.findall("game") if root is not None and root.tag == "gameList" else []:
+                path = os.path.normpath(os.path.join(sysdir, g.findtext("path") or ""))
+                if path not in games and not (os.path.splitext(path)[1].lower() in exts and os.path.isfile(path)
+                                              and path.startswith(sysdir + os.sep)):
+                    continue                      # "does not exist or is arcade asset ! Ignoring."
+                md = dict(games.get(path, {}))
+                md.update({c.tag: c.text or "" for c in g if c.tag != "path"})
+                added[path] = md
+            if not added:
+                return 204, "204 No game added / updated"
+            new_system = system not in self.mem
+            self.mem.setdefault(system, {}).update(added)
+        if new_system:              # loaded just for this: its gamelist saved, then every list reloaded
+            self.save()
+            self.reload()
+            return 201, "201 Game added. System not updated"
+        return 200, "OK"
 
     def game(self, system, name):
         """The in-memory metadata of the game whose file name is `name`."""

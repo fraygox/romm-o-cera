@@ -105,6 +105,10 @@ running when the window closes pauses and picks up the next night.
 Name, description, date, genre, developer, players, rating and cover are
 handed to EmulationStation through its own API once it's idle — never by
 editing `gamelist.xml` behind its back, which EmulationStation could overwrite.
+New downloads are added to EmulationStation's lists on their own, so it
+doesn't reload every system for them. Batocera 43.1's EmulationStation can't
+add games this way (a bug fixed after it), so there it reloads its lists as
+before, as it does everywhere after games are compressed or deleted.
 
 ## Updates
 

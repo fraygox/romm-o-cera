@@ -12,7 +12,10 @@ writes gamelist.xml. Instead:
   1. wait until no game (and not this app) is running;
   2. read, from gamelist.xml (read only), the info of games about to be
      renamed (CHD conversions), so it can be carried to the new file;
-  3. /reloadgames, so ES discovers new files (downloads, CHDs);
+  3. let ES list new files: downloads go in with POST /addgames/<system>
+     (only those games, in a moment); anything else, or an ES that doesn't
+     take them (Batocera 43.1's rejects every body), gets the full
+     /reloadgames, which can take minutes on a big library;
   4. per game, POST /systems/<sys>/games/<id> with only the fields that
      should change (ES keeps the rest), and upload covers/manuals/media with
      POST .../media/<type>. ES updates its in-memory list and its own
@@ -142,6 +145,15 @@ class EsApi:
         st, _ = self._req("POST", "/systems/%s/games/%s/media/%s" % (urllib.parse.quote(system), gid, mtype),
                           data, ctype, timeout=120)
         return st == 200
+
+    def add_games(self, system, body):
+        """POST /addgames/<system> with a partial gamelist.xml: the status
+        (see rommlib.es_add_games), or None when ES can't be asked."""
+        # next release: rommlib.es_add_games (romm/es.py; v0.9.0 lacks it)
+        try:
+            return self._req("POST", "/addgames/%s" % urllib.parse.quote(system), body, "application/xml")[0]
+        except Exception:
+            return None
 
     def reload(self):
         es_get("/reloadgames", timeout=120)
@@ -445,9 +457,8 @@ def apply(entries, api, es, esapi, carry):
     return left
 
 
-def wait_listed(esapi, entries, es, timeout=180):
-    """After /reloadgames: wait until ES lists the systems (and new files) we
-    need — the reload runs on ES's UI thread after the request returns."""
+def wanted(entries, es):
+    """{system: primary paths ES must list} for the entries' files on disk."""
     want = {}
     for e in entries:
         ps = list((e.get("rename") or {}).values()) or e.get("paths") or []
@@ -456,6 +467,73 @@ def wait_listed(esapi, entries, es, timeout=180):
                 prim = p if p.lower().endswith(".m3u") else rommlib.primary_path(e["system"], [p], es)
                 if prim:
                     want.setdefault(e["system"], set()).add(prim)
+    return want
+
+
+def gamelist_xml(sysdir, games):
+    """A partial gamelist.xml (bytes): {absolute path: {tag: text}}."""
+    # next release: rommlib.gamelist_xml (romm/es.py; v0.9.0 lacks it)
+    root = ET.Element("gameList")
+    for path, fields in games.items():
+        g = ET.SubElement(root, "game")
+        ET.SubElement(g, "path").text = rel(sysdir, path)
+        for k, v in fields.items():
+            ET.SubElement(g, k).text = v
+    return ET.tostring(root, encoding="utf-8")
+
+
+def add_games(esapi, entries, es):
+    """List a batch's new files in ES without a full reload: per system, POST
+    /addgames/<system> with just the games ES doesn't list yet (an entry for
+    a listed game would reset what ES keeps beyond the tags we send). True
+    when ES lists them all now (or nothing was missing), False when the
+    batch needs /reloadgames: it renames or removes games (ES must also
+    forget the old files), or ES didn't take them — Batocera 43.1's ES
+    answers 204 to every /addgames (fixed upstream 2026-07), an older one
+    may not know the file, the address may be down."""
+    if any("rename" in e or "remove" in e for e in entries):
+        return False
+    want, names, hides = wanted(entries, es), {}, {}
+    for e in entries:
+        for p in e.get("paths") or []:
+            if e.get("name"):
+                names.setdefault(p, e["name"])
+        for h in e.get("hide") or []:               # a set's discs: listed (hidden) with its playlist
+            if os.path.exists(h):
+                hides.setdefault(e["system"], set()).add(h)
+                want.setdefault(e["system"], set())
+    reloading = False
+    for system, paths in want.items():
+        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+        listed = esapi.games(system, refresh=True) or {}
+        new = {p: ({"name": names[p]} if names.get(p) else {}) for p in sorted(paths) if p not in listed}
+        new.update({h: {"hidden": "true"} for h in sorted(hides.get(system, ())) if h not in listed and h not in new})
+        if not new:
+            continue
+        try:
+            body = gamelist_xml(sysdir, new)
+        except (ValueError, UnicodeError):          # a name XML can't carry: reload instead
+            return False
+        st = esapi.add_games(system, body)
+        if st == 201:                               # a system ES hadn't loaded: it reloads by itself
+            rommlib.log("finalize: %d game(s) added to ES (%s, new system; ES reloads)" % (len(new), system))
+            reloading = True
+            break                                   # the reload lists the rest too
+        listed = (esapi.games(system, refresh=True) or {}) if st == 200 else {}
+        if st != 200 or any(p not in listed for p in paths):
+            rommlib.log("finalize: ES didn't take the new games (%s: %s); reloading all" % (
+                system, "HTTP %d" % st if st else "no answer"))
+            return False
+        rommlib.log("finalize: %d game(s) added to ES (%s)" % (len(new), system))
+    if reloading:
+        wait_listed(esapi, entries, es)
+    return True
+
+
+def wait_listed(esapi, entries, es, timeout=180):
+    """After /reloadgames: wait until ES lists the systems (and new files) we
+    need — the reload runs on ES's UI thread after the request returns."""
+    want = wanted(entries, es)
     time.sleep(6)
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -541,14 +619,16 @@ def route_renames(entries):
 
 
 def process(entries, api=None, es=None, esapi=None):
-    """One batch: route renames, snapshot old info, reload ES, apply.
-    Returns the entries ES couldn't take yet."""
+    """One batch: route renames, snapshot old info, let ES list the new
+    files (/addgames, else a full reload), apply. Returns the entries ES
+    couldn't take yet."""
     es = es if es is not None else rommlib.load_es_systems()
     esapi = esapi or EsApi()
     route_renames(entries)
     carry = snapshot_renames(entries, esapi)
-    esapi.reload()
-    wait_listed(esapi, entries, es)
+    if not add_games(esapi, entries, es):
+        esapi.reload()
+        wait_listed(esapi, entries, es)
     left = apply(entries, api, es, esapi, carry)
     for e in left:                           # keep what we knew about renamed games
         if "rename" in e:

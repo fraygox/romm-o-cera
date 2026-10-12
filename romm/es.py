@@ -248,6 +248,34 @@ def es_notify(msg):
         return False
 
 
+def gamelist_xml(system, games):
+    """A partial gamelist.xml (bytes) for games of a system: {absolute path:
+    {tag: text}}; paths are written relative to the system folder."""
+    sysdir = os.path.join(_core.ROMS_ROOT, system)
+    root = ET.Element("gameList")
+    for path, fields in games.items():
+        g = ET.SubElement(root, "game")
+        ET.SubElement(g, "path").text = "./" + os.path.relpath(path, sysdir)
+        for k, v in (fields or {}).items():
+            ET.SubElement(g, k).text = str(v)
+    return ET.tostring(root, encoding="utf-8")
+
+
+def es_add_games(system, games, timeout=30):
+    """List new games in ES without reloading every system: POST
+    /addgames/<system> with a partial gamelist.xml (gamelist_xml). ES adds
+    files on disk with an extension the system takes, and merges the given
+    tags. The status: 200 added; 201 added to a system ES hadn't loaded (ES
+    then reloads everything by itself); 204 nothing taken (unknown files, or
+    Batocera 43.1, whose ES rejects every body); 404 no such system; None
+    when ES can't be asked."""
+    try:
+        return EsClient().post("/addgames/" + urllib.parse.quote(system), gamelist_xml(system, games),
+                               "application/xml", timeout, errors=False).status
+    except EsError:
+        return None
+
+
 # ---------------------------------------------------------------- ES systems
 
 def load_es_systems():
