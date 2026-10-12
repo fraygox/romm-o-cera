@@ -3801,7 +3801,7 @@ class SettingsScreen(Screen):
             sec("Updates"),
             table("channel"),
             ("update", "Updates", ("%s available" % self.app.update_tag) if self.app.update_tag
-             else "v" + rommlib.VERSION,
+             else "v" + rommlib.VERSION_LABEL,
              ("Download, check and install %s" % self.app.update_tag) if self.app.update_tag
              else "Check GitHub for a newer " + ("build" if cfg["update_channel"] == "nightly" else "release")),
         ] + ([("rollback", "Go back to the previous version", "v" + self.prev, "Undo the last update")]
@@ -4039,7 +4039,7 @@ class SettingsScreen(Screen):
                     tag = app.update_tag
                     app.modal = Confirm(app, "Update to %s?" % tag,
                                         "Downloads it from GitHub, checks it, and keeps v%s so you can go "
-                                        "back. RomM-o-Cera then closes; open it again." % rommlib.VERSION,
+                                        "back. RomM-o-Cera then closes; open it again." % rommlib.VERSION_LABEL,
                                         "Update", lambda: self._do_update())
                 else:
                     app.toast("Checking GitHub…")
@@ -4047,12 +4047,12 @@ class SettingsScreen(Screen):
                     def checked(tag):
                         app.update_tag = tag
                         app.toast(("%s is available" % tag) if tag else
-                                  "You have the latest version (v%s)" % rommlib.VERSION, BLUE if tag else GREEN)
+                                  "You have the latest version (v%s)" % rommlib.VERSION_LABEL, BLUE if tag else GREEN)
                     app.bg(lambda: rommlib.newer_release(dict(cfg, check_updates=True), force=True), checked)
             elif key == "rollback" and a == "ok":
                 app.modal = Confirm(app, "Go back to v%s?" % self.prev,
                                     "Swaps v%s back in; v%s is kept so you can undo this. RomM-o-Cera then "
-                                    "closes; open it again." % (self.prev, rommlib.VERSION),
+                                    "closes; open it again." % (self.prev, rommlib.VERSION_LABEL),
                                     "Go back", lambda: self._swap(rommlib.rollback), danger=True)
             elif key == "bios" and a == "ok":
                 app.push(BiosScreen(app))

@@ -275,13 +275,14 @@ def install_staged(staged_app, app_dir=rommlib.APP_DIR, backup=None):
             _move(backup, app_dir)              # put the old version back
             raise
     shutil.rmtree(os.path.dirname(staged_app), ignore_errors=True)
-    _core.log("UPDATE installed %s (previous %s kept for rollback)" % (_version_in(app_dir), _version_in(backup)))
-    return _version_in(app_dir)
+    _core.log("UPDATE installed %s (previous %s kept for rollback)" % (_version_in(app_dir, True),
+                                                                     _version_in(backup, True)))
+    return _version_in(app_dir, True)
 
 
 def backup_version(backup=None):
     backup = backup or APP_BACKUP
-    return _version_in(backup) if os.path.isdir(backup) else None
+    return _version_in(backup, True) if os.path.isdir(backup) else None
 
 
 def rollback(app_dir=rommlib.APP_DIR, backup=None):
@@ -301,5 +302,5 @@ def rollback(app_dir=rommlib.APP_DIR, backup=None):
             _move(tmp, app_dir)                  # put the current version back
             raise UpdateError("Couldn't swap versions; nothing changed")
         _move(tmp, backup)
-    _core.log("ROLLBACK now %s (backup %s)" % (_version_in(app_dir), _version_in(backup)))
-    return _version_in(app_dir)
+    _core.log("ROLLBACK now %s (backup %s)" % (_version_in(app_dir, True), _version_in(backup, True)))
+    return _version_in(app_dir, True)

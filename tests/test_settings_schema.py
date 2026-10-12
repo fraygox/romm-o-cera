@@ -59,6 +59,7 @@ ACTION_RUNS = [("full", "defaults"), ("full", "changed"), ("full", "odd"), ("too
 def _pin(monkeypatch, env):
     e = ENVS[env]
     monkeypatch.setattr(rommlib, "VERSION", "0.7.1")
+    monkeypatch.setattr(rommlib, "VERSION_LABEL", "0.7.1")
     monkeypatch.setattr(rommlib, "cpu_threads", lambda: e["threads"])
     monkeypatch.setattr(rommlib, "total_ram", lambda: e["ram"])
     which = shutil.which
