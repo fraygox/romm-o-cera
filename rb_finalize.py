@@ -552,6 +552,7 @@ def process(entries, api=None, es=None, esapi=None):
 
 def main():
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
     lockf = open(LOCK, "w")
     try:
         fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)

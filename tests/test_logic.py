@@ -532,6 +532,23 @@ def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypat
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
+def test_try_lock_gives_up_at_once_when_the_lock_is_held(isolated, tmp_path):
+    path = str(tmp_path / "x.lock")
+    os.makedirs(rommlib.DATA_DIR)
+    with rommlib.try_lock(path) as fd:
+        assert fd is not None
+        with rommlib.try_lock(path) as again:      # another open file: flock says busy
+            assert again is None
+        assert rommlib.chd_worker_busy() is False
+        with rommlib.try_lock(rommlib.chd_lock_path()):
+            assert rommlib.chd_worker_busy() is True
+    with rommlib.try_lock(path) as fd:             # released on leaving the block
+        assert fd is not None
+    with pytest.raises(OSError):
+        with rommlib.try_lock(str(tmp_path / "missing" / "x.lock")):
+            pass
+
+
 # ------------------------------------------------------------ gamelist write safety
 
 

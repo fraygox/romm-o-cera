@@ -1,4 +1,5 @@
 """Paths, platform constants, errors and the small helpers every part uses."""
+import contextlib
 import io
 import json
 import os
@@ -164,6 +165,25 @@ class queue_lock:
 
     def __exit__(self, *a):
         self.f.close()
+
+
+@contextlib.contextmanager
+def try_lock(path):
+    """Hold path's exclusive flock for the with block, or yield None at once
+    when another process holds it: `with try_lock(p) as fd: if fd is None: ...`.
+    The file is made if missing and never truncated; not being able to open it
+    raises OSError. Leaving the block releases the lock."""
+    import fcntl
+    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield None
+        else:
+            yield fd
+    finally:
+        os.close(fd)
 
 
 def append_gamelist(*entries):

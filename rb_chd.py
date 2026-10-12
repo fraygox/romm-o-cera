@@ -874,6 +874,7 @@ def main():
     os.umask(0o022)       # CHDs readable like any other rom, however this worker was started
     os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
     while True:
+        # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
         lockf = open(rommlib.chd_lock_path(), "w")
         try:
             fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -11,19 +11,11 @@ from . import core as _core, discs as _discs, ps3 as _ps3, convert as _convert, 
 
 def chd_worker_busy():
     """True while rb_chd.py holds its lock (a conversion may be writing)."""
-    import fcntl
     try:
-        fd = os.open(_core.chd_lock_path(), os.O_RDONLY | os.O_CREAT, 0o644)
+        with _core.try_lock(_core.chd_lock_path()) as fd:
+            return fd is None
     except OSError:
         return False
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        return False
-    except OSError:
-        return True
-    finally:
-        os.close(fd)
 
 
 # Systems whose games are folders full of data (or that aren't games at all):

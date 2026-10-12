@@ -70,6 +70,7 @@ class Notes:
 
 def main():
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
     lockf = open(rommlib.DL_LOCK, "w")
     try:
         fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -140,6 +141,7 @@ def handover(timeout=30):
     """Called by the app at start: if a worker is running, ask it to stop and
     wait until it has released the lock. Returns True if one was running."""
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
     f = open(rommlib.DL_LOCK, "w")
     try:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
