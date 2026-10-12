@@ -8,10 +8,10 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${OUT:-$HERE/dist}
-# -B: no __pycache__ left in the repo (tests in docker leave root-owned ones there)
-VER=$(cd "$HERE" && python3 -B -c 'import rommlib; print(rommlib.VERSION)')
-REL=$(cd "$HERE" && python3 -B -c 'import rommlib; print(rommlib.RELEASE_DATE)')
-BLD=$(cd "$HERE" && python3 -B -c 'import rommlib; print(rommlib.BUILD)')
+# read from the file, not by importing it: a build machine needs no app dependencies
+lit() { sed -n "s/^$1 = \"\([^\"]*\)\".*/\1/p" "$HERE/rommlib.py" | head -1; }
+VER=$(lit VERSION); REL=$(lit RELEASE_DATE); BLD=$(lit BUILD)
+[ -n "$VER" ] || { echo "no VERSION in rommlib.py" >&2; exit 1; }
 [ -z "$BLD" ] || { echo "rommlib.BUILD must be empty in a release (is '$BLD')" >&2; exit 1; }
 NIGHTLY=${NIGHTLY:-}
 if [ -n "$NIGHTLY" ]; then
