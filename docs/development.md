@@ -81,6 +81,10 @@ tools/release.py screenshots              # refresh the README screenshots (comm
 tools/release.py docs                     # publish main's docs site now
 ```
 
+Notes no commit subject carries (upgrade advice, known issues) go under
+`## Unreleased` in CHANGELOG.md: nightly notes show them, and the next
+`stable` folds them into its section.
+
 `stable` bumps `VERSION` and `RELEASE_DATE`, adds the CHANGELOG section
 (written from the commits since the last release, grouped by Conventional
 Commit type, unless `--notes` gives it), refreshes the README screenshots,

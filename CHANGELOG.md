@@ -3,6 +3,13 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## Unreleased
+
+### Upgrading
+- **Updating from v0.7.x:** close RomM-o-Cera and open it again after the update finishes, before
+  downloading anything. Until you do, the old version still running can't copy a game's saves to its new
+  file name when a download replaces a differently named copy (the saves stay under the old name).
+
 ## v0.9.0 (2026-10-12)
 
 update channels, half the memory at 4K, and a busy RomM no longer breaks covers or downloads

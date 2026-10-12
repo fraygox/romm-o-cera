@@ -102,6 +102,14 @@ def draft_notes(tag):
     return "\n".join(out).strip()
 
 
+def unreleased():
+    """The CHANGELOG's "## Unreleased" section (notes no commit subject carries,
+    e.g. upgrade advice): its body, or "". The next stable release takes it."""
+    text = open(CHANGELOG, encoding="utf-8").read() if os.path.exists(CHANGELOG) else ""
+    m = re.search(r"^## Unreleased[^\n]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    return m.group(1).strip() if m else ""
+
+
 def changelog_section(tag):
     """(summary, body) of a version's CHANGELOG.md section."""
     text = open(CHANGELOG, encoding="utf-8").read()
@@ -117,8 +125,10 @@ def cmd_notes(a):
     if a.nightly:
         tag = last_tag()
         notes = draft_notes(tag) or "No user-facing changes."
+        extra = unreleased()
         print("The newest changes on main, built as they land: new fixes sooner, less tested than a release. "
-              "Settings → Update channel → Nightly follows it.\n\nSince %s:\n\n%s" % (tag or "the start", notes))
+              "Settings → Update channel → Nightly follows it.\n\nSince %s:\n\n%s%s"
+              % (tag or "the start", notes, "\n\n" + extra if extra else ""))
     else:
         summary, body = changelog_section(a.tag)
         print((summary + "\n\n" if summary else "") + body + "\n\n" + INSTALL)
@@ -235,7 +245,10 @@ def add_changelog(tag, today, summary, notes):
     text = open(CHANGELOG, encoding="utf-8").read() if os.path.exists(CHANGELOG) else head
     if re.search(r"^## %s\b" % re.escape(tag), text, re.M):
         sys.exit("CHANGELOG.md already has %s" % tag)
-    section = "## %s (%s)\n\n%s\n\n%s\n\n" % (tag, today, summary, notes.strip())
+    extra = unreleased()                         # folded into this release, then removed
+    text = re.sub(r"^## Unreleased[^\n]*\n.*?(?=^## |\Z)", "", text, count=1, flags=re.M | re.S)
+    section = "## %s (%s)\n\n%s\n\n%s\n\n" % (tag, today, summary,
+                                              (notes.strip() + ("\n\n" + extra if extra else "")).strip())
     i = text.find("\n## ")
     text = text[:i + 1] + section + text[i + 1:] if i >= 0 else text.rstrip() + "\n\n" + section
     open(CHANGELOG, "w", encoding="utf-8").write(text)
