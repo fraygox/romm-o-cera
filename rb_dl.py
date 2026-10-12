@@ -10,7 +10,6 @@ transfer (the .part stays), saves the queue and exits, and the app takes over.
 When the queue is empty it starts the CHD worker if needed and merges gamelist
 entries once ES is idle.
 """
-import fcntl
 import os
 import sys
 import time
@@ -114,20 +113,26 @@ class Notes:
 
 def main():
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
-    # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
-    lockf = open(rommlib.DL_LOCK, "w")
-    try:
-        fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return                                   # another worker is already on it
-    if os.path.exists(rommlib.DL_STOP):
-        os.remove(rommlib.DL_STOP)
-    cfg = rommlib.load_config()
-    if rommlib.Downloader.saved_held():
-        rommlib.log("dl-worker: queue is paused (Pause all); not starting")
-        lockf.close()
+    with rommlib.try_lock(rommlib.DL_LOCK) as fd:
+        if fd is None:
+            return                               # another worker is already on it
+        if os.path.exists(rommlib.DL_STOP):
+            os.remove(rommlib.DL_STOP)
+        cfg = rommlib.load_config()
+        held = rommlib.Downloader.saved_held()
+        if held:
+            rommlib.log("dl-worker: queue is paused (Pause all); not starting")
+        else:
+            notes = download(cfg)
+    if held:
         after_downloads(cfg, None)           # earlier games' CHD + game info still go ahead
-        return
+    elif notes is not None:                      # None: handed back to the app
+        after_downloads(cfg, notes)
+
+
+def download(cfg):
+    """Work through the saved queue (under DL_LOCK). Returns this run's Notes,
+    or None when the app came back and took the queue over."""
     d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
     d.allow_overlap = False      # mostly runs while a game plays: one disk job at a time
     n = d.resume()
@@ -162,11 +167,10 @@ def main():
     rommlib.log("dl-worker: %s (%d done)" % ("handed back to the app" if stopped else "queue finished", done))
     if os.path.exists(rommlib.DL_STOP):
         os.remove(rommlib.DL_STOP)
-    lockf.close()
     if stopped:
-        return
+        return None
     notes.collect(d)
-    after_downloads(cfg, notes)
+    return notes
 
 
 def after_downloads(cfg, notes):
@@ -185,23 +189,16 @@ def handover(timeout=30):
     """Called by the app at start: if a worker is running, ask it to stop and
     wait until it has released the lock. Returns True if one was running."""
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
-    # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
-    f = open(rommlib.DL_LOCK, "w")
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        fcntl.flock(f, fcntl.LOCK_UN)
-        return False                             # nobody holds it
-    except OSError:
-        pass
+    with rommlib.try_lock(rommlib.DL_LOCK) as fd:
+        if fd is not None:
+            return False                         # nobody holds it
     open(rommlib.DL_STOP, "w").close()
     t0 = time.time()
     while time.time() - t0 < timeout:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(f, fcntl.LOCK_UN)
-            return True
-        except OSError:
-            time.sleep(0.2)
+        with rommlib.try_lock(rommlib.DL_LOCK) as fd:
+            if fd is not None:
+                return True
+        time.sleep(0.2)
     return True
 
 

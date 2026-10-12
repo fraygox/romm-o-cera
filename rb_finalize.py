@@ -25,7 +25,6 @@ writes gamelist.xml. Instead:
 Entries ES can't take yet (a system or file it doesn't list) are kept and
 retried; nothing is dropped silently.
 """
-import fcntl
 import json
 import os
 import sys
@@ -670,12 +669,14 @@ def process(entries, api=None, es=None, esapi=None):
 
 def main():
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
-    # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
-    lockf = open(lock_path(), "w")
-    try:
-        fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return  # another finalize is already waiting; it will pick ours up
+    with rommlib.try_lock(lock_path()) as fd:
+        if fd is None:
+            return  # another finalize is already waiting; it will pick ours up
+        drain()
+
+
+def drain():
+    """Hand ES every queued entry (under the lock), waiting for it to go idle first."""
     # entries ES couldn't take last time: try them again, once per run
     deferred = _read_jsonl(deferred_path())
     if deferred:

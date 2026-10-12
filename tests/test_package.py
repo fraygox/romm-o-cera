@@ -114,13 +114,14 @@ def test_qualified_names_exist():
                     assert node.attr in vars(rommlib), (p, node.lineno, node.attr)
 
 
-# rommlib names v0.9.0 (the previous release) has, that the lazily loaded
-# workers use. An old process reaches the NEW files after an in-app update
-# swapped the folder under it: a still-open UI imports rb_chd_plan on the
+# rommlib names v0.10.0 (the previous release) has, that the lazily loaded
+# workers use. (These workers wait for v0.10.0 to be out: from then on the set
+# pins that release, which added try_lock.) An old process reaches the NEW
+# files after an in-app update swapped the folder under it: a still-open UI imports rb_chd_plan on the
 # Compress screen (which imports rb_chd and rb_finalize) and rb_dl to take over
 # downloads, and rb_dl imports rb_finalize. All of it runs against the OLD
 # rommlib already in memory. Add a name here only after checking the previous
-# release defines it (`git show v0.9.0:romm/<module>.py`); a name new in this
+# release defines it (`git show v0.10.0:romm/<module>.py`); a name new in this
 # release waits for the next one. Bump the tag with each stable release.
 PREVIOUS_RELEASE_NAMES = frozenset((
     "Api", "CHD_QUEUE_DIR", "CHECK_ERRORS", "CONVERTER", "CONVERTERS", "CSO_TEMP_SUFFIX", "CsoError",
@@ -133,6 +134,7 @@ PREVIOUS_RELEASE_NAMES = frozenset((
     "keep_free_bytes", "load_config", "load_es_systems", "log", "m3u_entry", "make_xiso", "migrate_saves",
     "path_size", "primary_path",
     "ps3_to_folder", "publish_queue_task", "queue_lock", "sheet_sources", "spawn_detached", "tmp_dir",
+    "try_lock",
     "write_png", "x360_tools", "xbox_partition", "xiso_listing", "xiso_to_iso", "z3ds_compress",
     "z3ds_info", "z3ds_verify", "zar_check",
     "DL_LOCK", "DL_STATUS", "DL_STOP", "Downloader", "Job", "es_notify", "start_conversions",   # rb_dl

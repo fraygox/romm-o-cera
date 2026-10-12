@@ -21,7 +21,6 @@ Per converted game it also:
 - queues the gamelist path rename for rb_finalize (flush → merge → reload,
   only when ES is idle).
 """
-import fcntl
 import json
 import os
 import re
@@ -899,21 +898,17 @@ def main():
     os.umask(0o022)       # CHDs readable like any other rom, however this worker was started
     os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
     while True:
-        # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
-        lockf = open(rommlib.chd_lock_path(), "w")
-        try:
-            fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            return                              # another worker has it
-        work(lockf)
-        lockf.close()
+        with rommlib.try_lock(rommlib.chd_lock_path()) as fd:
+            if fd is None:
+                return                          # another worker has it
+            work(fd)
         # a task queued while we were giving up the lock would find it taken
         # and not start a worker: look once more after releasing it
         if not pending():
             return
 
 
-def work(lockf):
+def work(fd):
     since_finalize = 0
     try:
         os.remove(rommlib.chd_current_path())   # left by a killed run
