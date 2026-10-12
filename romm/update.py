@@ -325,8 +325,11 @@ def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
     rb_dl is asked to hand over (as when the app starts: it saves the queue,
     the partial file stays for a resume); rb_chd and rb_finalize get SIGTERM
     (rb_chd stops its tool and keeps the originals; the task stays queued).
-    Whatever is still running after `timeout` is killed with its session (a
-    paused chdman too). Returns the scripts that were running."""
+    rb_dl gets SIGTERM too if it hasn't gone after a short grace (past its
+    download loop it no longer looks for the hand-over). Whatever is still
+    running after `timeout` (and is still that helper: pids get reused) is
+    killed with its session (a paused chdman too). Returns the scripts that
+    were running."""
     pids = helper_pids(app_dir, proc)
     if "rb_dl.py" in pids.values():
         try:
@@ -339,11 +342,21 @@ def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
                 os.kill(pid, signal.SIGTERM)
             except OSError:
                 pass
-    end = time.monotonic() + timeout
+    start = time.monotonic()
+    grace, end, nudged = start + min(5, timeout / 2), start + timeout, False
     while time.monotonic() < end and any(_alive(p, proc) for p in pids):
+        if not nudged and time.monotonic() >= grace:
+            nudged = True
+            for pid, script in pids.items():
+                if script == "rb_dl.py" and _alive(pid, proc):
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except OSError:
+                        pass
         time.sleep(0.2)
+    still = helper_pids(app_dir, proc)
     for pid in pids:
-        if not _alive(pid, proc):
+        if not _alive(pid, proc) or still.get(pid) != pids[pid]:
             continue
         try:
             if os.getpgid(pid) == pid:           # its own session: its tools go too

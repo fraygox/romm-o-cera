@@ -15,6 +15,8 @@ import rommlib
 HELPER = r"""
 import os, signal, subprocess, sys, time
 kind, stop = sys.argv[1], sys.argv[2]
+if kind == "dl_busy":                     # past its download loop: never looks for downloads.stop
+    kind = "plain"
 if kind == "stubborn":
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -170,3 +172,31 @@ def test_nothing_is_reopened_over_a_game_started_meanwhile(es, tmp_path):
     es.running = "/userdata/roms/gba/Lorem.zip"                   # a game starts in the pause
     time.sleep(2.5)
     assert es.launched == []
+
+
+def test_a_download_worker_past_its_loop_is_stopped_after_a_short_grace(isolated, tmp_path):
+    app_dir = str(tmp_path / "app")
+    os.makedirs(app_dir)
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    p = _start(app_dir, "rb_dl.py", "dl_busy", rommlib.DL_STOP)
+    for _ in range(100):
+        if os.path.exists(rommlib.DL_STOP + ".ready-rb_dl.py"):
+            break
+        time.sleep(0.05)
+    try:
+        t0 = time.monotonic()
+        assert rommlib.stop_helpers(timeout=8, app_dir=app_dir) == ["rb_dl.py"]
+        assert p.wait(timeout=5) == -15                   # SIGTERM after the grace, not the kill at the end
+        assert time.monotonic() - t0 < 7.5
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
+
+
+def test_quitting_while_the_update_installs_waits_for_it(app):
+    app.updating = True
+    said = []
+    app.toast = lambda msg, color=None: said.append(msg)
+    app.request_quit()
+    assert app.running is True and "Finishing the update" in said[-1]
