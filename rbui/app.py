@@ -589,6 +589,9 @@ class App:
             self.stack[-1].enter()
 
     def request_quit(self):
+        if getattr(self, "updating", False):
+            self.toast("Finishing the update first: %s closes by itself in a moment" % APP_NAME)
+            return
         if getattr(self.modal, "is_quit", False):
             return self._quit()                     # asked twice: quit
         n = self.downloader.active_count()
@@ -823,6 +826,7 @@ class App:
             return
         if a == "start" and len(self.stack) > 1 and not getattr(self.stack[-1], "own_start", False):
             del self.stack[1:]
+            self.make_custom_theme()               # Custom's unsaved colours aren't kept either
             apply_theme(self.theme_key())          # a theme being previewed (Settings, Theme) isn't kept
             self.stack[0].enter()
             return

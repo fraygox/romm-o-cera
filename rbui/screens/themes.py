@@ -433,9 +433,11 @@ class CustomThemeScreen(Screen):
         if shown != "custom":
             app.toast("Saved. Match theme to controller is on: this controller shows %s" % THEMES[shown][0],
                       theme.AMBER)
-        app.pop()
+        app.stack.pop()                     # not app.pop(): the picker would preview Custom again
         if isinstance(app.stack[-1], ThemePickerScreen):
-            app.pop()                       # chosen: back where the picker was opened
+            app.stack.pop()                 # chosen: back where the picker was opened
+        app.stack[-1].enter()
+        apply_theme(app.theme_key())        # what this controller shows (Match theme to controller)
 
     def hints(self):
         return [("A", "Use"), ("LEFT RIGHT", "Change"), ("L", "Bigger step back"), ("R", "Bigger step"),

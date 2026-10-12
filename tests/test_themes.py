@@ -313,3 +313,28 @@ def test_custom_a_saves_four_settings_and_uses_it_from_start(ui, rb):
         app2.canvas.fill(rb.BG)
         scr.draw(app2.canvas)
     rb.set_custom(195, 225, 30, "dark")
+
+
+def test_home_from_custom_leaves_no_unsaved_colours_behind(ui, rb):
+    """Start went home past the Custom screen's own restore: its unsaved
+    colours stayed on screen (and on the Custom card)."""
+    app = ui
+    pk, cs = _custom(app, rb)
+    cs.set("accent", 330)
+    app.dispatch("start")
+    assert len(app.stack) == 1 and app.cfg["theme"] == "default"
+    assert rb.ACCENT == rb._DEFAULT_PALETTE["ACCENT"]
+    assert rb.THEMES["custom"][1] == rb.custom_palette()              # the saved custom colours again
+
+
+def test_custom_kept_while_the_controller_picks_the_theme_shows_the_controller_theme(ui, rb):
+    app = ui
+    app.cfg["theme_auto"] = True
+    app.input.names = lambda: ["Xbox Wireless Controller"]
+    app.apply_config()
+    said = []
+    app.toast = lambda msg, color=None: said.append(msg)
+    pk, cs = _custom(app, rb)
+    cs.action("ok")
+    assert app.cfg["theme"] == "custom" and isinstance(app.stack[-1], rb.SettingsScreen)
+    assert rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"] and "Xbox" in said[-1]
