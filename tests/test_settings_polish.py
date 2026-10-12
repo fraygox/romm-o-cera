@@ -352,3 +352,21 @@ def test_documentation_row_shows_the_code_and_opens_it_big(ui, rb):
     app.stack[-1].draw(app.canvas)
     app.stack[-1].action("back")
     assert app.stack[-1] is st
+
+
+def test_turning_the_daily_check_back_on_checks_now(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    app.bg = lambda fn, done=None, err=None: done(fn()) if done else fn()
+    asked = []
+    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False: asked.append(force) or "v9.9.9")
+    scr = rb.SettingsScreen(app)
+    app.cfg["check_updates"] = True
+    scr.EFFECTS["check_updates"](scr, app)
+    assert asked == [True] and app.update_tag == "v9.9.9"
+    app.cfg["check_updates"] = False
+    scr.EFFECTS["check_updates"](scr, app)
+    assert app.update_tag is None and asked == [True]

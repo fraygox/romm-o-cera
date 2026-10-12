@@ -4157,6 +4157,13 @@ class SettingsScreen(Screen):
         if lim:
             app.bg(lambda: rommlib.prune_cache(lim), lambda r: self._measure_cache(), lambda e: None)
 
+    def _check_updates(self, app):
+        """Daily check back on: check now, not at the next start. Off: forget what it found."""
+        if app.cfg["check_updates"]:
+            self._update_channel(app)
+        else:
+            app.update_tag = None
+
     def _update_channel(self, app):
         """A new channel: forget what the old one offered and ask GitHub again."""
         app.update_tag = None
@@ -4175,6 +4182,7 @@ class SettingsScreen(Screen):
         "sounds": _sounds,
         "cache_limit": _cache_limit,
         "update_channel": _update_channel,
+        "check_updates": _check_updates,
     }
 
     def _available(self, st):

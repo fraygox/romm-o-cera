@@ -2598,7 +2598,7 @@
    "wake": 0
   },
   "full/changed/checkupdates/left": {
-   "bg": 0,
+   "bg": 1,
    "cfg": {
     "check_updates": true
    },
@@ -2614,7 +2614,7 @@
    "wake": 0
   },
   "full/changed/checkupdates/ok": {
-   "bg": 0,
+   "bg": 1,
    "cfg": {
     "check_updates": true
    },
@@ -2630,7 +2630,7 @@
    "wake": 0
   },
   "full/changed/checkupdates/right": {
-   "bg": 0,
+   "bg": 1,
    "cfg": {
     "check_updates": true
    },
@@ -7828,7 +7828,7 @@
    "wake": 0
   },
   "tools/changed/checkupdates/left": {
-   "bg": 0,
+   "bg": 1,
    "cfg": {
     "check_updates": true
    },
@@ -7844,7 +7844,7 @@
    "wake": 0
   },
   "tools/changed/checkupdates/ok": {
-   "bg": 0,
+   "bg": 1,
    "cfg": {
     "check_updates": true
    },
@@ -7860,7 +7860,7 @@
    "wake": 0
   },
   "tools/changed/checkupdates/right": {
-   "bg": 0,
+   "bg": 1,
    "cfg": {
     "check_updates": true
    },

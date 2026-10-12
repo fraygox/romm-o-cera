@@ -70,7 +70,7 @@ SETTINGS = (
             help="Which symbols the hints show. Auto picks them from the controller's name."),
     Setting("check_updates", True,      # once a day, ask GitHub if a newer release exists
             row="checkupdates", label="Check for updates daily", sub="Updates still checks when you ask",
-            kind="onoff",
+            kind="onoff", effects=("check_updates",),
             help="Once a day, asks GitHub whether a newer version is out on your update channel, and says so "
                  "when there is one. The request carries nothing about you or your games. Off: no daily "
                  "check, but Updates still checks whenever you select it."),
