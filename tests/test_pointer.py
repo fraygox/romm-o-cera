@@ -336,3 +336,63 @@ def test_tapping_an_installed_match_opens_its_manage_menu(make_app, rb, monkeypa
     app.modal = None
     app.tap(hits[1][0].center)
     assert opened[-1] == ("download", 1)
+
+
+# ---- raw joysticks (no SDL mapping)
+
+class FakeJoy:
+    def __init__(self, buttons, axes):
+        self.buttons, self.axes = buttons, axes
+
+    def init(self):
+        pass
+
+    def get_instance_id(self):
+        return 7
+
+    def get_numbuttons(self):
+        return self.buttons
+
+    def get_numaxes(self):
+        return len(self.axes)
+
+    def get_axis(self, a):
+        return self.axes[a]
+
+    def get_name(self):
+        return "Generic USB Joystick"
+
+
+def _raw(rb, monkeypatch, joy):
+    import pygame
+    pygame.init()
+    monkeypatch.setattr(rb, "sdlcontroller", None)
+    monkeypatch.setattr(pygame.joystick, "get_count", lambda: 0)
+    inp = rb.Input(False)
+    monkeypatch.setattr(pygame.joystick, "Joystick", lambda i: joy)
+    inp._open(0)
+    assert inp.joysticks == {7: joy}
+    return inp
+
+
+def test_a_raw_joystick_has_l2_r2(rb, monkeypatch):
+    import pygame
+    inp = _raw(rb, monkeypatch, FakeJoy(12, [0.0, 0.0, -1.0, 0.0, 0.0, -1.0]))
+    out = []
+    for b in (6, 7, 8, 9, 4, 5):
+        inp.handle(pygame.event.Event(pygame.JOYBUTTONDOWN, button=b, instance_id=7, joy=0), out)
+        inp.handle(pygame.event.Event(pygame.JOYBUTTONUP, button=b, instance_id=7, joy=0), out)
+    assert out == ["l2", "r2", "select", "start", "l1", "r1"]
+    out = []
+    for axis, v in ((2, 1.0), (2, -1.0), (5, 0.8), (5, -1.0), (3, 1.0), (3, 0.0), (4, -1.0), (2, 0.9)):
+        inp.handle(pygame.event.Event(pygame.JOYAXISMOTION, axis=axis, value=v, instance_id=7, joy=0), out)
+    assert out == ["l2", "r2", "l2"]                        # the right stick (3, 4) does nothing
+
+
+def test_a_raw_joystick_with_few_buttons_keeps_select_start(rb, monkeypatch):
+    import pygame
+    inp = _raw(rb, monkeypatch, FakeJoy(8, [0.0, 0.0]))
+    out = []
+    for b in (6, 7):
+        inp.handle(pygame.event.Event(pygame.JOYBUTTONDOWN, button=b, instance_id=7, joy=0), out)
+    assert out == ["select", "start"]

@@ -8,7 +8,10 @@ dialogs, messages) is drawn by one helper, so they always match.
 **Controller:** south button confirms (switch in Settings) · east back ·
 Y search · X list menu · L/R page · L2/R2 previous/next letter · Select
 downloads · Start home · **Hotkey + Start exits**. `rommbrowser.pygame.keys`
-turns off Batocera's pad-to-keyboard mapping for this app.
+turns off Batocera's pad-to-keyboard mapping for this app. A pad SDL has no
+mapping for still works: with 10 or more buttons, buttons 6 and 7 are L2/R2
+and 8 and 9 Select/Start (with fewer, 6 and 7 are Select/Start), and axes that
+rest fully back are L2 then R2.
 
 **Keyboard:** arrows move · Enter confirm · Esc back · X menu · Y search ·
 PgUp/PgDn page · `[` `]` letter jump · Tab downloads · Home home. Search and

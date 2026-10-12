@@ -767,6 +767,7 @@ class Input:
         self.key_action = {}    # pygame key -> the action its press queued
         self.key_up = {}        # action -> when its key was last let go
         self.axis_dir = {}
+        self.raw_triggers = {}  # raw joystick instance id -> its [L2, R2] trigger axes
         if sdlcontroller is not None:
             sdlcontroller.init()
         for i in range(pygame.joystick.get_count()):
@@ -812,6 +813,10 @@ class Input:
             j = pygame.joystick.Joystick(index)
             j.init()
             self.joysticks[j.get_instance_id()] = j
+            # triggers on a raw joystick are the axes past the left stick that rest
+            # all the way back (-1), first L2 then R2; a right stick rests at 0
+            self.raw_triggers[j.get_instance_id()] = \
+                [a for a in range(2, j.get_numaxes()) if j.get_axis(a) < -0.5][:2]
         except Exception:
             pass
 
@@ -951,6 +956,12 @@ class Input:
                 return
             m = {0: "south", 1: "east", 2: "west", 3: "north", 4: "l1", 5: "r1",
                  6: "select", 7: "start", 8: "select", 9: "start"}
+            j = self.joysticks.get(ev.instance_id)
+            try:
+                if j is not None and j.get_numbuttons() >= 10:
+                    m.update({6: "l2", 7: "r2"})      # 10+ buttons: L2 R2 then Select Start (generic pads)
+            except Exception:
+                pass
             name = m.get(ev.button)
             if name in ("south", "east", "west", "north"):
                 name = self._face(name)
@@ -974,9 +985,19 @@ class Input:
             elif x == 1:
                 self._press("right", out)
         elif t == pygame.JOYAXISMOTION:
-            if ev.instance_id in self.controllers or ev.axis > 1:
+            if ev.instance_id in self.controllers:
                 return
-            self._axis(("j", ev.instance_id, ev.axis), ev.axis == 0, ev.value, out)
+            trig = self.raw_triggers.get(ev.instance_id, [])
+            if ev.axis in trig:
+                key, on = ("jt", ev.instance_id, ev.axis), ev.value > 0
+                name = ("l2", "r2")[trig.index(ev.axis)]
+                if on and not self.axis_dir.get(key):
+                    self._press(name, out)
+                elif not on and self.axis_dir.get(key):
+                    self._release(name)
+                self.axis_dir[key] = on
+            elif ev.axis <= 1:
+                self._axis(("j", ev.instance_id, ev.axis), ev.axis == 0, ev.value, out)
 
     def _axis(self, key, horizontal, v, out):
         d = None
