@@ -565,6 +565,7 @@ class Converter:
     check: Optional[Callable] = None   # check(src) raises one of CHECK_ERRORS when it can't be converted
     renamed_sources: tuple = ()    # found by the planner too: renamed to a source first ("X.xiso" -> "X.iso")
     planner_skips_done: bool = False   # the planner leaves a source alone when its output is already there
+    priority: tuple = ()       # its systems in the planner's queue order (see planner_order); a shared one: ranked once
     audit: Optional[Callable] = None   # audit(path, orig, deep): how Check games checks an output (see NotVerified)
     audit_exts: tuple = ()     # other files audit checks as if they were its output (Azahar's own .zcia)
     tool: Optional[object] = None  # the ToolSpec it needs downloaded (romm/tools.py), if any
@@ -597,10 +598,13 @@ def _ext(path):
 
 
 CONVERTERS = (
-    # CD images become createcd on every CHD system (PS2's CD-based games come as cue/bin too)
+    # CD images become createcd on every CHD system (PS2's CD-based games come as cue/bin too);
+    # its priority ranks PS2 and PSP for createdvd and cso as well
     Converter("createcd", "CHD", "chd", frozenset(_core.CHD_CD_SYSTEMS | _core.CHD_DVD_SYSTEMS),
               dict.fromkeys((".cue", ".gdi"), ".chd"), "chd", _config.SETTING["chd"].label, "turned off",
-              lambda cfg, system: bool(_config.config_value(cfg, "chd")), chd=True),
+              lambda cfg, system: bool(_config.config_value(cfg, "chd")), chd=True,
+              priority=("psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
+                        "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp")),
     # DVD images (.iso) on PS2/PSP only
     Converter("createdvd", "CHD", "chd", frozenset(_core.CHD_DVD_SYSTEMS), {".iso": ".chd"},
               "chd", _config.SETTING["chd"].label, "turned off",
@@ -613,31 +617,38 @@ CONVERTERS = (
               check=lambda src: _discs.cso_info(src), space=lambda src: _discs.cso_info(src)["total"] + os.path.getsize(src)),
     Converter("rvz", "RVZ", "rvz", frozenset(_core.RVZ_SYSTEMS), dict.fromkeys(_core.RVZ_SOURCES, ".rvz"),
               "rvz", _config.SETTING["rvz"].label, "turned off, or dolphin-tool isn't installed",
-              lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit, tool=_tools.TOOL_DOLPHIN),
+              lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit, tool=_tools.TOOL_DOLPHIN,
+              priority=("gamecube", "wii")),
     # Xbox: images are made bootable (make_xiso, .xiso -> .iso) first, when xbox_bootable is on
     Converter("squashfs", "squashfs", "squashfs", frozenset(_core.SQUASH_SYSTEMS), {".iso": ".squashfs"},
               "squashfs", _config.SETTING["squashfs"].label, "turned off, or mksquashfs is missing",
               lambda cfg, system: squashfs_enabled(cfg, system), keep_image_ext=True,
-              renamed_sources=(".xiso",), audit=squashfs_audit),
+              renamed_sources=(".xiso",), audit=squashfs_audit, priority=("xbox",)),
     # encrypted dumps are skipped (Azahar can't run them either)
     Converter("z3ds", "ZCCI", "z3ds", frozenset(Z3DS_SYSTEMS), dict(Z3DS_SOURCES),
               "z3ds", _config.SETTING["z3ds"].label, "turned off, or libzstd is missing",
               lambda cfg, system: z3ds_enabled(cfg, system), check=lambda src: z3ds_info(src),
-              planner_skips_done=True, audit=z3ds_audit, audit_exts=(".zcia",)),
+              planner_skips_done=True, audit=z3ds_audit, audit_exts=(".zcia",), priority=("3ds",)),
     # the extracted files and the .zar sit next to the image until it's verified
     Converter("zar", "ZAR", "zar", frozenset(_tools.ZAR_SYSTEMS), {".iso": ".zar"},
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
-              audit=zar_audit, tool=_tools.TOOL_X360),
+              audit=zar_audit, tool=_tools.TOOL_X360, priority=("xbox360",)),
     # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
     # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
     Converter("ps3", "PS3 folder", "ps3", frozenset({"ps3"}), {".iso": ".ps3", ".zip": ".ps3"},
               "ps3_folders", _config.SETTING["ps3_folders"].label, "turned off",
               lambda cfg, system: bool(_config.config_value(cfg, "ps3_folders")),
               check=lambda src: _ps3.ps3_check(src), space=lambda src: _ps3.ps3_image_size(src),
-              audit=lambda path, orig, deep: _ps3.ps3_folder_check(path, deep)),
+              audit=lambda path, orig, deep: _ps3.ps3_folder_check(path, deep), priority=("ps3",)),
 )
 CONVERTER = {c.mode: c for c in CONVERTERS}
+
+
+def planner_order():
+    """Every system a converter works on, in the order the library planner
+    (rb_chd_plan) queues them: each converter's priority, in table order."""
+    return [s for c in CONVERTERS for s in c.priority]
 
 
 def output_converter(path):
