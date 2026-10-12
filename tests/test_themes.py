@@ -82,9 +82,6 @@ def test_settings_theme_row_cycles_and_repaints_at_once(ui, rb):
     assert app.cfg["theme"] == "default_oled" and rb.BG == (0, 0, 0)
     assert rommlib.load_config()["theme"] == "default_oled"          # saved
     st.action("left")
-    st.action("left")                                                 # Auto OLED and Auto come first
-    assert app.cfg["theme"] == "auto_oled"
-    st.action("left")
     st.action("left")                                                 # wraps round to the last theme
     last = list(rb.THEMES)[-1]
     assert app.cfg["theme"] == last and rb.ACCENT == rb.THEMES[last][1]["ACCENT"]

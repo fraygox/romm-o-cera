@@ -1711,7 +1711,7 @@
   "bare/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "auto_oled"
+    "theme": "high_contrast_light"
    },
    "gone": [],
    "modal": null,
@@ -1768,6 +1768,69 @@
    "sfx": [
     "toggle"
    ],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/themeauto/left": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/themeauto/ok": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/themeauto/right": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [
     [
@@ -3581,6 +3644,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/themeauto/left": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/themeauto/ok": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/themeauto/right": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/tls/left": {
    "bg": 1,
    "cfg": {
@@ -5310,7 +5421,7 @@
   "full/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "auto_oled"
+    "theme": "high_contrast_light"
    },
    "gone": [],
    "modal": null,
@@ -5357,6 +5468,54 @@
    "sfx": [
     "toggle"
    ],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/themeauto/left": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/themeauto/ok": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/themeauto/right": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -7016,7 +7175,7 @@
   "full/odd/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "auto_oled"
+    "theme": "high_contrast_light"
    },
    "gone": [],
    "modal": null,
@@ -7060,6 +7219,51 @@
    "sfx": [
     "toggle"
    ],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/themeauto/left": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/themeauto/ok": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/themeauto/right": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -8823,6 +9027,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/changed/themeauto/left": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/themeauto/ok": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/themeauto/right": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/changed/tls/left": {
    "bg": 1,
    "cfg": {
@@ -10576,7 +10828,7 @@
   "tools/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "auto_oled"
+    "theme": "high_contrast_light"
    },
    "gone": [],
    "modal": null,
@@ -10623,6 +10875,54 @@
    "sfx": [
     "toggle"
    ],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/themeauto/left": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/themeauto/ok": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/themeauto/right": {
+   "bg": 0,
+   "cfg": {
+    "theme_auto": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -11019,7 +11319,8 @@
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
-  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red, each also as OLED (pure black, for OLED TVs). Auto follows your controller (Default with a keyboard). High contrast is black and white with a yellow highlight; High contrast light is black on white.",
+  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red, each also as OLED (pure black, for OLED TVs). High contrast is black and white with a yellow highlight; High contrast light is black on white.",
+  "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses that maker's colours instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast themes are always kept.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer RomM-o-Cera, then downloads, checks and installs it. The current version is kept so you can go back.",
@@ -11407,6 +11708,20 @@
     "Back"
    ]
   ],
+  "themeauto": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
   "tls": [
    [
     "A",
@@ -11683,6 +11998,12 @@
     "Colours for the whole app; OLED: pure black"
    ],
    [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
+   ],
+   [
     "sounds",
     "Sounds",
     "Quiet",
@@ -11941,6 +12262,12 @@
     "Theme",
     "Default",
     "Colours for the whole app; OLED: pure black"
+   ],
+   [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
    ],
    [
     "sounds",
@@ -12203,6 +12530,12 @@
     "Colours for the whole app; OLED: pure black"
    ],
    [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
+   ],
+   [
     "sounds",
     "Sounds",
     "On",
@@ -12463,6 +12796,12 @@
     "Colours for the whole app; OLED: pure black"
    ],
    [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
+   ],
+   [
     "sounds",
     "Sounds",
     "Quiet",
@@ -12715,6 +13054,12 @@
     "Theme",
     "Default",
     "Colours for the whole app; OLED: pure black"
+   ],
+   [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
    ],
    [
     "sounds",
@@ -12971,6 +13316,12 @@
     "Colours for the whole app; OLED: pure black"
    ],
    [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
+   ],
+   [
     "sounds",
     "Sounds",
     "On",
@@ -13225,6 +13576,12 @@
     "Colours for the whole app; OLED: pure black"
    ],
    [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
+   ],
+   [
     "sounds",
     "Sounds",
     "Quiet",
@@ -13477,6 +13834,12 @@
     "Theme",
     "Default",
     "Colours for the whole app; OLED: pure black"
+   ],
+   [
+    "themeauto",
+    "Match theme to controller",
+    "Off",
+    "PlayStation, Xbox or Nintendo colours"
    ],
    [
     "sounds",

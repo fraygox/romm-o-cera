@@ -466,9 +466,9 @@ def style_from_names(names):
     return "xbox"
 
 
-# Theme "Auto" follows the controller: the theme of its maker (the button labels'
-# style when they're set by hand), Default for a keyboard or a pad it doesn't know.
-AUTO_THEMES = {"auto": "", "auto_oled": "_oled"}
+# "Match theme to controller": the theme of the pad's maker (the button labels'
+# style when they're set by hand); the chosen Theme for a keyboard or a pad it
+# doesn't know, and always for a high-contrast Theme.
 XBOX_NAMES = ("xbox", "x-box", "microsoft", "xinput", "x360")
 
 
@@ -481,12 +481,12 @@ def pad_family(names):
     return None
 
 
-def theme_for(name, button_style, names):
-    """A Theme setting -> the THEMES key to paint with (Auto resolved)."""
-    if name not in AUTO_THEMES:
+def theme_for(name, auto, button_style, names):
+    """The Theme setting (and Match theme to controller) -> the THEMES key to paint with."""
+    if not auto or name.startswith("high_contrast"):
         return name
     fam = button_style if button_style in FACE else pad_family(names)
-    return (fam or "default") + AUTO_THEMES[name]
+    return fam + ("_oled" if name.endswith("_oled") else "") if fam else name
 
 
 def pad_face(token):
@@ -1384,7 +1384,7 @@ class App:
         self.scaled_covers.clear()
 
     def theme_key(self):
-        return theme_for(self.cfg["theme"], self.cfg["button_style"], self.input.names())
+        return theme_for(self.cfg["theme"], self.cfg["theme_auto"], self.cfg["button_style"], self.input.names())
 
     def resolve_style(self):
         want = self.cfg["button_style"] or "auto"
@@ -1638,7 +1638,7 @@ class App:
     def on_pad_change(self):
         if (self.cfg["button_style"] or "auto") == "auto":
             self.resolve_style()
-        if self.cfg["theme"] in AUTO_THEMES:
+        if self.cfg["theme_auto"]:
             apply_theme(self.theme_key())
 
     def take_over_downloads(self):
@@ -4177,6 +4177,7 @@ class SettingsScreen(Screen):
                                         (["%s RAM" % human_size(rommlib.total_ram())] if rommlib.total_ram() else []))),
             sec("This app"),
             row("theme", self._theme_value()),
+            table("themeauto"),
             table("sounds"),
             table("cachelimit"),
             ("cache", "Clear cover cache",
@@ -4298,15 +4299,16 @@ class SettingsScreen(Screen):
 
     STYLES = ["auto", "xbox", "playstation", "nintendo"]
     SPEEDS = rommlib.SPEEDS                   # MB/s, 0 = no limit
-    THEME_CYCLE = list(AUTO_THEMES) + list(THEMES)     # what left and right cycle through
+    THEME_CYCLE = list(THEMES)                       # what left and right cycle through
     LOW_MEMORY = ["auto", True, False]
 
     def _theme_value(self):
         cfg = self.app.cfg
-        if cfg["theme"] in AUTO_THEMES:
-            now = THEMES[theme_for("auto", cfg["button_style"], self.app.input.names())][0]
-            return "%s (%s)" % ("Auto OLED" if cfg["theme"] == "auto_oled" else "Auto", now)
-        return THEMES.get(cfg["theme"], THEMES["default"])[0]
+        chosen = THEMES.get(cfg["theme"], THEMES["default"])[0]
+        now = self.app.theme_key()
+        if now != cfg["theme"] and now in THEMES:              # matched to the controller
+            return "%s (now %s)" % (chosen, THEMES[now][0])
+        return chosen
 
     def _style_value(self):
         want = self.app.cfg["button_style"] or "auto"

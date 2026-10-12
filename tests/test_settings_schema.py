@@ -246,6 +246,7 @@ DEFAULTS_LITERAL = [
     ("xbox_bootable", True), ("squashfs", False), ("z3ds", True), ("zar", False), ("ps3_folders", True),
     ("ps3_decrypt", False), ("cache_limit_mb", 1024), ("download_hours", "any"), ("background_downloads", True),
     ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("sounds", "normal"), ("theme", "default"), ("update_channel", "stable"),
+    ("theme_auto", False),
     ("platform_map", {}),
 ]
 
