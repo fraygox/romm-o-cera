@@ -53,7 +53,7 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
 - **Feels native**: button labels match your controller (Xbox, PlayStation,
   Nintendo) or keyboard, colour themes to match (one that follows your
   controller, pure-black OLED and high-contrast versions), settings explain
-  themselves, updates install from the
+  themselves, a QR code opens the documentation on your phone, updates install from the
   box with one-step rollback. → [Controls](docs/controls.md),
   [Settings](docs/settings.md)
 

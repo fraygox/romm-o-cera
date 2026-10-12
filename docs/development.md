@@ -175,6 +175,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/downloader.py` | downloads: the queue, the workers, space planning |
 | `romm/audit.py` | Check games, and game info for games already here |
 | `romm/unseen.py` | games EmulationStation can't see |
+| `romm/qr.py` | a small QR code encoder (byte mode, versions 1-6) for the Documentation row |
 
 The rules (`tests/test_package.py` checks them):
 

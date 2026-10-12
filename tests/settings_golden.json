@@ -651,6 +651,50 @@
    "toasts": [],
    "wake": 0
   },
+  "bare/defaults/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/docs/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "bare/defaults/hours/left": {
    "bg": 0,
    "cfg": {
@@ -2645,6 +2689,50 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/docs/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/hours/left": {
    "bg": 0,
    "cfg": {
@@ -4350,6 +4438,50 @@
    "wake": 0
   },
   "full/defaults/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -6076,6 +6208,47 @@
    "toasts": [],
    "wake": 0
   },
+  "full/odd/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/docs/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/odd/hours/left": {
    "bg": 0,
    "cfg": {
@@ -7733,6 +7906,50 @@
    "wake": 0
   },
   "tools/changed/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -9488,6 +9705,50 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/docs/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/hours/left": {
    "bg": 0,
    "cfg": {
@@ -10740,6 +11001,7 @@
   "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the menus.",
   "checkupdates": "Once a day, asks GitHub whether a newer version is out on your update channel, and says so when there is one. The request carries nothing about you or your games. Off: no daily check, but Updates still checks whenever you select it.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
+  "docs": "Point your phone's camera at the code to open the documentation: setting up, every setting, and what to do when something goes wrong. {A} shows it bigger.",
   "hours": "Downloads only start inside this window, e.g. overnight. A download running when it closes pauses and picks up next time. \"Download now\" in Downloads skips the wait.",
   "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits (\"Waiting for space\") and starts once there's room; smaller ones behind it keep going.",
   "manuals": "Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation.",
@@ -10900,6 +11162,16 @@
    ]
   ],
   "credits": [
+   [
+    "A",
+    "Open"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "docs": [
    [
     "A",
     "Open"
@@ -11445,6 +11717,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Can't be read",
@@ -11697,6 +11975,12 @@
     "Credits and licenses",
     "Open",
     "The software RomM-o-Cera uses or downloads"
+   ],
+   [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
    ],
    [
     "resetcfg",
@@ -11953,6 +12237,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Can't be read",
@@ -12207,6 +12497,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -12453,6 +12749,12 @@
     "Credits and licenses",
     "Open",
     "The software RomM-o-Cera uses or downloads"
+   ],
+   [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
    ],
    [
     "resetcfg",
@@ -12703,6 +13005,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -12951,6 +13259,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -13197,6 +13511,12 @@
     "Credits and licenses",
     "Open",
     "The software RomM-o-Cera uses or downloads"
+   ],
+   [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
    ],
    [
     "resetcfg",

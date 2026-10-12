@@ -3825,6 +3825,7 @@ class SettingsScreen(Screen):
              "Covers re-download as you browse"),
             ("bios", "BIOS files", "Open", "What each system needs, and what RomM can fill"),
             ("credits", "Credits and licenses", "Open", "The software RomM-o-Cera uses or downloads"),
+            ("docs", "Documentation", "QR code", "Open it on your phone"),
             ("resetcfg", "Reset settings", "Can't be read" if rommlib.config_unreadable() else "Reset",
              "Start over from the defaults; the old file is kept"),
             sec("Updates"),
@@ -3949,13 +3950,13 @@ class SettingsScreen(Screen):
     def crumbs(self):
         return ["Settings"]
 
-    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits")
+    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits", "docs")
 
     def hints(self):
         items = self.items()
         key = items[min(self.sel, len(items) - 1)][0]
         if key in self.ACTIONS:
-            return [("A", "Open" if key in ("bios", "credits") else "Select"), ("B", "Back")]
+            return [("A", "Open" if key in ("bios", "credits", "docs") else "Select"), ("B", "Back")]
         return [("A", "Change"), ("LEFT RIGHT", "Choose"), ("B", "Back")]
 
     def selectable(self):
@@ -4064,6 +4065,8 @@ class SettingsScreen(Screen):
                 self._toggle_ps3_decrypt()
             elif key == "credits" and a == "ok":
                 app.push(CreditsScreen(app))
+            elif key == "docs" and a == "ok":
+                app.push(DocsScreen(app))
             elif key == "resetcfg" and a == "ok":
                 app.modal = Confirm(app, "Reset all settings?",
                                     "Every setting goes back to its default, including the server address and "
@@ -4308,10 +4311,12 @@ class SettingsScreen(Screen):
         for ln in rich_lines(self.f, self.f.body, SETTING_HELP.get(key, sub), p.width - 56, 7):
             rich_text(c, self.f, self.f.body, ln, (p.left + 28, yy), DIM)
             yy += 26
-        if value:
+        a = p.bottom - 150
+        if key == "docs":
+            draw_qr(c, docs_qr(), pygame.Rect(p.left + 28, yy + 10, p.width - 56, a - yy - 22))
+        elif value:
             yy += 8
             text(c, self.f.small, "Now: " + value, (p.left + 28, yy), ACCENT_HI, maxw=p.width - 56)
-        a = p.bottom - 150
         hline(c, LINE, (p.left + 28, a), (p.right - 28, a))
         text(c, self.f.h3, APP_NAME, (p.left + 28, a + 14), TEXT)
         text(c, self.f.small, "v%s · %s · by %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE, rommlib.AUTHOR),
@@ -4339,6 +4344,8 @@ SETTING_HELP = dict({s.row: s.help for s in rommlib.SETTINGS if s.row}, **{
     "cache": "Deletes every cached cover; they download again as you browse.",
     "bios": "What each system needs, what's missing, and what your RomM can supply.",
     "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
+    "docs": "Point your phone's camera at the code to open the documentation: setting up, every "
+            "setting, and what to do when something goes wrong. {A} shows it bigger.",
     "update": "Checks GitHub for a newer RomM-o-Cera, then downloads, checks and installs it. The "
               "current version is kept so you can go back.",
     "rollback": "Swaps the previous version back in. The current one is kept, so this can be undone too.",
@@ -4371,6 +4378,66 @@ CREDITS = [
     ("7-Zip", "for .7z and .rar downloads", "LGPL-2.1 (+ unRAR restriction)", "7-zip.org", "Part of Batocera."),
     ("Batocera.linux", "the system, and EmulationStation's API", "GPL and others", "batocera.org", ""),
 ]
+
+
+def docs_qr():
+    """The documentation site's QR code (made once)."""
+    if "docs" not in _QR:
+        _QR["docs"] = rommlib.qr_matrix(rommlib.DOCS_URL)
+    return _QR["docs"]
+
+
+_QR = {}
+
+
+def draw_qr(c, matrix, rect):
+    """A QR code, as large as fits in rect (logical), centred: whole physical
+    pixels per module, dark on white with the 4-module quiet zone, whatever
+    the theme (phones read dark on light best). Returns the physical rect."""
+    n = len(matrix) + 8
+    r = SR(rect)
+    px = max(1, min(r.width, r.height) // n)
+    box = pygame.Rect(0, 0, px * n, px * n)
+    box.center = r.center
+    pygame.draw.rect(c, (255, 255, 255), box, border_radius=px)
+    for y, row in enumerate(matrix):
+        x = 0
+        while x < len(row):                     # one rect per run of dark modules
+            if not row[x]:
+                x += 1
+                continue
+            x0 = x
+            while x < len(row) and row[x]:
+                x += 1
+            c.fill((0, 0, 0), (box.left + (x0 + 4) * px, box.top + (y + 4) * px, (x - x0) * px, px))
+    return box
+
+
+class DocsScreen(Screen):
+    """Settings, Documentation: the docs site's QR code, big enough to scan from the couch."""
+
+    def crumbs(self):
+        return ["Settings", "Documentation"]
+
+    def hints(self):
+        return [("B", "Back")]
+
+    def draw(self, c):
+        p = pygame.Rect(48, 84, W - 96, 554)
+        rrect(c, PANEL, p, 16)
+        draw_qr(c, docs_qr(), pygame.Rect(p.left + 32, p.top + 32, 490, p.height - 64))
+        x, w = p.left + 32 + 490 + 40, p.right - 32 - (p.left + 32 + 490 + 40)
+        text(c, self.f.h2, "Documentation", (x, p.top + 60), TEXT, maxw=w)
+        text(c, self.f.body, rommlib.DOCS_URL.replace("https://", "").rstrip("/"), (x, p.top + 104), ACCENT_HI,
+             maxw=w)
+        yy = p.top + 160
+        for para in ("Point your phone's camera at the code to open it.",
+                     "Installing, connecting to RomM, browsing and downloading, disc compression, PS3 games, "
+                     "every setting, the controls, and what to do when something goes wrong."):
+            for ln in wrap(self.f.body, para, w):
+                text(c, self.f.body, ln, (x, yy), DIM)
+                yy += 28
+            yy += 14
 
 
 class CreditsScreen(ListScreen):

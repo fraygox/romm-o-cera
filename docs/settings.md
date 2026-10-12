@@ -24,6 +24,9 @@ The rows that aren't a setting do something when you press confirm:
   missing, and what your RomM can fill in.
 - **Credits and licenses** lists the software RomM-o-Cera is built on or
   downloads, and its licenses.
+- **Documentation** shows a QR code for this documentation in the panel
+  beside the list; point your phone's camera at it to open the site. Confirm
+  shows the code full size, for a far couch.
 - **Reset settings** puts every setting back to its default, including the
   server address and token. The old file is kept beside it as
   `config.json.bad-<date>`, so nothing is lost.
