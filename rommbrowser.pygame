@@ -3254,6 +3254,7 @@ class SearchScreen(Screen):
         self.preview_total = None
         self.preview_q = None
         self.pending_at = None
+        self.pick = None                  # the focused Top match; None: the keyboard has focus
 
     def crumbs(self):
         out = ["Search"]
@@ -3262,6 +3263,8 @@ class SearchScreen(Screen):
         return out
 
     def hints(self):
+        if self.pick is not None:
+            return [("A", "Open"), ("B", "Keyboard")] + ([] if INPUT_MODE["kb"] else [("START", "Search")])
         if INPUT_MODE["kb"]:
             return [("TYPE", "Letters"), ("BKSP", "Delete"), ("A", "Search"), ("B", "Back")]
         return [("A", "Type"), ("X", "Delete"), ("Y", "Space"), ("START", "Search"), ("B", "Back")]
@@ -3273,18 +3276,51 @@ class SearchScreen(Screen):
         self.query = (self.query + s)[:60]
         self.pending_at = time.time() + 0.45
 
-    text_entry = True                 # a physical keyboard types here
+    @property
+    def text_entry(self):
+        """A physical keyboard types here, except on the Top matches (Enter opens one)."""
+        return self.pick is None
 
     def type_text(self, s):
+        self.pick = None
         self._type(s)
 
     def tap_key(self, r, c):
         self.r, self.c = r, c
         self.action("ok")
 
+    def open(self, rom):
+        """A Top match: the manage menu for a game on the box (as in a game list), else download."""
+        app = self.app
+        app.modal = ManageMenu(app, rom) if app.rom_status(rom)[0] == "installed" else DownloadConfirm(app, rom)
+
+    def tap_pick(self, i):
+        self.pick = i
+        self.open(self.preview[i])
+
+    def pick_action(self, a):
+        """Focus on the Top matches: up/down among them, left/right back to the
+        keyboard row beside the focused one, B too."""
+        n = len(self.preview[:8])
+        if a in ("up", "down") and n:
+            self.pick = max(0, min(n - 1, self.pick + (1 if a == "down" else -1)))
+        elif a in ("left", "right", "back"):
+            self.r = max(0, min(len(self.ROWS), round((58 * self.pick - 35) / 64)))
+            self.c = 0 if a == "right" else self.row_len(self.r) - 1
+            self.pick = None
+        elif a == "ok" and n:
+            self.open(self.preview[self.pick])
+        elif a in ("start", "r1"):
+            self.go()
+
     def action(self, a):
+        if self.pick is not None:
+            return self.pick_action(a)
         nrows = len(self.ROWS) + 1
-        if a == "up":
+        n = len(self.preview[:8])
+        if a in ("left", "right") and n and self.c == (0 if a == "left" else self.row_len(self.r) - 1):
+            self.pick = min(n - 1, round((35 + 64 * self.r) / 58))   # past the keyboard's edge: the matches beside it
+        elif a == "up":
             self.r = (self.r - 1) % nrows
         elif a == "down":
             self.r = (self.r + 1) % nrows
@@ -3340,6 +3376,8 @@ class SearchScreen(Screen):
                 if q == self.query.strip():
                     self.preview = page.get("items", [])
                     self.preview_total = page.get("total")
+                    if self.pick is not None:
+                        self.pick = min(self.pick, len(self.preview[:8]) - 1) if self.preview else None
             def call():
                 page = app.api.roms(platform_ids=pids, search=q, limit=250)
                 page["items"] = rank_search(q, page.get("items", []))[:8]
@@ -3369,7 +3407,7 @@ class SearchScreen(Screen):
             for ci, ch in enumerate(row):
                 kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
                 self.app.hit(kr, lambda ri=ri, ci=ci: self.tap_key(ri, ci))
-                on = (ri, ci) == (self.r, self.c)
+                on = (ri, ci) == (self.r, self.c) and self.pick is None
                 rrect(c, ACCENT if on else PANEL, kr, 10)
                 text(c, self.f.key, ch, kr.center, TEXT if on else DIM, "center")
         sy = ky + len(self.ROWS) * (kh + gap)
@@ -3378,7 +3416,7 @@ class SearchScreen(Screen):
             w = span * kw + (span - 1) * gap
             kr = pygame.Rect(sx, sy, w, kh)
             self.app.hit(kr, lambda ci=ci: self.tap_key(len(self.ROWS), ci))
-            on = (self.r, self.c) == (len(self.ROWS), ci)
+            on = (self.r, self.c) == (len(self.ROWS), ci) and self.pick is None
             col = ACCENT if on else (PANEL_HI if label == "Search" else PANEL)
             rrect(c, col, kr, 10)
             text(c, self.f.h3, label, kr.center, TEXT if on or label == "Search" else DIM, "center")
@@ -3395,9 +3433,10 @@ class SearchScreen(Screen):
             msg = "Start typing — results appear here." if len(self.query.strip()) < 2 else \
                 ("Searching…" if self.preview_total is None or self.pending_at else "No matches")
             text(c, self.f.body, msg, (p.left + 24, y), DIM)
-        for rom in self.preview[:8]:
-            self.app.hit((p.left + 12, y - 6, p.width - 24, 56),
-                         lambda rom=rom: setattr(self.app, "modal", DownloadConfirm(self.app, rom)))
+        for i, rom in enumerate(self.preview[:8]):
+            self.app.hit((p.left + 12, y - 6, p.width - 24, 56), lambda i=i: self.tap_pick(i))
+            if i == self.pick:
+                focus_box(c, (p.left + 12, y - 6, p.width - 24, 56), 12)
             pl = self.app.platform_by_id.get(rom.get("platform_id"))
             text(c, self.f.row, rom_title(rom), (p.left + 24, y),
                  TEXT, maxw=p.width - 48)

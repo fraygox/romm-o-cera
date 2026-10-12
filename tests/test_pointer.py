@@ -247,3 +247,92 @@ def test_finger_events_alone_do_nothing(make_app, rb):
         assert not app.pointer(e, out)
         app.input.handle(e, out)
     assert out == [] and len(app.stack) == 1
+
+
+# ---- Search: the Top matches
+
+def _search(rb, app, monkeypatch, installed=()):
+    app.push(rb.HomeScreen(app))
+    sc = rb.SearchScreen(app)
+    app.push(sc)
+    sc.query = "lorem"
+    sc.preview = [{"id": i, "name": "Lorem %d" % i, "platform_id": 1, "fs_size_bytes": 1} for i in range(5)]
+    sc.preview_total = 5
+    monkeypatch.setattr(app, "rom_status", lambda rom: ("installed" if rom["id"] in installed else "remote", None))
+    opened = []
+    monkeypatch.setattr(rb, "ManageMenu", lambda a, rom: opened.append(("manage", rom["id"])) or "menu")
+    monkeypatch.setattr(rb, "DownloadConfirm", lambda a, rom: opened.append(("download", rom["id"])) or "dl")
+    return sc, opened
+
+
+def test_search_matches_take_controller_focus(make_app, rb, monkeypatch):
+    app = make_app()
+    sc, opened = _search(rb, app, monkeypatch, installed={2})
+    sc.r, sc.c = 1, len(sc.ROWS[1]) - 1                   # P, the end of its row
+    sc.action("right")
+    assert sc.pick is not None and not sc.text_entry
+    first = sc.pick
+    sc.action("down")
+    assert sc.pick == first + 1
+    for _ in range(10):
+        sc.action("down")
+    assert sc.pick == 4                                   # stays on the last
+    sc.action("up")
+    sc.action("up")
+    sc.action("ok")                                       # Lorem 2 is on the box: its manage menu
+    assert opened == [("manage", 2)] and app.modal == "menu"
+    app.modal = None
+    sc.action("down")
+    sc.action("ok")
+    assert opened[-1] == ("download", 3)
+    app.modal = None
+    sc.action("left")                                     # back to the keyboard, beside it
+    assert sc.pick is None and sc.text_entry and sc.c == sc.row_len(sc.r) - 1
+    sc.c = 0
+    sc.action("left")                                     # left from the first key: the matches too
+    assert sc.pick is not None
+    sc.action("back")                                     # B: the keyboard again, not out of Search
+    assert sc.pick is None and app.stack[-1] is sc
+    app.draw()
+
+
+def test_search_without_matches_keeps_the_keyboard_wrapping(make_app, rb, monkeypatch):
+    app = make_app()
+    sc, opened = _search(rb, app, monkeypatch)
+    sc.preview = []
+    sc.r, sc.c = 1, len(sc.ROWS[1]) - 1
+    sc.action("right")
+    assert sc.pick is None and sc.c == 0
+    sc.action("left")
+    assert sc.c == len(sc.ROWS[1]) - 1
+
+
+def test_search_enter_on_a_match_opens_it_from_the_keyboard(make_app, rb, monkeypatch):
+    """With focus on the matches the screen leaves text entry, so Enter is A."""
+    import pygame
+    app = make_app()
+    sc, opened = _search(rb, app, monkeypatch)
+    sc.pick = 1
+    app.input.text_mode = sc.text_entry                   # what the main loop sets from it
+    assert app.input.text_mode is False
+    out = []
+    app.input.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0, unicode="\r"), out)
+    app.input.pending = [(rb.time.time() - 1, a) for _, a in app.input.pending]
+    app.input.flush(out)
+    assert out == ["ok"]
+    for a in out:
+        app.dispatch(a)
+    assert opened == [("download", 1)]
+
+
+def test_tapping_an_installed_match_opens_its_manage_menu(make_app, rb, monkeypatch):
+    app = make_app()
+    sc, opened = _search(rb, app, monkeypatch, installed={0})
+    app.draw()
+    hits = [(r, fn) for r, fn in app.targets if r.left == 732]
+    assert len(hits) == 5
+    app.tap(hits[0][0].center)
+    assert opened == [("manage", 0)]
+    app.modal = None
+    app.tap(hits[1][0].center)
+    assert opened[-1] == ("download", 1)

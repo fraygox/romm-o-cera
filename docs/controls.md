@@ -22,3 +22,8 @@ lists (a mouse click never scrolls). A click acts on what was under it when
 pressed, if let go on the same thing. On a setting or menu row with a choice,
 a tap left of the value's middle (where ‹ is) steps back, anywhere else steps
 on; the hint bar's left/right and L2/R2 glyphs work both ways too.
+
+**Search's top matches:** move right past the end of a keyboard row (or left
+past its start) to reach them; up/down picks one, A opens it, B or left/right
+returns to the keyboard. A game already on the box opens its menu (delete or
+download again), as in a game list; tapping a match does the same.
