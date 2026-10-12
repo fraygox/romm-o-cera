@@ -103,13 +103,14 @@ def test_an_update_closes_the_app_and_starts_nothing(app, rb, monkeypatch):
     calls = []
     monkeypatch.setattr(rommlib, "stop_helpers", lambda: calls.append("stop") or [])
     monkeypatch.setattr(rommlib, "es_notify", lambda msg: calls.append(msg))
+    monkeypatch.setattr(rommlib, "relaunch_when_closed", lambda **kw: calls.append("relaunch") or True)
     monkeypatch.setattr(app.downloader, "pause_all", lambda: calls.append("pause"))
     spawned = []
     monkeypatch.setattr(app, "spawn_helper", spawned.append)
     st = _settings(app, rb)
     st._swap(lambda: "/staged", lambda staged: calls.append(("install", staged)) or "9.9.9")
-    assert calls[:3] == ["pause", "stop", ("install", "/staged")]
-    assert "v9.9.9" in calls[3]
+    assert calls[:4] == ["pause", "stop", ("install", "/staged"), "relaunch"]
+    assert "v9.9.9" in calls[4] and "Opening it again" in calls[4]
     assert app.running is False and app.updated == "9.9.9"
     app.headless = False                              # on_exit as on the box
     monkeypatch.setattr(rommlib, "conversions_pending", lambda: True)
@@ -133,6 +134,7 @@ def test_going_back_closes_too(app, rb, monkeypatch):
     calls = []
     monkeypatch.setattr(rommlib, "stop_helpers", lambda: calls.append("stop") or [])
     monkeypatch.setattr(rommlib, "es_notify", lambda msg: None)
+    monkeypatch.setattr(rommlib, "relaunch_when_closed", lambda **kw: True)
     st = _settings(app, rb)
     st._swap(None, lambda: calls.append("rollback") or "0.9.0")
     assert calls == ["stop", "rollback"] and app.running is False

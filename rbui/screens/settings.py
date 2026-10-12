@@ -389,11 +389,11 @@ class SettingsScreen(Screen):
                 if app.update_tag:
                     tag = app.update_tag
                     app.modal = Confirm(app, "Update to %s?" % tag,
-                                        "Downloads it from GitHub and checks it, then closes %s to install "
-                                        "it: downloads in progress pause and carry on when you open it again, "
-                                        "and a disc being compressed starts over later. v%s is kept so you "
-                                        "can go back." % (APP_NAME, rommlib.VERSION_LABEL),
-                                        "Update and close", lambda: self._do_update())
+                                        "Downloads it from GitHub and checks it, then restarts %s to install "
+                                        "it: downloads in progress pause and carry on when it's back, and a "
+                                        "disc being compressed starts over. v%s is kept so you can go back."
+                                        % (APP_NAME, rommlib.VERSION_LABEL),
+                                        "Update and restart", lambda: self._do_update())
                 else:
                     app.toast("Checking GitHub…")
 
@@ -405,10 +405,10 @@ class SettingsScreen(Screen):
                     app.bg(lambda: rommlib.newer_release(dict(cfg, check_updates=True), force=True), checked)
             elif key == "rollback" and a == "ok":
                 app.modal = Confirm(app, "Go back to v%s?" % self.prev,
-                                    "Swaps v%s back in (v%s is kept so you can undo this), then closes %s: "
-                                    "downloads in progress pause and carry on when you open it again."
+                                    "Swaps v%s back in (v%s is kept so you can undo this), then restarts %s: "
+                                    "downloads in progress pause and carry on when it's back."
                                     % (self.prev, rommlib.VERSION_LABEL, APP_NAME),
-                                    "Go back and close", lambda: self._swap(None, rommlib.rollback), danger=True)
+                                    "Go back and restart", lambda: self._swap(None, rommlib.rollback), danger=True)
             elif key == "bios" and a == "ok":
                 app.push(BiosScreen(app))
             elif key == "cache" and a == "ok":
@@ -544,8 +544,10 @@ class SettingsScreen(Screen):
 
         def done(ver):
             app.updated = ver
-            rommlib.es_notify("%s is now v%s. Open it again from Pygame." % (APP_NAME, ver))
-            app._quit()                             # on_exit starts no helpers: all of it resumes on the next start
+            back = rommlib.relaunch_when_closed(python="/usr/bin/python3" if os.path.exists("/usr/bin/python3") else None)
+            rommlib.es_notify("%s is now v%s. %s" % (APP_NAME, ver, "Opening it again…" if back else
+                                                     "Open it again from Pygame."))
+            app._quit()                             # on_exit starts no helpers: all of it resumes when it's back
 
         def err(e):
             app.updating = False
@@ -660,8 +662,9 @@ SETTING_HELP = dict({s.row: s.help for s in rommlib.SETTINGS if s.row}, **{
     "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
     "docs": "Point your phone's camera at the code to open the documentation: setting up, every "
             "setting, and what to do when something goes wrong. {A} shows it bigger.",
-    "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and closes the app to "
-              "install it. Downloads pause and carry on next time. The current version is kept so you can go back.",
-    "rollback": "Swaps the previous version back in and closes the app. The current one is kept, so this can "
+    "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and restarts the app to "
+              "install it. Downloads pause and carry on when it's back. The current version is kept so you can "
+              "go back.",
+    "rollback": "Swaps the previous version back in and restarts the app. The current one is kept, so this can "
                 "be undone too.",
 })
