@@ -40,6 +40,7 @@ LOCK = os.path.join(rommlib.DATA_DIR, "finalize.lock")
 # entries ES couldn't take this time (game/system not listed yet): retried next run
 DEFERRED = os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl")
 MAX_TRIES = 5
+BAD_MAX = 1024 * 1024    # <queue>.bad keeps its newest lines up to this size
 
 TEXT_FIELDS = ("name", "desc", "releasedate", "developer", "publisher", "genre", "players", "rating",
                "region", "lang", "family")
@@ -487,9 +488,15 @@ def _read_jsonl(path):
     except OSError:
         return []
     if bad:
-        with open(path + ".bad", "a") as f:
-            for line in bad:
-                f.write(line if line.endswith("\n") else line + "\n")
+        text = "".join(line if line.endswith("\n") else line + "\n" for line in bad)
+        try:
+            with open(path + ".bad", errors="replace") as f:
+                text = f.read() + text
+        except OSError:
+            pass
+        if len(text) > BAD_MAX:                  # keep the newest whole lines
+            text = text[text.find("\n", len(text) - BAD_MAX - 1) + 1:]
+        rommlib.atomic_write_text(path + ".bad", text)
         rommlib.log("finalize: set aside %d unreadable queue line(s) in %s.bad" % (len(bad), os.path.basename(path)))
     return out
 

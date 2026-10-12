@@ -395,6 +395,36 @@ def test_queue_reorder_pause_and_persist(isolated):
     assert not d2.hold and not json.load(open(rommlib.QUEUE_PATH))["held"]
 
 
+@pytest.mark.parametrize("stop,go", [("hold_all", "release_all"), ("pause_job", "resume_job")])
+def test_resumed_before_the_transfer_stopped_still_finishes(isolated, stop, go):
+    """Pause then Resume before the worker has noticed the pause: the job
+    used to land in Paused after the resume and stay there (no .m3u for a
+    disc set paused and resumed quickly on a slow box)."""
+    import threading
+    cfg = dict(rommlib.DEFAULT_CONFIG, url="http://127.0.0.1:9", token="x")
+    d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
+    started, stopping, runs = threading.Event(), threading.Event(), []
+
+    def process(j):                     # a transfer that notices a pause only when told to
+        runs.append(j.state)
+        if len(runs) == 1:
+            started.set()
+            stopping.wait(10)
+            if j.cancel.is_set():
+                raise rommlib.Cancelled()
+        j.state = rommlib.Job.DONE
+    d._process = process
+    j = d.enqueue(_carts(1)[0], "gba")
+    assert started.wait(10)
+    getattr(d, stop)(*([] if stop == "hold_all" else [j]))
+    getattr(d, go)(*([] if go == "release_all" else [j]))
+    stopping.set()
+    t0 = time.time()
+    while j.state != "Done" and time.time() - t0 < 10:
+        time.sleep(0.02)
+    assert j.state == "Done" and len(runs) == 2, (j.state, runs)
+
+
 def test_old_queue_format_still_loads(isolated):
     os.makedirs(rommlib.DATA_DIR)
     json.dump([{"rom": _carts(1)[0], "system": "gba"}], open(rommlib.QUEUE_PATH, "w"))

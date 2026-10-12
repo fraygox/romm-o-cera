@@ -86,6 +86,7 @@ class Job:
         self.attempts = 0
         self.retry_at = 0.0
         self.pause = False            # cancel, but keep it in the saved queue
+        self.resume = False           # resumed while still stopping: queue it again once it has
         self.force = False            # "Download now": ignore the download hours
         self.user_paused = False      # paused by the user (not by "Pause all" / exit)
         self.short_space = 0          # waiting for space: bytes still to free
@@ -110,7 +111,7 @@ class Job:
         return self.state in (Job.QUEUED, Job.DOWNLOADING, Job.VERIFYING, Job.EXTRACTING)
 
     def requeue(self):
-        self.state, self.message, self.pause = Job.QUEUED, "", False
+        self.state, self.message, self.pause, self.resume = Job.QUEUED, "", False, False
         self.short_space = 0
         self.user_paused, self.force = False, False
         self.cancel = threading.Event()
@@ -318,7 +319,7 @@ class Downloader:
             self.hold = True
             for j in self.jobs:
                 if j.state in (Job.DOWNLOADING, Job.VERIFYING, Job.EXTRACTING):
-                    j.pause = True
+                    j.pause, j.resume = True, False
                     j.cancel.set()
         self.save_queue()
 
@@ -326,8 +327,12 @@ class Downloader:
         with self.cv:
             self.hold = False
             for j in self.jobs:
-                if j.state == Job.PAUSED and not j.user_paused:    # one you paused yourself stays paused
+                if j.user_paused:                                  # one you paused yourself stays paused
+                    continue
+                if j.state == Job.PAUSED:
                     j.requeue()
+                elif j.pause and j.active:                         # Pause all hasn't stopped it yet
+                    j.resume = True
             self.cv.notify_all()
         self.save_queue()
 
@@ -347,7 +352,7 @@ class Downloader:
             if job.state == Job.QUEUED:
                 job.state, job.message = Job.PAUSED, "Paused"
             elif job.active:
-                job.pause = True
+                job.pause, job.resume = True, False
                 job.cancel.set()
         self.save_queue()
 
@@ -356,6 +361,8 @@ class Downloader:
             if job.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
                 job.requeue()
                 self.cv.notify_all()
+            elif job.pause and job.active:                         # its pause hasn't stopped it yet
+                job.resume = True
         self.save_queue()
 
     def _part_files(self, job):
@@ -395,7 +402,7 @@ class Downloader:
                 job.state, job.message = Job.CANCELLED, "Cancelled"
                 drop = True
             elif job.active:
-                job.pause = False
+                job.pause = job.resume = False
                 job.cancel.set()               # the worker drops the partial when it stops
         if drop:
             self._drop_parts(job)
@@ -482,7 +489,7 @@ class Downloader:
         """Stop transfers but keep them queued (partials resume via Range)."""
         for j in list(self.jobs):
             if j.active:
-                j.pause = True
+                j.pause, j.resume = True, False
                 j.cancel.set()
         with self.cv:
             self.cv.notify_all()
@@ -545,8 +552,13 @@ class Downloader:
         if isinstance(e, Cancelled):
             if not j.pause:
                 self._drop_parts(j)        # before the state flips: "Cancelled" means cleaned up
-            j.state = Job.PAUSED if j.pause else Job.CANCELLED
-            j.message = "Paused" if j.pause else "Cancelled"
+            with self.cv:                  # a resume decides under the same lock
+                if j.pause and j.resume:   # resumed before it stopped: the .part resumes it
+                    j.requeue()
+                    self.cv.notify_all()
+                else:
+                    j.state = Job.PAUSED if j.pause else Job.CANCELLED
+                    j.message = "Paused" if j.pause else "Cancelled"
         elif isinstance(e, _core.NoSpace):
             if not j.short_space:
                 _core.log("SPACE %s: %s (keeping %s free)" % (j.name, e, _core.human_size(_config.keep_free_bytes(self.cfg))))

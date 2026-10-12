@@ -1,5 +1,6 @@
 # The test suite on every push and pull request; nightly.yml and release.yml
-# run it too (workflow_call) and publish nothing if it fails.
+# run it too (workflow_call) and publish nothing if it fails. Runners name a
+# fixed Ubuntu image in every workflow, so a new one comes in by choice.
 name: tests
 on:
   push:
@@ -10,11 +11,11 @@ permissions:
   contents: read
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: sudo apt-get install -y -qq zip unzip libzstd1 >/dev/null

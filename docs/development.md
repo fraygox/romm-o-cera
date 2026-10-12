@@ -252,6 +252,19 @@ minute (logged once); one RomM has no file for, or refuses this token or
 certificate for, is "no cover". The ES API on localhost and
 the single-use pairing POST don't go through it.
 
+### Logs
+
+`rommlib.log()` appends to `romm-browser.log` in the data folder; the app and
+every worker (rb_dl, rb_chd, rb_chd_plan, rb_finalize) write it at once. Each
+line is one `O_APPEND` write, so lines never mix. The write that takes the
+file past `LOG_MAX` (10 MB) rotates it under `romm-browser.log.lock`:
+`.1` is the newest old log, `.9` the oldest (`LOG_KEEP`), so the logs never
+take more than about 100 MB. A writer that finds a fresh file once it has the
+lock leaves it, so it's rotated once. Every other file the data folder keeps
+is bounded too: `chd-results.jsonl` keeps its last entries, the cover cache
+its size limit, and queue lines rb_finalize can't read (`*.bad`) their
+newest 1 MB.
+
 ## Files
 
 | File | Role |
