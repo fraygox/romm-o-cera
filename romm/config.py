@@ -68,7 +68,12 @@ SETTINGS = (
             row="style", label="Button labels", sub="Match the symbols on your controller",
             valid=_str_or_null,
             help="Which symbols the hints show. Auto picks them from the controller's name."),
-    Setting("check_updates", True),     # once a day, ask GitHub if a newer release exists
+    Setting("check_updates", True,      # once a day, ask GitHub if a newer release exists
+            row="checkupdates", label="Check for updates daily", sub="Updates still checks when you ask",
+            kind="onoff",
+            help="Once a day, asks GitHub whether a newer version is out on your update channel, and says so "
+                 "when there is one. The request carries nothing about you or your games. Off: no daily "
+                 "check, but Updates still checks whenever you select it."),
     Setting("chd", True,                # background CHD conversion of extracted disc games
             row="chd", label="Compress disc games to CHD", sub="CD systems, PS2 and PSP, in the background",
             kind="onoff", effects=("downloader",),

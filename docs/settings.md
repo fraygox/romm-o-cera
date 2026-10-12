@@ -33,6 +33,9 @@ The rows that aren't a setting do something when you press confirm:
 - **Update channel** picks Stable (tested releases) or Nightly (also builds
   of the newest changes); switching asks GitHub again straight away
   ([Updating](../README.md#updating)).
+- **Check for updates daily**: once a day the app asks GitHub whether a
+  newer version is out on your channel, and says so. Off, there's no daily
+  check, but **Updates** still checks whenever you select it.
 - **Updates** checks GitHub now. When a newer version is out, the row names
   it, and confirm downloads it, checks it, installs it and keeps the version
   you had; then the app closes, and you open it again.
@@ -68,7 +71,7 @@ warnings are coral, not red).
 | `verify_tls_ca` | — | written by the app: the CA-bundle path `verify_tls` last held, so the Settings row can cycle back to it after On or Off |
 | `swap_ab` | `false` | `false`: south button confirms (Batocera's default) |
 | `button_style` | `auto` | `auto`, `xbox`, `playstation` or `nintendo` button labels |
-| `check_updates` | `true` | daily check of GitHub for a newer release (sends no data beyond the request) |
+| `check_updates` | `true` | daily check of GitHub for a newer version (sends no data beyond the request); `false`: only when you select Updates |
 | `update_channel` | `stable` | `stable`: releases; `nightly`: also builds of the newest changes ([Updating](../README.md#updating)) |
 | `background_downloads` | `true` | keep downloading after the app exits |
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |

@@ -277,6 +277,7 @@ SCENES = [
     ("settings-app", lambda: app.push(settings_at("credits"))),
     ("rvz-confirm", lambda: (app.push(settings_at("rvz")), app.stack[-1]._toggle_rvz())),
     ("credits", lambda: app.push(rb.CreditsScreen(app))),
+    ("settings-updates", lambda: app.push(settings_at("checkupdates"))),
     ("url-edit", lambda: app.push(rb.TextInputScreen(app, "RomM server URL", "https://romm.example.com",
                                                      lambda v: None))),
     ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),

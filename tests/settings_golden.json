@@ -544,6 +544,69 @@
    ],
    "wake": 0
   },
+  "bare/defaults/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
   "bare/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -2490,6 +2553,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -4148,6 +4259,54 @@
    "bg": 0,
    "cfg": {
     "chd_threads": 1
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
    },
    "gone": [],
    "modal": null,
@@ -5831,6 +5990,51 @@
    "toasts": [],
    "wake": 0
   },
+  "full/odd/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/odd/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -7438,6 +7642,54 @@
    "bg": 0,
    "cfg": {
     "chd_threads": 4
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
    },
    "gone": [],
    "modal": null,
@@ -9144,6 +9396,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -10438,6 +10738,7 @@
   "chd": "Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background while nothing runs. Lossless, verified before the original is deleted.",
   "chdlowmem": "chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right pick Auto, On or Off.",
   "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the menus.",
+  "checkupdates": "Once a day, asks GitHub whether a newer version is out on your update channel, and says so when there is one. The request carries nothing about you or your games. Off: no daily check, but Updates still checks whenever you select it.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
   "hours": "Downloads only start inside this window, e.g. overnight. A download running when it closes pauses and picks up next time. \"Download now\" in Downloads skips the wait.",
   "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits (\"Waiting for space\") and starts once there's room; smaller ones behind it keep going.",
@@ -10571,6 +10872,20 @@
    ]
   ],
   "chdthreads": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "checkupdates": [
    [
     "A",
     "Change"
@@ -11148,6 +11463,12 @@
     "Stable releases, or nightly builds"
    ],
    [
+    "checkupdates",
+    "Check for updates daily",
+    "Off",
+    "Updates still checks when you ask"
+   ],
+   [
     "update",
     "Updates",
     "v9.9.9 available",
@@ -11394,6 +11715,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -11644,6 +11971,12 @@
     "Stable releases, or nightly builds"
    ],
    [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
+   ],
+   [
     "update",
     "Updates",
     "v9.9.9 available",
@@ -11892,6 +12225,12 @@
     "Stable releases, or nightly builds"
    ],
    [
+    "checkupdates",
+    "Check for updates daily",
+    "Off",
+    "Updates still checks when you ask"
+   ],
+   [
     "update",
     "Updates",
     "v0.7.1",
@@ -12132,6 +12471,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -12376,6 +12721,12 @@
     "Stable releases, or nightly builds"
    ],
    [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
+   ],
+   [
     "update",
     "Updates",
     "v0.7.1",
@@ -12618,6 +12969,12 @@
     "Stable releases, or nightly builds"
    ],
    [
+    "checkupdates",
+    "Check for updates daily",
+    "Off",
+    "Updates still checks when you ask"
+   ],
+   [
     "update",
     "Updates",
     "v0.7.1",
@@ -12858,6 +13215,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",

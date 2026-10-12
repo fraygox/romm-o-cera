@@ -3800,6 +3800,7 @@ class SettingsScreen(Screen):
              "Start over from the defaults; the old file is kept"),
             sec("Updates"),
             table("channel"),
+            table("checkupdates"),
             ("update", "Updates", ("%s available" % self.app.update_tag) if self.app.update_tag
              else "v" + rommlib.VERSION_LABEL,
              ("Download, check and install %s" % self.app.update_tag) if self.app.update_tag

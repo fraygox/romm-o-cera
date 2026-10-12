@@ -104,5 +104,6 @@ editing `gamelist.xml` behind its back, which EmulationStation could overwrite.
 new release in place, keeping the previous version for one-step rollback.
 The swap is a single step where the drive allows it, so a power cut mid-update
 never leaves the box without the app. A
-daily check flags new releases (turn it off with `"check_updates": false`).
+daily check flags new releases (turn it off with **Check for updates daily**;
+Updates still checks when you select it).
 Details in the [main README](../README.md#updating).
