@@ -37,7 +37,7 @@ def tools(isolated, tmp_path, monkeypatch):
         t.extractall(str(tmp_path / "unpack"))
     os.makedirs(tmp_path / "tools", exist_ok=True)
     shutil.move(str(tmp_path / "unpack" / ("xbox360-tools-" + rommlib.X360_TOOLS["version"])),
-                rommlib.x360_tools_dir())
+                rommlib.tool_dir(rommlib.TOOL_X360))
     exe = rommlib.x360_tools()
     if not exe or not _runs(exe[0]):
         pytest.skip("xbox360-tools don't run on this host (glibc too old?)")
@@ -74,21 +74,22 @@ def test_install_from_pinned_archive(isolated, tmp_path, monkeypatch):
     srv, url = _serve(data)
     try:
         with pytest.raises(rommlib.RommError, match="didn't match its checksum"):
-            rommlib.install_x360_tools(url=url, sha256="0" * 64)
-        assert rommlib.x360_tools() is None and rommlib.zar_state({"zar": True})["label"] == "Tools missing"
+            rommlib.install_tool(rommlib.TOOL_X360, url=url, sha256="0" * 64)
+        assert rommlib.x360_tools() is None
+        assert rommlib.tool_state(rommlib.TOOL_X360, {"zar": True})["label"] == "Tools missing"
         try:
-            got = rommlib.install_x360_tools(url=url, sha256=rommlib.X360_TOOLS["sha256"])
+            got = rommlib.install_tool(rommlib.TOOL_X360, url=url, sha256=rommlib.X360_TOOLS["sha256"])
         except rommlib.RommError as e:
             if "don't run" in str(e):
                 pytest.skip("xbox360-tools don't run on this host")
             raise
         assert got == rommlib.x360_tools()
-        d = rommlib.x360_tools_dir()
+        d = rommlib.tool_dir(rommlib.TOOL_X360)
         assert sorted(os.listdir(os.path.join(d, "LICENSES"))) == [
             "COPYING-zstd.txt", "LICENSE-ZArchive.txt", "LICENSE-extract-xiso.txt", "LICENSE-zstd.txt"]
         assert "fishtank" in open(os.path.join(d, "LICENSES", "LICENSE-extract-xiso.txt")).read()
         assert rommlib.zar_enabled({"zar": True}, "xbox360") and not rommlib.zar_enabled({"zar": True}, "xbox")
-        assert rommlib.zar_state({"zar": True})["label"] == "On"
+        assert rommlib.tool_state(rommlib.TOOL_X360, {"zar": True})["label"] == "On"
     finally:
         srv.shutdown()
 

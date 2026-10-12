@@ -165,7 +165,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/covers.py` | the cover cache |
 | `romm/net.py` | the HTTP session every request goes through: shared connections, a per-server limit that backs off when the server is busy, retries |
 | `romm/api.py` | the RomM API client and pairing |
-| `romm/tools.py` | the dolphin-tool and Xbox 360 tool installers |
+| `romm/tools.py` | the tools a converter downloads (dolphin-tool, the Xbox 360 tools), each described once as a `ToolSpec` (pinned archives, Settings row state, credits' commits) that its Converter names (`Converter.tool`), and their one installer |
 | `romm/bios.py` | BIOS checks and fetching |
 | `romm/ps3.py` | PS3 discs |
 | `romm/convert.py` | conversions: the Converter table, Z3DS, .zar checks, the conversion queue |

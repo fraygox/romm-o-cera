@@ -308,7 +308,7 @@ SCENES = [
     ("settings-downloads", lambda: app.push(settings_at("overlap"))),
     ("settings-compression", lambda: app.push(settings_at("rvz"))),
     ("settings-app", lambda: app.push(settings_at("credits"))),
-    ("rvz-confirm", lambda: (app.push(settings_at("rvz")), app.stack[-1]._toggle_rvz())),
+    ("rvz-confirm", lambda: (app.push(settings_at("rvz")), app.stack[-1]._toggle_tool("rvz"))),
     ("credits", lambda: app.push(rb.CreditsScreen(app))),
     ("settings-docs", lambda: app.push(settings_at("docs"))),
     ("docs", lambda: (app.push(rb.SettingsScreen(app)), app.push(rb.DocsScreen(app)))),

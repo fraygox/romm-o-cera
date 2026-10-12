@@ -89,11 +89,11 @@ def test_install_dolphin_tool_checks_and_unpacks(isolated, tmp_path, monkeypatch
     srv, url = _serve(good)
     try:
         with pytest.raises(rommlib.RommError, match="didn't match its checksum"):
-            rommlib.install_dolphin_tool(url=url, sha256="0" * 64)
+            rommlib.install_tool(rommlib.TOOL_DOLPHIN, url=url, sha256="0" * 64)
         assert rommlib.dolphin_tool_path() is None
         seen = []
-        p = rommlib.install_dolphin_tool(lambda g, t: seen.append(g), url=url,
-                                         sha256=hashlib.sha256(good).hexdigest())
+        p = rommlib.install_tool(rommlib.TOOL_DOLPHIN, lambda g, t: seen.append(g), url=url,
+                                 sha256=hashlib.sha256(good).hexdigest())
         assert p == rommlib.dolphin_tool_path() and os.access(p, os.X_OK) and seen[-1] == len(good)
         assert sorted(os.listdir(os.path.dirname(p))) == ["COPYING", "SOURCE.txt", "dolphin-tool"]
         assert rommlib.rvz_enabled({"rvz": True}) and not rommlib.rvz_enabled({"rvz": False})
@@ -103,20 +103,55 @@ def test_install_dolphin_tool_checks_and_unpacks(isolated, tmp_path, monkeypatch
     srv, url = _serve(evil)
     try:
         with pytest.raises(rommlib.RommError, match="Unexpected file"):
-            rommlib.install_dolphin_tool(url=url, sha256=hashlib.sha256(evil).hexdigest())
+            rommlib.install_tool(rommlib.TOOL_DOLPHIN, url=url, sha256=hashlib.sha256(evil).hexdigest())
         assert not (tmp_path / "escape").exists()
     finally:
         srv.shutdown()
 
 
+def test_install_x360_tools_runs_each_program_from_the_archives_top_folder(isolated, tmp_path, monkeypatch):
+    """The same installer as dolphin-tool's, from the Xbox 360 tools' ToolSpec:
+    two programs, inside a top folder named after the release."""
+    monkeypatch.setenv("ROMM_BROWSER_TOOLS", str(tmp_path / "tools"))
+    monkeypatch.setattr(rommlib, "zar_supported", lambda: True)
+    top = rommlib.TOOL_X360.folder + "/"
+    script = "#!/bin/sh\necho '%s usage'\n"
+    one = _tarball([(top + "extract-xiso", (script % "extract-xiso").encode(), 0o755)])
+    both = _tarball([(top + "extract-xiso", (script % "extract-xiso").encode(), 0o755),
+                     (top + "zarchive", (script % "ZArchive").encode(), 0o755), (top + "LICENSE", b"MIT-0", 0o644)])
+    srv, url = _serve(one)
+    try:
+        with pytest.raises(rommlib.RommError, match="has no zarchive in it"):
+            rommlib.install_tool(rommlib.TOOL_X360, url=url, sha256=hashlib.sha256(one).hexdigest())
+    finally:
+        srv.shutdown()
+    srv, url = _serve(both)
+    try:
+        got = rommlib.install_tool(rommlib.TOOL_X360, url=url, sha256=hashlib.sha256(both).hexdigest())
+    finally:
+        srv.shutdown()
+    d = rommlib.tool_dir(rommlib.TOOL_X360)
+    assert got == rommlib.x360_tools() == (os.path.join(d, "extract-xiso"), os.path.join(d, "zarchive"))
+    assert sorted(os.listdir(d)) == ["LICENSE", "extract-xiso", "zarchive"]
+    assert rommlib.tool_state(rommlib.TOOL_X360, {"zar": True})["label"] == "On"
+    assert "xbox360-tools %s installed" % rommlib.X360_TOOLS["version"] in open(rommlib.LOG_PATH).read()
+
+
+def test_converters_name_the_tools_they_need():
+    assert {c.mode: c.tool for c in rommlib.CONVERTERS if c.tool} == \
+        {"rvz": rommlib.TOOL_DOLPHIN, "zar": rommlib.TOOL_X360}
+    for c in rommlib.CONVERTERS:
+        assert c.tool is None or c.tool.setting == c.setting
+
+
 def test_rvz_state_labels(isolated, tmp_path, monkeypatch):
     monkeypatch.setenv("ROMM_BROWSER_TOOLS", str(tmp_path / "tools"))
-    assert rommlib.rvz_state({})["label"] == "Off"
-    assert rommlib.rvz_state({"rvz": True})["label"] == "Tool missing"
+    assert rommlib.tool_state(rommlib.TOOL_DOLPHIN, {})["label"] == "Off"
+    assert rommlib.tool_state(rommlib.TOOL_DOLPHIN, {"rvz": True})["label"] == "Tool missing"
     _install_fake_tool(monkeypatch, tmp_path)
-    assert rommlib.rvz_state({"rvz": True})["label"] == "On"
+    assert rommlib.tool_state(rommlib.TOOL_DOLPHIN, {"rvz": True})["label"] == "On"
     monkeypatch.setattr(rommlib, "rvz_supported", lambda: False)
-    assert rommlib.rvz_state({"rvz": True})["label"] == "Not on this CPU"
+    assert rommlib.tool_state(rommlib.TOOL_DOLPHIN, {"rvz": True})["label"] == "Not on this CPU"
 
 
 # ------------------------------------------------------------ conversion
@@ -383,7 +418,7 @@ def test_dolphin_tool_per_cpu(monkeypatch):
                   ("riscv64", False)):
         monkeypatch.setattr(platform, "machine", lambda m=m: m)
         assert rommlib.rvz_supported() is ok, m
-    assert rommlib.rvz_state({})["label"] == "Not on this CPU"            # riscv64 left patched
+    assert rommlib.tool_state(rommlib.TOOL_DOLPHIN, {})["label"] == "Not on this CPU"     # riscv64 left patched
 
 
 def test_32bit_userland_on_64bit_kernel_not_offered(monkeypatch):

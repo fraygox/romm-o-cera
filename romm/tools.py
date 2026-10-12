@@ -3,6 +3,8 @@ import os
 import shutil
 import struct
 import subprocess
+from dataclasses import dataclass
+from typing import Callable
 
 import requests
 
@@ -42,29 +44,71 @@ TOOLS_DIR = os.path.join(_core.DATA_DIR, "tools")
 RVZ_ARGS = ["-f", "rvz", "-c", "zstd", "-l", "5", "-b", "131072"]   # Dolphin's recommended RVZ settings
 
 
-def dolphin_tool_dir():
-    return os.path.join(os.environ.get("ROMM_BROWSER_TOOLS", TOOLS_DIR), "dolphin-tool-" + DOLPHIN_TOOL["version"])
+# ---------------------------------------------------------- the tools, described once
+
+@dataclass(frozen=True, eq=False)
+class ToolSpec:
+    """A program a converter needs that Batocera doesn't ship: downloaded when
+    its setting is turned on, from its own GitHub release (one archive per CPU,
+    pinned by SHA-256), into tools/<slug>-<version>. The converter that needs
+    it names it (Converter.tool); Settings, Credits and the installer read it."""
+    setting: str               # the converter's config key ("rvz", "zar")
+    slug: str                  # its folder under tools/ is <slug>-<version> (the archive's top folder too, if any)
+    label: str                 # in messages: "dolphin-tool", "Xbox 360 tools"
+    subject: str               # starting a sentence: "dolphin-tool", "The Xbox 360 tools"
+    pin: dict                  # version, the commits it's built from, this CPU's url / sha256 / size
+    exes: tuple                # the programs in it
+    probes: tuple              # per program: (arguments, a word its output holds when it runs here)
+    env: str                   # ROMM_BROWSER_<env>_URL / _SHA256 replace the pin (tests, a local build)
+    built_from: str            # the "installed" log line's detail
+    help: dict                 # the Settings row's grey line: "cpu", "on", "missing", "off"
+    supported: Callable        # () -> built for this box's CPU
+    installed: Callable        # () -> what the converter runs (paths), or None when not installed
+
+    @property
+    def folder(self):
+        return "%s-%s" % (self.slug, self.pin["version"])
+
+
+def tool_dir(spec):
+    return os.path.join(os.environ.get("ROMM_BROWSER_TOOLS", TOOLS_DIR), spec.folder)
+
+
+def tool_paths(spec):
+    """Every program of the tool, when all are installed; else None."""
+    exe = [os.path.join(tool_dir(spec), n) for n in spec.exes]
+    return tuple(exe) if all(os.path.isfile(p) and os.access(p, os.X_OK) for p in exe) else None
+
+
+def tool_state(spec, cfg):
+    """{"label", "help"} for the setting's Settings row."""
+    if not spec.supported():
+        return {"label": "Not on this CPU", "help": spec.help["cpu"]}
+    on = _config.config_value(cfg, spec.setting)
+    if on and spec.installed():
+        return {"label": "On", "help": spec.help["on"]}
+    if on:
+        return {"label": "Tools missing" if len(spec.exes) > 1 else "Tool missing", "help": spec.help["missing"]}
+    return {"label": "Off", "help": spec.help["off"]}
 
 
 def dolphin_tool_path():
     """The installed dolphin-tool, or None."""
-    p = os.path.join(dolphin_tool_dir(), "dolphin-tool")
-    return p if os.path.isfile(p) and os.access(p, os.X_OK) else None
+    p = tool_paths(TOOL_DOLPHIN)
+    return p[0] if p else None
 
 
 def rvz_supported():
     return _machine() in DOLPHIN_TOOLS
 
 
-def rvz_state(cfg):
-    """{"label", "help"} for the Settings row."""
-    if not rvz_supported():
-        return {"label": "Not on this CPU", "help": "dolphin-tool is built for x86_64 and 64-bit ARM only"}
-    if _config.config_value(cfg, "rvz") and dolphin_tool_path():
-        return {"label": "On", "help": "Lossless, usually much smaller (dolphin-tool %s)" % DOLPHIN_TOOL["version"]}
-    if _config.config_value(cfg, "rvz"):
-        return {"label": "Tool missing", "help": "{A} downloads dolphin-tool again"}
-    return {"label": "Off", "help": "Turning it on downloads dolphin-tool once"}
+TOOL_DOLPHIN = ToolSpec(
+    "rvz", "dolphin-tool", "dolphin-tool", "dolphin-tool", DOLPHIN_TOOL, ("dolphin-tool",),
+    ((("--help",), "convert"),), "DOLPHIN", DOLPHIN_TOOL["commit"][:10],
+    {"cpu": "dolphin-tool is built for x86_64 and 64-bit ARM only",
+     "on": "Lossless, usually much smaller (dolphin-tool %s)" % DOLPHIN_TOOL["version"],
+     "missing": "{A} downloads dolphin-tool again", "off": "Turning it on downloads dolphin-tool once"},
+    lambda: rvz_supported(), lambda: dolphin_tool_path())
 
 
 def _fetch_tool_archive(label, url, want, dest, progress=None):
@@ -112,33 +156,41 @@ def _fetch_tool_archive(label, url, want, dest, progress=None):
     return staging
 
 
-def install_dolphin_tool(progress=None, url=None, sha256=None):
-    """Download, check and unpack dolphin-tool into DATA_DIR/tools. Returns
-    its path. The archive holds the binary, Dolphin's license and SOURCE.txt."""
-    if not rvz_supported():
-        raise _core.RommError("dolphin-tool isn't built for this CPU (%s)." % _machine())
-    url = url or os.environ.get("ROMM_BROWSER_DOLPHIN_URL") or DOLPHIN_TOOL["url"]
-    want = (sha256 or os.environ.get("ROMM_BROWSER_DOLPHIN_SHA256") or DOLPHIN_TOOL["sha256"]).lower()
-    if not want:
-        raise _core.RommError("This version doesn't know dolphin-tool's checksum yet.")
-    dest = dolphin_tool_dir()
-    staging = _fetch_tool_archive("dolphin-tool", url, want, dest, progress)
-    exe = os.path.join(staging, "dolphin-tool")
-    if not os.path.isfile(exe):
-        raise _core.RommError("The dolphin-tool archive has no dolphin-tool in it.")
-    os.chmod(exe, 0o755)
+def install_tool(spec, progress=None, url=None, sha256=None):
+    """Download, check and unpack the tool into DATA_DIR/tools, and run each
+    program once. Returns spec.installed(). The archive holds the programs,
+    their licenses and their exact source (SOURCE.txt)."""
+    are = len(spec.exes) > 1
+    if not spec.supported():
+        raise _core.RommError("%s %s built for this CPU (%s)." % (spec.subject, "aren't" if are else "isn't", _machine()))
+    url = url or os.environ.get("ROMM_BROWSER_%s_URL" % spec.env) or spec.pin["url"]
+    want = (sha256 or os.environ.get("ROMM_BROWSER_%s_SHA256" % spec.env) or spec.pin["sha256"]).lower()
+    dest = tool_dir(spec)
+    staging = _fetch_tool_archive(spec.label, url, want, dest, progress)
+    top = os.path.join(staging, spec.folder)
+    root = top if os.path.isdir(top) else staging
+    exe = [os.path.join(root, n) for n in spec.exes]
+    missing = [n for n, p in zip(spec.exes, exe) if not os.path.isfile(p)]
+    if missing:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise _core.RommError("The %s archive has no %s in it." % (spec.label, missing[0]))
+    for p in exe:
+        os.chmod(p, 0o755)
     try:
-        out = subprocess.run([exe, "--help"], capture_output=True, text=True, timeout=30)
+        outs = [subprocess.run([p] + list(args), capture_output=True, text=True, timeout=30)
+                for p, (args, _) in zip(exe, spec.probes)]
     except OSError as e:
         shutil.rmtree(staging, ignore_errors=True)
-        raise _core.RommError("dolphin-tool doesn't run on this box (%s)." % e.strerror) from None
-    if "convert" not in (out.stdout + out.stderr):
+        raise _core.RommError("%s %s run on this box (%s)." % (spec.subject, "don't" if are else "doesn't",
+                                                               e.strerror)) from None
+    if not all(word in (o.stdout + o.stderr).lower() for o, (_, word) in zip(outs, spec.probes)):
         shutil.rmtree(staging, ignore_errors=True)
-        raise _core.RommError("dolphin-tool doesn't run on this box.")
+        raise _core.RommError("%s %s run on this box." % (spec.subject, "don't" if are else "doesn't"))
     shutil.rmtree(dest, ignore_errors=True)
-    os.replace(staging, dest)
-    _core.log("dolphin-tool %s installed (%s)" % (DOLPHIN_TOOL["version"], DOLPHIN_TOOL["commit"][:10]))
-    return os.path.join(dest, "dolphin-tool")
+    os.replace(root, dest)
+    shutil.rmtree(staging, ignore_errors=True)
+    _core.log("%s %s installed (%s)" % (spec.slug, spec.pin["version"], spec.built_from))
+    return spec.installed()
 
 
 # ---------------------------------------------------------- Xbox 360 -> .zar (ZArchive)
@@ -162,61 +214,19 @@ ZAR_SYSTEMS = {"xbox360"}
 ZAR_MAGIC, ZAR_VERSION = 0x169f52d6, 0x61bf3a01
 
 
-def x360_tools_dir():
-    return os.path.join(os.environ.get("ROMM_BROWSER_TOOLS", TOOLS_DIR), "xbox360-tools-" + X360_TOOLS["version"])
-
-
 def x360_tools():
     """(extract-xiso, zarchive) paths when both are installed, else None."""
-    d = x360_tools_dir()
-    exe = [os.path.join(d, n) for n in ("extract-xiso", "zarchive")]
-    return tuple(exe) if all(os.path.isfile(p) and os.access(p, os.X_OK) for p in exe) else None
+    return tool_paths(TOOL_X360)
 
 
 def zar_supported():
     return _machine() in X360_TOOLS_ALL
 
 
-def zar_state(cfg):
-    """{"label", "help"} for the Settings row."""
-    if not zar_supported():
-        return {"label": "Not on this CPU", "help": "Xbox 360 emulation on Batocera is x86_64 only"}
-    if _config.config_value(cfg, "zar") and x360_tools():
-        return {"label": "On", "help": "Smaller files xenia-canary opens directly"}
-    if _config.config_value(cfg, "zar"):
-        return {"label": "Tools missing", "help": "{A} downloads them again"}
-    return {"label": "Off", "help": "Turning it on downloads two small tools once"}
-
-
-def install_x360_tools(progress=None, url=None, sha256=None):
-    """Download, check and unpack extract-xiso + zarchive into DATA_DIR/tools.
-    Returns the (extract-xiso, zarchive) paths."""
-    if not zar_supported():
-        raise _core.RommError("The Xbox 360 tools aren't built for this CPU (%s)." % _machine())
-    url = url or os.environ.get("ROMM_BROWSER_X360_URL") or X360_TOOLS["url"]
-    want = (sha256 or os.environ.get("ROMM_BROWSER_X360_SHA256") or X360_TOOLS["sha256"]).lower()
-    dest = x360_tools_dir()
-    staging = _fetch_tool_archive("Xbox 360 tools", url, want, dest, progress)
-    top = os.path.join(staging, "xbox360-tools-" + X360_TOOLS["version"])
-    root = top if os.path.isdir(top) else staging
-    exe = [os.path.join(root, n) for n in ("extract-xiso", "zarchive")]
-    if not all(os.path.isfile(p) for p in exe):
-        shutil.rmtree(staging, ignore_errors=True)
-        raise _core.RommError("The Xbox 360 tools archive is missing a tool.")
-    for p in exe:
-        os.chmod(p, 0o755)
-    try:
-        a = subprocess.run([exe[0], "-h"], capture_output=True, text=True, timeout=30)
-        b = subprocess.run([exe[1]], capture_output=True, text=True, timeout=30)
-    except OSError as e:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise _core.RommError("The Xbox 360 tools don't run on this box (%s)." % e.strerror) from None
-    if "extract-xiso" not in (a.stdout + a.stderr) or "zarchive" not in (b.stdout + b.stderr).lower():
-        shutil.rmtree(staging, ignore_errors=True)
-        raise _core.RommError("The Xbox 360 tools don't run on this box.")
-    shutil.rmtree(dest, ignore_errors=True)
-    os.replace(root, dest)
-    shutil.rmtree(staging, ignore_errors=True)
-    _core.log("xbox360-tools %s installed (extract-xiso %s, zarchive %s)" % (
-        X360_TOOLS["version"], X360_TOOLS["extract_xiso"][:7], X360_TOOLS["zarchive"][:7]))
-    return x360_tools()
+TOOL_X360 = ToolSpec(
+    "zar", "xbox360-tools", "Xbox 360 tools", "The Xbox 360 tools", X360_TOOLS, ("extract-xiso", "zarchive"),
+    ((("-h",), "extract-xiso"), ((), "zarchive")), "X360",
+    "extract-xiso %s, zarchive %s" % (X360_TOOLS["extract_xiso"][:7], X360_TOOLS["zarchive"][:7]),
+    {"cpu": "Xbox 360 emulation on Batocera is x86_64 only", "on": "Smaller files xenia-canary opens directly",
+     "missing": "{A} downloads them again", "off": "Turning it on downloads two small tools once"},
+    lambda: zar_supported(), lambda: x360_tools())

@@ -4121,16 +4121,15 @@ class SettingsScreen(Screen):
         arcade = dict(cfg["platform_map"] or {}).get("arcade") or rommlib.PLATFORM_MAP["arcade"]
         def onoff(v):
             return "On" if v else "Off"
-        rvz = rommlib.rvz_state(cfg)
-        if getattr(self.app, "rvz_busy", False):
-            pr = getattr(self.app, "rvz_progress", None)
-            rvz = {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
-                   "help": "dolphin-tool, from RomM-o-Cera's GitHub releases"}
-        zar = rommlib.zar_state(cfg)
-        if getattr(self.app, "zar_busy", False):
-            pr = getattr(self.app, "zar_progress", None)
-            zar = {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
-                   "help": "extract-xiso and zarchive, from RomM-o-Cera's GitHub releases"}
+
+        def tool_row(key):
+            """A switch whose converter needs a download: its state, or how far the download is."""
+            if getattr(self.app, key + "_busy", False):
+                pr = getattr(self.app, key + "_progress", None)
+                return {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
+                        "help": self.TOOL_TEXT[key]["fetching"]}
+            return rommlib.tool_state(rommlib.CONVERTER[key].tool, cfg)
+        rvz, zar = tool_row("rvz"), tool_row("zar")
         sec = SettingsScreen.section
 
         def row(rid, value, sub=None):            # a config.json row: name and grey line from the table
@@ -4436,10 +4435,8 @@ class SettingsScreen(Screen):
                 i = opts.index(cur) if isinstance(cur, bool) else 0
                 cfg["chd_low_memory"] = opts[(i + (-1 if a == "left" else 1)) % len(opts)]
                 app.apply_config()
-            elif key == "rvz":
-                self._toggle_rvz()
-            elif key == "zar":
-                self._toggle_zar()
+            elif key in self.TOOL_TEXT:
+                self._toggle_tool(key)
             elif key == "ps3decrypt":
                 self._toggle_ps3_decrypt()
             elif key == "credits" and a == "ok":
@@ -4487,53 +4484,77 @@ class SettingsScreen(Screen):
         else:
             super().action(a)
 
-    def _toggle_rvz(self):
+    # switches whose converter needs a tool downloaded (Converter.tool): what they say
+    TOOL_TEXT = {
+        "rvz": {"cpu": "dolphin-tool is built for x86_64 and 64-bit ARM boxes only",
+                "busy": "dolphin-tool is still downloading",
+                "off": "GameCube and Wii conversion off (dolphin-tool stays installed)",
+                "on": "GameCube and Wii games will be converted to RVZ",
+                "title": "Download dolphin-tool?",
+                "body": "RVZ conversion needs Dolphin's dolphin-tool {version}{size}: built from the Dolphin "
+                        "version Batocera uses, GPL-2.0-or-later, checked by SHA-256 before use. "
+                        "Credits are in Settings.",
+                "start": "Downloading dolphin-tool…",
+                "fetching": "dolphin-tool, from RomM-o-Cera's GitHub releases",
+                "done": "dolphin-tool {version} installed: GameCube and Wii games convert to RVZ",
+                "failed": "dolphin-tool download failed ({error})"},
+        "zar": {"cpu": "Xbox 360 emulation on Batocera is x86_64 only",
+                "busy": "The Xbox 360 tools are still downloading",
+                "off": "Xbox 360 conversion off (the tools stay installed)",
+                "on": "Xbox 360 games will be converted to .zar",
+                "title": "Download the Xbox 360 tools?",
+                "body": "Converting to .zar needs extract-xiso and zarchive{size}, built from their "
+                        "published source and checked by SHA-256 before use. A .zar holds the game's "
+                        "files, not the whole disc image. Credits are in Settings.",
+                "start": "Downloading the Xbox 360 tools…",
+                "fetching": "extract-xiso and zarchive, from RomM-o-Cera's GitHub releases",
+                "done": "Xbox 360 tools installed: Xbox 360 games convert to .zar",
+                "failed": "Xbox 360 tools download failed ({error})"},
+    }
+
+    def _toggle_tool(self, key):
+        """Turn a converter on or off; the first time on, download its tool (asked first)."""
         app, cfg = self.app, self.app.cfg
-        if not rommlib.rvz_supported():
-            app.toast("dolphin-tool is built for x86_64 and 64-bit ARM boxes only", AMBER)
+        spec, say = rommlib.CONVERTER[key].tool, self.TOOL_TEXT[key]
+        if not spec.supported():
+            app.toast(say["cpu"], AMBER)
             return
-        if getattr(app, "rvz_busy", False):
-            app.toast("dolphin-tool is still downloading")
+        if getattr(app, key + "_busy", False):
+            app.toast(say["busy"])
             return
-        if cfg["rvz"] and rommlib.dolphin_tool_path():
-            cfg["rvz"] = False
+        if spec.installed():
+            cfg[key] = not cfg[key]
             app.apply_config()
             app.downloader.cfg = cfg
-            app.toast("GameCube and Wii conversion off (dolphin-tool stays installed)")
+            if cfg[key]:
+                app.toast(say["on"], GREEN)
+            else:
+                app.toast(say["off"])
             return
-        if rommlib.dolphin_tool_path():
-            cfg["rvz"] = True
-            app.apply_config()
-            app.downloader.cfg = cfg
-            app.toast("GameCube and Wii games will be converted to RVZ", GREEN)
-            return
-        t = rommlib.DOLPHIN_TOOL
+        t = spec.pin
 
         def install():
-            app.rvz_busy = True
+            setattr(app, key + "_busy", True)
 
             def prog(got, total):
-                app.rvz_progress = (got / total) if total else None
+                setattr(app, key + "_progress", (got / total) if total else None)
             try:
-                return rommlib.install_dolphin_tool(prog)
+                return rommlib.install_tool(spec, prog)
             finally:
-                app.rvz_busy = False
+                setattr(app, key + "_busy", False)
 
-        def done(path):
-            cfg["rvz"] = True
+        def done(paths):
+            cfg[key] = True
             app.apply_config()
             app.downloader.cfg = cfg
-            app.toast("dolphin-tool %s installed: GameCube and Wii games convert to RVZ" % t["version"], GREEN)
+            app.toast(say["done"].format(version=t["version"]), GREEN)
 
         def failed(e):
-            app.toast(str(e) if isinstance(e, rommlib.RommError) else "dolphin-tool download failed (%s)"
-                      % e.__class__.__name__, RED)
+            app.toast(str(e) if isinstance(e, rommlib.RommError) else say["failed"].format(error=e.__class__.__name__),
+                      RED)
         size = (" (%s)" % human_size(t["size"])) if t.get("size") else ""
-        app.modal = Confirm(app, "Download dolphin-tool?",
-                            "RVZ conversion needs Dolphin's dolphin-tool %s%s: built from the Dolphin "
-                            "version Batocera uses, GPL-2.0-or-later, checked by SHA-256 before use. "
-                            "Credits are in Settings." % (t["version"], size),
-                            "Download", lambda: (app.toast("Downloading dolphin-tool…"), app.bg(install, done, failed)))
+        app.modal = Confirm(app, say["title"], say["body"].format(version=t["version"], size=size), "Download",
+                            lambda: (app.toast(say["start"]), app.bg(install, done, failed)))
 
     def _toggle_ps3_decrypt(self):
         """On: copy the disc keys in RomM's PS3 firmware (if any) into bios/ps3keys."""
@@ -4556,55 +4577,6 @@ class SettingsScreen(Screen):
                           "them to RomM's PS3 firmware", AMBER)
         app.bg(lambda: rommlib.fetch_ps3_keys(app.api, pid) if pid and app.api else len(rommlib.ps3_keys()),
                done, lambda e: (app.toast(str(e), RED), done(len(rommlib.ps3_keys()))))
-
-    def _toggle_zar(self):
-        app, cfg = self.app, self.app.cfg
-        if not rommlib.zar_supported():
-            app.toast("Xbox 360 emulation on Batocera is x86_64 only", AMBER)
-            return
-        if getattr(app, "zar_busy", False):
-            app.toast("The Xbox 360 tools are still downloading")
-            return
-        if cfg["zar"] and rommlib.x360_tools():
-            cfg["zar"] = False
-            app.apply_config()
-            app.downloader.cfg = cfg
-            app.toast("Xbox 360 conversion off (the tools stay installed)")
-            return
-        if rommlib.x360_tools():
-            cfg["zar"] = True
-            app.apply_config()
-            app.downloader.cfg = cfg
-            app.toast("Xbox 360 games will be converted to .zar", GREEN)
-            return
-        t = rommlib.X360_TOOLS
-
-        def install():
-            app.zar_busy = True
-
-            def prog(got, total):
-                app.zar_progress = (got / total) if total else None
-            try:
-                return rommlib.install_x360_tools(prog)
-            finally:
-                app.zar_busy = False
-
-        def done(paths):
-            cfg["zar"] = True
-            app.apply_config()
-            app.downloader.cfg = cfg
-            app.toast("Xbox 360 tools installed: Xbox 360 games convert to .zar", GREEN)
-
-        def failed(e):
-            app.toast(str(e) if isinstance(e, rommlib.RommError) else "Xbox 360 tools download failed (%s)"
-                      % e.__class__.__name__, RED)
-        size = (" (%s)" % human_size(t["size"])) if t.get("size") else ""
-        app.modal = Confirm(app, "Download the Xbox 360 tools?",
-                            "Converting to .zar needs extract-xiso and zarchive%s, built from their "
-                            "published source and checked by SHA-256 before use. A .zar holds the game's "
-                            "files, not the whole disc image. Credits are in Settings." % size,
-                            "Download", lambda: (app.toast("Downloading the Xbox 360 tools…"),
-                                                 app.bg(install, done, failed)))
 
     def _do_update(self):
         self.app.toast("Downloading and checking the update…")
@@ -4745,14 +4717,14 @@ CREDITS = [
      "This app. Its license is LICENSE in the app folder."),
     ("Rubik", "the font, © The Rubik Project Authors (design: Hubert & Fischer)", "SIL Open Font License 1.1",
      "github.com/googlefonts/rubik", "Its license travels with it: fonts/OFL-Rubik.txt in the app folder."),
-    ("dolphin-tool", "from the Dolphin emulator, version %s" % rommlib.DOLPHIN_TOOL["version"],
+    ("dolphin-tool", "from the Dolphin emulator, version %s" % rommlib.TOOL_DOLPHIN.pin["version"],
      "GPL-2.0-or-later", "dolphin-emu.org · source: github.com/dolphin-emu/dolphin (commit %s)"
-     % rommlib.DOLPHIN_TOOL["commit"][:10],
+     % rommlib.TOOL_DOLPHIN.pin["commit"][:10],
      "Optional download for GameCube and Wii to RVZ. Its source, COPYING and LICENSES/ are on the same release."),
-    ("extract-xiso", "by in <in@fishtank.com>, XboxDev (commit %s)" % rommlib.X360_TOOLS["extract_xiso"][:7],
+    ("extract-xiso", "by in <in@fishtank.com>, XboxDev (commit %s)" % rommlib.TOOL_X360.pin["extract_xiso"][:7],
      "BSD-style license", "github.com/XboxDev/extract-xiso",
      "This product includes software developed by in <in@fishtank.com>. Optional download for Xbox 360 to .zar."),
-    ("ZArchive", "zarchive, by Exzap (commit %s)" % rommlib.X360_TOOLS["zarchive"][:7], "MIT-0",
+    ("ZArchive", "zarchive, by Exzap (commit %s)" % rommlib.TOOL_X360.pin["zarchive"][:7], "MIT-0",
      "github.com/Exzap/ZArchive",
      "Optional download for Xbox 360 to .zar. Licenses and source are on the xbox360-tools release."),
     ("zstd", "Zstandard, by Meta Platforms, linked into zarchive", "BSD-3-Clause", "github.com/facebook/zstd",

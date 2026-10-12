@@ -567,6 +567,7 @@ class Converter:
     planner_skips_done: bool = False   # the planner leaves a source alone when its output is already there
     audit: Optional[Callable] = None   # audit(path, orig, deep): how Check games checks an output (see NotVerified)
     audit_exts: tuple = ()     # other files audit checks as if they were its output (Azahar's own .zcia)
+    tool: Optional[object] = None  # the ToolSpec it needs downloaded (romm/tools.py), if any
 
     @property
     def sources(self):
@@ -612,7 +613,7 @@ CONVERTERS = (
               check=lambda src: _discs.cso_info(src), space=lambda src: _discs.cso_info(src)["total"] + os.path.getsize(src)),
     Converter("rvz", "RVZ", "rvz", frozenset(_core.RVZ_SYSTEMS), dict.fromkeys(_core.RVZ_SOURCES, ".rvz"),
               "rvz", _config.SETTING["rvz"].label, "turned off, or dolphin-tool isn't installed",
-              lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit),
+              lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit, tool=_tools.TOOL_DOLPHIN),
     # Xbox: images are made bootable (make_xiso, .xiso -> .iso) first, when xbox_bootable is on
     Converter("squashfs", "squashfs", "squashfs", frozenset(_core.SQUASH_SYSTEMS), {".iso": ".squashfs"},
               "squashfs", _config.SETTING["squashfs"].label, "turned off, or mksquashfs is missing",
@@ -627,7 +628,7 @@ CONVERTERS = (
     Converter("zar", "ZAR", "zar", frozenset(_tools.ZAR_SYSTEMS), {".iso": ".zar"},
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
-              audit=zar_audit),
+              audit=zar_audit, tool=_tools.TOOL_X360),
     # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
     # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
     Converter("ps3", "PS3 folder", "ps3", frozenset({"ps3"}), {".iso": ".ps3", ".zip": ".ps3"},
