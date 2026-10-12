@@ -1151,7 +1151,7 @@ def test_one_converter_per_file_and_the_planner_knows_every_system():
             for ext in c.sources:
                 assert (system, ext) not in seen, (system, ext, seen.get((system, ext)), c.mode)
                 seen[(system, ext)] = c.mode
-    assert set(rb_chd_plan.ORDER) == set().union(*(c.systems for c in rommlib.CONVERTERS))
+    assert sorted(rb_chd_plan.ORDER) == sorted(set().union(*(c.systems for c in rommlib.CONVERTERS)))   # each once
     assert rommlib.conversion_for("ps2", "/r/G.cue", {"chd": True}).mode == "createcd"
     assert rommlib.conversion_for("ps2", ".iso", {"chd": True}).mode == "createdvd"
     assert rommlib.conversion_for("psx", ".iso", {"chd": True}) is None
