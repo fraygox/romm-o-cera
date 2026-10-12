@@ -3453,17 +3453,29 @@ class DownloadsScreen(ListScreen):
             e.append(("Download now", "Start this one anyway (download hours / Pause all)", lambda: d.force_job(j)))
         if j.active:
             e.append(("Pause", "Keeps the partial file; resume any time", lambda: d.pause_job(j)))
-            e.append(("Cancel download", "", lambda: setattr(app, "modal", Confirm(
-                app, "Cancel download?", j.label, "Cancel download", lambda: d.cancel_job(j), danger=True))))
+            e.append(("Cancel download", "", lambda: self.confirm_cancel(j)))
         elif j.state == J.PAUSED:
             e.append(("Resume", "", lambda: d.resume_job(j)))
-            e.append(("Cancel download", "", lambda: d.cancel_job(j)))
+            e.append(("Cancel download", "Deletes the part downloaded so far", lambda: self.confirm_cancel(j)))
         elif j.state in (J.FAILED, J.CANCELLED):
             e.append(("Retry" if j.state == J.FAILED else "Download again", j.message, lambda: d.resume_job(j)))
             e.append(("Remove from the list", "", lambda: d.remove(j)))
         else:                                      # done
             e.append(("Remove from the list", "The game stays on the box", lambda: d.remove(j)))
         app.modal = ActionMenu(app, j.label, e)
+
+    def confirm_cancel(self, j):
+        """Cancelling deletes the partial file, paused or not: ask first, and say how much goes."""
+        app, d = self.app, self.app.downloader
+        got = max(d.part_bytes(j), j.done_bytes)
+        if got:
+            body = "%s: the %s downloaded so far%s is deleted." % (
+                j.label, human_size(got), " (of %s)" % human_size(j.total_bytes) if j.total_bytes else "")
+            if j.state == rommlib.Job.PAUSED:
+                body += " Back keeps it, to resume later."
+        else:
+            body = "%s: nothing is downloaded yet." % j.label
+        app.modal = Confirm(app, "Cancel download?", body, "Cancel download", lambda: d.cancel_job(j), danger=True)
 
     def status(self, j):
         """(text, colour) for a row."""

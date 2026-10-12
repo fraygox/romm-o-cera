@@ -213,6 +213,17 @@ def fake_unseen():
     mk("psx/Elit Notes.xyz", 1 * MB)
 
 
+def paused_cancel():
+    """The cancel prompt of a paused download (deletes the partial file)."""
+    jobs = fake_jobs()
+    j = jobs[4]
+    j.state, j.done_bytes = J.PAUSED, 230 * MB
+    app.downloader.jobs.__init__(jobs)
+    app.downloader.hold = False
+    app.push(rb.DownloadsScreen(app))
+    app.stack[-1].confirm_cancel(j)
+
+
 def install_some():
     """A few games from the mock library 'on the box' (files + install records)."""
     lib = app.library
@@ -267,6 +278,7 @@ SCENES = [
     ("downloads", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
                            app.push(rb.DownloadsScreen(app)))),
     ("conversions", lambda: (fake_conversions(), app.push(rb.ConversionsScreen(app)))),
+    ("downloads-cancel", paused_cancel),
     ("downloads-empty", lambda: (app.downloader.jobs.clear(), app.push(rb.DownloadsScreen(app)))),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
     ("settings-pair", lambda: app.push(settings_at("pair"))),
