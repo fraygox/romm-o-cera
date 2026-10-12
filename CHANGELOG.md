@@ -6,9 +6,11 @@ Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/
 ## Unreleased
 
 ### Upgrading
-- **Updating from v0.7.x:** close RomM-o-Cera and open it again after the update finishes, before
-  downloading anything. Until you do, the old version still running can't copy a game's saves to its new
-  file name when a download replaces a differently named copy (the saves stay under the old name).
+- **Close RomM-o-Cera and open it again once this update is installed**, before compressing or downloading
+  anything (the update's last screen has the button). Until you do, the old version still running can
+  stop with an error on the Compress screen, and from v0.7.x it can't copy a game's saves to its new file
+  name when a download replaces a differently named copy (the saves stay under the old name). From this
+  version on, updating closes the app by itself.
 
 ## v0.9.0 (2026-10-12)
 

@@ -114,9 +114,10 @@ def test_qualified_names_exist():
                     assert node.attr in vars(rommlib), (p, node.lineno, node.attr)
 
 
-# rommlib names v0.10.0 (the previous release) has, that the lazily loaded
-# workers use. (These workers wait for v0.10.0 to be out: from then on the set
-# pins that release, which added try_lock and planner_order.) An old process
+# rommlib names the previous release has, that the lazily loaded workers use:
+# v0.9.0's, plus try_lock and planner_order, which v0.10.0 brings (adopted a
+# release early: the v0.10.0 notes ask v0.9.0 users to reopen the app after
+# updating, and from v0.10.0 on updating closes the app). An old process
 # reaches the NEW files after an in-app update swapped the folder under it: a
 # still-open UI imports rb_chd_plan on the Compress screen (which imports
 # rb_chd and rb_finalize) and rb_dl to take over downloads, and rb_dl imports
