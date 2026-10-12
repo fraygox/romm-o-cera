@@ -21,8 +21,8 @@ verifies each CHD before the original goes.
 - A folder holding two releases of a game (say the original and a "Dual Shock
   Ver.") becomes one playlist per release.
 - DVD images (PS2, PSP) skip chdman's FLAC codec, which leaks memory in some
-  chdman builds. **Low-memory mode** (on automatically under 4 GB RAM) skips it
-  for CDs too; their audio tracks come out a bit bigger.
+  chdman builds. **Low-memory mode** (Auto: on under 4 GB RAM; or On, or Off)
+  skips it for CDs too; their audio tracks come out a bit bigger.
 - Any conversion stops if chdman takes more than half the RAM or free memory
   runs low; the originals are kept and it's tried again later.
 - **Compression threads**: auto leaves some for the menus.

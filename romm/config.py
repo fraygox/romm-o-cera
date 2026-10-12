@@ -80,8 +80,9 @@ SETTINGS = (
     Setting("chd_low_memory", "auto",   # CDs without chdman's leaky FLAC codec: "auto" (on under 4 GB RAM), true, false
             row="chdlowmem", label="Low-memory mode", sub="Skips chdman's leaky FLAC codec for CDs",
             valid=lambda v: isinstance(v, bool) or v == "auto",
-            help="chdman's FLAC codec leaks memory on some builds. On boxes under 4 GB RAM this is on by "
-                 "default: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless."),
+            help="chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB "
+                 "RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right "
+                 "pick Auto, On or Off."),
     Setting("keep_free_gb", 20,         # downloads and CHD conversions never leave less than this free (GB)
             row="keepfree", label="Keep free on disk", sub="Downloads wait instead of filling the drive",
             kind="choice", choices=KEEP_FREE_CHOICES, effects=("downloader",),

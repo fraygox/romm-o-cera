@@ -5,10 +5,44 @@ On the box: **Pygame → RomM-o-Cera → Settings**. Settings are grouped
 the panel beside the list explains the selected one. Everything is saved to
 `/userdata/system/romm-browser/config.json` straight away.
 
-**Pair with RomM** (in RomM server) signs the box in with the short code
-RomM shows when you press Pair on a client API token, instead of typing the
-token: see [Connecting](connecting.md#signing-in-pair-with-a-code). It stores
-the token in `token`.
+The rows that aren't a setting do something when you press confirm:
+
+**RomM server**
+
+- **Pair with RomM** signs the box in with the short code RomM shows when
+  you press Pair on a client API token, instead of typing the token: see
+  [Connecting](connecting.md#signing-in-pair-with-a-code). It stores the token
+  in `token`.
+- **Test connection** asks RomM for its platform list right now and says how
+  many platforms it found, or why it couldn't.
+
+**This app**
+
+- **Clear cover cache** deletes every cached cover (the row shows how much
+  they take); they download again as you browse.
+- **BIOS files** opens the BIOS check: what each system needs, what's
+  missing, and what your RomM can fill in.
+- **Credits and licenses** lists the software RomM-o-Cera is built on or
+  downloads, and its licenses.
+- **Reset settings** puts every setting back to its default, including the
+  server address and token. The old file is kept beside it as
+  `config.json.bad-<date>`, so nothing is lost.
+
+**Updates**
+
+- **Update channel** picks Stable (tested releases) or Nightly (also builds
+  of the newest changes); switching asks GitHub again straight away
+  ([Updating](../README.md#updating)).
+- **Updates** checks GitHub now. When a newer version is out, the row names
+  it, and confirm downloads it, checks it, installs it and keeps the version
+  you had; then the app closes, and you open it again.
+- **Go back to the previous version** (only after an update) swaps the
+  version you had back in. The one you leave is kept, so this can be undone
+  too.
+
+**Low-memory mode** (in Disc compression) is Auto, On or Off: Auto turns it
+on for boxes with less than 4 GB of RAM, and the row says which it is and
+why ("Auto (Off, 8.0 GB RAM)").
 
 **Theme** (in This app) sets the colours of the whole app: Default (RomM
 violet), PlayStation, Xbox or Nintendo, each also as an **OLED** version with
@@ -24,10 +58,6 @@ warnings are coral, not red).
 | ![PlayStation OLED theme](../screenshots/themes/playstation-oled.png) | ![Xbox theme](../screenshots/themes/xbox.png) |
 | ![Nintendo theme](../screenshots/themes/nintendo.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
 
-**Reset settings** (in This app) puts every setting back to its default,
-including the server address and token. The old file is kept beside it as
-`config.json.bad-<date>`, so nothing is lost.
-
 ## `config.json`
 
 | Key | Default | |
@@ -35,6 +65,7 @@ including the server address and token. The old file is kept beside it as
 | `url` | — | RomM base URL |
 | `token` | — | client API token |
 | `verify_tls` | `true` | `false` or a CA-bundle path for self-signed certs ([Connecting](connecting.md)) |
+| `verify_tls_ca` | — | written by the app: the CA-bundle path `verify_tls` last held, so the Settings row can cycle back to it after On or Off |
 | `swap_ab` | `false` | `false`: south button confirms (Batocera's default) |
 | `button_style` | `auto` | `auto`, `xbox`, `playstation` or `nintendo` button labels |
 | `check_updates` | `true` | daily check of GitHub for a newer release (sends no data beyond the request) |

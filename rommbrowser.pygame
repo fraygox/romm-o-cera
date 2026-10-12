@@ -3784,9 +3784,9 @@ class SettingsScreen(Screen):
             row("chdthreads", ("Auto (%d of %d)" % (rommlib.auto_chd_threads(), rommlib.cpu_threads()))
                 if str(cfg["chd_threads"]) == "auto" else
                 "%d of %d" % (rommlib.chd_threads(cfg), rommlib.cpu_threads())),
-            row("chdlowmem", onoff(rommlib.chd_low_memory(cfg)) +
-                ((" (auto, %s RAM)" % human_size(rommlib.total_ram()) if rommlib.total_ram() else " (auto)")
-                 if not isinstance(cfg["chd_low_memory"], bool) else "")),
+            row("chdlowmem", onoff(cfg["chd_low_memory"]) if isinstance(cfg["chd_low_memory"], bool) else
+                "Auto (%s)" % ", ".join([onoff(rommlib.chd_low_memory(cfg))] +
+                                        (["%s RAM" % human_size(rommlib.total_ram())] if rommlib.total_ram() else []))),
             sec("This app"),
             row("theme", THEMES.get(cfg["theme"], THEMES["default"])[0]),
             table("sounds"),
@@ -3900,6 +3900,7 @@ class SettingsScreen(Screen):
 
     STYLES = ["auto", "xbox", "playstation", "nintendo"]
     SPEEDS = rommlib.SPEEDS                   # MB/s, 0 = no limit
+    LOW_MEMORY = ["auto", True, False]
 
     def _style_value(self):
         want = self.app.cfg["button_style"] or "auto"
@@ -4013,7 +4014,9 @@ class SettingsScreen(Screen):
                 cfg["chd_threads"] = opts[(opts.index(cur) + (-1 if a == "left" else 1)) % len(opts)]
                 app.apply_config()
             elif key == "chdlowmem":
-                cfg["chd_low_memory"] = not rommlib.chd_low_memory(cfg)
+                opts, cur = self.LOW_MEMORY, cfg["chd_low_memory"]
+                i = opts.index(cur) if isinstance(cur, bool) else 0
+                cfg["chd_low_memory"] = opts[(i + (-1 if a == "left" else 1)) % len(opts)]
                 app.apply_config()
             elif key == "rvz":
                 self._toggle_rvz()

@@ -442,7 +442,7 @@
   "bare/defaults/chdlowmem/ok": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": true
    },
    "gone": [],
    "modal": null,
@@ -463,7 +463,7 @@
   "bare/defaults/chdlowmem/right": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": true
    },
    "gone": [],
    "modal": null,
@@ -2397,7 +2397,7 @@
   "full/changed/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": "auto"
    },
    "gone": [],
    "modal": null,
@@ -4067,7 +4067,7 @@
   "full/defaults/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": true
+    "chd_low_memory": false
    },
    "gone": [],
    "modal": null,
@@ -5744,7 +5744,7 @@
   "full/odd/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": true
+    "chd_low_memory": false
    },
    "gone": [],
    "modal": null,
@@ -7357,7 +7357,7 @@
   "tools/changed/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": "auto"
    },
    "gone": [],
    "modal": null,
@@ -9051,7 +9051,7 @@
   "tools/defaults/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": true
+    "chd_low_memory": false
    },
    "gone": [],
    "modal": null,
@@ -10436,7 +10436,7 @@
   "cachelimit": "How much space game covers may take. The least recently seen go first.",
   "channel": "Stable gets tested releases. Nightly also gets builds of the newest changes, made as they land: new fixes sooner, less tested. Updates finds the newest straight away. Going back to Stable keeps the nightly you have until a release is newer; Go back to the previous version undoes an update.",
   "chd": "Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background while nothing runs. Lossless, verified before the original is deleted.",
-  "chdlowmem": "chdman's FLAC codec leaks memory on some builds. On boxes under 4 GB RAM this is on by default: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless.",
+  "chdlowmem": "chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right pick Auto, On or Off.",
   "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the menus.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
   "hours": "Downloads only start inside this window, e.g. overnight. A download running when it closes pauses and picks up next time. \"Download now\" in Downloads skips the wait.",
@@ -11332,7 +11332,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "On (auto, 2.0 GB RAM)",
+    "Auto (On, 2.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -11580,7 +11580,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "On (auto, 2.0 GB RAM)",
+    "Auto (On, 2.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -12070,7 +12070,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "Off (auto, 8.0 GB RAM)",
+    "Auto (Off, 8.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -12312,7 +12312,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "Off (auto, 8.0 GB RAM)",
+    "Auto (Off, 8.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -12796,7 +12796,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "Off (auto, 8.0 GB RAM)",
+    "Auto (Off, 8.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
