@@ -31,6 +31,8 @@ another region or revision of the game is already on the box.
 - **Download every game in this list** (up to 1,000).
 - **Fill in game info** for this system's games already on the box (see
   [On this box](on-this-box.md#fill-in-game-info)).
+- **Get BIOS for** the platform, when the box is missing BIOS files that
+  your RomM has (checksum-verified; all systems: [On this box](on-this-box.md#bios-files)).
 
 **Download a whole collection** straight from Collections: X on a collection
 (up to 1,000 games).
@@ -74,8 +76,8 @@ download only what fits.
 ### The Downloads screen
 
 Reorder, pause, cancel, pause/resume everything, clear finished. Each game
-shows what it's being compressed to (CHD, RVZ, squashfs, .zcci, .zar) and
-when that's done. L2/R2 opens **Conversions** (background compression). "Download now" starts one game
+shows what it's being compressed to (CHD, RVZ, squashfs, .zcci, .zar, a
+`.ps3` folder) and when that's done. L2/R2 opens **Conversions** (background compression). "Download now" starts one game
 outside the download hours.
 
 ### Space
@@ -103,6 +105,7 @@ editing `gamelist.xml` behind its back, which EmulationStation could overwrite.
 **Settings → Updates** checks GitHub, then downloads, verifies and installs a
 new release in place, keeping the previous version for one-step rollback.
 The swap is a single step where the drive allows it, so a power cut mid-update
-never leaves the box without the app. A
-daily check flags new releases (turn it off with `"check_updates": false`).
-Details in the [main README](../README.md#updating).
+never leaves the box without the app. **Update channel** picks what it
+offers: *Stable* releases, or *Nightly* builds of the newest changes as they
+land. A daily check flags a newer version on your channel (turn it off with
+`"check_updates": false`). Details in the [main README](../README.md#updating).

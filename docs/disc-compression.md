@@ -103,7 +103,8 @@ writing, every block is read back the way Azahar reads it and the result must
 hash to the original's CRC32 before the original is deleted.
 
 - Only decrypted dumps (the kind Azahar runs). An encrypted one is left as it is
-  (Conversions shows it as skipped, with the reason) and Check games flags it.
+  (Conversions shows it as skipped, and Compress games already here as can't
+  convert, with the reason) and Check games flags it.
 - `.cia` installers stay as they are for now.
 - Check games compares a `.zcci` with RomM's original: a quick check catches a
   cut-short file or one packed from a different dump; a full check decodes the
@@ -149,7 +150,9 @@ The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 **On this box → Compress games already here** lists, system by system, the
 disc games on the box that could still be compressed. Compress one game or a
 whole system (a whole system can take hours). CHD works even with its switch
-off; RVZ, squashfs, .zcci and .zar need theirs on. Details in
+off; RVZ, squashfs, .zcci, .zar and PS3 game folders need theirs on. Games it
+can't convert (an encrypted 3DS dump, a PS3 disc without its key, a damaged
+`.cso`) are listed apart with the reason, never queued. Details in
 [On this box](on-this-box.md#compress-games-already-here).
 
 Over SSH, `rb_chd_plan.py` does the same:
@@ -164,12 +167,14 @@ setsid nohup python3 rb_chd.py >/dev/null 2>&1 &
 ```
 
 It queues CD/DVD games for CHD (even with CHD turned off), and GameCube/Wii
-images for RVZ, 3DS games for `.zcci` and Xbox 360 images for `.zar` when
-those are on (encrypted 3DS dumps are listed and skipped). Games already
-queued are left out.
+images for RVZ, 3DS games for `.zcci`, Xbox 360 images for `.zar` and PS3
+disc images for `.ps3` folders when those are on. What it can't convert
+(encrypted 3DS dumps, PS3 discs without a key, damaged `.cso` files) is
+listed as skipped, with the reason. Games already queued are left out.
 Xbox: with Make Xbox images bootable on, full disc images are cut to their
-game partition and `.xiso` files renamed right away; with Xbox to squashfs on,
-the images are then queued for packing.
+game partition and `.xiso` files renamed right away (even with Xbox to
+squashfs off); with Xbox to squashfs on, the images are then queued for
+packing.
 
 ## PS3 game folders
 

@@ -10,15 +10,16 @@ runs in the background like disc compression, and is paused while a game runs.
   same way.
 - **Games already on the box:** a PS3 zip shows up in
   [Games ES can't see](on-this-box.md#games-es-cant-see), where **Unpack**
-  turns it into a game folder. Loose `.iso` files are listed under
-  [Compress games already here](on-this-box.md).
+  turns it into a game folder. Loose `.iso` files and PS3 zips are also
+  listed under [Compress games already here](on-this-box.md#compress-games-already-here).
 - **Checked before anything is deleted:** every file is written from the
   image, the game's start files (`EBOOT.BIN`, `PARAM.SFO`) are checked, and a
   zip's own checksum is checked by reading it to the end. Only then does the
   image go.
 
 A disc that can't become a folder (encrypted with no key, damaged, or one with
-no game to boot) is left exactly as it is, and ES doesn't list it.
+no game to boot) is left exactly as it is, and ES doesn't list it. Compress
+games already here lists it as **can't convert**, with the reason.
 
 Setting: **PS3 games as folders**, on by default.
 

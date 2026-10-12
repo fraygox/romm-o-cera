@@ -41,18 +41,28 @@ for downloads.
 Disc games already on the box that could still be compressed: ones copied
 over by hand, or downloaded while a format was off. The scan goes through
 every system and lists each one with its game count, size and the format it
-would become (CHD, RVZ, squashfs, .zcci, .zar), biggest first.
+would become (CHD, RVZ, squashfs, .zcci, .zar, a `.ps3` game folder),
+biggest first.
 
 - **A** on a system lists its games: **A** compresses one, **X** all of them.
 - **X** on a system compresses the whole system. You're asked first: a big
   system can take hours.
+
+Games a converter applies to but can't convert come last, as **can't convert**
+rows per system: an encrypted 3DS dump, an encrypted PS3 disc without its key
+(or with **Decrypt PS3 discs** off), a damaged or LZ4 `.cso`. **A** lists them
+with the reason for each. They're left as they are and never queued; fix or
+replace the file and it shows up with the others.
 
 It all runs in the background like any other conversion (see
 [Conversions](#conversions)), pauses while you play, and each original is
 deleted only after its copy checks out. CHD works even with **Compress disc
 games to CHD** off (asking for it here is the point); the other formats show
 dimmed with "needs a setting" until their switch in Settings → Disc
-compression is on. Games already queued don't show up again. Over SSH,
+compression is on. Xbox images that aren't bootable yet are the exception:
+with **Make Xbox images bootable** on and Xbox to squashfs off, they're
+listed as "to bootable .iso" and only made bootable. Games already queued
+don't show up again. Over SSH,
 `rb_chd_plan.py` does the same
 ([Disc compression](disc-compression.md#converting-a-library-you-already-have)).
 
