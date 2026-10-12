@@ -34,7 +34,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 import rb_finalize  # noqa: E402
 
-SAVES_ROOT = os.environ.get("ROMM_BROWSER_SAVES", "/userdata/saves")
 JUNK_EXTS = {".txt", ".nfo", ".md5", ".sfv", ".sha1", ".jpg", ".jpeg", ".png", ".m3u",
              ".dat", ".url", ".log", ".xml", ".pdf", ".cfg", ".ini", ".lic"}
 FINALIZE_EVERY = 15   # merge gamelist renames + reload ES after this many games
@@ -267,76 +266,6 @@ def sources_of(cue_or_gdi):
     if not cue_or_gdi.lower().endswith((".cue", ".gdi")):
         return [cue_or_gdi]
     return [cue_or_gdi] + rommlib.sheet_sources(cue_or_gdi, strict=True)     # unreadable: OSError
-
-
-# migrate_saves and fix_m3us are copies of rommlib's (romm/library.py), kept for
-# one release: v0.7.1's Downloader, still running during an in-app update, calls
-# them here in the new rb_chd.py. Drop them, and call rommlib's, in the release
-# after the next.
-def migrate_saves(system, old_path, new_path):
-    """Copy saves/states keyed on the old file name to the new one. RetroArch
-    keys on the stem ("Game (USA).srm"), PCSX2 states on the full basename
-    ("Game (USA).iso.p2s"), so both forms are mapped."""
-    root = os.path.join(SAVES_ROOT, system)
-    if not os.path.isdir(root):
-        return 0
-    ob, nb = os.path.basename(old_path), os.path.basename(new_path)
-    pairs = [(ob, nb), (os.path.splitext(ob)[0], os.path.splitext(nb)[0])]
-    pairs = [(o, n) for o, n in pairs if o != n]
-    copied = 0
-    for dp, _, fns in os.walk(root):
-        for fn in fns:
-            for o, n in pairs:
-                if fn.startswith(o + "."):
-                    dst = os.path.join(dp, n + fn[len(o):])
-                    if not os.path.exists(dst):
-                        # whole or not at all: a cut-short copy under the new name
-                        # would never be redone and the emulator would load it
-                        tmp = "%s.tmp-%d" % (dst, os.getpid())
-                        try:
-                            shutil.copy2(os.path.join(dp, fn), tmp)
-                            _sync_file(tmp)
-                            os.replace(tmp, dst)
-                        except BaseException:
-                            try:
-                                os.remove(tmp)
-                            except OSError:
-                                pass
-                            raise
-                        copied += 1
-                    break
-    if copied:
-        note("chd: copied %d save file(s) %s -> %s" % (copied, ob, nb))
-    return copied
-
-
-def fix_m3us(sysdir, old_to_new):
-    """Point existing .m3u playlists at the new CHDs. Returns m3us touched."""
-    touched = []
-    for dp, _, fns in os.walk(sysdir):
-        for fn in fns:
-            if not fn.lower().endswith(".m3u"):
-                continue
-            p = os.path.join(dp, fn)
-            try:
-                with open(p, errors="surrogateescape") as f:      # odd bytes in names survive as-is
-                    lines = f.read().splitlines()
-            except OSError:
-                continue
-            changed = False
-            out = []
-            for ln in lines:
-                entry = rommlib.m3u_entry(ln)
-                target = os.path.normpath(os.path.join(dp, entry)) if entry else ""
-                if target in old_to_new:
-                    out.append(os.path.relpath(old_to_new[target], dp))
-                    changed = True
-                else:
-                    out.append(ln)
-            if changed:
-                rommlib.atomic_write_text(p, "\n".join(out) + "\n", errors="surrogateescape")
-                touched.append(p)
-    return touched
 
 
 def _crc32(out):
@@ -851,7 +780,7 @@ def convert(task):
     old_to_new = {os.path.normpath(s): o for s, o in plan}
     in_size = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
     out_size = sum(rommlib.path_size(m) for m in made)
-    m3us = fix_m3us(sysdir, old_to_new)
+    m3us = rommlib.fix_m3us(sysdir, old_to_new)
     hide = []
     if multi:
         # an existing playlist (now rewritten) stays the entry; else write one
@@ -874,12 +803,12 @@ def convert(task):
                 _sync_dir(out_dir)
         hide = made if primary else []
         primary = primary or made[0]
-        migrate_saves(system, srcs[0], primary)
+        rommlib.migrate_saves(system, srcs[0], primary)
         for s, o in plan:
-            migrate_saves(system, s, o)
+            rommlib.migrate_saves(system, s, o)
     else:
         primary = made[0]
-        migrate_saves(system, srcs[0], primary)
+        rommlib.migrate_saves(system, srcs[0], primary)
 
     # record the rename before deleting anything: a crash after this leaves
     # duplicates at worst, never a CHD whose game info can't follow it

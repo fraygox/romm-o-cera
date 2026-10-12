@@ -39,7 +39,6 @@ def chd(isolated, tmp_path, monkeypatch):
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
-    monkeypatch.setattr(rb_chd, "SAVES_ROOT", str(tmp_path / "saves"))
     monkeypatch.setattr(rommlib, "keep_free_bytes", lambda cfg: 0)
     return rb_chd
 
@@ -295,9 +294,9 @@ def test_a_failed_playlist_rewrite_leaves_the_old_playlist(isolated, monkeypatch
     with monkeypatch.context() as m:
         m.setattr(builtins, "open", _enospc_on("Saga.m3u"))
         with pytest.raises(OSError):
-            rb_chd.fix_m3us(sysdir, {os.path.join(sysdir, "Saga (Disc 1).cue"): os.path.join(sysdir, "Saga (Disc 1).chd")})
+            rommlib.fix_m3us(sysdir, {os.path.join(sysdir, "Saga (Disc 1).cue"): os.path.join(sysdir, "Saga (Disc 1).chd")})
     assert open(m3u).read() == "Saga (Disc 1).cue\nSaga (Disc 2).cue\n", "playlist emptied"
-    rb_chd.fix_m3us(sysdir, {os.path.join(sysdir, "Saga (Disc 1).cue"): os.path.join(sysdir, "Saga (Disc 1).chd")})
+    rommlib.fix_m3us(sysdir, {os.path.join(sysdir, "Saga (Disc 1).cue"): os.path.join(sysdir, "Saga (Disc 1).chd")})
     assert open(m3u).read() == "Saga (Disc 1).chd\nSaga (Disc 2).cue\n"
 
 
@@ -315,8 +314,8 @@ def test_an_interrupted_save_copy_never_leaves_a_truncated_save(chd, monkeypatch
     with monkeypatch.context() as m:
         m.setattr(chd.shutil, "copy2", full)
         with pytest.raises(OSError):
-            chd.migrate_saves("psx", "/r/psx/G/Game (Disc 1).cue", "/r/psx/Game.m3u")
-    chd.migrate_saves("psx", "/r/psx/G/Game (Disc 1).cue", "/r/psx/Game.m3u")
+            rommlib.migrate_saves("psx", "/r/psx/G/Game (Disc 1).cue", "/r/psx/Game.m3u")
+    rommlib.migrate_saves("psx", "/r/psx/G/Game (Disc 1).cue", "/r/psx/Game.m3u")
     assert (saves / "Game.srm").stat().st_size == 131072, "truncated save left under the new name"
     assert sorted(os.listdir(str(saves))) == ["Game (Disc 1).srm", "Game.srm"]          # no temp left
 

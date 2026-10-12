@@ -75,8 +75,6 @@ def isolated(tmp_path, monkeypatch):
     import rb_finalize
     monkeypatch.setattr(rb_finalize, "LOCK", str(data / "finalize.lock"))
     monkeypatch.setattr(rb_finalize, "DEFERRED", str(data / "gamelist-deferred.jsonl"))
-    import rb_chd                                     # its own copy, until its save helpers go
-    monkeypatch.setattr(rb_chd, "SAVES_ROOT", vals["SAVES_ROOT"])
     for env in ("ROMM_URL", "ROMM_TOKEN", "ROMM_VERIFY_TLS"):
         monkeypatch.delenv(env, raising=False)
     return tmp_path

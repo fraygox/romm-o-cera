@@ -198,13 +198,13 @@ The rules (`tests/test_package.py` checks them):
   deploy.sh stamps `BUILD = ""` there, and APP_DIR is that file's folder.
 
 Worker files an OLD process loads lazily after an in-app update swapped the
-folder must only use rommlib names the previous release has: v0.7.1's
-`rb_dl.py` imports rb_chd (and with it rb_finalize) for migrate_saves and
-fix_m3us, which is why rb_chd keeps its own copies of those two for one
-release (they live in romm/library.py now), and a UI left
-open imports rb_chd_plan on the Compress screen. Read settings there as
+folder must only use rommlib names the previous release has: a UI left open
+imports rb_chd_plan on the Compress screen (and with it rb_chd and
+rb_finalize) and rb_dl to take over downloads. A name new in this release
+reaches the workers in the next one. Read settings there as
 `cfg.get(key, rommlib.DEFAULT_CONFIG[key])`, not `config_value`.
-`tests/test_package.py` pins the names they may use.
+`tests/test_package.py` pins the names they may use (`PREVIOUS_RELEASE_NAMES`,
+checked against the previous release's tag; bump it with each release).
 `romm` is a generic name: it is found first because every entry point is a
 script in the app folder (sys.path[0]), and install.sh's version check puts
 the app folder first too.

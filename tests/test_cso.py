@@ -204,7 +204,6 @@ def chd(isolated, tmp_path, monkeypatch):
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
-    monkeypatch.setattr(rb_chd, "SAVES_ROOT", str(tmp_path / "saves"))
     monkeypatch.setattr(rommlib, "keep_free_bytes", lambda cfg: 0)
     return rb_chd
 

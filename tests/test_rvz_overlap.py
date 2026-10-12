@@ -339,7 +339,6 @@ def test_find_in_romm_by_ra_hash_then_name(isolated):
 def test_replace_old_copy_after_download(isolated, mock_url, monkeypatch, tmp_path):
     """A broken copy under another name: RomM's copy comes in, saves are copied
     to its name, the playlist follows, the broken file is deleted."""
-    import rb_chd
     api, d = _setup(mock_url)
     rom = _rom(api, "Ipsum Saga (Japan) (Disc 1)")
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
@@ -352,7 +351,6 @@ def test_replace_old_copy_after_download(isolated, mock_url, monkeypatch, tmp_pa
     (saves / "psx").mkdir(parents=True)
     (saves / "psx" / "Ipsum Saga (J) (Disc 1).srm").write_text("card")
     monkeypatch.setattr(rommlib, "SAVES_ROOT", str(saves))
-    monkeypatch.setattr(rb_chd, "SAVES_ROOT", str(tmp_path / "not-these"))     # the package's copy runs
     j = d.enqueue(rom, "psx", replace=[old])
     _wait([j])
     assert j.state == rommlib.Job.DONE, j.message
