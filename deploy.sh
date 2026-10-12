@@ -9,15 +9,16 @@
 #   ROMM_TOKEN   RomM client API token. Unset = keep the box's current one.
 #   ROMM_VERIFY_TLS  "false" for a self-signed cert, or a CA-bundle path on the box.
 #   SSH_KEY      private key for root@host (default: your ssh config / agent;
-#                monorepo .env: ROMM_BATOCERA_SSH_KEY)
+#                .env: ROMM_BATOCERA_SSH_KEY)
 #   SSH_USER     default root
+#   FORCE=1      deploy even while a game (or RomM-o-Cera) is running on the box
 # Both can also be set later on the box: Pygame → RomM Browser → Settings.
 #
-# Monorepo convenience: if this folder lives two levels under a directory with
-# a .env, ROMM_BATOCERA_{URL,TOKEN,HOST} there are used as fallbacks.
+# A .env next to this script (git-ignored; or ROMM_O_CERA_ENV=path) may hold
+# ROMM_BATOCERA_{HOST,URL,TOKEN,SSH_KEY} as fallbacks.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-ENVF="$HERE/../../.env"
+ENVF="${ROMM_O_CERA_ENV:-$HERE/.env}"
 envget() { [ -f "$ENVF" ] && sed -n "s/^$1=//p" "$ENVF" | head -1 || true; }
 HOST=${1:-$(envget ROMM_BATOCERA_HOST)}
 [ -n "$HOST" ] || { echo "usage: ./deploy.sh <batocera-host>" >&2; exit 1; }
@@ -30,6 +31,14 @@ KEYF=${KEYF/#\~/$HOME}
 [ -n "$KEYF" ] && SSH_OPTS+=(-i "$KEYF")
 TARGET="${SSH_USER:-root}@$HOST"
 APPDIR=/userdata/roms/pygame/rommbrowser
+# never swap files under someone playing (or using the app): ES says what runs
+if [ -z "${FORCE:-}" ]; then
+    RUNNING=$(ssh "${SSH_OPTS[@]}" "$TARGET" "curl -s -m 3 localhost:1234/runningGame" || true)
+    case "$RUNNING" in
+        ""|*"NO GAME RUNNING"*) ;;
+        *) echo "Something is running on $HOST, not deploying under it (FORCE=1 to anyway): $RUNNING" >&2; exit 1 ;;
+    esac
+fi
 ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p $APPDIR/fonts $APPDIR/romm /userdata/system/romm-browser"
 # romm/ before rommlib.py: a process started mid-deploy never sees a front without its package
 scp -q "${SSH_OPTS[@]}" "$HERE"/romm/*.py "$TARGET:$APPDIR/romm/"
