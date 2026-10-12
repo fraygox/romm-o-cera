@@ -232,13 +232,13 @@ def main():
     tot = 0
     for c in cands:
         rel = os.path.relpath(c["root"], rommlib.ROMS_ROOT)
-        print("%-9s %6.2f GB  %d disc%s  %s%s" % (c["system"], c["size"] / 1e9, len(c["files"]),
-                                                 "" if len(c["files"]) == 1 else "s", rel,
-                                                 " [%s]" % c["name"] if c["name"] else ""))
+        print("%-9s %9s  %d disc%s  %s%s" % (c["system"], rommlib.human_size(c["size"]), len(c["files"]),
+                                              "" if len(c["files"]) == 1 else "s", rel,
+                                              " [%s]" % c["name"] if c["name"] else ""))
         tot += c["size"]
     if not a.dry_run:
         queue(cands, say=print)
-    print("%s %d games, %.1f GB" % ("would queue" if a.dry_run else "queued", len(cands), tot / 1e9))
+    print("%s %d games, %s" % ("would queue" if a.dry_run else "queued", len(cands), rommlib.human_size(tot)))
 
 
 if __name__ == "__main__":

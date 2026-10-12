@@ -844,9 +844,9 @@ def convert(task):
         else:
             # other games / files stay in it: only the converted files were renamed
             note("chd: kept folder (non-junk leftovers) %s" % folder_root)
-    note("chd: OK %s -> %s  (%.2f GB -> %.2f GB)" % (
+    note("chd: OK %s -> %s  (%s -> %s)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),
-        in_size / 1e9, out_size / 1e9))
+        rommlib.human_size(in_size), rommlib.human_size(out_size)))
     return True
 
 
