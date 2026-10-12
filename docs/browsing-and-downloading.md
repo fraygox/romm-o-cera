@@ -47,7 +47,11 @@ download only what fits.
   `.m3u` playlist, the single discs hidden), and discs you already have are
   reused. "Only this disc" is there too.
 - Downloads are **resumable**, **checked against RomM's checksums** (zips
-  member by member) and retried on network errors. One that grows past the
+  member by member) and retried on network errors. When RomM (or the proxy
+  in front of it) says it's busy, the app sends it fewer requests at once
+  and tries again after the wait it asks for, for covers, lists and
+  downloads alike. A cover that didn't come is asked for again a little
+  later, so a hiccup doesn't leave "no cover" for the rest of the session. One that grows past the
   file's size RomM gave stops at once ("The server sent more than the file's
   size"), so a broken server can't fill the drive.
 - They **keep going after you exit** and while you play (optionally

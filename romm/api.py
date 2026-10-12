@@ -8,17 +8,16 @@ from concurrent.futures import Future
 
 import requests
 
-from . import core as _core, config as _config, covers as _covers
+from . import core as _core, config as _config, covers as _covers, net as _net
 
 
 class Api:
     def __init__(self, url, token, verify_tls=True):
         self.base = (url or "").strip().rstrip("/")
-        self.s = requests.Session()
-        # covers and parallel lookups share the session: keep enough connections
-        # open that none is thrown away and set up again (requests keeps 10)
-        for scheme in ("https://", "http://"):
-            self.s.mount(scheme, requests.adapters.HTTPAdapter(pool_maxsize=HTTP_POOL))
+        # covers, parallel lookups and downloads share the session: keep enough
+        # connections open that none is thrown away and set up again (requests
+        # keeps 10), and back off together when RomM is busy (see net.py)
+        self.s = _net.http_session(HTTP_POOL)
         self.s.verify = _config.norm_verify(verify_tls)
         self.s.headers.update({"Authorization": "Bearer " + (token or "").strip(),
                                "User-Agent": _core.UA})
@@ -118,6 +117,7 @@ class Api:
             raise _core.RommError("%s download failed (%s)" % (what, e.__class__.__name__)) from None
         try:
             if r.status_code != 200:
+                _net.discard(r)
                 raise _core.RommError("%s download failed: HTTP %d" % (what, r.status_code))
             n = 0
             with open(part, "wb") as f:
@@ -186,7 +186,11 @@ class Api:
         return self.get("/api/firmware", {"platform_id": platform_id})
 
     def fetch_cover(self, rom, large=False):
-        """Cached cover for a rom (path or None). Blocking. large=True for
+        """Cached cover for a rom: its path, or None when it has none (no
+        cover, RomM has no file for it, or what came back isn't usable).
+        Raises CoverError when it couldn't be fetched just now (RomM busy,
+        unreachable or failing): asking again later may work. A rejected
+        token or certificate is None: asking again wouldn't help. Blocking. large=True for
         high-DPI screens (the small cover is ~300 px tall)."""
         keys = ("path_cover_large", "path_cover_small") if large else \
             ("path_cover_small", "path_cover_large")
@@ -200,19 +204,42 @@ class Api:
             return dest
         try:
             r = self.s.get(self.base + path, timeout=15, stream=True)
-            data = _read_capped(r, COVER_MAX) if r.status_code == 200 else b""
-            if data:
-                tmp = "%s.%d.tmp" % (dest, threading.get_ident())     # two loads of one cover never share it
+        except requests.exceptions.SSLError:
+            return None                 # won't change by asking again (Settings says why)
+        except requests.RequestException as e:
+            raise CoverError("cover: %s" % e.__class__.__name__) from None
+        try:
+            if r.status_code in (400, 401, 403, 404, 410, 422):
+                _net.discard(r)
+                return None                                   # no such file, or not for this token
+            if r.status_code != 200:
+                _net.discard(r)
+                raise CoverError("cover: HTTP %d" % r.status_code)
+            try:
+                data = _read_capped(r, COVER_MAX)
+            except requests.RequestException as e:
+                raise CoverError("cover: %s" % e.__class__.__name__) from None
+            except _core.RommError:
+                return None                                   # larger than any cover
+            if not data:
+                return None
+            tmp = "%s.%d.tmp" % (dest, threading.get_ident())     # two loads of one cover never share it
+            try:
                 _core.write_png(data, tmp)
                 os.replace(tmp, dest)
-                self._cache_written = getattr(self, "_cache_written", 0) + os.path.getsize(dest)
-                if self._cache_written > _covers.PRUNE_EVERY and getattr(self, "cache_limit", 0):
-                    self._cache_written = 0
-                    _covers.prune_cache(self.cache_limit)
-                return dest
-        except (requests.RequestException, OSError, _core.RommError):
-            pass
-        return None
+            except (OSError, _core.RommError):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                return None
+            self._cache_written = getattr(self, "_cache_written", 0) + os.path.getsize(dest)
+            if self._cache_written > _covers.PRUNE_EVERY and getattr(self, "cache_limit", 0):
+                self._cache_written = 0
+                _covers.prune_cache(self.cache_limit)
+            return dest
+        finally:
+            r.close()
 
     def exchange_pair_code(self, code):
         return exchange_pair_code(self.base, code, self.s.verify)
@@ -420,6 +447,10 @@ def exchange_pair_code(url, code, verify_tls=True, timeout=20):
 
 
 COVER_MAX = 32 << 20      # a cover bigger than this isn't a cover
+
+
+class CoverError(_core.RommError):
+    """A cover couldn't be fetched just now (RomM busy or unreachable)."""
 BIOS_MAX = 1 << 30         # the largest Batocera firmware files are a few hundred MB
 
 

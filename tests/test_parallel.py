@@ -418,7 +418,7 @@ def test_a_stale_request_never_cancels_a_newer_one(app):
     assert app.covers.get(1) == "loading" and 1 in app.cover_req
 
 
-def test_a_cover_that_fails_shows_none_and_is_not_asked_again(app):
+def test_a_cover_that_fails_isnt_asked_again_straight_away(app):
     calls = []
 
     def fetch_cover(rom, large=False):
@@ -429,8 +429,8 @@ def test_a_cover_that_fails_shows_none_and_is_not_asked_again(app):
     app.cover({"id": 9})
     app.cover_loader.run_one(wait=False)
     _run_posted(app)
-    assert app.covers[9] is None and app.cover({"id": 9}) is None
-    assert app.cover_loader.pending() == 0 and calls == [1]
+    assert 9 not in app.covers and app.cover({"id": 9}) is None        # "…" for now
+    assert app.cover_loader.pending() == 0 and calls == [1]            # after a wait (test_net)
 
 
 def test_covers_use_a_bounded_set_of_threads(app):

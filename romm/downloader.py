@@ -12,7 +12,7 @@ import zipfile
 
 import requests
 
-from . import (core as _core, config as _config, discs as _discs, es as _es, ps3 as _ps3, convert as _convert,
+from . import (core as _core, config as _config, net as _net, discs as _discs, es as _es, ps3 as _ps3, convert as _convert,
                library as _library, leftovers as _leftovers)
 
 
@@ -628,12 +628,12 @@ class Downloader:
         except Exception as e:
             raise NetError("Download interrupted (%s)." % e.__class__.__name__) from None
         if r.status_code == 416:      # .part already complete (verified below)
-            r.close()
+            _net.discard(r)
         elif r.status_code in (429, 500, 502, 503, 504):
-            r.close()
+            _net.discard(r)
             raise NetError("RomM busy (HTTP %d)." % r.status_code)
         elif r.status_code not in (200, 206):
-            r.close()
+            _net.discard(r)
             raise _core.RommError("Download failed: HTTP %d" % r.status_code)
         else:
             if r.status_code == 200:

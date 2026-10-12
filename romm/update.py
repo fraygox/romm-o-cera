@@ -10,7 +10,7 @@ import zipfile
 import requests
 
 import rommlib
-from . import core as _core, config as _config
+from . import core as _core, config as _config, net as _net
 
 
 UPDATE_REPO = os.environ.get("ROMM_BROWSER_UPDATE_REPO", "fraygox/romm-o-cera")
@@ -41,7 +41,7 @@ def newer_release(cfg, force=False):
     checked = cache.get("checked", 0)
     if force or now - checked > 86400 or checked > now + 3600:
         try:
-            r = requests.get("%s/repos/%s/releases/latest" % (GITHUB_API, UPDATE_REPO),
+            r = _net.plain_get("%s/repos/%s/releases/latest" % (GITHUB_API, UPDATE_REPO),
                              timeout=6, headers={"User-Agent": _core.UA,
                                                  "Accept": "application/vnd.github+json"})
             if r.status_code == 200:
@@ -80,10 +80,11 @@ def _gh_get(url, **kw):
     kw.setdefault("timeout", 20)
     headers = {"User-Agent": _core.UA, "Accept": "application/vnd.github+json"}
     try:
-        r = requests.get(url, headers=headers, **kw)
+        r = _net.plain_get(url, headers=headers, **kw)
     except requests.RequestException as e:
         raise UpdateError("Can't reach GitHub (%s)" % e.__class__.__name__) from None
     if r.status_code != 200:
+        _net.discard(r)
         raise UpdateError("GitHub answered HTTP %d" % r.status_code)
     return r
 
@@ -124,10 +125,15 @@ def stage_release(info, staging=None):
         raise UpdateError("SHA256SUMS doesn't list romm-o-cera.zip")
     r = _gh_get(info["zip"], stream=True)
     buf = io.BytesIO()
-    for chunk in r.iter_content(1 << 16):
-        buf.write(chunk)
-        if buf.tell() > MAX_RELEASE_BYTES:
-            raise UpdateError("Release zip is unexpectedly large")
+    try:
+        for chunk in r.iter_content(1 << 16):
+            buf.write(chunk)
+            if buf.tell() > MAX_RELEASE_BYTES:
+                raise UpdateError("Release zip is unexpectedly large")
+    except requests.RequestException as e:
+        raise UpdateError("The download from GitHub broke off (%s)" % e.__class__.__name__) from None
+    finally:
+        r.close()
     data = buf.getvalue()
     if hashlib.sha256(data).hexdigest() != want:
         raise UpdateError("Checksum mismatch — download corrupted, nothing changed")

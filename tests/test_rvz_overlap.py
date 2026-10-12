@@ -287,7 +287,7 @@ def test_only_version_tags_count_as_updates(isolated, monkeypatch):
         @staticmethod
         def json():
             return {"tag_name": "dolphin-tool-2603a"}
-    monkeypatch.setattr(rommlib.requests, "get", lambda *a, **k: R())
+    monkeypatch.setattr(rommlib, "plain_get", lambda *a, **k: R())
     assert rommlib.newer_release({"check_updates": True}, force=True) is None
 
 

@@ -959,6 +959,9 @@ class Input:
 
 # ------------------------------------------------------------------- app
 
+COVER_RETRY = (5, 15, 60)       # seconds before a cover RomM couldn't send is asked for again
+
+
 class CoverLoader:
     """Covers come in on up to WORKERS threads, the newest request first, so
     the screen you're looking at fills before rows you scrolled past. A request
@@ -1011,7 +1014,9 @@ class CoverLoader:
                 try:
                     res = load()
                 except Exception as e:
-                    rommlib.log("cover %s: %s" % (rid, e.__class__.__name__))
+                    if rid not in self.app.cover_retry:      # once, not every minute it stays down
+                        rommlib.log("cover %s: %s" % (rid, e if isinstance(e, rommlib.RommError)
+                                                      else e.__class__.__name__))
                     self.app.post(failed)
                 else:
                     self.app.post(lambda: done(res))
@@ -1065,6 +1070,7 @@ class App:
         self.covers = {}             # rom_id -> Surface | "loading" | None
         self.cover_order = []
         self.cover_req = {}          # rom_id -> the request the app waits for (stale ones are ignored)
+        self.cover_retry = {}        # rom_id -> (monotonic time to ask again, failures): RomM was busy
         self.cover_loader = CoverLoader(self)
         self.running = True
         self.status = "Connecting…"
@@ -1196,6 +1202,9 @@ class App:
         c = self.covers.get(rid)
         if c is not None or rid in self.covers:
             return None if c == "loading" else c
+        retry = self.cover_retry.get(rid)
+        if retry and time.monotonic() < retry[0]:
+            return None                   # couldn't be fetched a moment ago: "…" until it's time
         self.covers[rid] = "loading"
         req = self.cover_req[rid] = object()
         self.cover_order.append(rid)
@@ -1208,7 +1217,7 @@ class App:
             return self.cover_req.get(rid) is req
 
         def load():
-            for attempt in (1, 2):
+            for _ in (1, 2):
                 path = self.api.fetch_cover(rom, large=K > 1.5)
                 if not path:
                     return None
@@ -1217,22 +1226,28 @@ class App:
                 except (pygame.error, OSError):
                     # trimmed from the cache between finding and reading it
                     # (or unreadable): drop it and fetch once more
-                    if attempt == 2:
-                        raise
                     try:
                         os.remove(path)
                     except OSError:
                         pass
+            return None                     # fetched again and still not an image: no cover
 
         def done(img):
             if current():
                 del self.cover_req[rid]
                 self.covers[rid] = img
+                self.cover_retry.pop(rid, None)
 
-        def failed():
+        def failed():                       # RomM busy or unreachable: ask again after a wait
             if current():
                 del self.cover_req[rid]
-                self.covers[rid] = None
+                del self.covers[rid]
+                self.cover_order.remove(rid)
+                n = self.cover_retry.get(rid, (0, 0))[1] + 1
+                now = time.monotonic()
+                self.cover_retry[rid] = (now + COVER_RETRY[min(n, len(COVER_RETRY)) - 1], n)
+                if len(self.cover_retry) > 2000:
+                    self.cover_retry = {r: v for r, v in self.cover_retry.items() if v[0] > now - 600}
 
         def dropped():                  # scrolled away before its turn: asked again when drawn
             if current():
@@ -1247,6 +1262,7 @@ class App:
         self.covers.clear()
         self.cover_order.clear()
         self.cover_req.clear()
+        self.cover_retry.clear()
         self.scaled_covers.clear()
 
     def resolve_style(self):

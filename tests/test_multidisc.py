@@ -304,7 +304,8 @@ def test_flaky_server_is_retried(isolated, mock_url, monkeypatch):
     api, d = _setup(mock_url)
     j = d.enqueue(_rom(api, "Flaky Cart (USA)"), "gba")
     _wait([j])
-    assert j.state == "Done" and j.verified and 1 <= j.attempts <= 2, (j.state, j.message, j.attempts)
+    # the session itself tries the 503s again (net.py), so the job may not need to
+    assert j.state == "Done" and j.verified and j.attempts <= 2, (j.state, j.message, j.attempts)
 
 
 def test_file_hash_ok(tmp_path):

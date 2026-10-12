@@ -6,7 +6,7 @@ import subprocess
 
 import requests
 
-from . import core as _core, config as _config
+from . import core as _core, config as _config, net as _net
 
 
 # ---------------------------------------------------------- dolphin-tool (GameCube / Wii -> RVZ)
@@ -79,8 +79,9 @@ def _fetch_tool_archive(label, url, want, dest, progress=None):
     tgz = os.path.join(tmpdir, os.path.basename(dest) + ".tar.gz")
     h = hashlib.sha256()
     try:
-        with requests.get(url, stream=True, timeout=30) as r:
+        with _net.plain_get(url, stream=True, timeout=30) as r:
             if r.status_code != 200:
+                _net.discard(r)
                 raise _core.RommError("Couldn't download %s (HTTP %d)." % (label, r.status_code))
             total = int(r.headers.get("Content-Length") or 0)
             got = 0

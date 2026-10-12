@@ -165,12 +165,22 @@ def fetch_bytes(api, url_path, limit=200 << 20):
         return None
     try:
         r = api.s.get(api.base + url_path, timeout=60, stream=True)
+    except Exception:
+        return None
+    try:
         if r.status_code != 200:
+            n = 0
+            for c in r.iter_content(1 << 14):     # a small error page: read it so the
+                n += len(c)                       # connection is kept, not closed
+                if n > 1 << 16:
+                    break
             return None
         data = r.raw.read(limit + 1, decode_content=True)
         return data if data and len(data) <= limit else None
     except Exception:
         return None
+    finally:
+        r.close()          # the connection goes back to the pool
 
 
 def as_png(data):

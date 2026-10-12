@@ -105,6 +105,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/discs.py` | incomplete-image checks, XISO, .cso, cue/gdi sheets |
 | `romm/es.py` | EmulationStation: its API, notify, m3u, game files, delete, systems, hashes and counts |
 | `romm/covers.py` | the cover cache |
+| `romm/net.py` | the HTTP session every request goes through: shared connections, a per-server limit that backs off when the server is busy, retries |
 | `romm/api.py` | the RomM API client and pairing |
 | `romm/tools.py` | the dolphin-tool and Xbox 360 tool installers |
 | `romm/bios.py` | BIOS checks and fetching |
@@ -148,6 +149,34 @@ open imports rb_chd_plan on the Compress screen. Read settings there as
 `romm` is a generic name: it is found first because every entry point is a
 script in the app folder (sys.path[0]), and install.sh's version check puts
 the app folder first too.
+
+### HTTP
+
+Every request to RomM goes through `Api.s`, and every request to GitHub
+through `plain_get()`; both are `net.http_session()`s. Don't make a new
+`requests.get` or `Session`. The session:
+
+- keeps connections open and shares them across threads, so a TLS
+  handshake is paid once per connection, not per request. Read a response
+  you're done with off with `discard(r)` rather than `r.close()`: closing an
+  unread body closes its connection too;
+- gives each server a `HostGate`: starts at `HTTP_POOL` requests at once,
+  halves what was in flight on a 429/502/503/504 or a timeout (once per
+  round of requests, never below `GATE_FLOOR`), pauses everyone for a
+  `Retry-After`, and grows back by one per round of answers;
+- sends a GET (never a POST) up to `NET_TRIES` times after a busy answer,
+  waiting what the server asked for, else 0.5 s, 1 s, 2 s (at most
+  `NET_WAIT_MAX` each), and once more after a refused or dropped
+  connection. A timeout isn't repeated (a wrong address would make the
+  user wait it out four times), and a `Retry-After` longer than
+  `NET_WAIT_MAX` goes back to the caller.
+
+Only the request and the response head hold a place at the gate: a long
+download's body doesn't. A cover that couldn't be fetched (`CoverError`)
+shows "…" and is asked for again when drawn, after 5 s, 15 s, then every
+minute (logged once); one RomM has no file for, or refuses this token or
+certificate for, is "no cover". The ES API on localhost and
+the single-use pairing POST don't go through it.
 
 ## Files
 
