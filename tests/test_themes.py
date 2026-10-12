@@ -32,7 +32,7 @@ def themed(rb):
 def test_every_theme_is_readable_and_keeps_status_apart_from_the_accent(themed):
     """Floors are the Default palette's own levels: no theme is harder to read."""
     rb = themed
-    assert list(rb.THEMES)[0] == "default" and len(rb.THEMES) == 30
+    assert list(rb.THEMES)[0] == "default" and len(rb.THEMES) == 31
     for name, (label, _) in rb.THEMES.items():
         assert "Nintendo" not in label, name                          # the Nintendo-inspired ones have own names
         assert rb.apply_theme(name) == name
@@ -206,3 +206,110 @@ def test_match_theme_to_controller_still_wins_and_says_so(ui, rb):
     pk.action("ok")
     assert app.cfg["theme"] == "synthwave" and rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"]
     assert said and "Match theme to controller" in said[0] and "Xbox" in said[0]
+
+
+# ------------------------------------------------------------ Custom
+
+def _floors(p):
+    for ground in ("BG", "PANEL", "BG2"):
+        assert contrast(p["TEXT"], p[ground]) >= 12 and contrast(p["DIM"], p[ground]) >= 6.5
+        assert contrast(p["FAINT"], p[ground]) >= 4.5
+    assert contrast(p["TEXT"], p["PANEL_HI"]) >= 7
+    for status in ("RED", "GREEN", "AMBER", "BLUE"):
+        assert contrast(p[status], p["PANEL"]) >= 4.5 and _dist(p[status], p["ACCENT"]) > 80
+
+
+@pytest.mark.parametrize("mode", ["dark", "oled", "light"])
+def test_no_custom_choice_is_hard_to_read(rb, mode):
+    """Every hue step of accent and tint, every strength step: the floors every theme meets.
+    (Every one of the 24 x 24 x 11 x 3 combinations was checked once; this walks a third of them.)"""
+    for accent in range(0, 360, 15):
+        for tint in range(0, 360, 45):
+            for strength in (0, 30, 60, 100):
+                p = rb.custom_palette(accent, tint, strength, mode)
+                assert set(p) == set(rb.PALETTE)
+                _floors(p)
+                if mode == "oled":
+                    assert p["BG"] == (0, 0, 0)
+                if mode == "light":
+                    assert rb.luminance(p["BG"]) > 0.5
+    _floors(rb.custom_palette("junk", None, 999, "neon"))          # hand-edited nonsense: still readable
+
+
+def test_the_custom_settings_defaults_match_the_palette_and_odd_values_fall_back(isolated, rb):
+    st = rommlib.SETTING
+    assert (st["theme_custom_accent"].default, st["theme_custom_tint"].default, st["theme_custom_strength"].default,
+            st["theme_custom_mode"].default) == (195, 225, 30, "dark")
+    assert rb.custom_palette() == rb.custom_palette(195, 225, 30, "dark")
+    import json
+    import os
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    with open(rommlib.CONFIG_PATH, "w") as f:
+        json.dump({"theme_custom_accent": 400, "theme_custom_tint": True, "theme_custom_strength": "50",
+                   "theme_custom_mode": "neon"}, f)
+    cfg = rommlib.load_config()
+    assert [cfg[k] for k in rb.CUSTOM_KEYS] == [195, 225, 30, "dark"]
+
+
+def _custom(app, rb):
+    _, pk = _picker(app, rb)
+    pk.go(pk.items.index("custom"))
+    assert pk.hints()[0] == ("A", "Edit")
+    pk.action("ok")
+    cs = app.stack[-1]
+    assert isinstance(cs, rb.CustomThemeScreen) and cs.crumbs() == ["Settings", "Theme", "Custom"]
+    return pk, cs
+
+
+def test_custom_previews_as_you_change_it_and_b_leaves_it_as_it_was(ui, rb):
+    app = ui
+    pk, cs = _custom(app, rb)
+    assert rb.ACCENT == rb.custom_palette()["ACCENT"]
+    cs.action("right")
+    assert cs.v["accent"] == 210 and rb.ACCENT == rb.custom_palette(210, 225, 30, "dark")["ACCENT"]
+    cs.action("r1")
+    assert cs.v["accent"] == 270
+    cs.action("l1")
+    cs.action("l1")
+    cs.action("l1")
+    cs.action("l1")
+    assert cs.v["accent"] == 30                                       # round the wheel
+    for _ in range(3):
+        cs.action("down")
+    cs.action("left")                                                 # mode wraps round to Light
+    assert cs.v["mode"] == "light" and rb.luminance(rb.BG) > 0.5
+    cs.action("up")
+    for _ in range(12):
+        cs.action("right")
+    assert cs.v["strength"] == 100
+    cs.action("back")
+    assert app.stack[-1] is pk and app.cfg["theme"] == "default"
+    assert rb.THEMES["custom"][1] == rb.custom_palette() and rb.ACCENT == rb.custom_palette()["ACCENT"]
+    assert rommlib.load_config()["theme_custom_accent"] == 195          # nothing saved
+
+
+def test_custom_a_saves_four_settings_and_uses_it_from_start(ui, rb):
+    app = ui
+    pk, cs = _custom(app, rb)
+    app.targets = []
+    cs.draw(app.canvas)
+    assert len(app.targets) >= 4 + 24 + 24 + 11 + 3                   # rows, swatches, strength steps, modes
+    cs.set("accent", 330)
+    cs.set("mode", "oled")
+    assert rb.BG == (0, 0, 0)
+    cs.action("ok")
+    assert isinstance(app.stack[-1], rb.SettingsScreen)                # the picker closed too
+    saved = rommlib.load_config()
+    assert saved["theme"] == "custom" and [saved[k] for k in rb.CUSTOM_KEYS] == [330, 225, 30, "oled"]
+    want = rb.custom_palette(330, 225, 30, "oled")
+    assert rb.ACCENT == want["ACCENT"] and rb.BG == (0, 0, 0)
+    rb.set_custom(195, 225, 30, "dark")                               # a fresh start reads config.json
+    rb.apply_theme("default")
+    app2 = rb.App(None, headless=True)
+    assert app2.cfg["theme"] == "custom" and rb.ACCENT == want["ACCENT"]
+    st = rb.SettingsScreen(app2)
+    assert {it[0]: it[2] for it in st.items()}["theme"] == "Custom"
+    for scr in (st, rb.ThemePickerScreen(app2), rb.CustomThemeScreen(app2)):
+        app2.canvas.fill(rb.BG)
+        scr.draw(app2.canvas)
+    rb.set_custom(195, 225, 30, "dark")

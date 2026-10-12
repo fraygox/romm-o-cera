@@ -287,6 +287,15 @@ def picker_at(key, oled=False):
     p.preview()
 
 
+def custom_at(sel=0, **v):
+    """Settings, Theme, Custom with these choices made (previewed, as making them would)."""
+    s = rb.CustomThemeScreen(app)
+    s.v.update(v)
+    s.sel = sel
+    s.preview()
+    return s
+
+
 # (name, setup) — setup pushes a screen / opens a modal; returns an optional
 # "ready" predicate (default: no background work pending)
 SCENES = [
@@ -324,11 +333,18 @@ SCENES = [
     ("settings-docs", lambda: app.push(settings_at("docs"))),
     ("docs", lambda: (app.push(rb.SettingsScreen(app)), app.push(rb.DocsScreen(app)))),
     ("settings-updates", lambda: app.push(settings_at("checkupdates"))),
+    ("settings-theme", lambda: app.push(settings_at("theme"))),
     ("theme-picker", lambda: picker_at(rb.theme_base(app.cfg["theme"]))),
     ("theme-picker-consoles", lambda: picker_at("famicom")),
     ("theme-picker-light", lambda: picker_at("dreamcast")),
     ("theme-picker-moods", lambda: picker_at("synthwave")),
     ("theme-picker-oled", lambda: picker_at("playstation", oled=True)),
+    ("theme-picker-custom", lambda: picker_at("custom")),
+    ("theme-custom", lambda: (picker_at("custom"), app.push(rb.CustomThemeScreen(app)))),
+    ("theme-custom-light", lambda: (picker_at("custom"), app.push(custom_at(accent=150, tint=30, strength=60,
+                                                                            mode="light")))),
+    ("theme-custom-oled", lambda: (picker_at("custom"), app.push(custom_at(accent=330, tint=280, strength=100,
+                                                                           mode="oled", sel=2)))),
     ("url-edit", lambda: app.push(rb.TextInputScreen(app, "RomM server URL", "https://romm.example.com",
                                                      lambda v: None))),
     ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),

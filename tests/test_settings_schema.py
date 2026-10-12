@@ -247,6 +247,8 @@ DEFAULTS_LITERAL = [
     ("ps3_decrypt", False), ("cache_limit_mb", 1024), ("download_hours", "any"), ("background_downloads", True),
     ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("sounds", "normal"), ("theme", "default"), ("update_channel", "stable"),
     ("theme_auto", False),
+    ("theme_custom_accent", 195), ("theme_custom_tint", 225), ("theme_custom_strength", 30),
+    ("theme_custom_mode", "dark"),
     ("platform_map", {}),
 ]
 

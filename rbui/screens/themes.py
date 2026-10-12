@@ -3,7 +3,8 @@ import time
 
 import pygame
 from rbui import theme
-from rbui.theme import apply_theme, palette_of, SR, THEME_DESC, THEME_GROUPS, theme_base, theme_oled, THEMES
+from rbui.theme import (apply_theme, CUSTOM_MODES, custom_palette, hue_name, palette_of, set_custom, SR,
+                        THEME_DESC, THEME_GROUPS, theme_base, theme_oled, THEMES)
 from rbui.draw import circle, polyline, rich_lines, rich_text, rrect, text, wrap
 from rbui.pads import theme_for
 from rbui.screens.base import Screen
@@ -49,6 +50,30 @@ def draw_mini(c, r, p):
         y += 21
 
 
+CUSTOM_KEYS = ("theme_custom_accent", "theme_custom_tint", "theme_custom_strength", "theme_custom_mode")
+MODE_NAMES = {"dark": "Dark", "oled": "OLED", "light": "Light"}
+
+
+def custom_of(cfg):
+    """(accent, tint, strength, mode) of the Custom theme in a config."""
+    return tuple(cfg[k] for k in CUSTOM_KEYS)
+
+
+def custom_summary(accent, tint, strength, mode):
+    lean = "neutral grey" if not strength else "%s tint at %d%%" % (hue_name(tint).lower(), strength)
+    return "%s accent, %s; %s" % (hue_name(accent), lean, {"oled": "OLED", "light": "light"}.get(mode, "dark"))
+
+
+def draw_meanings(c, f, x, y, w):
+    """What each colour means, in two columns; returns the y below."""
+    for n, (lab, col) in enumerate((("Focus", theme.ACCENT), ("Ready", theme.GREEN), ("Working", theme.AMBER),
+                                    ("Problem", theme.RED), ("Info", theme.BLUE))):
+        cx, cy = x + (w // 2) * (n // 3), y + 31 * (n % 3)
+        circle(c, col, (cx + 10, cy + 12), 9)
+        text(c, f.body, lab, (cx + 30, cy + 1), theme.TEXT)
+    return y + 3 * 31
+
+
 class ThemePickerScreen(Screen):
     """Every theme as a card in groups. Moving previews the theme across the
     whole app; A keeps it, B puts back the one there was. Y switches a card
@@ -59,7 +84,7 @@ class ThemePickerScreen(Screen):
 
     def __init__(self, app):
         super().__init__(app)
-        self.groups = [(g, list(keys)) for g, keys in self.card_groups()]
+        self.groups = [(g, list(keys)) for g, keys in THEME_GROUPS]
         self.items = [k for _, keys in self.groups for k in keys]
         self.group_of = [gi for gi, (_, keys) in enumerate(self.groups) for _ in keys]
         self.was = app.cfg["theme"] if app.cfg["theme"] in THEMES else "default"
@@ -69,10 +94,6 @@ class ThemePickerScreen(Screen):
         self.sel = self.items.index(here) if here in self.items else 0
         self.scroll, self.scroll_f, self.drawn_at = 0, 0.0, None
         self.preview()
-
-    @staticmethod
-    def card_groups():
-        return THEME_GROUPS
 
     def crumbs(self):
         return self.trail("Theme")
@@ -110,7 +131,9 @@ class ThemePickerScreen(Screen):
     def toggle_oled(self):
         k = self.items[self.sel]
         o = theme_oled(k)
-        if o is None:
+        if k == "custom":
+            self.app.toast("Custom's Mode can be OLED: {A} opens it")
+        elif o is None:
             self.app.toast("%s has no OLED version" % self.label())
         elif o == k:
             self.app.toast("%s is only OLED" % self.label())
@@ -173,13 +196,18 @@ class ThemePickerScreen(Screen):
 
     def hints(self):
         o = theme_oled(self.items[self.sel])
-        return [("A", "Use")] + ([("Y", "OLED off" if self.key() == o else "OLED on")] if o and o != self.items[self.sel]
-                                 else []) + [("L", "Previous group"), ("R", "Next group"), ("B", "Back")]
+        k = self.items[self.sel]
+        o = theme_oled(k)
+        oled = [("Y", "OLED off" if self.key() == o else "OLED on")] if o and o != k else []
+        return [("A", "Edit" if k == "custom" else "Use")] + oled + \
+            [("L", "Previous group"), ("R", "Next group"), ("B", "Back")]
 
     def action(self, a):
         if a == "back":
             self.restore()
             self.app.pop()
+        elif a == "ok" and self.items[self.sel] == "custom":
+            self.app.push(CustomThemeScreen(self.app))
         elif a == "ok":
             self.choose()
         elif a == "y":
@@ -293,6 +321,8 @@ class ThemePickerScreen(Screen):
         """(group title, name, description) of the focused card."""
         k = self.items[self.sel]
         desc = THEME_DESC.get(k, "")
+        if k == "custom":
+            desc = custom_summary(*custom_of(self.app.cfg))
         if self.key() != k:
             desc += ". On pure black, for OLED TVs" if self.key().endswith("_oled") else ""
         return self.groups[self.group_of[self.sel]][0], self.label(), desc
@@ -309,17 +339,15 @@ class ThemePickerScreen(Screen):
             text(c, self.f.body, ln, (x, y), theme.DIM)
             y += 25
         y += 14
-        for n, (lab, col) in enumerate((("Focus", theme.ACCENT), ("Ready", theme.GREEN), ("Working", theme.AMBER),
-                                        ("Problem", theme.RED), ("Info", theme.BLUE))):
-            cx, cy = x + (w // 2) * (n // 3), y + 31 * (n % 3)        # what each colour means, in two columns
-            circle(c, col, (cx + 10, cy + 12), 9)
-            text(c, self.f.body, lab, (cx + 30, cy + 1), theme.TEXT)
-        y += 3 * 31 + 10
+        y = draw_meanings(c, self.f, x, y, w) + 10
         k, app = self.key(), self.app
         shown = theme_for(k, app.cfg["theme_auto"], app.cfg["button_style"], app.input.names())
         if shown != k:
             note, col = "Match theme to controller is on: this controller shows %s instead." % THEMES[shown][0], \
                 theme.AMBER
+        elif self.items[self.sel] == "custom":
+            note, col = "{A} opens it: pick your own colours there. {B} goes back to %s." % THEMES[self.was][0], \
+                theme.FAINT
         elif k == self.was:
             note, col = "Your theme now.", theme.FAINT
         else:
@@ -342,3 +370,189 @@ class ThemePickerScreen(Screen):
         rrect(c, theme.BG2, badge, 16)
         ratio = text_contrast({n: getattr(theme, n) for n in theme.PALETTE})
         text(c, self.f.small, "Easy to read · text %.0f:1" % ratio, badge.center, theme.GREEN, "center", maxw=w - 20)
+
+
+class CustomThemeScreen(Screen):
+    """Settings → Theme → Custom: the player's own theme from four choices,
+    the whole app showing it as they change. A keeps it (and uses it), B
+    leaves it as it was."""
+    ROWS = (("accent", "Accent colour", "The focus, the logo, progress"),
+            ("tint", "Background tint", "The hue the backgrounds and greys lean toward"),
+            ("strength", "Tint strength", "From neutral grey to fully tinted"),
+            ("mode", "Mode", "Dark, OLED (pure black) or Light"))
+    HUE_STEP, BIG_HUE, STRENGTH_STEP = 15, 60, 10
+    ROW_Y, ROW_H = 96, 86
+    PANEL = pygame.Rect(776, 84, 456, 554)
+
+    def __init__(self, app):
+        super().__init__(app)
+        a, t, st, m = custom_of(app.cfg)
+        self.v = {"accent": a, "tint": t, "strength": st, "mode": m if m in CUSTOM_MODES else "dark"}
+        self.sel = 0
+        self.preview()
+
+    def crumbs(self):
+        return self.trail("Custom")
+
+    def enter(self):
+        self.preview()
+
+    def values(self):
+        return self.v["accent"], self.v["tint"], self.v["strength"], self.v["mode"]
+
+    def preview(self):
+        set_custom(*self.values())
+        apply_theme("custom")
+
+    def change(self, d, big=False):
+        row, v = self.ROWS[self.sel][0], self.v
+        if row in ("accent", "tint"):
+            step = self.BIG_HUE if big else self.HUE_STEP
+            v[row] = (v[row] // self.HUE_STEP * self.HUE_STEP + d * step) % 360   # onto the steps, then round
+        elif row == "strength":
+            v[row] = max(0, min(100, v[row] // self.STRENGTH_STEP * self.STRENGTH_STEP
+                                + d * self.STRENGTH_STEP * (3 if big else 1)))
+        else:
+            v[row] = CUSTOM_MODES[(CUSTOM_MODES.index(v[row]) + d) % len(CUSTOM_MODES)]
+        self.preview()
+
+    def set(self, row, value):
+        """Touch: a swatch, a step of the strength bar or a mode picked straight away."""
+        self.sel = [r[0] for r in self.ROWS].index(row)
+        self.v[row] = value
+        self.preview()
+
+    def keep(self):
+        app = self.app
+        for k, v in zip(CUSTOM_KEYS, self.values()):
+            app.cfg[k] = v
+        app.cfg["theme"] = "custom"
+        app.apply_config()
+        app.sfx.play("toggle")
+        shown = app.theme_key()
+        if shown != "custom":
+            app.toast("Saved. Match theme to controller is on: this controller shows %s" % THEMES[shown][0],
+                      theme.AMBER)
+        app.pop()
+        if isinstance(app.stack[-1], ThemePickerScreen):
+            app.pop()                       # chosen: back where the picker was opened
+
+    def hints(self):
+        return [("A", "Use"), ("LEFT RIGHT", "Change"), ("L", "Bigger step back"), ("R", "Bigger step"),
+                ("B", "Back")]
+
+    def action(self, a):
+        if a == "back":
+            set_custom(*custom_of(self.app.cfg))     # as it was; the picker shows it again
+            self.app.pop()
+        elif a == "ok":
+            self.keep()
+        elif a in ("up", "down"):
+            self.sel = max(0, min(len(self.ROWS) - 1, self.sel + (1 if a == "down" else -1)))
+        elif a in ("left", "right", "l1", "r1"):
+            self.change(1 if a in ("right", "r1") else -1, big=a in ("l1", "r1"))
+
+    # ---- drawing
+    def hue_swatches(self):
+        """Each hue step's accent with the other choices as they are (what that step would give)."""
+        key = (self.v["tint"], self.v["strength"], self.v["mode"])
+        got = self.__dict__.get("_swatches")
+        if not got or got[0] != key:
+            got = self._swatches = (key, [custom_palette(h, *key)["ACCENT"] for h in range(0, 360, self.HUE_STEP)])
+        return got[1]
+
+    def tint_swatches(self):
+        """Each hue step as the rules it would give at full strength (the backgrounds' hue, easy to see)."""
+        key = (self.v["accent"], self.v["mode"])
+        got = self.__dict__.get("_tints")
+        if not got or got[0] != key:
+            got = self._tints = (key, [custom_palette(key[0], h, 100, key[1])["LINE"]
+                                       for h in range(0, 360, self.HUE_STEP)])
+        return got[1]
+
+    def value_text(self, row):
+        v = self.v[row]
+        if row in ("accent", "tint"):
+            return "%s · %d°" % (hue_name(v), v)
+        if row == "strength":
+            return "None (grey)" if not v else "%d%%" % v
+        return MODE_NAMES[v]
+
+    def draw(self, c):
+        for n, (row, label, sub) in enumerate(self.ROWS):
+            r = pygame.Rect(48, self.ROW_Y + n * self.ROW_H, 700, self.ROW_H - 8)
+            on = n == self.sel
+            self.app.hit(r, lambda n=n: setattr(self, "sel", n))
+            rrect(c, theme.PANEL_HI if on else theme.PANEL, r, 12)
+            if on:
+                rrect(c, theme.ACCENT, r, 12, 2)
+            text(c, self.f.h3, label, (r.left + 22, r.top + 8), theme.TEXT if on else theme.DIM)
+            vr = text(c, self.f.body, self.value_text(row), (r.right - 22, r.top + 20), theme.TEXT if on else theme.DIM,
+                      "midright", maxw=240)
+            if on:                                                  # ‹ › around the value
+                for x0, d in ((vr.left - 12, -1), (r.right - 12, 1)):
+                    polyline(c, theme.ACCENT_HI, [(x0 - 3 * d, r.top + 14), (x0 + 3 * d, r.top + 20),
+                                                  (x0 - 3 * d, r.top + 26)], 2)
+            strip = pygame.Rect(r.left + 22, r.top + 44, r.width - 44, 22)
+            if row in ("accent", "tint"):
+                cols = self.hue_swatches() if row == "accent" else self.tint_swatches()
+                self.draw_strip(c, strip, cols, self.v[row] // self.HUE_STEP, row)
+            elif row == "strength":
+                self.draw_steps(c, strip)
+            else:
+                self.draw_modes(c, strip)
+        y = self.ROW_Y + len(self.ROWS) * self.ROW_H + 6
+        for ln in rich_lines(self.f, self.f.small, "Every colour is made from these four, then nudged until it's as "
+                             "easy to read as Default: a custom theme can't be hard to read. {L} and {R} take "
+                             "bigger steps.", 700, 3):
+            rich_text(c, self.f, self.f.small, ln, (52, y), theme.FAINT)
+            y += 23
+        self.draw_panel(c)
+
+    def draw_strip(self, c, r, cols, at, row):
+        w = r.width / len(cols)
+        for n, col in enumerate(cols):
+            x0, x1 = round(r.left + n * w), round(r.left + (n + 1) * w)
+            cell = pygame.Rect(x0, r.top, x1 - x0 - 2, r.height)
+            rrect(c, col, cell, 5)
+            self.app.hit(cell.inflate(0, 10), lambda n=n: self.set(row, n * self.HUE_STEP))
+            if n == at:
+                rrect(c, theme.TEXT, cell.inflate(6, 6), 7, 2)
+
+    def draw_steps(self, c, r):
+        n = 100 // self.STRENGTH_STEP + 1
+        w = r.width / n
+        for k in range(n):
+            x0, x1 = round(r.left + k * w), round(r.left + (k + 1) * w)
+            cell = pygame.Rect(x0, r.top + 4, x1 - x0 - 4, r.height - 8)
+            lit = k * self.STRENGTH_STEP <= self.v["strength"]
+            rrect(c, theme.ACCENT if lit else theme.LINE, cell, 4)
+            self.app.hit(cell.inflate(4, 18), lambda k=k: self.set("strength", k * self.STRENGTH_STEP))
+
+    def draw_modes(self, c, r):
+        w = (r.width - 2 * 12) // 3
+        for k, m in enumerate(CUSTOM_MODES):
+            pill = pygame.Rect(r.left + k * (w + 12), r.top - 2, w, r.height + 4)
+            lit = m == self.v["mode"]
+            rrect(c, theme.ACCENT if lit else theme.BG2, pill, 13)
+            text(c, self.f.small, MODE_NAMES[m], pill.center, theme.ink_on(theme.ACCENT) if lit else theme.DIM,
+                 "center")
+            self.app.hit(pill, lambda m=m: self.set("mode", m))
+
+    def draw_panel(self, c):
+        p = self.PANEL
+        rrect(c, theme.PANEL, p, 16)
+        x, w = p.left + 24, p.width - 48
+        text(c, self.f.small, "PREVIEW", (x, p.top + 22), theme.ACCENT_HI)
+        text(c, self.f.h2, "Custom", (x, p.top + 44), theme.TEXT)
+        for n, ln in enumerate(wrap(self.f.body, custom_summary(*self.values()), w, 2)):
+            text(c, self.f.body, ln, (x, p.top + 84 + 25 * n), theme.DIM)
+        pal = {k: getattr(theme, k) for k in theme.PALETTE}
+        mini = pygame.Rect(0, p.top + 130, round(220 * 176 / 118), 220)
+        mini.centerx = p.centerx
+        draw_mini(c, mini, pal)
+        draw_meanings(c, self.f, x, mini.bottom + 18, w)
+        badge = pygame.Rect(x, p.bottom - 52, w, 32)
+        rrect(c, theme.BG2, badge, 16)
+        text(c, self.f.small, "Easy to read · text %.0f:1" % text_contrast(pal), badge.center, theme.GREEN, "center",
+             maxw=w - 20)

@@ -77,7 +77,18 @@ OLED version (cards that have one show an OLED pill; Red Visor is only OLED).
 The side panel names the theme, says what it's after, shows what its colours
 mean (focus, ready, working, problem, info) and a row at its real size. A
 tick marks the theme you use. Left and right on the Theme row still step
-through the themes without opening the picker. Every
+through the themes without opening the picker.
+
+**Custom**, under Yours at the end of the picker, is your own theme: confirm
+on its card opens it. Pick an **accent colour** and a **background tint**
+round the colour wheel (left and right go 15° at a time, L and R 60°; on a
+touch screen, tap a colour), how strong the **tint** is (from neutral grey to
+fully tinted), and the **mode**: Dark, OLED (pure black) or Light. The whole
+app shows it as you change it; confirm keeps it and uses it, back leaves it as
+it was. Every colour is made from those four choices and then nudged until it
+meets the same readability floors as every other theme, with warnings kept
+apart from the accent, so no choice can make it hard to read. It's saved in
+`config.json` as four `theme_custom_` settings. Every
 theme keeps text at least as readable as Default, and warnings never share a
 colour with the highlight (in Kyoto, warnings are coral, not red). A new
 install starts on Default.
@@ -124,8 +135,12 @@ Theme row shows what's on screen ("Default (now PlayStation)").
 | `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
 | `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
-| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo` (Kyoto), or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `dmg` (Brick), `virtualboy_oled` (Red Visor OLED), `famicom` (Red & White), `snes` (Lavender), `megadrive`, `dreamcast`, `gamecube` (Indigo Cube), `n64` (Sixty-Four), `turbografx`, `neogeo`, `atari`, `c64`, `phosphor`, `amber`, `synthwave`, `sakura`, `nord`, `solarized`, `dracula`, `paper` |
+| `theme` | `default` | colours: `custom` (your own, from the four `theme_custom_` keys), `default`, `playstation`, `xbox`, `nintendo` (Kyoto), or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `dmg` (Brick), `virtualboy_oled` (Red Visor OLED), `famicom` (Red & White), `snes` (Lavender), `megadrive`, `dreamcast`, `gamecube` (Indigo Cube), `n64` (Sixty-Four), `turbografx`, `neogeo`, `atari`, `c64`, `phosphor`, `amber`, `synthwave`, `sakura`, `nord`, `solarized`, `dracula`, `paper` |
 | `theme_auto` | `false` | `true`: a PlayStation, Xbox or Nintendo controller picks the theme made for it (Match theme to controller) |
+| `theme_custom_accent` | `195` | the Custom theme's accent: a hue in degrees, `0`–`359` (0 red, 120 green, 240 blue); Settings steps it by 15 |
+| `theme_custom_tint` | `225` | the hue the Custom theme's backgrounds and greys lean toward, `0`–`359` |
+| `theme_custom_strength` | `30` | how far they lean: `0` (neutral grey) to `100` |
+| `theme_custom_mode` | `dark` | the Custom theme's mode: `dark`, `oled` (pure black) or `light` |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |

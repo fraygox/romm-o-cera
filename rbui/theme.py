@@ -2,6 +2,8 @@
 
 apply_theme() rebinds the palette names in this module: read them as theme.BG (never
 `from rbui.theme import BG`, which would keep the colour of the theme at import)."""
+import colorsys
+
 import pygame
 
 
@@ -181,6 +183,7 @@ THEME_GROUPS = (
                   "turbografx", "neogeo", "atari", "c64")),
     ("Screens and moods", ("phosphor", "amber", "synthwave", "sakura")),
     ("Classic palettes", ("nord", "solarized", "dracula", "paper")),
+    ("Yours", ("custom",)),
 )
 THEME_DESC = {
     "default": "RomM's violet on a deep indigo ink",
@@ -209,6 +212,7 @@ THEME_DESC = {
     "solarized": "The classic low-contrast-noise palette, dark",
     "dracula": "Purple-grey night with pink and green",
     "paper": "A warm light theme for bright rooms",
+    "custom": "Your own: an accent colour, a background tint, and dark, OLED or light",
 }
 
 
@@ -247,6 +251,108 @@ def light_theme():
 def ink_on(fill):
     """TEXT or BG, whichever reads better on fill (a letter on an accent tile)."""
     return TEXT if abs(luminance(TEXT) - luminance(fill)) >= abs(luminance(BG) - luminance(fill)) else BG
+
+
+def contrast(a, b):
+    """WCAG contrast ratio, 1 .. 21."""
+    la, lb = sorted((luminance(a), luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+# The Custom theme (Settings → Theme → Custom): every colour made from four choices, then nudged
+# to the floors every theme meets (test_themes), so no choice can make it hard to read.
+CUSTOM_MODES = ("dark", "oled", "light")
+_LIGHT_STATUS = dict(GREEN=(10, 110, 54), AMBER=(124, 82, 0), RED=(174, 26, 26), BLUE=(10, 90, 168))
+
+
+def hls(hue, light, sat):
+    """A colour from a hue in degrees, lightness and saturation 0..1."""
+    return tuple(round(v * 255) for v in colorsys.hls_to_rgb((hue % 360) / 360, light, sat))
+
+
+def _hls_of(c):
+    return colorsys.rgb_to_hls(*(v / 255 for v in c))
+
+
+def custom_palette(accent=195, tint=225, strength=30, mode="dark"):
+    """The 14 colours of a Custom theme: accent hue and tint hue in degrees, tint
+    strength 0..100 (0: neutral greys), mode dark, oled (pure black) or light.
+    Text and status colours then move toward white (black on light) until they
+    reach the floors, with a margin; the grounds deepen when a bright tint at
+    full strength would keep white text from them; a status colour too close to
+    the accent, or to a status colour before it, turns round the colour wheel."""
+    def num(v, default):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+    accent, tint = num(accent, 195) % 360, num(tint, 225) % 360
+    s = max(0, min(100, num(strength, 30))) / 100
+    light = mode == "light"
+
+    def t(level, k):                       # the tint at a lightness (k: how much of the strength)
+        return hls(tint, level, s * k)
+    if light:
+        p = dict(BG=t(.95, .45), BG2=t(.91, .45), PANEL=t(.985, .6), LINE=t(.78, .3), TEXT=t(.07, .5),
+                 DIM=t(.23, .35), FAINT=t(.37, .3), ACCENT=hls(accent, .45, .85), ACCENT_HI=hls(accent, .32, .8))
+        p.update(_LIGHT_STATUS)
+    else:
+        lv = (0, .045, .075, .2) if mode == "oled" else (.085, .11, .14, .27)
+        p = dict(BG=t(lv[0], .55), BG2=t(lv[1], .55), PANEL=t(lv[2], .5), LINE=t(lv[3], .4), TEXT=t(.95, .6),
+                 DIM=t(.79, .45), FAINT=t(.67, .4), ACCENT=hls(accent, .6, .85), ACCENT_HI=hls(accent, .8, .9))
+        p.update({k: _DEFAULT_PALETTE[k] for k in ("GREEN", "AMBER", "RED", "BLUE")})
+    ink, ground = ((0, 0, 0), (255, 255, 255)) if light else ((255, 255, 255), (0, 0, 0))
+
+    def push(k, floor, against, to=ink):
+        for _ in range(200):
+            if min(contrast(p[k], p[g]) for g in against) >= floor:
+                break
+            p[k] = mix(p[k], to, 0.04)
+    for g in ("BG", "BG2", "PANEL", "LINE"):            # a bright tint at full strength: deeper grounds
+        for _ in range(100):
+            if contrast(ink, p[g]) >= (8 if g == "LINE" else 14):
+                break
+            p[g] = mix(p[g], ground, 0.04)
+    p["PANEL_HI"] = mix(p["PANEL"], p["ACCENT"], 0.2 if light else 0.35)
+    grounds = ("BG", "BG2", "PANEL")
+    push("TEXT", 12.5, grounds)
+    push("DIM", 6.8, grounds)
+    push("FAINT", 4.7, grounds)
+    push("ACCENT", 3, grounds)
+    push("ACCENT_HI", 4.7, ("PANEL", "PANEL_HI"))
+    push("PANEL_HI", 7.3, ("TEXT",), ground)
+    ah, done = _hls_of(p["ACCENT"])[0], []
+    for k in ("GREEN", "AMBER", "RED", "BLUE"):
+        h, lt, sat = _hls_of(p[k])
+        away = 1 if (h - ah) % 1 < 0.5 else -1          # turn away from the accent's hue first
+        for n in range(24):
+            p[k] = hls(h * 360 + away * (1 if n % 2 else -1) * ((n + 1) // 2) * 15, lt, sat)
+            push(k, 4.7, ("PANEL",))
+            if _dist(p[k], p["ACCENT"]) > 90 and all(_dist(p[k], p[o]) > 60 for o in done):
+                break
+        done.append(k)
+    return {k: p[k] for k in PALETTE}
+
+
+def _dist(a, b):
+    return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+
+
+def set_custom(accent, tint, strength, mode):
+    """Make the Custom theme from these (the app does it from config.json at start and on every save)."""
+    THEMES["custom"] = ("Custom", custom_palette(accent, tint, strength, mode))
+
+
+HUE_NAMES = ((0, "Red"), (20, "Orange"), (40, "Amber"), (55, "Yellow"), (75, "Lime"), (105, "Green"),
+             (150, "Teal"), (175, "Cyan"), (195, "Sky"), (215, "Blue"), (240, "Indigo"), (255, "Violet"),
+             (275, "Purple"), (295, "Magenta"), (320, "Pink"), (340, "Rose"), (355, "Red"))
+
+
+def hue_name(hue):
+    return [n for h, n in HUE_NAMES if h <= hue % 360][-1]
+
+
+set_custom(195, 225, 30, "dark")
 
 
 # On this box's space bar (derived colours: apply_theme keeps them in step)

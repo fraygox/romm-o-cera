@@ -7,7 +7,7 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import APP_NAME, draw, pads, theme
-from rbui.theme import apply_theme, FPS, H, ink_on, S, W
+from rbui.theme import apply_theme, FPS, H, ink_on, S, set_custom, W
 from rbui.draw import (as_rgba, button_glyph, circle, COVER_DECODES, COVER_ENTRIES, cover_fit, Fonts, glyph_width,
                        hline, measure, rich_text, rich_width, rom_title, rrect, surface_bytes, text)
 from rbui.pads import FACE, style_from_names, theme_for, TOKEN_ACTION, TOKEN_BACK
@@ -113,6 +113,7 @@ class App:
         self.tapped, self.ptr_later = False, []    # a tap acted since the last frame; events held back
         self.sfx = Sfx(self.cfg["sounds"] if screen is not None else "off")
         self.input = Input(self.cfg["swap_ab"])
+        self.make_custom_theme()
         apply_theme(self.theme_key())
         self.headless = headless
         self.api = rommlib.Api.from_config(self.cfg)
@@ -356,6 +357,11 @@ class App:
         self.cover_retry.clear()
         self.scaled_covers.clear()
 
+    def make_custom_theme(self):
+        """The Custom theme from config.json's four theme_custom_* settings."""
+        c = self.cfg
+        set_custom(c["theme_custom_accent"], c["theme_custom_tint"], c["theme_custom_strength"], c["theme_custom_mode"])
+
     def theme_key(self):
         return theme_for(self.cfg["theme"], self.cfg["theme_auto"], self.cfg["button_style"], self.input.names())
 
@@ -371,6 +377,7 @@ class App:
         except rommlib.ConfigUnreadable:
             self.toast("config.json can't be read: this change is not saved (Settings, Reset settings)", theme.AMBER)
         self.input.set_swap(self.cfg["swap_ab"])
+        self.make_custom_theme()
         apply_theme(self.theme_key())
         self.resolve_style()
         if reconnect:

@@ -52,8 +52,8 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   included). → [PS3 games](docs/ps3.md#where-disc-keys-go)
 - **Feels native**: button labels match your controller (Xbox, PlayStation,
   Nintendo) or keyboard, two dozen colour themes in a picker that previews
-  them live (one that follows your controller, pure-black OLED and
-  high-contrast versions), settings explain
+  them live, or your own (one that follows your controller, pure-black OLED
+  and high-contrast versions), settings explain
   themselves, a QR code opens the documentation on your phone, updates install from the
   box with one-step rollback. → [Controls](docs/controls.md),
   [Settings](docs/settings.md)

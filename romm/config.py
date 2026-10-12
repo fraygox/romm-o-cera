@@ -185,7 +185,8 @@ SETTINGS = (
             row="theme", label="Theme", sub="Colours for the whole app, previewed live",
             help="Colours for the whole app. {A} shows every theme as a card, and the whole app takes it on as "
                  "you move: {A} keeps it, {B} goes back. {Y} turns on a card's OLED version (pure black). Left "
-                 "and right step through them here. Every theme is as easy to read as Default."),
+                 "and right step through them here. Custom, under Yours, makes your own. Every theme is as easy to "
+                 "read as Default."),
     Setting("update_channel", "stable",  # stable: releases only; nightly: also the nightly build
             row="channel", label="Update channel", sub="Stable releases, or nightly builds",
             kind="choice", choices=("stable", "nightly"), effects=("update_channel",),
@@ -200,6 +201,16 @@ SETTINGS = (
             help="With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it "
                  "(PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED "
                  "one. With a keyboard or another controller, your Theme. High contrast themes are always kept."),
+    # Settings → Theme → Custom: the player's own theme, every colour made from these four (rbui/theme.py's
+    # custom_palette); "theme": "custom" uses it
+    Setting("theme_custom_accent", 195,     # the accent's hue in degrees (0 red, 120 green, 240 blue)
+            valid=lambda v: type(v) is int and 0 <= v < 360),
+    Setting("theme_custom_tint", 225,       # the hue the backgrounds and greys lean toward, degrees
+            valid=lambda v: type(v) is int and 0 <= v < 360),
+    Setting("theme_custom_strength", 30,    # how far they lean, 0 (neutral grey) to 100
+            valid=lambda v: type(v) is int and 0 <= v <= 100),
+    Setting("theme_custom_mode", "dark",    # dark | oled (pure black) | light
+            valid=lambda v: v in ("dark", "oled", "light")),
     Setting("platform_map", {},         # per-slug overrides of PLATFORM_MAP (null hides)
             valid=_parses(lambda v: dict(v or {}))),
 )

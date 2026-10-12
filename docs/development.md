@@ -278,7 +278,7 @@ on `sys.path`, imports it and runs `main()`. The modules, in import order
 | Module | Holds |
 |---|---|
 | `rbui/__init__.py` | `APP_DIR` (the app folder) and `APP_NAME` |
-| `rbui/theme.py` | scaling (`W`, `H`, `K`, `S()`, `SR()`, `LR()`), the palette, `THEMES` and `apply_theme()`, the theme picker's groups and descriptions, the space bar's derived colours |
+| `rbui/theme.py` | scaling (`W`, `H`, `K`, `S()`, `SR()`, `LR()`), the palette, `THEMES` and `apply_theme()`, the theme picker's groups and descriptions, the Custom theme (`custom_palette()`), the space bar's derived colours |
 | `rbui/pads.py` | controller styles: the glyph and label each hint token shows, `PAD_STYLE`, `INPUT_MODE` |
 | `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, covers' scaling |
 | `rbui/sfx.py` | the UI's sounds |
