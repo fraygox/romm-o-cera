@@ -35,10 +35,6 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 
-ES = rommlib.ES_API
-LOCK = os.path.join(rommlib.DATA_DIR, "finalize.lock")
-# entries ES couldn't take this time (game/system not listed yet): retried next run
-DEFERRED = os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl")
 MAX_TRIES = 5
 BAD_MAX = 1024 * 1024    # <queue>.bad keeps its newest lines up to this size
 
@@ -53,10 +49,19 @@ CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gi
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
 
 
+def lock_path():
+    return os.path.join(rommlib.DATA_DIR, "finalize.lock")
+
+
+def deferred_path():
+    # entries ES couldn't take this time (game/system not listed yet): retried next run
+    return os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl")
+
+
 # ------------------------------------------------------------------ ES API
 
 def es_get(path, timeout=5):
-    return rommlib.es_get(path, timeout, base=ES)
+    return rommlib.es_get(path, timeout, base=rommlib.ES_API)
 
 
 def game_running():
@@ -83,7 +88,7 @@ class EsApi:
     """The slice of Batocera ES's HTTP API this uses (Batocera 43)."""
 
     def __init__(self, base=None):
-        self.base = base or ES
+        self.base = base or rommlib.ES_API
         self._games = {}
 
     def _req(self, method, path, data=None, ctype=None, timeout=30):
@@ -553,16 +558,16 @@ def process(entries, api=None, es=None, esapi=None):
 def main():
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     # next release: rommlib.try_lock (new in romm/core.py; v0.9.0 lacks it, see PREVIOUS_RELEASE_NAMES)
-    lockf = open(LOCK, "w")
+    lockf = open(lock_path(), "w")
     try:
         fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return  # another finalize is already waiting; it will pick ours up
     # entries ES couldn't take last time: try them again, once per run
-    deferred = _read_jsonl(DEFERRED)
+    deferred = _read_jsonl(deferred_path())
     if deferred:
         rommlib.append_gamelist(*deferred)      # queue again first, then forget (entries are idempotent)
-        _write_jsonl(DEFERRED, [])
+        _write_jsonl(deferred_path(), [])
     work = rommlib.GAMELIST_QUEUE + ".work"
     failures = 0
     while True:
@@ -605,7 +610,7 @@ def main():
                 else:
                     rommlib.log("finalize: giving up on an entry for %s after %d tries: %s" % (
                         e.get("system"), MAX_TRIES, (e.get("paths") or list((e.get("rename") or {}).values()) or ["?"])[0]))
-            _write_jsonl(DEFERRED, _read_jsonl(DEFERRED) + keep)
+            _write_jsonl(deferred_path(), _read_jsonl(deferred_path()) + keep)
             os.remove(work)
             rommlib.log("finalize: %d entries to ES, %d kept for later" % (len(entries) - len(left), len(keep)))
         except Exception as e:

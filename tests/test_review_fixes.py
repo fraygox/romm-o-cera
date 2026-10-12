@@ -269,8 +269,6 @@ def test_finalize_never_drops_the_queue_while_claiming_it(isolated, monkeypatch)
     import builtins
     import rb_finalize
     os.makedirs(rommlib.DATA_DIR)
-    monkeypatch.setattr(rb_finalize, "LOCK", os.path.join(rommlib.DATA_DIR, "finalize.lock"))
-    monkeypatch.setattr(rb_finalize, "DEFERRED", os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl"))
     monkeypatch.setattr(rb_finalize, "wait_idle", lambda *a: True)
     rommlib.append_gamelist({"system": "psx", "rename": {"/r/psx/A.cue": "/r/psx/A.chd"}, "hide": []})
     with monkeypatch.context() as m:                 # only open() breaks; the isolated paths stay

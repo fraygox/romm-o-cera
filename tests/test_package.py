@@ -149,9 +149,10 @@ def test_lazily_loaded_workers_only_use_names_the_previous_release_has():
 
 
 def test_isolated_redirects_every_data_path(isolated):
-    """Paths joined from DATA_DIR at import (UPDATE_CACHE, TOOLS_DIR, rb_finalize's
-    LOCK...) are patched too: a test must never write into a real data folder
-    (pytest run on the box itself)."""
+    """Paths joined from DATA_DIR at import (UPDATE_CACHE, TOOLS_DIR...) are
+    patched too, and those joined at call time (rb_finalize's lock and deferred
+    entries...) follow DATA_DIR: a test must never write into a real data
+    folder (pytest run on the box itself)."""
     import rb_chd
     import rb_chd_plan
     import rb_dl
@@ -161,3 +162,6 @@ def test_isolated_redirects_every_data_path(isolated):
     for m in list(rommlib._MODULES) + [rb_chd, rb_chd_plan, rb_dl, rb_finalize, rb_repair]:
         for n, v in vars(m).items():
             assert not (isinstance(v, str) and v.startswith(real)), (m.__name__, n, v)
+    for fn in (rommlib.chd_lock_path, rommlib.chd_current_path, rommlib.chd_results_path,
+               rommlib.audit_path, rb_finalize.lock_path, rb_finalize.deferred_path):
+        assert fn().startswith(rommlib.DATA_DIR + os.sep), (fn.__name__, fn())

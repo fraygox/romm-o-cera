@@ -72,9 +72,6 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(rommlib, "_BIOS_DB", None)
     for k, v in vals.items():
         monkeypatch.setattr(rommlib, k, v)
-    import rb_finalize
-    monkeypatch.setattr(rb_finalize, "LOCK", str(data / "finalize.lock"))
-    monkeypatch.setattr(rb_finalize, "DEFERRED", str(data / "gamelist-deferred.jsonl"))
     for env in ("ROMM_URL", "ROMM_TOKEN", "ROMM_VERIFY_TLS"):
         monkeypatch.delenv(env, raising=False)
     return tmp_path
@@ -142,7 +139,7 @@ def fake_es(monkeypatch):
 
     def make(systems):
         es = FakeES(rommlib.ROMS_ROOT, systems)
-        monkeypatch.setattr(rb_finalize, "ES", es.url)
+        monkeypatch.setattr(rommlib, "ES_API", es.url)
         monkeypatch.setattr(rb_finalize.time, "sleep", lambda s: None)
         made.append(es)
         return es
