@@ -92,6 +92,7 @@ class EsApi:
         self._games = {}
 
     def _req(self, method, path, data=None, ctype=None, timeout=30):
+        # next release: the ES client in romm/es.py (rommlib.EsClient; v0.9.0 lacks it)
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": ctype} if ctype else {})
         try:

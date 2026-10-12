@@ -11,11 +11,102 @@ from . import core as _core, discs as _discs
 ES_API = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")     # Batocera ES's HTTP API
 
 
+# ---------------------------------------------------------------- the ES client
+# Every call to ES's HTTP API goes through EsClient: one timeout rule, replies
+# as EsReply (status + body, read as text or JSON), and one error, EsError,
+# whatever went wrong. The names below it (es_get, es_notify...) are thin
+# wrappers that older code and the workers rely on.
+
+class EsError(_core.RommError):
+    """ES couldn't be asked (not running, timed out: .status None), answered
+    with an HTTP error (.status 4xx/5xx) or with JSON that isn't JSON."""
+
+    def __init__(self, path, status=None, reason=""):
+        self.path, self.status, self.reason = path, status, reason
+        super().__init__("EmulationStation didn't answer (%s)" % reason if status is None or reason
+                         else "EmulationStation answered HTTP %d to %s" % (status, path.split("?")[0]))
+
+
+class EsReply:
+    """What ES answered: .status, .body (bytes), .ok (2xx), .text, .json()."""
+
+    __slots__ = ("path", "status", "body")
+
+    def __init__(self, path, status, body):
+        self.path, self.status, self.body = path, status, body or b""
+
+    @property
+    def ok(self):
+        return 200 <= self.status < 300
+
+    @property
+    def text(self):
+        return self.body.decode("utf-8", "replace")
+
+    def json(self):
+        """The body as JSON (empty: None). EsError if it isn't JSON."""
+        try:
+            return json.loads(self.body or b"null")
+        except ValueError:
+            raise EsError(self.path, self.status, "not JSON") from None
+
+
+class EsClient:
+    """Batocera EmulationStation's HTTP API (port 1234, localhost only).
+    base: ES's address (ES_API, read at each call, by default)."""
+
+    def __init__(self, base=None, timeout=5):
+        self.base, self.timeout = base, timeout
+
+    def request(self, method, path, data=None, ctype=None, timeout=None, errors=True):
+        """One call: an EsReply. str data goes as UTF-8 text/plain. Raises
+        EsError when ES can't be asked, and (errors=True) on an HTTP status
+        >= 400; errors=False hands those back as replies (ES uses 404 for
+        "nothing changed", for instance)."""
+        import urllib.error
+        import urllib.request
+        if isinstance(data, str):
+            data, ctype = data.encode("utf-8"), ctype or "text/plain; charset=utf-8"
+        req = urllib.request.Request((self.base or ES_API) + path, data=data, method=method,
+                                     headers={"Content-Type": ctype} if ctype else {})
+        try:
+            try:
+                with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
+                    reply = EsReply(path, r.status, r.read())
+            except urllib.error.HTTPError as e:
+                try:
+                    body = e.read()
+                except Exception:
+                    body = b""
+                finally:
+                    e.close()
+                reply = EsReply(path, e.code, body)
+        except Exception as e:                  # refused, timed out, reset, a bad address
+            raise EsError(path, None, e.__class__.__name__) from None
+        if errors and reply.status >= 400:
+            raise EsError(path, reply.status)
+        return reply
+
+    def get(self, path, timeout=None, errors=True):
+        return self.request("GET", path, timeout=timeout, errors=errors)
+
+    def post(self, path, data, ctype=None, timeout=None, errors=True):
+        return self.request("POST", path, data, ctype, timeout, errors)
+
+    def json(self, path, timeout=None):
+        """GET a JSON reply, parsed (empty: None). Raises EsError."""
+        return self.get(path, timeout).json()
+
+    def text(self, path, timeout=None):
+        """GET a reply as text. Raises EsError."""
+        return self.get(path, timeout).text
+
+
 def es_get(path, timeout=5, base=None):
-    """GET from ES's API: (status, body bytes). Raises when ES can't be asked."""
-    import urllib.request
-    with urllib.request.urlopen((base or ES_API) + path, timeout=timeout) as r:
-        return r.status, r.read()
+    """GET from ES's API: (status, body bytes). Raises EsError when ES can't be
+    asked or answers with an HTTP error."""
+    r = EsClient(base).get(path, timeout)
+    return r.status, r.body
 
 
 def es_running_game(app_busy=False, get=None):
@@ -38,7 +129,7 @@ def es_running_game(app_busy=False, get=None):
 
 
 def _es_json(path, timeout=10):
-    return json.loads(es_get(path, timeout)[1] or b"null")
+    return EsClient().json(path, timeout)
 
 
 def es_game_list(systems=None):
@@ -151,13 +242,9 @@ def delete_game(system, path, library=None):
 
 def es_notify(msg):
     """Show a popup in EmulationStation (Batocera's ES API). Best effort."""
-    import urllib.request
     try:
-        req = urllib.request.Request(ES_API + "/notify", data=msg.encode("utf-8"), method="POST",
-                                     headers={"Content-Type": "text/plain; charset=utf-8"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return r.status < 300
-    except Exception:
+        return EsClient().post("/notify", msg).ok
+    except EsError:
         return False
 
 

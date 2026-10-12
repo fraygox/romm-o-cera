@@ -165,7 +165,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/core.py` | data paths, platform constants, errors, log, atomic writes, queue locking, `try_lock` (a lock file taken only if free), small helpers (sizes, names, a rom's download path `rom_dest`, free space, spawning) |
 | `romm/config.py` | `config.json`: the `Setting` table, load/save/migrate, URL and verify helpers, download hours, conversion threads, keep-free space |
 | `romm/discs.py` | incomplete-image checks, XISO, .cso, cue/gdi sheets |
-| `romm/es.py` | EmulationStation: its API, notify, m3u, game files, delete, systems, hashes and counts |
+| `romm/es.py` | EmulationStation: its API client (`EsClient`), notify, m3u, game files, delete, systems, hashes and counts |
 | `romm/covers.py` | the cover cache |
 | `romm/net.py` | the HTTP session every request goes through: shared connections, a per-server limit that backs off when the server is busy, retries |
 | `romm/api.py` | the RomM API client and pairing |

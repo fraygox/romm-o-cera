@@ -10,6 +10,10 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
 - GET  /reloadgames                 save in-memory lists, then reload from disk
 - GET  /runningGame                 {"msg": "NO GAME RUNNING"} unless .running set
 - GET  /systems                     systems with games (name, gamesystem, totalGames)
+- POST /notify                      text/plain popup: 200, empty body; 400 if no body
+
+Unknown GET paths fall through to ES's static-file route: 404 "404 not found"
+(text/html); unknown POST paths get httplib's bare 404.
 
 `save()` writes the in-memory lists over gamelist.xml whenever a test wants —
 the way ES's background saves overwrote edits made behind its back.
@@ -36,6 +40,7 @@ class FakeES:
         self.mem = {}                                    # system -> {abs path: {field: value}}
         self.running = None
         self.posts = []
+        self.notes = []                                  # /notify texts
         self.lock = threading.Lock()
         self.reload()
         fake = self
@@ -81,6 +86,11 @@ class FakeES:
             def do_POST(self):
                 p = self.path.split("?")[0]
                 body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                if p == "/notify":
+                    if not body:
+                        return self._send(400, b"400 bad request - body is missing", "text/html")
+                    fake.notes.append(body.decode("utf-8"))
+                    return self._send(200, b"")
                 m = re.match(r"^/systems/([^/]+)/games/([0-9a-f]+)/media/([a-z]+)$", p)
                 if m:
                     path = fake.find(m.group(1), m.group(2))
