@@ -549,6 +549,17 @@ def test_try_lock_gives_up_at_once_when_the_lock_is_held(isolated, tmp_path):
             pass
 
 
+def test_rom_dest_stays_inside_the_system_folder(isolated, tmp_path):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    assert rommlib.rom_dest({"fs_name": "Game (USA).chd"}, "psx") == os.path.join(sysdir, "Game (USA).chd")
+    assert rommlib.rom_dest({"fs_name": "../../etc/passwd"}, "psx") == os.path.join(sysdir, "_.._etc_passwd")
+    assert rommlib.rom_dest({"fs_name": ""}, "psx") is None
+    assert rommlib.rom_dest({}, "psx") is None
+    os.makedirs(sysdir)
+    os.symlink(str(tmp_path), os.path.join(sysdir, "Out"))      # a link that leads out of roms/psx
+    assert rommlib.rom_dest({"fs_name": "Out"}, "psx") is None
+
+
 # ------------------------------------------------------------ gamelist write safety
 
 

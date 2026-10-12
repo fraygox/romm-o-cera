@@ -369,8 +369,8 @@ class Downloader:
         """A download's partial files on disk (only .part files of that rom,
         only inside roms/<system>)."""
         sysdir = os.path.join(_core.ROMS_ROOT, job.system)
-        base = os.path.join(sysdir, _core.safe_name(job.rom.get("fs_name") or ""))
-        if not job.rom.get("fs_name") or not _core._inside(base, sysdir):
+        base = _core.rom_dest(job.rom, job.system)
+        if not base:
             return []
         cands = [base + ".part"]
         if os.path.isdir(base):
@@ -732,12 +732,11 @@ class Downloader:
         return st.f_bavail * st.f_frsize
 
     @staticmethod
-    def _part_bytes(sysdir, detail):
+    def _part_bytes(system, detail):
         """Bytes of this rom's partial download already on disk."""
-        name = _core.safe_name(detail.get("fs_name") or "")
-        if not name:
+        p = _core.rom_dest(detail, system)
+        if not p:
             return 0
-        p = os.path.join(sysdir, name)
         if os.path.isfile(p + ".part"):
             return os.path.getsize(p + ".part")
         if os.path.isdir(p):
@@ -763,7 +762,7 @@ class Downloader:
         j.done_bytes, j.verified = 0, None
         # extracted disc games are bigger than the zip; what's already
         # downloaded (.part) is on disk; and the keep-free reserve stays free
-        need = max(0, space_needed(detail, system) - self._part_bytes(sysdir, detail)) + \
+        need = max(0, space_needed(detail, system) - self._part_bytes(system, detail)) + \
             (_config.keep_free_bytes(self.cfg) or _core.SPACE_MARGIN)       # keep-free 0: still a small margin
         free = self._free_bytes(sysdir) - self.unpacking_bytes
         if free < need:
@@ -773,14 +772,16 @@ class Downloader:
         j.short_space = 0
 
         j.state = Job.DOWNLOADING
-        fs_name = _core.safe_name(detail["fs_name"])
+        target = _core.rom_dest(detail, system)
+        if not target:
+            raise _core.RommError("RomM gave no usable file name for this game")
         # A RomM rom that is a *folder* (multi-file GDI/cue+bin set, or a folder
         # holding a single file) is pulled file by file, keeping its layout; the
         # whole-rom /content endpoint would hand back a zip or an extensionless
         # file named after the folder.
         is_folder = files and _library.rom_is_folder(detail, files)
         if is_folder:
-            folder = os.path.join(sysdir, fs_name)
+            folder = target
             prefix = (detail.get("full_path") or "").rstrip("/") + "/"
             for f in files:
                 rel = f.get("full_path", "")
@@ -796,7 +797,7 @@ class Downloader:
                     f["id"], urllib.parse.quote(f["file_name"])), dest, f.get("file_size_bytes"), f)
             return {"kind": "folder", "path": folder, "heavy": False}
         else:
-            dest = os.path.join(sysdir, fs_name)
+            dest = target
             rec = files[0] if len(files) == 1 else None
             if os.path.isfile(dest) and not os.path.exists(dest + ".part") and \
                     os.path.getsize(dest) == j.total_bytes and file_hash_ok(dest, rec, name=dest)[0] is True:

@@ -109,9 +109,9 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                 sure = False                         # can't tell what's queued: no copies offered
     keep = set()
     for rom, system in pending_roms:
-        name = _core.safe_name(rom.get("fs_name") or "")
-        if name:
-            keep.add(os.path.normpath(os.path.join(_core.ROMS_ROOT, system, name)))
+        dest = _core.rom_dest(rom, system)
+        if dest:
+            keep.add(os.path.normpath(dest))
     out = []
 
     def kept(p):

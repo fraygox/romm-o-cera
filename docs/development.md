@@ -158,7 +158,7 @@ modules, in import order (each uses only the ones above it):
 
 | Module | Holds |
 |---|---|
-| `romm/core.py` | data paths, platform constants, errors, log, atomic writes, queue locking, `try_lock` (a lock file taken only if free), small helpers (sizes, names, free space, spawning) |
+| `romm/core.py` | data paths, platform constants, errors, log, atomic writes, queue locking, `try_lock` (a lock file taken only if free), small helpers (sizes, names, a rom's download path `rom_dest`, free space, spawning) |
 | `romm/config.py` | `config.json`: the `Setting` table, load/save/migrate, URL and verify helpers, download hours, conversion threads, keep-free space |
 | `romm/discs.py` | incomplete-image checks, XISO, .cso, cue/gdi sheets |
 | `romm/es.py` | EmulationStation: its API, notify, m3u, game files, delete, systems, hashes and counts |

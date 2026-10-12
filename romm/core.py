@@ -388,6 +388,17 @@ def _inside(path, root):
     return p != r and p.startswith(r + os.sep)
 
 
+def rom_dest(rom, system):
+    """Where RomM's file (or folder) for rom goes: roms/<system>/<its fs_name,
+    made safe>. None when RomM gave no name, or when that path would leave
+    roms/<system> (resolving symlinks)."""
+    if not rom.get("fs_name"):
+        return None
+    sysdir = os.path.join(ROMS_ROOT, system)
+    path = os.path.join(sysdir, safe_name(rom["fs_name"]))
+    return path if _inside(path, sysdir) else None
+
+
 def path_size(p):
     if os.path.isfile(p):
         return os.path.getsize(p)
