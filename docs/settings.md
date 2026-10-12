@@ -40,11 +40,15 @@ The rows that aren't a setting do something when you press confirm:
   newer version is out on your channel, and says so. Off, there's no daily
   check, but **Updates** still checks whenever you select it.
 - **Updates** checks GitHub now. When a newer version is out, the row names
-  it, and confirm downloads it, checks it, installs it and keeps the version
-  you had; then the app closes, and you open it again.
+  it, and confirm downloads it and checks it, then closes the app to install
+  it, keeping the version you had. Downloads in progress pause and carry on
+  when you open the app again; a disc being compressed stops (its originals
+  stay) and starts over later. Nothing of the old version keeps running in
+  the background. EmulationStation then says the new version is ready: open
+  it again from Pygame.
 - **Go back to the previous version** (only after an update or a `deploy.sh`) swaps the
-  version you had back in. The one you leave is kept, so this can be undone
-  too.
+  version you had back in and closes the app the same way. The one you leave
+  is kept, so this can be undone too.
 
 **Low-memory mode** (in Disc compression) is Auto, On or Off: Auto turns it
 on for boxes with less than 4 GB of RAM, and the row says which it is and

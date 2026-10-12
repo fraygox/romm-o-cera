@@ -1881,8 +1881,8 @@ class App:
     def on_exit(self):
         pending = 0 if self.downloader.hold else self.downloader.pending_count()
         self.downloader.pause_all()          # keeps them in download-queue.json
-        if self.headless:
-            return
+        if self.headless or getattr(self, "updated", None):
+            return                            # updated: it all carries on when the new version starts
         if pending and self.cfg["background_downloads"]:
             self.spawn_helper("rb_dl.py")     # finishes the queue while you play
             return                            # it runs CHD + gamelist merge when done
@@ -4456,9 +4456,11 @@ class SettingsScreen(Screen):
                 if app.update_tag:
                     tag = app.update_tag
                     app.modal = Confirm(app, "Update to %s?" % tag,
-                                        "Downloads it from GitHub, checks it, and keeps v%s so you can go "
-                                        "back. RomM-o-Cera then closes; open it again." % rommlib.VERSION_LABEL,
-                                        "Update", lambda: self._do_update())
+                                        "Downloads it from GitHub and checks it, then closes %s to install "
+                                        "it: downloads in progress pause and carry on when you open it again, "
+                                        "and a disc being compressed starts over later. v%s is kept so you "
+                                        "can go back." % (APP_NAME, rommlib.VERSION_LABEL),
+                                        "Update and close", lambda: self._do_update())
                 else:
                     app.toast("Checking GitHub…")
 
@@ -4469,9 +4471,10 @@ class SettingsScreen(Screen):
                     app.bg(lambda: rommlib.newer_release(dict(cfg, check_updates=True), force=True), checked)
             elif key == "rollback" and a == "ok":
                 app.modal = Confirm(app, "Go back to v%s?" % self.prev,
-                                    "Swaps v%s back in; v%s is kept so you can undo this. RomM-o-Cera then "
-                                    "closes; open it again." % (self.prev, rommlib.VERSION_LABEL),
-                                    "Go back", lambda: self._swap(rommlib.rollback), danger=True)
+                                    "Swaps v%s back in (v%s is kept so you can undo this), then closes %s: "
+                                    "downloads in progress pause and carry on when you open it again."
+                                    % (self.prev, rommlib.VERSION_LABEL, APP_NAME),
+                                    "Go back and close", lambda: self._swap(None, rommlib.rollback), danger=True)
             elif key == "bios" and a == "ok":
                 app.push(BiosScreen(app))
             elif key == "cache" and a == "ok":
@@ -4577,30 +4580,49 @@ class SettingsScreen(Screen):
                done, lambda e: (app.toast(str(e), RED), done(len(rommlib.ps3_keys()))))
 
     def _do_update(self):
-        self.app.toast("Downloading and checking the update…")
         tag = self.app.update_tag
-        self._swap(lambda: rommlib.install_staged(rommlib.stage_release(rommlib.release_info(tag))))
+        self._swap(lambda: rommlib.stage_release(rommlib.release_info(tag)), rommlib.install_staged)
 
-    def _swap(self, fn):
+    def _swap(self, prepare, install):
+        """Update (prepare = download and check, while everything still runs)
+        or go back, then close: downloads pause (kept in the queue), the
+        background helpers stop, the app folder is swapped and the app quits.
+        Nothing of the old version is left running beside the new files."""
         app = self.app
         if getattr(app, "updating", False):
             app.toast("An update is already running")
             return
         app.updating = True
+        closing = []
+
+        def close(staged=None):
+            closing.append(True)
+            app.toast("Closing %s to install…" % APP_NAME)
+            app.downloader.pause_all()
+
+            def run():
+                end = time.monotonic() + 15            # a transfer stops at once; unzipping may take a moment
+                while time.monotonic() < end and any(j.state in UPDATE_WAITS for j in list(app.downloader.jobs)):
+                    time.sleep(0.2)
+                rommlib.stop_helpers()
+                return install(staged) if staged is not None else install()
+            app.bg(run, done, err)
 
         def done(ver):
-            app.updating = False
-            app.update_tag = None                  # we're on it now
-            self.prev = rommlib.backup_version()
-            app.modal = Confirm(app, "Now on v%s" % ver,
-                                "Close RomM-o-Cera and open it again from Pygame to use it.",
-                                "Close %s" % APP_NAME, app._quit)
+            app.updated = ver
+            rommlib.es_notify("%s is now v%s. Open it again from Pygame." % (APP_NAME, ver))
+            app._quit()                             # on_exit starts no helpers: all of it resumes on the next start
 
         def err(e):
             app.updating = False
-            app.toast(str(e) if isinstance(e, (rommlib.UpdateError, rommlib.RommError)) else "Update failed (%s)"
-                      % e.__class__.__name__, RED)
-        app.bg(fn, done, err)
+            msg = str(e) if isinstance(e, (rommlib.UpdateError, rommlib.RommError)) else \
+                "Update failed (%s)" % e.__class__.__name__
+            app.toast(msg + ("; downloads are paused (Downloads, X resumes)" if closing else ""), RED)
+        if prepare:
+            app.toast("Downloading and checking the update…")
+            app.bg(prepare, close, err)
+        else:
+            close()
 
     ROW_H, HEAD_H, TOP, BOTTOM = 57, 40, 84, 638
 
@@ -4704,9 +4726,10 @@ SETTING_HELP = dict({s.row: s.help for s in rommlib.SETTINGS if s.row}, **{
     "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
     "docs": "Point your phone's camera at the code to open the documentation: setting up, every "
             "setting, and what to do when something goes wrong. {A} shows it bigger.",
-    "update": "Checks GitHub for a newer RomM-o-Cera, then downloads, checks and installs it. The "
-              "current version is kept so you can go back.",
-    "rollback": "Swaps the previous version back in. The current one is kept, so this can be undone too.",
+    "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and closes the app to "
+              "install it. Downloads pause and carry on next time. The current version is kept so you can go back.",
+    "rollback": "Swaps the previous version back in and closes the app. The current one is kept, so this can "
+                "be undone too.",
 })
 
 
@@ -4920,6 +4943,9 @@ def pending_roms(app):
     pend = [(j.rom, j.system) for j in list(d.jobs) if j.active or j.state == rommlib.Job.PAUSED]
     return pend + [(it["rom"], it["system"]) for it in rommlib.Downloader.saved_queue()
                    if it.get("rom") and it.get("system")]
+
+
+UPDATE_WAITS = (rommlib.Job.DOWNLOADING, rommlib.Job.VERIFYING, rommlib.Job.EXTRACTING)
 
 
 def conversion_rows():

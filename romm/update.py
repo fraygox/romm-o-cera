@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import time
 import zipfile
 
@@ -278,6 +279,82 @@ def install_staged(staged_app, app_dir=rommlib.APP_DIR, backup=None):
     _core.log("UPDATE installed %s (previous %s kept for rollback)" % (_version_in(app_dir, True),
                                                                      _version_in(backup, True)))
     return _version_in(app_dir, True)
+
+
+# The background helpers this app starts (spawn_detached: each its own session).
+# An update stops them first, so no old copy keeps running beside the new one.
+HELPERS = ("rb_dl.py", "rb_chd.py", "rb_finalize.py")
+
+
+def helper_pids(app_dir=rommlib.APP_DIR, proc="/proc"):
+    """{pid: script} for this app's helpers running now, any version: matched
+    by the script path on their command line (never by a loose pattern)."""
+    want = {os.path.join(app_dir, s): s for s in HELPERS}
+    out = {}
+    try:
+        names = os.listdir(proc)
+    except OSError:
+        return out
+    for d in names:
+        if not d.isdigit() or int(d) == os.getpid():
+            continue
+        try:
+            with open(os.path.join(proc, d, "cmdline"), "rb") as f:
+                argv = f.read().split(b"\0")
+        except OSError:
+            continue
+        for a in argv[1:3]:                      # python3 [-u] /…/rb_x.py
+            if os.fsdecode(a) in want:
+                out[int(d)] = want[os.fsdecode(a)]
+                break
+    return out
+
+
+def _alive(pid, proc="/proc"):
+    """Running (a zombie, gone but not reaped by its parent, counts as gone)."""
+    try:
+        with open(os.path.join(proc, str(pid), "stat")) as f:
+            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
+def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
+    """Stop this app's background helpers before an update swaps their files.
+    rb_dl is asked to hand over (as when the app starts: it saves the queue,
+    the partial file stays for a resume); rb_chd and rb_finalize get SIGTERM
+    (rb_chd stops its tool and keeps the originals; the task stays queued).
+    Whatever is still running after `timeout` is killed with its session (a
+    paused chdman too). Returns the scripts that were running."""
+    pids = helper_pids(app_dir, proc)
+    if "rb_dl.py" in pids.values():
+        try:
+            open(_core.DL_STOP, "w").close()
+        except OSError:
+            pass
+    for pid, script in pids.items():
+        if script != "rb_dl.py":
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and any(_alive(p, proc) for p in pids):
+        time.sleep(0.2)
+    for pid in pids:
+        if not _alive(pid, proc):
+            continue
+        try:
+            if os.getpgid(pid) == pid:           # its own session: its tools go too
+                os.killpg(pid, signal.SIGCONT)
+                os.killpg(pid, signal.SIGKILL)
+            else:
+                os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    if pids:
+        _core.log("UPDATE stopped %s" % ", ".join(sorted(set(pids.values()))))
+    return sorted(set(pids.values()))
 
 
 def backup_version(backup=None):
