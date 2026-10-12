@@ -928,9 +928,11 @@ class CoverLoader:
         self.seen = {}              # rid -> when cover() last asked for it (drawn)
         self.busy = self.threads = 0
 
-    def want(self, rid, load, done, failed, dropped):
+    def want(self, rid, load, done, failed, dropped, wanted):
+        """wanted(): False once the app no longer waits for this request (the
+        cover was evicted or the covers reset): it's then skipped silently."""
         with self.cv:
-            self.todo.append((rid, load, done, failed, dropped))
+            self.todo.append((rid, load, done, failed, dropped, wanted))
             if self.threads < min(self.WORKERS, self.busy + len(self.todo)):
                 self.threads += 1
                 threading.Thread(target=self._work, daemon=True).start()
@@ -953,10 +955,12 @@ class CoverLoader:
                 if not wait:
                     return False
                 self.cv.wait()
-            rid, load, done, failed, dropped = self.todo.pop()
+            rid, load, done, failed, dropped, wanted = self.todo.pop()
             self.busy += 1
         try:
-            if time.monotonic() - self.seen.get(rid, 0) > self.STALE:
+            if not wanted():
+                pass
+            elif time.monotonic() - self.seen.get(rid, 0) > self.STALE:
                 self.app.post(dropped)
             else:
                 try:
@@ -1015,6 +1019,7 @@ class App:
         self.lock = threading.Lock()
         self.covers = {}             # rom_id -> Surface | "loading" | None
         self.cover_order = []
+        self.cover_req = {}          # rom_id -> the request the app waits for (stale ones are ignored)
         self.cover_loader = CoverLoader(self)
         self.running = True
         self.status = "Connecting…"
@@ -1147,10 +1152,15 @@ class App:
         if c is not None or rid in self.covers:
             return None if c == "loading" else c
         self.covers[rid] = "loading"
+        req = self.cover_req[rid] = object()
         self.cover_order.append(rid)
         if len(self.cover_order) > 160:
             old = self.cover_order.pop(0)
             self.covers.pop(old, None)
+            self.cover_req.pop(old, None)         # a load still on its way for it is ignored
+
+        def current():
+            return self.cover_req.get(rid) is req
 
         def load():
             for attempt in (1, 2):
@@ -1170,18 +1180,29 @@ class App:
                         pass
 
         def done(img):
-            self.covers[rid] = img
+            if current():
+                del self.cover_req[rid]
+                self.covers[rid] = img
 
         def failed():
-            self.covers[rid] = None
+            if current():
+                del self.cover_req[rid]
+                self.covers[rid] = None
 
         def dropped():                  # scrolled away before its turn: asked again when drawn
-            if self.covers.get(rid) == "loading":
+            if current():
+                del self.cover_req[rid]
                 del self.covers[rid]
-                if rid in self.cover_order:
-                    self.cover_order.remove(rid)
-        self.cover_loader.want(rid, load, done, failed, dropped)
+                self.cover_order.remove(rid)
+        self.cover_loader.want(rid, load, done, failed, dropped, current)
         return None
+
+    def forget_covers(self):
+        """Drop every cover in memory (new server, cache cleared); loads on their way are ignored."""
+        self.covers.clear()
+        self.cover_order.clear()
+        self.cover_req.clear()
+        self.scaled_covers.clear()
 
     def resolve_style(self):
         want = self.cfg["button_style"] or "auto"
@@ -1201,8 +1222,7 @@ class App:
             self.api = rommlib.Api.from_config(self.cfg)
             self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
             self.downloader.api = self.api
-            self.covers.clear()
-            self.scaled_covers.clear()
+            self.forget_covers()
             self.details.clear()
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
             self.status, self.error = "Connecting…", None
@@ -3852,8 +3872,7 @@ class SettingsScreen(Screen):
                 app.push(BiosScreen(app))
             elif key == "cache" and a == "ok":
                 shutil.rmtree(rommlib.COVER_CACHE, ignore_errors=True)
-                app.covers.clear()
-                app.scaled_covers.clear()
+                app.forget_covers()
                 self.cache_bytes = 0
                 app.toast("Cover cache cleared", GREEN)
         else:

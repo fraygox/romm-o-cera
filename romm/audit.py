@@ -270,6 +270,9 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         sysdir = os.path.join(_core.ROMS_ROOT, system)
         if not os.path.isdir(sysdir):
             continue
+        names = [n for n in sorted(os.listdir(sysdir)) if not _not_a_game(n)]
+        if not names:               # Batocera makes every system's folder: don't list RomM's games for none
+            continue
         index = {}
         for pid in platforms_by_system[system]:
             listed = api.roms_all(platform_ids=[pid], cancel=cancel)
@@ -278,7 +281,6 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             for r in listed:
                 index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
                 index.setdefault((r.get("fs_name") or "").lower(), r)
-        names = [n for n in sorted(os.listdir(sysdir)) if not _not_a_game(n)]
         # RomM's record of each game, fetched a few at a time just ahead of the loop
         ids = []
         for n in names:

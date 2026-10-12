@@ -1,7 +1,9 @@
 """The RomM API client, and pairing a box with a code."""
 import os
+import queue
 import re
-from concurrent.futures import ThreadPoolExecutor
+import threading
+from concurrent.futures import Future
 
 import requests
 
@@ -165,7 +167,7 @@ class Api:
             r = self.s.get(self.base + path, timeout=15, stream=True)
             data = _read_capped(r, COVER_MAX) if r.status_code == 200 else b""
             if data:
-                tmp = dest + ".tmp"
+                tmp = "%s.%d.tmp" % (dest, threading.get_ident())     # two loads of one cover never share it
                 _core.write_png(data, tmp)
                 os.replace(tmp, dest)
                 self._cache_written = getattr(self, "_cache_written", 0) + os.path.getsize(dest)
@@ -188,9 +190,51 @@ class Api:
 # NEW secret when it's exchanged, so anything else using that token stops
 # working: one token per device.
 
-HTTP_POOL = 16            # connections kept open to RomM (covers + parallel lookups)
 LOOKUP_WORKERS = 6        # game records at once: RomM's own work (~45 ms each) is the slow part
 PAGE_WORKERS = 4          # listing pages at once
+# connections kept open to RomM: the UI's 12 cover threads, lookups, pages and a download
+HTTP_POOL = 12 + LOOKUP_WORKERS + PAGE_WORKERS + 2
+
+
+class _Workers:
+    """A few daemon threads running submitted calls (like ThreadPoolExecutor,
+    whose threads Python waits for at exit: quitting mid-check would wait out
+    the requests in flight)."""
+
+    def __init__(self, n):
+        self.q, self.n = queue.SimpleQueue(), n
+        for _ in range(n):
+            threading.Thread(target=self._run, daemon=True).start()
+
+    def submit(self, fn, *args):
+        f = Future()
+        self.q.put((f, fn, args))
+        return f
+
+    def _run(self):
+        while True:
+            job = self.q.get()
+            if job is None:
+                return
+            f, fn, args = job
+            if not f.set_running_or_notify_cancel():
+                continue
+            try:
+                f.set_result(fn(*args))
+            except BaseException as e:
+                f.set_exception(e)
+
+    def shutdown(self):
+        """Calls not started yet are cancelled; the threads end after their current one."""
+        while True:
+            try:
+                job = self.q.get_nowait()
+            except queue.Empty:
+                break
+            if job is not None:
+                job[0].cancel()
+        for _ in range(self.n):
+            self.q.put(None)
 
 
 def fetch_many(fn, keys, workers=None, cancel=None):
@@ -209,10 +253,13 @@ def fetch_many(fn, keys, workers=None, cancel=None):
         except Exception as e:                      # handed to the caller, raised where it's used
             return k, e, False
     out = {}
-    with ThreadPoolExecutor(max(1, min(workers or LOOKUP_WORKERS, len(keys)))) as ex:
-        for k, v, skipped in ex.map(one, keys):
+    pool = _Workers(max(1, min(workers or LOOKUP_WORKERS, len(keys))))
+    try:
+        for k, v, skipped in [f.result() for f in [pool.submit(one, k) for k in keys]]:
             if not skipped:
                 out[k] = v
+    finally:
+        pool.shutdown()
     return out
 
 
@@ -237,7 +284,7 @@ class Prefetch:
         self.ahead = ahead or 3 * workers
         self.next = 0
         self.futures = {}
-        self.ex = ThreadPoolExecutor(max(1, workers)) if self.keys else None
+        self.ex = _Workers(max(1, workers)) if self.keys else None
         self._fill(0)
 
     def _fill(self, done_upto):
@@ -247,16 +294,20 @@ class Prefetch:
             self.next += 1
 
     def get(self, key):
+        i = self.pos.get(key)
+        if i is not None:               # the loop is here: keys it went past without asking
+            self.next = max(self.next, i)       # are never fetched, the window moves on with it
+            for k in [k for k in self.futures if self.pos[k] < i]:
+                self.futures.pop(k).cancel()
+            self._fill(i + 1)
         f = self.futures.pop(key, None)
-        if f is None:
-            return self.fn(key)
-        self._fill(self.pos[key] + 1)
-        return f.result()
+        return self.fn(key) if f is None else f.result()
 
     def close(self):
         if self.ex:
-            self.ex.shutdown(wait=False, cancel_futures=True)
+            self.ex.shutdown()
             self.ex = None
+            self.futures.clear()
 
     def __enter__(self):
         return self
