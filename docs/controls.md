@@ -19,4 +19,6 @@ and a pad work side by side.
 menu entries, keys, buttons and the hint bar; tap the logo for Home and the
 breadcrumbs to go back; drag a finger or scroll the wheel to move through
 lists (a mouse click never scrolls). A click acts on what was under it when
-pressed, if let go on the same thing.
+pressed, if let go on the same thing. On a setting or menu row with a choice,
+a tap left of the value's middle (where ‹ is) steps back, anywhere else steps
+on; the hint bar's left/right and L2/R2 glyphs work both ways too.

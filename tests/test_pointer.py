@@ -120,6 +120,64 @@ def test_a_tapped_settings_row_stays_under_the_finger(make_app, rb):
         s.sel = s.selectable()[min(len(s.selectable()) - 1, s.selectable().index(s.sel) + 1)]
 
 
+def test_settings_choice_rows_step_back_from_the_left_of_their_value(make_app, rb):
+    app = make_app()
+    app.push(rb.HomeScreen(app))
+    s = rb.SettingsScreen(app)
+    app.push(s)
+    app.sfx.set_level = lambda lv: None
+    i = next(k for k, it in enumerate(s.items()) if it[0] == "sounds")
+    s.sel = i
+    app.draw()
+    r = row_rects(rb, app, s)["sounds"]
+    assert app.cfg["sounds"] == "normal"
+    app.tap((r.right - 30, r.centery))                    # the value's right: on
+    assert app.cfg["sounds"] == "quiet"
+    app.draw()
+    back = [t for t, fn in app.targets if fn and fn.__defaults__ == (i,) and t.width < 700]
+    assert back
+    app.tap(back[0].center)                               # its left half (and ‹): back
+    assert app.cfg["sounds"] == "normal"
+    app.draw()
+    app.tap((r.left + 40, r.centery))                     # the label: on, as A
+    assert app.cfg["sounds"] == "quiet"
+
+
+def test_action_menu_choice_rows_step_both_ways_by_tap(make_app, rb):
+    app = make_app()
+    app.push(rb.HomeScreen(app))
+    got = []
+    app.modal = rb.ActionMenu(app, "Menu", [("Pick", "", lambda d: got.append(d), "Two", "choice"),
+                                            ("Act", "", lambda: got.append("act"))],
+                              refresh=lambda: app.modal.entries)
+    app.draw()
+    row = [r for r, fn in app.targets[app.modal_from:] if fn and fn.__defaults__ == (0,)]
+    full = max(row, key=lambda r: r.width)
+    back = min(row, key=lambda r: r.width)
+    app.tap((full.right - 10, full.centery))              # ›
+    app.tap(back.center)                                  # ‹
+    app.tap((full.left + 20, full.centery))               # the label
+    assert got == [1, -1, 1] and app.modal is not None
+
+
+def test_the_left_right_hint_goes_both_ways(make_app, rb):
+    app = make_app()
+    app.push(rb.HomeScreen(app))
+    s = rb.SettingsScreen(app)
+    app.push(s)
+    s.sel = next(k for k, it in enumerate(s.items()) if it[0] == "sounds")
+    app.draw()
+    sent = []
+    app.dispatch = sent.append
+    foot = [(r, fn) for r, fn in app.targets if r.top == rb.H - 46 and fn and fn.__defaults__ in (("left",),
+                                                                                               ("right",))]
+    left = next(r for r, fn in foot if fn.__defaults__ == ("left",))
+    right = next(r for r, fn in foot if fn.__defaults__ == ("right",))
+    app.tap((left.left + 4, left.centery))
+    app.tap((right.right - 4, right.centery))
+    assert sent == ["left", "right"]
+
+
 def test_a_press_let_go_on_another_row_does_nothing(make_app, rb):
     app = make_app((3840, 2160))
     s = settings_at_bottom(rb, app)

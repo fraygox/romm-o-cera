@@ -447,6 +447,7 @@ KEY_LABELS = {"A": "Enter", "B": "Esc", "X": "X", "Y": "Y", "L": "PgUp", "R": "P
               "L2 R2": "[ ]", "START": "Home", "SELECT": "Tab"}
 TOKEN_ACTION = {"A": "ok", "B": "back", "X": "x", "Y": "y", "L": "l1", "R": "r1", "L2 R2": "r2",
                 "START": "start", "SELECT": "select", "LEFT RIGHT": "right", "BKSP": "x"}
+TOKEN_BACK = {"LEFT RIGHT": "left", "L2 R2": "l2"}      # a tap on the left half of these glyphs
 # Every control shown on screen is one of these tokens, drawn by button_glyph():
 # in hints as (token, label), in prose as "{token}" through rich_text/rich_lines.
 TOKENS = ("A", "B", "X", "Y", "L", "R", "L2 R2", "START", "SELECT", "LEFT RIGHT", "TYPE", "BKSP")
@@ -1895,10 +1896,13 @@ class App:
             if fx + glyph_width(self.fonts, btn) + 8 + measure(self.fonts.small, label) > rx:
                 break
             x0 = fx
-            fx += button_glyph(c, self.fonts, btn, fx, H - 34) + 8
+            gw = button_glyph(c, self.fonts, btn, fx, H - 34)
+            fx += gw + 8
             r = text(c, self.fonts.small, label, (fx, H - 23), DIM, "midleft")
             if btn in TOKEN_ACTION:
                 self.hit((x0 - 8, H - 46, r.right - x0 + 16, 46), lambda a=TOKEN_ACTION[btn]: self.dispatch(a))
+            if btn in TOKEN_BACK:                    # a two-way control: its left half goes the other way
+                self.hit((x0 - 8, H - 46, gw // 2 + 8, 46), lambda a=TOKEN_BACK[btn]: self.dispatch(a))
             fx = r.right + 22
         self.modal_from = len(self.targets)
         if self.modal:
@@ -3946,6 +3950,7 @@ class SettingsScreen(Screen):
         return ["Settings"]
 
     ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits")
+    STEPLESS = ACTIONS + ("resetcfg",)        # rows left/right don't step through
 
     def hints(self):
         items = self.items()
@@ -4293,7 +4298,14 @@ class SettingsScreen(Screen):
             warn = sub.startswith("Plain HTTP")
             text(c, self.f.small, sub, (r.left + 22, r.top + 28), AMBER if warn else FAINT, maxw=420)
             vcol = ACCENT_HI if key in self.ACTIONS else (TEXT if on else DIM)
-            text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
+            vr = text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
+            if key not in self.STEPLESS:          # a tap left of the value's middle steps back
+                bx = min(vr.left - 28, vr.centerx - 60)
+                self.app.hit((bx, y, vr.centerx - bx, 52), lambda i=i: self.tap_now(i, "left"))
+                if on:                                # ‹ › around the value: back and on
+                    for x0, d in ((vr.left - 12, -1), (r.right - 12, 1)):
+                        polyline(c, ACCENT_HI, [(x0 - 3 * d, r.centery - 6), (x0 + 3 * d, r.centery),
+                                                (x0 - 3 * d, r.centery + 6)], 2)
         c.set_clip(clip)
         if total > view:
             track = pygame.Rect(756, self.TOP, 4, view - 5)
@@ -6523,9 +6535,9 @@ class ActionMenu:
         elif a in ("back", "quit", "x"):
             self.app.modal = None
 
-    def tap(self, i):
+    def tap(self, i, a="ok"):
         self.sel = i
-        self.action("ok")
+        self.action(a)
 
     def reload(self):
         """Re-read entries, keeping focus on the same row (by label)."""
@@ -6585,6 +6597,9 @@ class ActionMenu:
                     if side > 0:
                         pts = [(x0 - 2, row.centery - 6), (x0 + 4, row.centery), (x0 - 2, row.centery + 6)]
                     polyline(c, ACCENT_HI if on else FAINT, pts, 2)
+                if fn:                                  # ‹ and the value's left half step back
+                    bx = min(vr.left - 28, vr.centerx - 60)
+                    self.app.hit((bx, row.top, vr.centerx - bx, row.height), lambda i=i: self.tap(i, "left"))
                 vw = (row.right - vr.left) + 24
             elif value:
                 vr = text(c, f.body, value, (row.right - 18, row.centery), ACCENT_HI if on else DIM, "midright")
