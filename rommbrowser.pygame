@@ -164,7 +164,15 @@ FONT_DIRS = ["/usr/share/fonts/dejavu", "/usr/share/fonts/dejavu-sans-fonts",
 CJK_FONTS = ["/usr/share/emulationstation/resources/DroidSansFallbackFull.ttf",
              "/usr/share/fonts/truetype/droid/DroidSansFallback.ttf",
              "/usr/share/fonts/google-droid-sans-fonts/DroidSansFallbackFull.ttf"]
-FALLBACK = {}   # Font -> same-size CJK Font (DejaVu has no kana/kanji/hangul)
+# Hangul: Droid has none. EmulationStation's own Korean font first (its weight
+# matches Rubik's), Nanum otherwise. Batocera's Noto CJK fonts are variable
+# fonts that SDL_ttf draws at their thinnest weight, so they aren't used.
+HANGUL_FONTS = ["/usr/share/emulationstation/resources/PyeojinGothic-Medium.ttf",
+                "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+                "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"]
+HANGUL = ((0x1100, 0x11FF), (0x3130, 0x318F), (0xA960, 0xA97F), (0xAC00, 0xD7FF))
+FALLBACK = {}   # Font -> [same-size Fonts tried in turn for characters it doesn't have]
+FONT_PATH = {}  # Font -> the file it was made from (coverage is per file, at any size)
 
 
 def find_font(name):
@@ -183,17 +191,23 @@ class Fonts:
         reg = bundled("Rubik-Regular.ttf") or dv
         med = bundled("Rubik-Medium.ttf") or find_font("DejaVuSans-Bold.ttf") or reg
         bold = bundled("Rubik-SemiBold.ttf") or med
-        cjk = next((p for p in CJK_FONTS if os.path.exists(p)), None)
+        # for characters Rubik lacks: Greek, arrows, music and other symbols; Chinese
+        # and Japanese; Korean (game titles and descriptions come in every script)
+        chain = [p for p in (dv, next((p for p in CJK_FONTS if os.path.exists(p)), None),
+                             next((p for p in HANGUL_FONTS if os.path.exists(p)), None)) if p and p != reg]
         cache = {}
+
+        def font(path, size):
+            if (path, size) not in cache:
+                f = cache[(path, size)] = pygame.font.Font(path, size)
+                FONT_PATH[f] = path
+            return cache[(path, size)]
 
         def mk(path, size):
             size = max(6, int(round(size * K)))
-            k = (path, size)
-            if k not in cache:
-                cache[k] = pygame.font.Font(path, size)
-                if cjk:
-                    FALLBACK[cache[k]] = pygame.font.Font(cjk, size)
-            return cache[k]
+            f = font(path, size)
+            FALLBACK[f] = [font(p, size) for p in chain]
+            return f
         self.h1 = mk(bold, 36)
         self.h2 = mk(bold, 25)
         self.h3 = mk(med, 20)
@@ -248,14 +262,45 @@ def _wide(ch):
     return ord(ch) >= 0x2E80        # CJK, kana, hangul, fullwidth forms
 
 
+_HAS = {}       # (font file, char) -> it has a glyph for it
+_PROBE = {}     # font file -> (a small Font of it, its "missing glyph" pixels)
+
+
+def _has_glyph(path, ch):
+    """SDL_ttf draws a character a font lacks as that font's missing-glyph box
+    (and its metrics don't tell): compare with an unassigned code point."""
+    k = (path, ch)
+    if k not in _HAS:
+        if path in HANGUL_FONTS and not any(a <= ord(ch) <= b for a, b in HANGUL):
+            _HAS[k] = False                 # only Hangul from these (their other glyphs aren't Rubik-like)
+            return False
+        if path not in _PROBE:
+            f = pygame.font.Font(path, 16)
+            _PROBE[path] = (f, pygame.image.tobytes(f.render("\u0378", True, (255,) * 3, (0,) * 3), "RGB"))
+        f, missing = _PROBE[path]
+        try:
+            _HAS[k] = pygame.image.tobytes(f.render(ch, True, (255,) * 3, (0,) * 3), "RGB") != missing
+        except pygame.error:                # zero width (a combining mark): nothing to draw, no box either
+            _HAS[k] = True
+    return _HAS[k]
+
+
+def _font_for(font, chain, ch):
+    if ch.isascii() or ch.isspace() or _has_glyph(FONT_PATH[font], ch):
+        return font
+    # the first fallback that has it; none does (an emoji): the font's own box
+    return next((f for f in chain if _has_glyph(FONT_PATH[f], ch)), font)
+
+
 def _runs(font, s):
-    """Split s into (font, chunk) runs: Latin via font, CJK via its fallback."""
-    fb = FALLBACK.get(font)
-    if fb is None or not any(_wide(ch) for ch in s):
+    """Split s into (font, chunk) runs: each character in the first font of
+    font + FALLBACK[font] that has it."""
+    chain = FALLBACK.get(font)
+    if not chain or s.isascii():
         return [(font, s)]
     out = []
     for ch in s:
-        f = fb if _wide(ch) else font
+        f = _font_for(font, chain, ch)
         if out and out[-1][0] is f:
             out[-1] = (f, out[-1][1] + ch)
         else:
