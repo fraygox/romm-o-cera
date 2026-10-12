@@ -8,6 +8,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${OUT:-$HERE/dist}
+case "$OUT" in /*) ;; *) OUT="$PWD/$OUT" ;; esac      # it's used after a cd
 # read from the file, not by importing it: a build machine needs no app dependencies
 lit() { sed -n "s/^$1 = \"\([^\"]*\)\".*/\1/p" "$HERE/rommlib.py" | head -1; }
 VER=$(lit VERSION); REL=$(lit RELEASE_DATE); BLD=$(lit BUILD)
