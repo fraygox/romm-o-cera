@@ -26,11 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 import rb_chd  # noqa: E402
 
-# the order games are queued in (and --systems' default): a priority, which the
-# converter table (sets of systems) can't say. Every system a converter works on
-# is here (tests/test_logic.py checks it against rommlib.CONVERTERS).
-ORDER = ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
-         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds", "xbox360", "ps3"]
+# the order games are queued in (and --systems' default): each converter's
+# priority, from the converter table (tests/test_logic.py pins it)
+ORDER = rommlib.planner_order()
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 

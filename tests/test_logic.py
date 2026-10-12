@@ -1178,9 +1178,11 @@ def test_one_converter_per_file_and_the_planner_knows_every_system():
     assert sorted(rb_chd_plan.ORDER) == sorted(set().union(*(c.systems for c in rommlib.CONVERTERS)))   # each once
     for c in rommlib.CONVERTERS:
         assert set(c.priority) <= c.systems, (c.mode, c.priority)      # ranks only its own systems
-    # the table's priorities give the planner's order (the planner reads them once
-    # the previous release has planner_order; until then they must agree)
-    assert rommlib.planner_order() == rb_chd_plan.ORDER
+    # the order the planner has always queued in, now read from the table: moving a
+    # converter or a priority entry must not change it by accident
+    assert rb_chd_plan.ORDER == ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd", "3do",
+                                 "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds",
+                                 "xbox360", "ps3"]
     assert rommlib.conversion_for("ps2", "/r/G.cue", {"chd": True}).mode == "createcd"
     assert rommlib.conversion_for("ps2", ".iso", {"chd": True}).mode == "createdvd"
     assert rommlib.conversion_for("psx", ".iso", {"chd": True}) is None
