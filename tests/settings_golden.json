@@ -1667,7 +1667,7 @@
   "bare/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -5178,7 +5178,7 @@
   "full/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -6843,7 +6843,7 @@
   "full/odd/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -10315,7 +10315,7 @@
   "tools/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -10757,7 +10757,7 @@
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
-  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red. Each has an OLED version with a pure black background, which keeps black areas dark on OLED TVs. High contrast is black and white with a yellow highlight; High contrast light is black on white. Left and right change it, and the app repaints straight away.",
+  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red, each also as OLED (pure black, for OLED TVs). Auto follows your controller (Default with a keyboard). High contrast is black and white with a yellow highlight; High contrast light is black on white.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer RomM-o-Cera, then downloads, checks and installs it. The current version is kept so you can go back.",

@@ -50,11 +50,17 @@ why ("Auto (Off, 8.0 GB RAM)").
 **Theme** (in This app) sets the colours of the whole app: Default (RomM
 violet), PlayStation, Xbox or Nintendo, each also as an **OLED** version with
 a pure black background, plus **High contrast** (black and white with a
-yellow highlight) and **High contrast light** (black on white). Left and
-right change it, and the app repaints
-straight away. Every theme keeps text at least as readable as Default, and
-warnings never share a colour with the highlight (in the Nintendo themes,
-warnings are coral, not red).
+yellow highlight) and **High contrast light** (black on white). **Auto**
+follows your controller: the PlayStation, Xbox or Nintendo theme for the
+controller the app sees (the one Button labels picks from), and Default with a
+keyboard or a controller whose name doesn't say who made it. When Button
+labels is set by hand, Auto follows that instead. **Auto OLED** does the
+same with the OLED versions. It changes as soon as a controller connects or
+disconnects, and the row shows what Auto picked ("Auto (PlayStation)"). Left
+and right change the theme, and the app repaints straight away. Every theme
+keeps text at least as readable as Default, and warnings never share a
+colour with the highlight (in the Nintendo themes, warnings are coral, not
+red). A new install starts on Default.
 
 | | |
 |---|---|
@@ -90,7 +96,7 @@ warnings are coral, not red).
 | `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
 | `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
-| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo`, or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light` |
+| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo`, or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `auto` or `auto_oled` follow the controller |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |

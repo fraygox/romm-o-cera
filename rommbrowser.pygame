@@ -465,6 +465,29 @@ def style_from_names(names):
     return "xbox"
 
 
+# Theme "Auto" follows the controller: the theme of its maker (the button labels'
+# style when they're set by hand), Default for a keyboard or a pad it doesn't know.
+AUTO_THEMES = {"auto": "", "auto_oled": "_oled"}
+XBOX_NAMES = ("xbox", "x-box", "microsoft", "xinput", "x360")
+
+
+def pad_family(names):
+    """playstation, nintendo or xbox from controller names; None when there's
+    no controller or its name says nothing (style_from_names would say xbox)."""
+    st = style_from_names(names)
+    if st != "xbox" or any(k in (n or "").lower() for n in names for k in XBOX_NAMES):
+        return st
+    return None
+
+
+def theme_for(name, button_style, names):
+    """A Theme setting -> the THEMES key to paint with (Auto resolved)."""
+    if name not in AUTO_THEMES:
+        return name
+    fam = button_style if button_style in FACE else pad_family(names)
+    return (fam or "default") + AUTO_THEMES[name]
+
+
 def pad_face(token):
     """(kind, text_or_shape, colour) for a hint token in the active style; on a light
     theme the controller's colours are deepened so they hold up on white."""
@@ -1091,10 +1114,10 @@ class App:
         self.fonts = Fonts()
         FONTS["f"] = self.fonts
         self.cfg = rommlib.load_config()
-        apply_theme(self.cfg["theme"])
         self.targets, self.modal_from, self.ptr = [], 0, None
         self.sfx = Sfx(self.cfg["sounds"] if screen is not None else "off")
         self.input = Input(self.cfg["swap_ab"])
+        apply_theme(self.theme_key())
         self.headless = headless
         self.api = rommlib.Api.from_config(self.cfg)
         self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
@@ -1328,6 +1351,9 @@ class App:
         self.cover_retry.clear()
         self.scaled_covers.clear()
 
+    def theme_key(self):
+        return theme_for(self.cfg["theme"], self.cfg["button_style"], self.input.names())
+
     def resolve_style(self):
         want = self.cfg["button_style"] or "auto"
         PAD_STYLE["style"] = want if want in FACE else style_from_names(self.input.names())
@@ -1340,7 +1366,7 @@ class App:
         except rommlib.ConfigUnreadable:
             self.toast("config.json can't be read: this change is not saved (Settings, Reset settings)", AMBER)
         self.input.set_swap(self.cfg["swap_ab"])
-        apply_theme(self.cfg["theme"])
+        apply_theme(self.theme_key())
         self.resolve_style()
         if reconnect:
             self.api = rommlib.Api.from_config(self.cfg)
@@ -1580,6 +1606,8 @@ class App:
     def on_pad_change(self):
         if (self.cfg["button_style"] or "auto") == "auto":
             self.resolve_style()
+        if self.cfg["theme"] in AUTO_THEMES:
+            apply_theme(self.theme_key())
 
     def take_over_downloads(self):
         """A background rb_dl.py may still be working: ask it to hand over,
@@ -1625,6 +1653,7 @@ class App:
         clock = pygame.time.Clock()
         self.startup_checks()
         self.resolve_style()
+        apply_theme(self.theme_key())
         self.take_over_downloads()
         lim = rommlib.cache_limit_bytes(self.cfg)
         if lim:                                   # trim the cover cache once per start
@@ -3788,7 +3817,7 @@ class SettingsScreen(Screen):
                 "Auto (%s)" % ", ".join([onoff(rommlib.chd_low_memory(cfg))] +
                                         (["%s RAM" % human_size(rommlib.total_ram())] if rommlib.total_ram() else []))),
             sec("This app"),
-            row("theme", THEMES.get(cfg["theme"], THEMES["default"])[0]),
+            row("theme", self._theme_value()),
             table("sounds"),
             table("cachelimit"),
             ("cache", "Clear cover cache",
@@ -3901,7 +3930,15 @@ class SettingsScreen(Screen):
 
     STYLES = ["auto", "xbox", "playstation", "nintendo"]
     SPEEDS = rommlib.SPEEDS                   # MB/s, 0 = no limit
+    THEME_CYCLE = list(AUTO_THEMES) + list(THEMES)     # what left and right cycle through
     LOW_MEMORY = ["auto", True, False]
+
+    def _theme_value(self):
+        cfg = self.app.cfg
+        if cfg["theme"] in AUTO_THEMES:
+            now = THEMES[theme_for("auto", cfg["button_style"], self.app.input.names())][0]
+            return "%s (%s)" % ("Auto OLED" if cfg["theme"] == "auto_oled" else "Auto", now)
+        return THEMES.get(cfg["theme"], THEMES["default"])[0]
 
     def _style_value(self):
         want = self.app.cfg["button_style"] or "auto"
@@ -4002,8 +4039,8 @@ class SettingsScreen(Screen):
                 app.apply_config()
                 app.toast("Confirm is now the %s button" % ("east" if cfg["swap_ab"] else "south"))
             elif key == "theme":
-                keys = list(THEMES)
-                cur = cfg["theme"] if cfg["theme"] in THEMES else "default"
+                keys = self.THEME_CYCLE
+                cur = cfg["theme"] if cfg["theme"] in keys else "default"
                 cfg["theme"] = keys[(keys.index(cur) + (-1 if a == "left" else 1)) % len(keys)]
                 app.apply_config()                  # repaints in the new colours on the next frame
                 app.sfx.play("toggle")

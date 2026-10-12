@@ -1,4 +1,5 @@
-"""Settings: Low-memory mode back to Auto, and the daily update check."""
+"""Settings: Low-memory mode back to Auto, the daily update check, and the Auto
+theme that follows the controller."""
 import pytest
 
 import rommlib
@@ -61,3 +62,57 @@ def test_the_daily_update_check_has_a_row_and_updates_still_checks_on_demand(ui,
     _at(st, "update")
     st.action("ok")
     assert asked == [(True, True)]                    # the button asks GitHub even with the daily check off
+
+
+def test_theme_for_follows_the_controller(rb):
+    t = rb.theme_for
+    assert t("auto", "auto", ["Sony Interactive Entertainment Wireless Controller"]) == "playstation"
+    assert t("auto_oled", "auto", ["DualSense Wireless Controller"]) == "playstation_oled"
+    assert t("auto", "auto", ["Nintendo Switch Pro Controller"]) == "nintendo"
+    assert t("auto", "auto", ["Xbox Series X Controller"]) == "xbox"
+    assert t("auto", "auto", ["Microsoft X-Box 360 pad"]) == "xbox"
+    assert t("auto", "auto", []) == "default"                                   # keyboard
+    assert t("auto_oled", "auto", ["Generic USB Gamepad"]) == "default_oled"    # unknown
+    assert t("auto", "nintendo", ["Generic USB Gamepad"]) == "nintendo"         # labels set by hand
+    assert t("auto", "", []) == "default"
+    assert t("xbox_oled", "playstation", ["DualSense"]) == "xbox_oled"          # a chosen theme stays
+
+
+def test_auto_theme_cycles_repaints_and_follows_a_new_controller(ui, rb):
+    app, st, names = ui
+    _at(st, "theme")
+    st.action("left")
+    assert app.cfg["theme"] == "auto_oled" and rb.BG == (0, 0, 0)
+    assert rb.ACCENT == rb.THEMES["xbox_oled"][1]["ACCENT"] and _value(st, "theme") == "Auto OLED (Xbox)"
+    st.action("left")
+    assert app.cfg["theme"] == "auto" and rommlib.load_config()["theme"] == "auto"
+    assert rb.BG == rb.THEMES["xbox"][1]["BG"] and _value(st, "theme") == "Auto (Xbox)"
+    names[:] = ["DualSense Wireless Controller"]                    # a pad connects
+    app.dispatch("padchange")
+    assert rb.ACCENT == rb.THEMES["playstation"][1]["ACCENT"] and _value(st, "theme") == "Auto (PlayStation)"
+    names[:] = []                                                   # and goes: keyboard
+    app.dispatch("padchange")
+    assert rb.ACCENT == rb._DEFAULT_PALETTE["ACCENT"] and _value(st, "theme") == "Auto (Default)"
+    st.action("left")                                               # wraps to the last theme
+    assert app.cfg["theme"] == list(rb.THEMES)[-1]
+    st.action("right")
+    st.action("right")
+    assert app.cfg["theme"] == "auto_oled"
+    app.cfg["theme"] = "xbox"
+    names[:] = ["DualSense Wireless Controller"]
+    app.apply_config()
+    app.dispatch("padchange")                                         # a chosen theme doesn't follow
+    assert rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"]
+
+
+def test_auto_theme_applies_at_start(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    pygame.init()
+    rommlib.save_config(dict(rommlib.DEFAULT_CONFIG, theme="auto_oled", button_style="nintendo"))
+    try:
+        rb.App(None, headless=True)
+        assert rb.BG == (0, 0, 0) and rb.ACCENT == rb.THEMES["nintendo_oled"][1]["ACCENT"]
+    finally:
+        rb.apply_theme("default")
+
