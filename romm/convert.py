@@ -819,8 +819,14 @@ def publish_queue_task(task, name, exclusive=False):
             f.flush()
             os.fsync(f.fileno())
         if exclusive:
+            # The planner (rb_chd_plan.queue) names tasks from a millisecond
+            # stamp and a counter, so a name can already hold a task from an
+            # earlier or concurrent run (the Compress screen and the command
+            # line). os.replace would silently overwrite that task and lose its
+            # conversion; link refuses a taken name (still publishing the task
+            # whole), and the planner tries the next number.
             try:
-                os.link(tmp, path)               # fails if the name is taken: no clobber
+                os.link(tmp, path)
             except FileExistsError:
                 return None
         else:
