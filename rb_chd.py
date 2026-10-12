@@ -760,6 +760,15 @@ def convert(task):
             if g.retry:
                 return None
             return False
+        except BaseException:
+            # stopped (SIGTERM raises SystemExit; the tool itself is stopped by
+            # run_tool), a converter missing, or anything else: the half-written
+            # output goes, never the sources
+            try:
+                _drop(tmp)
+            except OSError:
+                pass
+            raise
         if rc != 0:
             note("chd: FAIL %s rc=%d %s" % (src, rc, err))
             for m in made + [tmp]:
@@ -881,7 +890,7 @@ def pending():
 
 
 def _sigterm(signum, frame):
-    raise SystemExit(0)                         # runs chdman()'s cleanup on the way out
+    raise SystemExit(0)                         # runs the cleanups on the way out: the tool stopped, its output dropped
 
 
 def main():

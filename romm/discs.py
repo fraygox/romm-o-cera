@@ -291,15 +291,21 @@ def make_xiso(path, free=None):
         if free < size - off + _core.SPACE_MARGIN:
             raise _core.NoSpace(size - off + _core.SPACE_MARGIN - free)
         tmp = path + ".xiso.part"
-        with open(path, "rb") as src, open(tmp, "wb") as out:
-            src.seek(off)
-            shutil.copyfileobj(src, out, 4 << 20)
-            out.flush()
-            os.fsync(out.fileno())
-        if os.path.getsize(tmp) != size - off:
-            os.remove(tmp)
-            raise OSError("copying %s's game partition came up short; left as it is" % path)
-        os.replace(tmp, path)
+        try:
+            with open(path, "rb") as src, open(tmp, "wb") as out:
+                src.seek(off)
+                shutil.copyfileobj(src, out, 4 << 20)
+                out.flush()
+                os.fsync(out.fileno())
+            if os.path.getsize(tmp) != size - off:
+                raise OSError("copying %s's game partition came up short; left as it is" % path)
+            os.replace(tmp, path)
+        except BaseException:           # failed or stopped (the worker's SIGTERM): no half copy left
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
         return off
 
 
