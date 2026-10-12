@@ -30,7 +30,9 @@ KEYF=${KEYF/#\~/$HOME}
 [ -n "$KEYF" ] && SSH_OPTS+=(-i "$KEYF")
 TARGET="${SSH_USER:-root}@$HOST"
 APPDIR=/userdata/roms/pygame/rommbrowser
-ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p $APPDIR/fonts /userdata/system/romm-browser"
+ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p $APPDIR/fonts $APPDIR/romm /userdata/system/romm-browser"
+# romm/ before rommlib.py: a process started mid-deploy never sees a front without its package
+scp -q "${SSH_OPTS[@]}" "$HERE"/romm/*.py "$TARGET:$APPDIR/romm/"
 scp -q "${SSH_OPTS[@]}" "$HERE"/rommbrowser.pygame "$HERE"/rommbrowser.pygame.keys "$HERE"/rommlib.py \
     "$HERE"/rb_finalize.py "$HERE"/rb_chd.py "$HERE"/rb_chd_plan.py "$HERE"/rb_dl.py "$HERE"/rb_repair.py "$HERE"/icon.png "$TARGET:$APPDIR/"
 scp -q "${SSH_OPTS[@]}" "$HERE"/fonts/*.ttf "$HERE"/fonts/OFL-Rubik.txt "$TARGET:$APPDIR/fonts/"
@@ -59,6 +61,6 @@ if [ -n "$BUILD_ID" ]; then
     (cd "$HERE" && git diff --quiet -- . 2>/dev/null) || BUILD_ID="$BUILD_ID-dirty"
     ssh "${SSH_OPTS[@]}" "$TARGET" "sed -i 's/^BUILD = \"\"/BUILD = \"$BUILD_ID\"/' $APPDIR/rommlib.py"
 fi
-ssh "${SSH_OPTS[@]}" "$TARGET" "cd $APPDIR && python3 -m py_compile rommlib.py rb_finalize.py rb_chd.py rb_chd_plan.py rb_dl.py rb_repair.py && python3 -c 'import ast;ast.parse(open(\"rommbrowser.pygame\").read())' && rm -rf __pycache__"
+ssh "${SSH_OPTS[@]}" "$TARGET" "cd $APPDIR && python3 -m py_compile rommlib.py romm/*.py rb_finalize.py rb_chd.py rb_chd_plan.py rb_dl.py rb_repair.py && python3 -c 'import ast;ast.parse(open(\"rommbrowser.pygame\").read())' && rm -rf __pycache__ romm/__pycache__"
 echo "Deployed to $HOST:$APPDIR"
 echo "First install: in ES run Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera."

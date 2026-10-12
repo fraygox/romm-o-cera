@@ -45,6 +45,7 @@ def test_save_config_is_private(isolated):
     assert mode == 0o600
     saved = json.load(open(rommlib.CONFIG_PATH))
     assert "junk" not in saved and saved["token"] == "rmm_secret"
+    assert saved["config_version"] == rommlib.CONFIG_VERSION and list(saved)[-1] == "config_version"
 
 
 def test_display_url_masks_credentials():
@@ -117,25 +118,31 @@ def test_sources_of_cue_and_gdi(tmp_path):
         ["g.gdi", "track01.bin", "Track Two.raw", "track03.bin"]
 
 
-def test_migrate_saves_copies_never_overwrites(tmp_path, monkeypatch):
+# rb_chd keeps a copy of migrate_saves/fix_m3us for one release (v0.7.1's
+# Downloader calls them there mid-update): both copies must behave the same.
+@pytest.mark.parametrize("owner", ["rommlib", "rb_chd"])
+def test_migrate_saves_copies_never_overwrites(isolated, tmp_path, monkeypatch, owner):
     saves = tmp_path / "saves" / "psx"
     saves.mkdir(parents=True)
     (saves / "Game (Disc 1).srm").write_text("old")
     (saves / "Game (Disc 1).state.auto").write_text("st")
     (saves / "Game.srm").write_text("keep-me")
-    monkeypatch.setattr(rb_chd, "SAVES_ROOT", str(tmp_path / "saves"))
-    n = rb_chd.migrate_saves("psx", "/r/psx/Game (Disc 1).cue", "/r/psx/Game.m3u")
+    mod = rommlib if owner == "rommlib" else rb_chd
+    monkeypatch.setattr(mod, "SAVES_ROOT", str(tmp_path / "saves"))
+    n = mod.migrate_saves("psx", "/r/psx/Game (Disc 1).cue", "/r/psx/Game.m3u")
     assert n == 1                                  # .state.auto copied, Game.srm untouched
     assert (saves / "Game.srm").read_text() == "keep-me"
     assert (saves / "Game.state.auto").read_text() == "st"
     assert (saves / "Game (Disc 1).srm").exists()  # originals stay
 
 
-def test_fix_m3us(tmp_path):
+@pytest.mark.parametrize("owner", ["rommlib", "rb_chd"])
+def test_fix_m3us(tmp_path, owner):
     (tmp_path / "G.m3u").write_text("G (Disc 1).cue\nG (Disc 2).cue\n")
     old = {os.path.normpath(str(tmp_path / "G (Disc 1).cue")): str(tmp_path / "G (Disc 1).chd"),
            os.path.normpath(str(tmp_path / "G (Disc 2).cue")): str(tmp_path / "G (Disc 2).chd")}
-    assert rb_chd.fix_m3us(str(tmp_path), old) == [str(tmp_path / "G.m3u")]
+    mod = rommlib if owner == "rommlib" else rb_chd
+    assert mod.fix_m3us(str(tmp_path), old) == [str(tmp_path / "G.m3u")]
     assert (tmp_path / "G.m3u").read_text() == "G (Disc 1).chd\nG (Disc 2).chd\n"
 
 

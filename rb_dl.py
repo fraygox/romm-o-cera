@@ -32,7 +32,7 @@ class Notes:
     ES is back in its menus (a popup during a game would go unseen)."""
 
     def __init__(self, cfg):
-        self.on = cfg.get("notify", True)
+        self.on = cfg.get("notify", rommlib.DEFAULT_CONFIG["notify"])
         self.ready, self.failed = [], []
         self.seen = set()
 
@@ -87,7 +87,7 @@ def main():
     d.allow_overlap = False      # mostly runs while a game plays: one disk job at a time
     n = d.resume()
     rommlib.log("dl-worker: %d queued" % n)
-    cap = float(cfg.get("speed_while_playing") or 0) * 1e6
+    cap = float(cfg.get("speed_while_playing", rommlib.DEFAULT_CONFIG["speed_while_playing"]) or 0) * 1e6
     notes = Notes(cfg)
     stopped = False
     tick = 0

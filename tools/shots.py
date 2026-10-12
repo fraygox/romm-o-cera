@@ -12,6 +12,7 @@ hand-drawn.
 """
 import argparse
 import html
+import json
 import os
 import socket
 import subprocess
@@ -28,6 +29,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("out")
 ap.add_argument("--styles", default="xbox,playstation,nintendo,kb")
 ap.add_argument("--scenes", default="")
+ap.add_argument("--theme", default="default", help="colour theme (rommbrowser THEMES key), e.g. xbox_oled")
 ap.add_argument("--readme", action="store_true",
                 help="also copy the README set (Xbox style) into screenshots/ next to the app")
 ap.add_argument("--fixed-wait", action="store_true",
@@ -97,9 +99,23 @@ es.mem["psx"][os.path.join(R, "psx/Dolor Dash (USA).chd")].update(lastplayed="20
 rommlib.ES_API = es.url
 
 rb = importlib.machinery.SourceFileLoader("rb", os.path.join(APP, "rommbrowser.pygame")).load_module()
+_real_statvfs = os.statvfs
+
+
+def _fixed_statvfs(path):
+    """The same disk in every run (1.8 TB, 644 GB free): screenshots don't drift with the host's disk."""
+    st = _real_statvfs(path)
+    frsize = 4096
+    return os.statvfs_result((frsize, frsize, 1800 * 10 ** 9 // frsize, 644 * 10 ** 9 // frsize,
+                              644 * 10 ** 9 // frsize, st.f_files, st.f_ffree, st.f_favail, st.f_flag,
+                              st.f_namemax))
+
+
+os.statvfs = _fixed_statvfs
 rommlib.display_url = lambda url: "romm.example.com"     # not the mock's 127.0.0.1:<port>
 pygame.init()
 app = rb.App(None, headless=True)
+app.cfg["theme"] = rb.apply_theme(args.theme)
 app.downloader.hold = True               # scenes fake their own jobs; nothing really downloads
 _rom = app.api.rom
 
@@ -178,6 +194,10 @@ def fake_audit():
         {"system": "psx", "path": os.path.join(R, "psx/Dolor Dash (USA).chd"), "severity": "differs", "rom": None,
          "problem": "Smaller than RomM's copy (a trimmed image?)"}],
         {"checked": 412, "matched": 398, "unmatched": 14}, False)
+    with open(rommlib.audit_path()) as f:              # a fixed time: screenshots don't change by the minute
+        d = json.load(f)
+    d["time"] = 1791057600                             # 2026-10-03 20:00 UTC
+    rommlib.atomic_write_json(rommlib.audit_path(), d)
 
 
 def fake_unseen():

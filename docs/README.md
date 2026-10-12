@@ -1,7 +1,8 @@
 # RomM-o-Cera documentation
 
 Start with the [main README](../README.md) to install it. These pages cover
-everything it does, one topic each.
+everything it does, one topic each. They're easiest to read on the
+[documentation site](https://fraygox.github.io/romm-o-cera/), which has search.
 
 | Page | What's in it |
 |---|---|

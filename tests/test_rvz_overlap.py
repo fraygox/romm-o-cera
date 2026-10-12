@@ -351,7 +351,8 @@ def test_replace_old_copy_after_download(isolated, mock_url, monkeypatch, tmp_pa
     saves = tmp_path / "saves"
     (saves / "psx").mkdir(parents=True)
     (saves / "psx" / "Ipsum Saga (J) (Disc 1).srm").write_text("card")
-    monkeypatch.setattr(rb_chd, "SAVES_ROOT", str(saves))
+    monkeypatch.setattr(rommlib, "SAVES_ROOT", str(saves))
+    monkeypatch.setattr(rb_chd, "SAVES_ROOT", str(tmp_path / "not-these"))     # the package's copy runs
     j = d.enqueue(rom, "psx", replace=[old])
     _wait([j])
     assert j.state == rommlib.Job.DONE, j.message

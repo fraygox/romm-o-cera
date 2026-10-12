@@ -1,0 +1,204 @@
+"""EmulationStation: its HTTP API, playlists and a game's files."""
+import json
+import os
+import shutil
+import urllib.parse
+import xml.etree.ElementTree as ET
+
+from . import core as _core, discs as _discs
+
+
+ES_API = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")     # Batocera ES's HTTP API
+
+
+def es_get(path, timeout=5, base=None):
+    """GET from ES's API: (status, body bytes). Raises when ES can't be asked."""
+    import urllib.request
+    with urllib.request.urlopen((base or ES_API) + path, timeout=timeout) as r:
+        return r.status, r.read()
+
+
+def es_running_game(app_busy=False, get=None):
+    """Path of the game ES is running ('' when idle); None when ES can't be
+    asked. This app itself counts as idle unless app_busy (rb_finalize must
+    not reload ES under it). get: the (status, body) fetcher, es_get by default."""
+    try:
+        status, body = (get or es_get)("/runningGame")
+    except Exception:
+        return None
+    if status != 200 or not body.strip():
+        return ""
+    try:
+        path = json.loads(body).get("path") or ""
+    except (ValueError, AttributeError):
+        return ""                     # not a JSON object: as if nothing runs
+    if not isinstance(path, str):
+        return ""
+    return "" if path.endswith("rommbrowser.pygame") and not app_busy else path
+
+
+def _es_json(path, timeout=10):
+    return json.loads(es_get(path, timeout)[1] or b"null")
+
+
+def es_game_list(systems=None):
+    """Every game EmulationStation lists (not hidden ones: discs behind a
+    playlist), as dicts with system, path, name, playcount, lastplayed
+    ("YYYYmmddTHHMMSS" or "" if never). Raises RommError if ES can't be asked."""
+    try:
+        if systems is None:
+            systems = [x["name"] for x in _es_json("/systems") or []
+                       if x.get("gamesystem") == "true" and x.get("collection") != "true"
+                       and int(x.get("totalGames") or 0) > 0]
+        out = []
+        for sysname in systems:
+            try:
+                games = _es_json("/systems/%s/games" % urllib.parse.quote(sysname)) or []
+            except Exception:
+                continue
+            for g in games:
+                if g.get("hidden") == "true" or not g.get("path", "").startswith(_core.ROMS_ROOT + "/"):
+                    continue
+                lp = g.get("lastplayed") or ""
+                out.append({"system": sysname, "path": g["path"], "name": g.get("name") or
+                            os.path.splitext(os.path.basename(g["path"]))[0],
+                            "playcount": int(float(g.get("playcount") or 0)),
+                            "lastplayed": lp if lp[:1].isdigit() and lp != "0" else ""})
+        return out
+    except _core.RommError:
+        raise
+    except Exception as e:
+        raise _core.RommError("EmulationStation didn't answer (%s)" % e.__class__.__name__)
+
+
+def m3u_entry(line):
+    """A playlist line's disc path as written; '' for a blank or # comment line."""
+    s = line.strip()
+    return "" if s.startswith("#") else s
+
+
+def m3u_lines(path):
+    """The disc paths an .m3u lists, as written (blank and # lines skipped;
+    odd bytes in names survive as-is). Raises OSError."""
+    with open(path, errors="surrogateescape") as f:
+        return [e for e in map(m3u_entry, f) if e]
+
+
+def m3u_paths(path):
+    """m3u_lines() as normalised paths, relative to the playlist's folder."""
+    d = os.path.dirname(path)
+    return [os.path.normpath(os.path.join(d, e)) for e in m3u_lines(path)]
+
+
+def game_files(path):
+    """Everything that makes up the game ES lists at `path`: a playlist's
+    discs, a cue/gdi's tracks — never anything outside its system folder."""
+    out, seen = [], set()
+
+    def add(p):
+        p = os.path.normpath(p)
+        if p in seen or not os.path.lexists(p):
+            return
+        seen.add(p)
+        out.append(p)
+        low = p.lower()
+        if low.endswith(".m3u") and os.path.isfile(p):
+            for q in m3u_paths(p):
+                add(q)
+        elif low.endswith((".cue", ".gdi")) and os.path.isfile(p):
+            for q in _discs.sheet_sources(p):
+                add(q)
+    add(path)
+    rel = os.path.relpath(path, _core.ROMS_ROOT).split(os.sep)
+    sysdir = os.path.join(_core.ROMS_ROOT, rel[0]) if len(rel) > 1 else None
+    return [p for p in out if sysdir and _core._inside(p, sysdir)]
+
+
+def delete_game(system, path, library=None):
+    """Delete a game ES lists (any game, not only ours): its files, then any
+    game folder left empty. Saves and states live elsewhere and are kept.
+    Returns (deleted paths, bytes freed)."""
+    sysdir = os.path.join(_core.ROMS_ROOT, system)
+    files = game_files(path)
+    freed = 0
+    for p in files:
+        if not _core._inside(p, sysdir):
+            continue
+        freed += _core.path_size(p)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        elif os.path.lexists(p):
+            os.remove(p)
+    for p in sorted({os.path.dirname(p) for p in files}, key=len, reverse=True):
+        d = p
+        while _core._inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
+    if library is not None and files:
+        gone = {os.path.normpath(p) for p in files}
+
+        def drop(inst):
+            for rid, rec in list(inst.items()):
+                paths = [os.path.normpath(x) for x in rec.get("paths", [])]
+                if paths and all(x in gone or not os.path.exists(x) for x in paths):
+                    inst.pop(rid, None)
+        library.update(drop)
+    if files:
+        _core.append_gamelist({"system": system, "remove": files})
+    _core.log("DELETE %s: %s (%s)" % (system, files, _core.human_size(freed)))
+    return files, freed
+
+
+def es_notify(msg):
+    """Show a popup in EmulationStation (Batocera's ES API). Best effort."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(ES_API + "/notify", data=msg.encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "text/plain; charset=utf-8"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status < 300
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------- ES systems
+
+def load_es_systems():
+    """{system_dir_name: set(extensions)} from Batocera's es_systems.cfg."""
+    out = {}
+    paths = [os.environ.get("ROMM_BROWSER_ES_SYSTEMS",
+                            "/usr/share/emulationstation/es_systems.cfg")]
+    cfgdir = "/userdata/system/configs/emulationstation"
+    if os.path.isdir(cfgdir):
+        paths += sorted(os.path.join(cfgdir, p) for p in os.listdir(cfgdir)
+                        if p.startswith("es_systems_") and p.endswith(".cfg"))
+    for p in paths:
+        try:
+            root = ET.parse(p).getroot()
+        except (OSError, ET.ParseError):
+            continue
+        for s in root.findall("system"):
+            path = (s.findtext("path") or "").rstrip("/")
+            exts = (s.findtext("extension") or "").lower().split()
+            if path:
+                out[os.path.basename(path)] = set(exts)
+    return out
+
+
+def es_hashes(system):
+    """{path: RetroAchievements hash} EmulationStation computed for a system's
+    games (hidden ones too). Empty if ES can't be asked."""
+    try:
+        games = _es_json("/systems/%s/games" % urllib.parse.quote(system)) or []
+    except Exception:
+        return {}
+    return {g["path"]: g["cheevosHash"] for g in games if g.get("path") and g.get("cheevosHash")}
+
+
+def es_counts():
+    """{system: games EmulationStation lists}; empty if ES can't be asked."""
+    try:
+        return {x["name"]: int(x.get("totalGames") or 0) for x in _es_json("/systems", timeout=3) or []
+                if x.get("name") and x.get("collection") != "true"}
+    except Exception:
+        return {}

@@ -269,6 +269,10 @@ def sources_of(cue_or_gdi):
     return [cue_or_gdi] + rommlib.sheet_sources(cue_or_gdi, strict=True)     # unreadable: OSError
 
 
+# migrate_saves and fix_m3us are copies of rommlib's (romm/library.py), kept for
+# one release: v0.7.1's Downloader, still running during an in-app update, calls
+# them here in the new rb_chd.py. Drop them, and call rommlib's, in the release
+# after the next.
 def migrate_saves(system, old_path, new_path):
     """Copy saves/states keyed on the old file name to the new one. RetroArch
     keys on the stem ("Game (USA).srm"), PCSX2 states on the full basename
@@ -395,7 +399,7 @@ def convert_squashfs(src, tmp, threads):
     off = rommlib.xbox_partition(src)
     if off is None:
         return 2, "not an Xbox disc image"
-    if off and not rommlib.load_config().get("xbox_bootable", True):
+    if off and not rommlib.load_config().get("xbox_bootable", rommlib.DEFAULT_CONFIG["xbox_bootable"]):
         # packing a full redump image would only make a smaller file xemu can't boot
         return 2, "a full disc image xemu can't boot (Settings: Make Xbox images bootable)"
     try:
@@ -995,7 +999,7 @@ def work(lockf):
         except ToolMissing as e:
             conv = rommlib.CONVERTER.get(task.get("mode")) if isinstance(task, dict) else None
             note("chd: %s isn't installed; dropping %s (Settings, %s)" % (
-                e, tasks[0], conv.setting_name if conv else "GameCube and Wii to RVZ"))
+                e, tasks[0], conv.setting_name if conv else rommlib.CONVERTER["rvz"].setting_name))
         except ChdmanMissing:
             note("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
             try:

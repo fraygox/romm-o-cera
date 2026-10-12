@@ -1,4 +1,5 @@
 """Self-update: stage from a (fake, local) GitHub release, install, roll back."""
+import glob
 import hashlib
 import shutil
 import http.server
@@ -6,6 +7,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import threading
 import zipfile
 
@@ -40,7 +42,10 @@ def release_zip(tmp_path_factory):
     out = tmp_path_factory.mktemp("dist")
     subprocess.run([os.path.join(APP, "tools", "build-release.sh")], env=dict(os.environ, OUT=str(out), ALLOW_OLD_DATE="1"),
                    check=True, capture_output=True)
-    return (out / "romm-o-cera.zip").read_bytes()
+    data = (out / "romm-o-cera.zip").read_bytes()
+    # install.sh and the in-app updater refuse a release without SHA256SUMS
+    assert (out / "SHA256SUMS").read_text().split("\n")[0] == "%s  romm-o-cera.zip" % hashlib.sha256(data).hexdigest()
+    return data
 
 
 @pytest.fixture
@@ -78,11 +83,26 @@ def test_update_install_and_rollback(isolated, fake_github, tmp_path):
     staged = rommlib.stage_release(rommlib.release_info(), staging=str(tmp_path / "stage"))
     ver = rommlib.install_staged(staged, app_dir=str(app), backup=str(tmp_path / "backup"))
     assert ver == rommlib.VERSION and (app / "fonts").is_dir() and (app / "rb_dl.py").exists()
+    assert (app / "romm" / "core.py").exists()
     assert rommlib.backup_version(str(tmp_path / "backup")) == "0.0.1"
     assert not (tmp_path / "stage").exists()
     assert all(a is None for a in _GH.seen_auth)               # RomM token never sent to GitHub
     assert rommlib.rollback(app_dir=str(app), backup=str(tmp_path / "backup")) == "0.0.1"
     assert rommlib.rollback(app_dir=str(app), backup=str(tmp_path / "backup")) == rommlib.VERSION
+
+
+def test_the_release_ships_the_romm_package(release_zip, tmp_path):
+    """build-release.sh lists files one by one: the zip carries romm/, and an
+    extracted copy imports from its own folder."""
+    with zipfile.ZipFile(io.BytesIO(release_zip)) as z:
+        names = set(z.namelist())
+        z.extractall(tmp_path)
+    pkg = {"rommbrowser/romm/" + os.path.basename(p) for p in glob.glob(os.path.join(APP, "romm", "*.py"))}
+    assert "rommbrowser/romm/__init__.py" in names and pkg <= names
+    app = tmp_path / "rommbrowser"
+    r = subprocess.run([sys.executable, "-c", "import rommlib, romm.core; rommlib.Downloader; print(romm.core.__file__)"],
+                       cwd=str(app), check=True, capture_output=True, text=True)
+    assert r.stdout.strip() == str(app / "romm" / "core.py")
 
 
 def test_update_rejects_bad_releases(isolated, fake_github, tmp_path):
@@ -102,6 +122,43 @@ def test_update_rejects_bad_releases(isolated, fake_github, tmp_path):
     with pytest.raises(rommlib.UpdateError, match="Unexpected path"):
         rommlib.stage_release(rommlib.release_info(), staging=stage)
     assert not (tmp_path / "escape.sh").exists() and not os.path.exists(stage)
+    assert (app / "rommbrowser.pygame").read_text() == "print('old')\n"   # untouched
+
+
+def _rezip(zip_bytes, replace):
+    """zip_bytes with the members in replace overwritten or added."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as src, zipfile.ZipFile(out, "w") as z:
+        for n in src.namelist():
+            if n not in replace:
+                z.writestr(n, src.read(n))
+        for n, body in replace.items():
+            z.writestr(n, body)
+    return out.getvalue()
+
+
+def test_update_rejects_a_broken_romm_package(isolated, fake_github, release_zip, tmp_path):
+    """The syntax check walks subfolders: since the package split most of the
+    engine is in romm/, and a broken module there must be refused before the
+    swap, not found on the next start."""
+    app = _fake_app(tmp_path, "0.0.1")
+    stage = str(tmp_path / "stage")
+    for broken in ("rommbrowser/romm/downloader.py", "rommbrowser/romm/x.py"):
+        fake_github("v" + rommlib.VERSION, zip_bytes=_rezip(release_zip, {broken: "def oops(:\n"}))
+        with pytest.raises(rommlib.UpdateError, match="SyntaxError"):
+            rommlib.stage_release(rommlib.release_info(), staging=stage)
+        assert not os.path.exists(stage)
+    assert (app / "rommbrowser.pygame").read_text() == "print('old')\n"   # untouched
+    # a release without romm/ would fail at `import rommlib` on the next start
+    # (anything the updater offers is newer than the split, so always has it)
+    old = io.BytesIO()
+    with zipfile.ZipFile(old, "w") as z:
+        z.writestr("rommbrowser/rommlib.py", 'VERSION = "%s"\n' % rommlib.VERSION)
+        z.writestr("rommbrowser/rommbrowser.pygame", "print('new')\n")
+    fake_github("v" + rommlib.VERSION, zip_bytes=old.getvalue())
+    with pytest.raises(rommlib.UpdateError, match="Release is missing romm/__init__.py"):
+        rommlib.stage_release(rommlib.release_info(), staging=stage)
+    assert not os.path.exists(stage)
     assert (app / "rommbrowser.pygame").read_text() == "print('old')\n"   # untouched
 
 

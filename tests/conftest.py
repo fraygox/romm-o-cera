@@ -64,10 +64,19 @@ def isolated(tmp_path, monkeypatch):
         "QUEUE_PATH": str(data / "download-queue.json"), "DL_LOCK": str(data / "downloads.lock"),
         "DL_STOP": str(data / "downloads.stop"), "DL_STATUS": str(data / "downloads-status.json"),
         "USERDATA": str(tmp_path), "BIOS_DB": str(tmp_path / "batocera-systems"),
+        "SAVES_ROOT": str(tmp_path / "saves"),
+        # joined from DATA_DIR once, at import
+        "UPDATE_CACHE": str(data / "update-check.json"), "APP_STAGING": str(data / "app-staging"),
+        "APP_BACKUP": str(data / "app-backup"), "TOOLS_DIR": str(data / "tools"),
     }
     monkeypatch.setattr(rommlib, "_BIOS_DB", None)
     for k, v in vals.items():
         monkeypatch.setattr(rommlib, k, v)
+    import rb_finalize
+    monkeypatch.setattr(rb_finalize, "LOCK", str(data / "finalize.lock"))
+    monkeypatch.setattr(rb_finalize, "DEFERRED", str(data / "gamelist-deferred.jsonl"))
+    import rb_chd                                     # its own copy, until its save helpers go
+    monkeypatch.setattr(rb_chd, "SAVES_ROOT", vals["SAVES_ROOT"])
     for env in ("ROMM_URL", "ROMM_TOKEN", "ROMM_VERIFY_TLS"):
         monkeypatch.delenv(env, raising=False)
     return tmp_path

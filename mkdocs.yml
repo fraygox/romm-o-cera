@@ -1,0 +1,67 @@
+# The documentation website (GitHub Pages). Its pages are assembled by
+# tools/docs_site.py from README.md and docs/; edit those, not build/.
+site_name: RomM-o-Cera
+site_description: A controller-driven RomM client for Batocera
+site_url: https://fraygox.github.io/romm-o-cera/
+repo_url: https://github.com/fraygox/romm-o-cera
+repo_name: fraygox/romm-o-cera
+edit_uri: ""
+docs_dir: build/site-src
+site_dir: build/site
+copyright: GPL-3.0-or-later · by fraygox
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Using it:
+      - Browsing and downloading: browsing-and-downloading.md
+      - On this box: on-this-box.md
+      - Disc compression: disc-compression.md
+      - PS3 games: ps3.md
+      - Settings: settings.md
+      - Controls: controls.md
+      - Connecting to RomM: connecting.md
+  - Development: development.md
+  - Credits and license: credits.md
+
+theme:
+  name: material
+  logo: icon.png
+  favicon: icon.png
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle: {icon: material/brightness-auto, name: Light mode}
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle: {icon: material/brightness-7, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle: {icon: material/brightness-4, name: Follow the system}
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+validation:
+  links:
+    anchors: warn

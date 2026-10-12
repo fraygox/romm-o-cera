@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.7.0).** It works on the author's box every day, but it
+**Early software (v0.8.0).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested
 against **RomM 5.4** (5.3 works too). Draws natively at any resolution, 720p
@@ -51,11 +51,13 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   games you own, from `bios/ps3keys` or your RomM (off by default; none are
   included). → [PS3 games](docs/ps3.md#where-disc-keys-go)
 - **Feels native**: button labels match your controller (Xbox, PlayStation,
-  Nintendo) or keyboard, settings explain themselves, updates install from the
+  Nintendo) or keyboard, colour themes to match (with pure-black OLED
+  and high-contrast versions), settings explain themselves, updates install from the
   box with one-step rollback. → [Controls](docs/controls.md),
   [Settings](docs/settings.md)
 
-All the details are in **[docs/](docs/README.md)**.
+All the details are on the **[documentation site](https://fraygox.github.io/romm-o-cera/)**
+(the same pages are in [docs/](docs/README.md)).
 
 ## Install
 
@@ -106,6 +108,8 @@ Re-running the install one-liner works too, and puts back an app folder that
 went missing. Your config, queue and logs are never touched.
 
 ## Documentation
+
+Easiest to read on the **[documentation site](https://fraygox.github.io/romm-o-cera/)**, with search.
 
 | | |
 |---|---|

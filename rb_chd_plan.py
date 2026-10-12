@@ -138,7 +138,7 @@ def candidates(systems=None, cfg=None, skipped=None):
         for root, files, name in games_for(system):
             xiso = cut = 0
             if system in rommlib.SQUASH_SYSTEMS:
-                bootable = cfg.get("xbox_bootable", True)
+                bootable = cfg.get("xbox_bootable", rommlib.DEFAULT_CONFIG["xbox_bootable"])
                 xiso = files[0].lower().endswith(".xiso")
                 if xiso and not bootable:
                     continue                     # ES doesn't list .xiso; renaming is part of the setting
