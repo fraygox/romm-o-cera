@@ -61,6 +61,6 @@ else
     mv "$DEST.new" "$DEST" || { [ -d "$DEST.old" ] && mv "$DEST.old" "$DEST"; echo "install failed"; exit 1; }
     rm -rf "$DEST.old"
 fi
-echo "Installed $(python3 -c "import sys;sys.path.insert(0,'$DEST');import rommlib;print('romm-o-cera v'+rommlib.VERSION)") to $DEST"
+echo "Installed $(python3 -c "import sys;sys.path.insert(0,'$DEST');import rommlib;print('romm-o-cera v'+rommlib.VERSION_LABEL)") to $DEST"
 echo "Next: Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera → Settings"
 echo "      to enter your RomM URL and client API token."
