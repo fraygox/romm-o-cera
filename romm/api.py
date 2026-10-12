@@ -1,6 +1,7 @@
 """The RomM API client, and pairing a box with a code."""
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -11,6 +12,10 @@ class Api:
     def __init__(self, url, token, verify_tls=True):
         self.base = (url or "").strip().rstrip("/")
         self.s = requests.Session()
+        # covers and parallel lookups share the session: keep enough connections
+        # open that none is thrown away and set up again (requests keeps 10)
+        for scheme in ("https://", "http://"):
+            self.s.mount(scheme, requests.adapters.HTTPAdapter(pool_maxsize=HTTP_POOL))
         self.s.verify = _config.norm_verify(verify_tls)
         self.s.headers.update({"Authorization": "Bearer " + (token or "").strip(),
                                "User-Agent": _core.UA})
@@ -97,6 +102,38 @@ class Api:
     def rom(self, rom_id):
         return self.get("/api/roms/%d" % rom_id)
 
+    def roms_all(self, limit=500, cap=None, cancel=None, **kw):
+        """Every page of a roms() listing, in order: the first page gives the
+        total, the rest are fetched PAGE_WORKERS at a time. cap: stop at that
+        many (rounded up to a page). None if cancel was set."""
+        first = self.roms(offset=0, limit=limit, **kw)
+        items = list(first.get("items") or [])
+        step, total = len(items), first.get("total") or 0
+        if not step:
+            return items
+        limit_to = total if cap is None else min(total, cap)
+        offsets = list(range(step, limit_to, step))
+        pages = fetch_many(lambda off: self.roms(offset=off, limit=limit, **kw), offsets, PAGE_WORKERS, cancel)
+        if cancel is not None and cancel.is_set():
+            return None
+        for off in offsets:
+            got = fetched(pages[off]).get("items") or []
+            items.extend(got)
+            total = pages[off].get("total") or 0
+            if len(got) < step:                       # the library shrank meanwhile: that's all
+                return items
+        # it grew meanwhile: the rest one page at a time, as before
+        while len(items) < (total if cap is None else min(total, cap)):
+            if cancel is not None and cancel.is_set():
+                return None
+            page = self.roms(offset=len(items), limit=limit, **kw)
+            got = page.get("items") or []
+            if not got:
+                break
+            items.extend(got)
+            total = page.get("total") or 0
+        return items
+
     def similar(self, rom_id, limit=30):
         """RomM's similar games, as plain rom dicts (best match first)."""
         out = self.get("/api/roms/%d/similar" % rom_id, {"limit": limit})
@@ -150,6 +187,83 @@ class Api:
 # the device swaps it for the token, unauthenticated. RomM gives the token a
 # NEW secret when it's exchanged, so anything else using that token stops
 # working: one token per device.
+
+HTTP_POOL = 16            # connections kept open to RomM (covers + parallel lookups)
+LOOKUP_WORKERS = 6        # game records at once: RomM's own work (~45 ms each) is the slow part
+PAGE_WORKERS = 4          # listing pages at once
+
+
+def fetch_many(fn, keys, workers=None, cancel=None):
+    """{key: fn(key)} for every key, `workers` calls at a time. A call that
+    raises keeps its exception as the value (raise it where it's used). Keys
+    left once cancel is set are missing."""
+    keys = list(keys)
+    if not keys:
+        return {}
+
+    def one(k):
+        if cancel is not None and cancel.is_set():
+            return k, None, True
+        try:
+            return k, fn(k), False
+        except Exception as e:                      # handed to the caller, raised where it's used
+            return k, e, False
+    out = {}
+    with ThreadPoolExecutor(max(1, min(workers or LOOKUP_WORKERS, len(keys)))) as ex:
+        for k, v, skipped in ex.map(one, keys):
+            if not skipped:
+                out[k] = v
+    return out
+
+
+def fetched(v):
+    """A fetch_many / Prefetch result: the value, or raise what the call raised."""
+    if isinstance(v, BaseException):
+        raise v
+    return v
+
+
+class Prefetch:
+    """fn(key) for keys a loop uses in order, each fetched before the loop gets
+    there (`workers` at a time, at most `ahead` keys in advance). get() returns
+    fn(key) or raises what it raised; a key not in the list, or asked again, is
+    fetched there and then."""
+
+    def __init__(self, fn, keys, workers=None, ahead=None):
+        workers = workers or LOOKUP_WORKERS
+        self.fn = fn
+        self.keys = list(dict.fromkeys(keys))
+        self.pos = {k: i for i, k in enumerate(self.keys)}
+        self.ahead = ahead or 3 * workers
+        self.next = 0
+        self.futures = {}
+        self.ex = ThreadPoolExecutor(max(1, workers)) if self.keys else None
+        self._fill(0)
+
+    def _fill(self, done_upto):
+        while self.ex and self.next < len(self.keys) and self.next < done_upto + self.ahead:
+            k = self.keys[self.next]
+            self.futures[k] = self.ex.submit(self.fn, k)
+            self.next += 1
+
+    def get(self, key):
+        f = self.futures.pop(key, None)
+        if f is None:
+            return self.fn(key)
+        self._fill(self.pos[key] + 1)
+        return f.result()
+
+    def close(self):
+        if self.ex:
+            self.ex.shutdown(wait=False, cancel_futures=True)
+            self.ex = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
 
 PAIR_CODE_LEN = 8
 PAIR_BAD_CODE = "That code isn't valid or has expired — make a new one in RomM"

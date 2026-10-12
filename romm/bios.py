@@ -117,17 +117,20 @@ def bios_status(api, platforms_by_system, systems_with_games=()):
     db = bios_requirements()
     rec = bios_fetched()
     out = []
-    for system in sorted(set(platforms_by_system) | set(systems_with_games)):
+    systems = [s for s in sorted(set(platforms_by_system) | set(systems_with_games)) if bios_required(s)]
+    missing_in = {s: missing_bios(s) for s in systems}
+    # every platform's firmware list at once (one request each)
+    firmware = _api.fetch_many(api.firmware, {pid for s in systems if missing_in[s]
+                                              for pid in platforms_by_system.get(s, [])}) if api is not None else {}
+    for system in systems:
         required = bios_required(system)
-        if not required:
-            continue
-        missing = missing_bios(system)
+        missing = missing_in[system]
         offers, seen = [], set()
         if missing and api is not None:
             want = {m["md5"]: m for m in missing}
             for pid in platforms_by_system.get(system, []):
                 try:
-                    fws = api.firmware(pid)
+                    fws = _api.fetched(firmware[pid])
                 except _core.RommError:
                     continue
                 for fw in fws:

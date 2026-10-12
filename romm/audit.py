@@ -7,7 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 
-from . import (core as _core, discs as _discs, es as _es, convert as _convert, library as _library,
+from . import (core as _core, discs as _discs, es as _es, api as _api, convert as _convert, library as _library,
                downloader as _downloader)
 
 
@@ -131,11 +131,12 @@ def _chd_frames(path, chdman):
     return ("cd", sum(int(x) for x in f)) if f else None
 
 
-def _chd_vs_romm(api, chd, rom, chdman):
+def _chd_vs_romm(api, chd, rom, chdman, detail_of=None):
     """A CHD converted on the box against RomM's original (zip of cue/bin, or
-    iso): None if it can't be compared; False if complete; else (have, need)."""
+    iso): None if it can't be compared; False if complete; else (have, need).
+    detail_of: how to get RomM's record (default api.rom)."""
     try:
-        detail = api.rom(rom["id"])
+        detail = (detail_of or api.rom)(rom["id"])
     except _core.RommError:
         return None
     sizes = {}
@@ -169,6 +170,12 @@ def _images_in(path):
         dns[:] = [x for x in dns if x not in _core.MEDIA_DIRS]
         out += [os.path.join(dp, f) for f in fns if f.lower().endswith((".cue", ".iso", ".chd"))]
     return out
+
+
+def _not_a_game(n):
+    low = n.lower()
+    return n.startswith(".") or n in _core.MEDIA_DIRS or \
+        low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd", ".chd.part"))
 
 
 def _slim(rom):
@@ -265,151 +272,155 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             continue
         index = {}
         for pid in platforms_by_system[system]:
-            off = 0
-            while True:
-                page = api.roms(platform_ids=[pid], offset=off, limit=500)
-                for r in page.get("items", []):
-                    index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
-                    index.setdefault((r.get("fs_name") or "").lower(), r)
-                off += len(page.get("items", []))
-                if not page.get("items") or off >= page.get("total", 0):
-                    break
-        for n in sorted(os.listdir(sysdir)):
-            if cancel is not None and cancel.is_set():
+            listed = api.roms_all(platform_ids=[pid], cancel=cancel)
+            if listed is None:
                 return findings, stats
-            path = os.path.join(sysdir, n)
-            low = n.lower()
-            if n.startswith(".") or n in _core.MEDIA_DIRS or low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd", ".chd.part")):
-                continue
-            if progress:
-                progress(system, n)
-            stats["checked"] += 1
-            # 1) disc sheets must find every track (needs no RomM at all)
-            for sheet in _discs._sheets_in(path):
-                for ref in _discs.sheet_sources(sheet):
-                    if not os.path.exists(ref):
-                        add(system, sheet, "Missing track file: %s" % os.path.basename(ref),
-                            index.get(os.path.splitext(n)[0].lower()) or index.get(low))
-            # 1b) disc images cut short (an interrupted copy): the game can't
-            # load what's past the end. Converted CHDs are compared with RomM's
-            # original exactly (below); here, the disc's own filesystem says so
-            for img in _images_in(path):
-                st = os.path.splitext(os.path.basename(img))[0].lower()
-                irom = index.get(st) or index.get(os.path.splitext(n)[0].lower()) or index.get(low)
-                if img.lower().endswith(".chd") and irom and \
-                        not (irom.get("fs_name") or "").lower().endswith(".chd"):
-                    exact = _chd_vs_romm(api, img, irom, chdman)
-                    if exact is not None:
-                        if exact:
-                            add(system, img, "Incomplete disc image: %d%% missing (%s of %s sectors in RomM's "
-                                "copy)" % _pct(exact), irom)
-                        continue
-                cut = _discs.disc_incomplete(img, chdman)
-                if cut and cut[2]:
-                    add(system, img, "Incomplete disc image: %d%% missing (%s of %s sectors)" % _pct(cut), irom)
-                elif cut:
-                    add(system, img, "May be cut short: a file on the disc reaches past its end (%s of %s "
-                        "sectors; some discs list dummy files)" % ("{:,}".format(cut[0]), "{:,}".format(cut[1])),
-                        irom, "differs")
-            # 2) against RomM's record of the game
-            stem = n if os.path.isdir(path) else _core.stem_of(n)
-            rom = index.get(low) or index.get(stem.lower())
-            if system in _convert.Z3DS_SYSTEMS and os.path.isfile(path) and _convert.z3ds_target(path):
-                try:
-                    _convert.z3ds_info(path)
-                except _convert.Z3dsError as e:          # whether RomM lists it or not: it won't run
-                    if "encrypted" in str(e):
-                        add(system, path, "Encrypted dump: Azahar can't run it (needs a decrypted copy)",
-                            rom, "differs")
-                except OSError:
-                    pass
-            if not rom:
-                stats["unmatched"] += 1
-                continue
-            stats["matched"] += 1
-            if os.path.isfile(path) and low.endswith(".chd") and \
-                    not (rom.get("fs_name") or "").lower().endswith(".chd"):
-                if deep:                                   # converted here: chdman checks itself
-                    p = subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", path],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-                    if p.returncode != 0:
-                        add(system, path, "CHD failed chdman verify", rom)
-                continue
-            try:
-                detail = api.rom(rom["id"])
-            except _core.RommError as e:
-                add(system, path, "Couldn't fetch RomM record (%s)" % e, None)
-                continue
-            files = [f for f in (detail.get("files") or []) if f.get("category") in (None, "game")]
-            if os.path.isfile(path) and low.endswith(_convert.Z3DS_EXTS):
-                check_z3ds(system, path, files, rom)
-                continue
-            if os.path.isfile(path) and low.endswith(".zar"):
-                # packed here from the disc's files: RomM's image hashes can't match by design
-                bad = _convert.zar_check(path, full=deep)
-                if bad:
-                    add(system, path, "Compressed file %s" % bad, rom)
-                continue
-            if os.path.isfile(path):
-                if len(files) == 1 and files[0]["file_name"].lower() == low and low.endswith(".zip"):
-                    check_zip(system, path, files, rom)
-                    continue
-                if len(files) == 1 and files[0]["file_name"].lower() == low:
-                    want = [(path, files[0])]               # same file as RomM (iso, chd…)
-                else:
-                    members = {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])
-                               if m.get("name")}
-                    m = members.get(low)
-                    want = [(path, {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
-                                    "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})] if m else []
-            else:
-                if _library.rom_is_folder(detail, files):
-                    prefix = (detail.get("full_path") or "").rstrip("/") + "/"
-                    want = []
-                    for f in files:
-                        rel = f.get("full_path", "")
-                        rel = rel[len(prefix):] if rel.startswith(prefix) else f["file_name"]
-                        want.append((os.path.join(path, *rel.split("/")), f))
-                else:
-                    want = [(os.path.join(path, *m["name"].split("/")),
-                             {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
-                              "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})
-                            for f in files for m in (f.get("archive_members") or [])]
-                # a disc folder later turned into <folder>.chd keeps nothing to compare
-            # discs converted to CHD on the box: the tracks are gone on purpose
-            chds = {os.path.splitext(x)[0].lower(): os.path.join(path, x)
-                    for x in (os.listdir(path) if os.path.isdir(path) else []) if x.lower().endswith(".chd")}
-            converted = set()
-            for fp, f in want:
-                st = os.path.splitext(os.path.basename(fp))[0].lower()
-                st = re.sub(r"\s*\(track \d+\)$", "", st)
-                if not os.path.exists(fp) and st in chds:
-                    converted.add(chds[st])
-            for c in converted:
-                if deep and subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", c],
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
-                    add(system, c, "CHD failed chdman verify", rom)
-            for fp, f in want:
+            for r in listed:
+                index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
+                index.setdefault((r.get("fs_name") or "").lower(), r)
+        names = [n for n in sorted(os.listdir(sysdir)) if not _not_a_game(n)]
+        # RomM's record of each game, fetched a few at a time just ahead of the loop
+        ids = []
+        for n in names:
+            rom = index.get(n.lower()) or index.get(
+                (n if os.path.isdir(os.path.join(sysdir, n)) else _core.stem_of(n)).lower())
+            if rom:
+                ids.append(rom["id"])
+        with _api.Prefetch(api.rom, ids) as records:
+            for n in names:
                 if cancel is not None and cancel.is_set():
                     return findings, stats
-                st = re.sub(r"\s*\(track \d+\)$", "", os.path.splitext(os.path.basename(fp))[0].lower())
-                if not os.path.exists(fp):
-                    if st not in chds:
-                        add(system, fp, "Missing file: %s" % os.path.basename(fp), rom)
-                elif _discs.xbox_cut(system, fp, f):
-                    continue          # cut to its game partition here: RomM's size and hashes are the full disc's
-                elif f.get("file_size_bytes") and os.path.getsize(fp) != f["file_size_bytes"]:
-                    small = os.path.getsize(fp) < f["file_size_bytes"]
-                    # a smaller .iso is usually a trimmed image (plays); a short
-                    # track or cart file is a broken copy
-                    trimmed = small and fp.lower().endswith((".iso", ".xiso"))
-                    add(system, fp, "%s than RomM's copy: %s vs %s%s" % (
-                        "Smaller" if small else "Bigger", _core.human_size(os.path.getsize(fp)),
-                        _core.human_size(f["file_size_bytes"]),
-                        " (trimmed or incomplete)" if trimmed else " (incomplete)" if small else ""),
-                        rom, "differs" if (trimmed or not small) else "damaged")
-                elif deep and _downloader.file_hash_ok(fp, f)[0] is False:
-                    add(system, fp, "Checksum doesn't match RomM", rom)
+                path = os.path.join(sysdir, n)
+                low = n.lower()
+                if progress:
+                    progress(system, n)
+                stats["checked"] += 1
+                # 1) disc sheets must find every track (needs no RomM at all)
+                for sheet in _discs._sheets_in(path):
+                    for ref in _discs.sheet_sources(sheet):
+                        if not os.path.exists(ref):
+                            add(system, sheet, "Missing track file: %s" % os.path.basename(ref),
+                                index.get(os.path.splitext(n)[0].lower()) or index.get(low))
+                # 1b) disc images cut short (an interrupted copy): the game can't
+                # load what's past the end. Converted CHDs are compared with RomM's
+                # original exactly (below); here, the disc's own filesystem says so
+                for img in _images_in(path):
+                    st = os.path.splitext(os.path.basename(img))[0].lower()
+                    irom = index.get(st) or index.get(os.path.splitext(n)[0].lower()) or index.get(low)
+                    if img.lower().endswith(".chd") and irom and \
+                            not (irom.get("fs_name") or "").lower().endswith(".chd"):
+                        exact = _chd_vs_romm(api, img, irom, chdman, records.get)
+                        if exact is not None:
+                            if exact:
+                                add(system, img, "Incomplete disc image: %d%% missing (%s of %s sectors in RomM's "
+                                    "copy)" % _pct(exact), irom)
+                            continue
+                    cut = _discs.disc_incomplete(img, chdman)
+                    if cut and cut[2]:
+                        add(system, img, "Incomplete disc image: %d%% missing (%s of %s sectors)" % _pct(cut), irom)
+                    elif cut:
+                        add(system, img, "May be cut short: a file on the disc reaches past its end (%s of %s "
+                            "sectors; some discs list dummy files)" % ("{:,}".format(cut[0]), "{:,}".format(cut[1])),
+                            irom, "differs")
+                # 2) against RomM's record of the game
+                stem = n if os.path.isdir(path) else _core.stem_of(n)
+                rom = index.get(low) or index.get(stem.lower())
+                if system in _convert.Z3DS_SYSTEMS and os.path.isfile(path) and _convert.z3ds_target(path):
+                    try:
+                        _convert.z3ds_info(path)
+                    except _convert.Z3dsError as e:          # whether RomM lists it or not: it won't run
+                        if "encrypted" in str(e):
+                            add(system, path, "Encrypted dump: Azahar can't run it (needs a decrypted copy)",
+                                rom, "differs")
+                    except OSError:
+                        pass
+                if not rom:
+                    stats["unmatched"] += 1
+                    continue
+                stats["matched"] += 1
+                if os.path.isfile(path) and low.endswith(".chd") and \
+                        not (rom.get("fs_name") or "").lower().endswith(".chd"):
+                    if deep:                                   # converted here: chdman checks itself
+                        p = subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", path],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                        if p.returncode != 0:
+                            add(system, path, "CHD failed chdman verify", rom)
+                    continue
+                try:
+                    detail = records.get(rom["id"])
+                except _core.RommError as e:
+                    add(system, path, "Couldn't fetch RomM record (%s)" % e, None)
+                    continue
+                files = [f for f in (detail.get("files") or []) if f.get("category") in (None, "game")]
+                if os.path.isfile(path) and low.endswith(_convert.Z3DS_EXTS):
+                    check_z3ds(system, path, files, rom)
+                    continue
+                if os.path.isfile(path) and low.endswith(".zar"):
+                    # packed here from the disc's files: RomM's image hashes can't match by design
+                    bad = _convert.zar_check(path, full=deep)
+                    if bad:
+                        add(system, path, "Compressed file %s" % bad, rom)
+                    continue
+                if os.path.isfile(path):
+                    if len(files) == 1 and files[0]["file_name"].lower() == low and low.endswith(".zip"):
+                        check_zip(system, path, files, rom)
+                        continue
+                    if len(files) == 1 and files[0]["file_name"].lower() == low:
+                        want = [(path, files[0])]               # same file as RomM (iso, chd…)
+                    else:
+                        members = {m["name"].lower(): m for f in files for m in (f.get("archive_members") or [])
+                                   if m.get("name")}
+                        m = members.get(low)
+                        want = [(path, {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
+                                        "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})] if m else []
+                else:
+                    if _library.rom_is_folder(detail, files):
+                        prefix = (detail.get("full_path") or "").rstrip("/") + "/"
+                        want = []
+                        for f in files:
+                            rel = f.get("full_path", "")
+                            rel = rel[len(prefix):] if rel.startswith(prefix) else f["file_name"]
+                            want.append((os.path.join(path, *rel.split("/")), f))
+                    else:
+                        want = [(os.path.join(path, *m["name"].split("/")),
+                                 {"file_size_bytes": m.get("size"), "sha1_hash": m.get("sha1_hash"),
+                                  "md5_hash": m.get("md5_hash"), "crc_hash": m.get("crc_hash")})
+                                for f in files for m in (f.get("archive_members") or [])]
+                    # a disc folder later turned into <folder>.chd keeps nothing to compare
+                # discs converted to CHD on the box: the tracks are gone on purpose
+                chds = {os.path.splitext(x)[0].lower(): os.path.join(path, x)
+                        for x in (os.listdir(path) if os.path.isdir(path) else []) if x.lower().endswith(".chd")}
+                converted = set()
+                for fp, f in want:
+                    st = os.path.splitext(os.path.basename(fp))[0].lower()
+                    st = re.sub(r"\s*\(track \d+\)$", "", st)
+                    if not os.path.exists(fp) and st in chds:
+                        converted.add(chds[st])
+                for c in converted:
+                    if deep and subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", c],
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+                        add(system, c, "CHD failed chdman verify", rom)
+                for fp, f in want:
+                    if cancel is not None and cancel.is_set():
+                        return findings, stats
+                    st = re.sub(r"\s*\(track \d+\)$", "", os.path.splitext(os.path.basename(fp))[0].lower())
+                    if not os.path.exists(fp):
+                        if st not in chds:
+                            add(system, fp, "Missing file: %s" % os.path.basename(fp), rom)
+                    elif _discs.xbox_cut(system, fp, f):
+                        continue          # cut to its game partition here: RomM's size and hashes are the full disc's
+                    elif f.get("file_size_bytes") and os.path.getsize(fp) != f["file_size_bytes"]:
+                        small = os.path.getsize(fp) < f["file_size_bytes"]
+                        # a smaller .iso is usually a trimmed image (plays); a short
+                        # track or cart file is a broken copy
+                        trimmed = small and fp.lower().endswith((".iso", ".xiso"))
+                        add(system, fp, "%s than RomM's copy: %s vs %s%s" % (
+                            "Smaller" if small else "Bigger", _core.human_size(os.path.getsize(fp)),
+                            _core.human_size(f["file_size_bytes"]),
+                            " (trimmed or incomplete)" if trimmed else " (incomplete)" if small else ""),
+                            rom, "differs" if (trimmed or not small) else "damaged")
+                    elif deep and _downloader.file_hash_ok(fp, f)[0] is False:
+                        add(system, fp, "Checksum doesn't match RomM", rom)
     for system in {f["system"] for f in findings}:
         if cancel is not None and cancel.is_set():
             break
@@ -499,20 +510,17 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
         return [], stats
     index, sets = {}, {}
     for pid in platform_ids:
-        off = 0
-        while True:
-            if cancel is not None and cancel.is_set():
-                return [], stats
-            page = api.roms(platform_ids=[pid], offset=off, limit=500)
-            for r in page.get("items", []):
-                index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
-                index.setdefault((r.get("fs_name") or "").lower(), r)
-                d = _library.disc_info(r.get("fs_name_no_ext") or "")
-                if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
-                    sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
-            off += len(page.get("items", []))
-            if not page.get("items") or off >= page.get("total", 0):
-                break
+        if cancel is not None and cancel.is_set():
+            return [], stats
+        listed = api.roms_all(platform_ids=[pid], cancel=cancel)
+        if listed is None:
+            return [], stats
+        for r in listed:
+            index.setdefault((r.get("fs_name_no_ext") or "").lower(), r)
+            index.setdefault((r.get("fs_name") or "").lower(), r)
+            d = _library.disc_info(r.get("fs_name_no_ext") or "")
+            if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
+                sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
     have = _gamelist_info(sysdir)
     names = sorted(os.listdir(sysdir))
     in_m3u = set()

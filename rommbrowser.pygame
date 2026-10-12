@@ -2097,16 +2097,12 @@ class CollectionScreen(ListScreen):
         """How many of a collection's games are on this box: the same test as
         the green tick in its list (our installs, and games copied over by
         hand, matched by file name). Fetches the collection's games."""
-        app, n, off = self.app, 0, 0
-        while True:
-            page = app.api.roms(collection=(it["param"], it["id"]), offset=off, limit=500).get("items") or []
-            for r in page:
-                pl = app.platform_by_id.get(r.get("platform_id"))
-                if pl and app.library.is_installed(r, pl["_system"]):
-                    n += 1
-            off += len(page)
-            if not page or len(page) < 500 or off >= (it.get("count") or 0):
-                return n
+        app, n = self.app, 0
+        for r in app.api.roms_all(collection=(it["param"], it["id"])):
+            pl = app.platform_by_id.get(r.get("platform_id"))
+            if pl and app.library.is_installed(r, pl["_system"]):
+                n += 1
+        return n
 
     def _want_here(self, it):
         """Count a visible collection's games on the box, one at a time, in the background."""
@@ -2223,14 +2219,7 @@ class CollectionScreen(ListScreen):
         app.toast("Listing %s…" % it["full"])
 
         def collect():
-            out, off = [], 0
-            while True:
-                page = app.api.roms(offset=off, limit=250, collection=(it["param"], it["id"]))
-                got = page.get("items", [])
-                out.extend(got)
-                off += len(got)
-                if not got or off >= page.get("total", 0) or off >= GameListScreen.BULK_MAX:
-                    return out
+            return app.api.roms_all(limit=250, cap=GameListScreen.BULK_MAX, collection=(it["param"], it["id"]))
 
         def listed(roms):
             if app.modal is not None or app.stack[-1] is not self:
