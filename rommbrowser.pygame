@@ -177,6 +177,7 @@ HANGUL_FONTS = ["/usr/share/emulationstation/resources/PyeojinGothic-Medium.ttf"
 HANGUL = ((0x1100, 0x11FF), (0x3130, 0x318F), (0xA960, 0xA97F), (0xAC00, 0xD7FF))
 FALLBACK = {}   # Font -> [same-size Fonts tried in turn for characters it doesn't have]
 FONT_PATH = {}  # Font -> the file it was made from (coverage is per file, at any size)
+FONT_CACHE = {}  # (file, size) -> Font: one open file each, however often Fonts() is made
 
 
 def find_font(name):
@@ -199,13 +200,11 @@ class Fonts:
         # and Japanese; Korean (game titles and descriptions come in every script)
         chain = [p for p in (dv, next((p for p in CJK_FONTS if os.path.exists(p)), None),
                              next((p for p in HANGUL_FONTS if os.path.exists(p)), None)) if p and p != reg]
-        cache = {}
-
         def font(path, size):
-            if (path, size) not in cache:
-                f = cache[(path, size)] = pygame.font.Font(path, size)
+            if (path, size) not in FONT_CACHE:
+                f = FONT_CACHE[(path, size)] = pygame.font.Font(path, size)
                 FONT_PATH[f] = path
-            return cache[(path, size)]
+            return FONT_CACHE[(path, size)]
 
         def mk(path, size):
             size = max(6, int(round(size * K)))
