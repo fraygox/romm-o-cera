@@ -763,6 +763,8 @@ class Input:
         self.controllers = {}
         self.joysticks = {}
         self.held = {}
+        self.key_action = {}    # pygame key -> the action its press queued
+        self.key_up = {}        # action -> when its key was last let go
         self.axis_dir = {}
         if sdlcontroller is not None:
             sdlcontroller.init()
@@ -843,17 +845,18 @@ class Input:
                 INPUT_MODE["kb"] = True
                 out.append(action)
             else:
-                self._press(action, out, "key")
+                # a tap let go before it was committed moves once: nothing is held to repeat
+                self._press(action, out, "key", hold=self.key_up.get(action, 0) < t)
         self.pending = keep
 
-    def _press(self, action, out, src="pad"):
+    def _press(self, action, out, src="pad", hold=True):
         now = time.time()
         t, other = self.last.get(action, (0, src))
         if other != src and now - t < self.ECHO:
             return                    # the same press arriving twice (pad + its keyboard echo)
         self.last[action] = (now, src)
         INPUT_MODE["kb"] = src == "key"
-        if action in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
+        if hold and action in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
             self.held[action] = now + self.REPEAT_DELAY
         out.append(action)
 
@@ -887,8 +890,12 @@ class Input:
                       pygame.K_TAB: "select", pygame.K_HOME: "start",
                       pygame.K_LEFTBRACKET: "l2", pygame.K_RIGHTBRACKET: "r2"}
             if ev.key in km:
+                self.key_action[ev.key] = km[ev.key]
                 self._key(km[ev.key], out)
         elif t == pygame.KEYUP:
+            a = self.key_action.pop(ev.key, None)
+            if a:
+                self.key_up[a] = time.time()
             for a in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
                 if self.last.get(a, (0, ""))[1] == "key":
                     self._release(a)
