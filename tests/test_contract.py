@@ -205,6 +205,17 @@ def test_client_token_scopes_are_enough(api):
     assert me.get("username")
 
 
+def test_pairing_exchange_rejects_a_bogus_code():
+    """Settings, Pair with RomM: the exchange endpoint exists, needs no token
+    and refuses a made-up code (no real code is ever used up here)."""
+    r = requests.post(URL + "/api/client-tokens/exchange", json={"code": "ZZZZ2222"},
+                      verify=rommlib.norm_verify(os.environ.get("ROMM_CONTRACT_VERIFY", True)),
+                      allow_redirects=False, timeout=20)
+    assert r.status_code == 404, r.status_code      # not 401 (unauthenticated) / 405 (missing)
+    with pytest.raises(rommlib.RommError, match="isn't valid or has expired"):
+        rommlib.exchange_pair_code(URL, "ZZZZ-2223", os.environ.get("ROMM_CONTRACT_VERIFY", True))
+
+
 def test_similar_games(api, busiest):
     r = api.roms(platform_ids=[busiest["id"]], limit=1)["items"][0]
     sim = api.similar(r["id"], limit=5)          # may be empty for an unidentified rom

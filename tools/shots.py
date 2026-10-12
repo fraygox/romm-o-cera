@@ -90,6 +90,7 @@ for _t in ("Veniam Quest (USA)", "Fugiat Racer (Europe)"):        # uncompressed
     with open(os.path.join(R, "psx", _t, _t + ".cue"), "w") as _f:
         _f.write('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % _t)
 mk("psx/Gone (USA).zip.part", 120 * MB)
+mk("psx/Dolor Dash (USA).7z", 300 * MB)                          # a copy of a game already here as CHD
 os.makedirs(os.path.join(R, "psx", "Empty Game"), exist_ok=True)
 es = FakeES(R, {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba": {".gba", ".zip"}})
 es.mem["psx"][os.path.join(R, "psx/Dolor Dash (USA).chd")].update(lastplayed="20261003T200000", playcount="4")
@@ -179,6 +180,19 @@ def fake_audit():
         {"checked": 412, "matched": 398, "unmatched": 14}, False)
 
 
+def fake_unseen():
+    """Files ES can't see: zips in a system that doesn't take .zip, a GameCube/Wii
+    image in n64/, a file no system lists (the Downloader's es map plays es_systems.cfg)."""
+    disc = {".gcm", ".iso", ".gcz", ".ciso", ".wbfs", ".rvz", ".m3u"}
+    app.downloader.es = {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba": {".gba", ".zip"},
+                         "n64": {".z64", ".n64", ".v64", ".zip", ".7z"}, "gamecube": disc, "wii": set(disc)}
+    mk("ps2/Lorem Racer (Homebrew).zip", 1900 * MB)
+    mk("ps2/Ipsum Arena (Homebrew).7z", 2600 * MB)
+    mk("n64/Dolor Cube (Homebrew).rvz", 1100 * MB)
+    mk("n64/Sit Amet Demo (Homebrew).z64", 8 * MB)
+    mk("psx/Elit Notes.xyz", 1 * MB)
+
+
 def install_some():
     """A few games from the mock library 'on the box' (files + install records)."""
     lib = app.library
@@ -235,6 +249,9 @@ SCENES = [
     ("conversions", lambda: (fake_conversions(), app.push(rb.ConversionsScreen(app)))),
     ("downloads-empty", lambda: (app.downloader.jobs.clear(), app.push(rb.DownloadsScreen(app)))),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
+    ("settings-pair", lambda: app.push(settings_at("pair"))),
+    ("pair-code", lambda: (app.push(settings_at("pair")), app.stack[-1].pair(),
+                           app.stack[-1].type_text("abcd-23"))),
     ("settings-downloads", lambda: app.push(settings_at("overlap"))),
     ("settings-compression", lambda: app.push(settings_at("rvz"))),
     ("settings-app", lambda: app.push(settings_at("credits"))),
@@ -253,7 +270,17 @@ SCENES = [
     ("on-this-box-conversions", lambda: (fake_conversions(), app.push(rb.OnThisBoxScreen(app)),
                                          setattr(app.stack[-1], "sel", 5))),
     ("games-from-romm", lambda: (install_some(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.InstalledScreen(app)))),
-    ("check-games", lambda: (fake_audit(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)))),
+    ("check-games", lambda: (fake_audit(), fake_unseen(), app.push(rb.OnThisBoxScreen(app)),
+                             app.push(rb.CheckScreen(app)))),
+    ("check-unseen", lambda: (fake_unseen(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)),
+                              app.push(rb.UnseenScreen(app)))),
+    ("check-unseen-menu", lambda: (fake_unseen(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)),
+                                   app.push(rb.UnseenScreen(app)),
+                                   setattr(app, "_after", lambda: app.stack[-1].action("ok")))),
+    ("check-unseen-picked", lambda: (fake_unseen(), app.push(rb.OnThisBoxScreen(app)),
+                                     app.push(rb.CheckScreen(app)), app.push(rb.UnseenScreen(app)),
+                                     setattr(app, "_after", lambda: [app.stack[-1].action(k) for k in
+                                                                     ("down", "x", "x")]))),
     ("manage", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                         setattr(app, "_after", lambda: setattr(app, "modal", rb.ManageMenu(app, install_some()))))),
     ("storage", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)))),

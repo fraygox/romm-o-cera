@@ -29,6 +29,26 @@ verifies each CHD before the original goes.
 - A disc image that's cut short (an interrupted copy) is never converted —
   Check games can download it again.
 
+### PSP `.cso` → CHD
+
+PSP games in CSO ("CISO", compressed ISO) form become CHD too, under the same
+switch. Batocera has no CSO tool, so RomM-o-Cera decodes the `.cso` itself to
+a temporary ISO next to it (`Game.cso-iso.part`, which EmulationStation
+doesn't list), and chdman packs that like a PSP `.iso` (2048-byte hunks, no
+FLAC). The original goes only after `chdman verify` passes **and** the CHD's
+data SHA-1 (`chdman info`, "Data SHA1") matches the SHA-1 of the decoded ISO.
+The temporary ISO is deleted whatever happens; one left by a power cut shows
+up in **Clean up leftovers**. While it works, it needs room for the decoded
+ISO plus the CHD.
+
+- Read: CSO version 1 (the common one, deflate), and version 2 files that
+  use only deflate.
+- Refused, the `.cso` stays as it is (PPSSPP plays it): CSO v2 files with LZ4
+  blocks and ZSO files ("CSO v2/ZSO isn't supported (needs LZ4)" — Batocera's
+  Python has no LZ4), anything damaged or cut short (a bad header or block
+  index, a block that doesn't decode to exactly its size), and an image that
+  isn't ISO9660 once decoded.
+
 ## GameCube and Wii to RVZ — off by default
 
 Turning it on downloads Dolphin's `dolphin-tool` once (about 8 MB, checked by
@@ -149,9 +169,15 @@ Xbox: with Make Xbox images bootable on, full disc images are cut to their
 game partition and `.xiso` files renamed right away; with Xbox to squashfs on,
 the images are then queued for packing.
 
+## PS3 game folders
+
+Not compression: PS3 disc images become `.ps3` game folders RPCS3 boots and
+updates. Encrypted discs use disc keys for games you own. See
+[PS3 games](ps3.md).
+
 ## Not offered (yet)
 
-- **PS3**: measured about 2% smaller as squashfs; Redump's PS3 images are
-  encrypted and barely compress.
+- **PS3 squashfs**: measured about 2% smaller; Redump's PS3 images barely
+  compress. PS3 discs become game folders instead ([PS3 games](ps3.md)).
 - **Wii U** (`.wua`): Cemu reads it, but making one needs a tool Batocera
   doesn't ship and each disc's key.

@@ -11,7 +11,7 @@ images are then queued for packing. 3DS (Settings -> 3DS to .zcci): decrypted
 .3ds/.cci/.cxi are queued for Z3DS; encrypted dumps are listed and skipped.
 Xbox 360 (Settings -> Xbox 360 to .zar, x86_64): .iso images are queued for .zar.
 
-Finds cue/gdi (CD systems) and iso (PS2) games that have no CHD yet, groups
+Finds cue/gdi (CD systems), iso (PS2/PSP) and cso (PSP) games that have no CHD yet, groups
 discs into games (a folder holding the disc files, with "(Disc N)" subfolders
 folded into their parent), and writes chd-queue tasks in the given system
 order. Then start rb_chd.py (it waits for ES to be idle by itself).
@@ -27,7 +27,7 @@ import rommlib  # noqa: E402
 import rb_chd  # noqa: E402
 
 ORDER = ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
-         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds", "xbox360"]
+         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds", "xbox360", "ps3"]
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 
@@ -36,9 +36,11 @@ def games_for(system):
     convs = rommlib.converters_for(system)
     if convs and not any(c.chd for c in convs):
         exts = tuple(e for c in convs for e in c.sources + c.renamed_sources)    # every image on its own
+        games = tuple(o for c in convs for o in c.outputs)     # a finished game folder (X.ps3): never inside
         out = []
         for dp, dns, fns in os.walk(sysdir):
-            dns[:] = [d for d in dns if d not in rommlib.MEDIA_DIRS and not d.startswith(".")]
+            dns[:] = [d for d in dns if d not in rommlib.MEDIA_DIRS and not d.startswith(".")
+                      and not d.lower().endswith(games)]
             out += [(os.path.join(dp, f), [os.path.join(dp, f)], None) for f in fns
                     if f.lower().endswith(exts)]
         return sorted(out, key=lambda x: x[0])
@@ -149,7 +151,7 @@ def candidates(systems=None, cfg=None, skipped=None):
             if conv.check:
                 try:
                     conv.check(files[0])
-                except (rommlib.Z3dsError, OSError) as e:
+                except rommlib.CHECK_ERRORS as e:
                     if skipped is not None:
                         skipped.append((system, files[0], str(e)))
                     continue

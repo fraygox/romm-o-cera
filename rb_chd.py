@@ -28,6 +28,7 @@ import signal
 import subprocess
 import sys
 import time
+import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
@@ -72,7 +73,7 @@ class MemoryGuard(Exception):
 DVD_CODECS = "lzma,zlib,huff"
 CD_CODECS_LOW_MEMORY = "cdlz,cdzl"
 def codecs_for(mode, cfg, system=None):
-    if mode == "createdvd":
+    if mode in ("createdvd", "cso"):          # cso: the ISO decoded from a PSP .cso
         # PPSSPP reads CHDs made with 2048-byte hunks (one sector) much faster
         return ["-c", DVD_CODECS] + (["-hs", "2048"] if system == "psp" else [])
     if rommlib.chd_low_memory(cfg):
@@ -556,12 +557,107 @@ def convert_zar(src, tmp):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _data_sha1(out):
+    """The CHD's "Data SHA1" from chdman info: the SHA-1 of the data it holds
+    (for a DVD CHD, exactly the ISO's bytes; "SHA1" also covers metadata)."""
+    m = re.search(r"(?mi)^\s*Data SHA1:\s*([0-9a-f]{40})\s*$", out)
+    return m.group(1).lower() if m else None
+
+
+def convert_cso(src, tmp, threads):
+    """PSP .cso -> CHD: decoded (in-process, paused while a game runs) to a
+    temporary ISO beside the CHD, which chdman packs like a PSP .iso. The CHD
+    must pass chdman verify and hold exactly the decoded ISO (its Data SHA1)
+    before the caller deletes the .cso. The temporary ISO never outlives this."""
+    status(step="Checking the original", pct=None)
+    try:
+        rommlib.cso_info(src)
+    except rommlib.CsoError as e:
+        return 2, str(e)
+    except OSError as e:
+        return 2, "can't read it (%s)" % e
+    iso = tmp[:-len(".part")] if tmp.endswith(".part") else tmp
+    iso = os.path.splitext(iso)[0] + rommlib.CSO_TEMP_SUFFIX
+    last = [-1]
+
+    def progress(frac):
+        pct = int(frac * 100)
+        if pct != last[0]:
+            last[0] = pct
+            status(step="Decoding the .cso", pct=pct)
+    try:
+        try:
+            want = rommlib.cso_decode(src, iso, pause=_idle, progress=progress)
+        except rommlib.CsoError as e:
+            return 3, str(e)
+        except OSError as e:
+            return 3, "couldn't decode it (%s)" % e
+        with open(iso, "rb") as f:
+            f.seek(0x8001)
+            if f.read(5) != b"CD001":
+                return 3, "the decoded image isn't a disc image (no ISO9660 header)"
+        status(step="Converting", pct=None)
+        codecs = codecs_for("cso", rommlib.load_config(), "psp")
+        rc, err = chdman("createdvd", "-np", threads, *codecs, "-f", "-i", iso, "-o", tmp)
+        if rc != 0 or not os.path.exists(tmp):
+            return rc or 4, err
+        status(step="Verifying", pct=None)
+        rc, err = chdman("verify", "-i", tmp)
+        if rc != 0:
+            return rc, err
+        try:
+            info = subprocess.run(["chdman", "info", "-i", tmp], capture_output=True, text=True,
+                                  errors="replace", timeout=300)      # reads the header only: instant
+            got = _data_sha1(info.stdout) if info.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError):
+            got = None
+        if got != want:
+            return 5, "CHD doesn't hold the decoded image (SHA-1 %s vs %s)" % (got, want)
+        return 0, "SHA-1 %s" % want
+    finally:
+        try:
+            os.remove(iso)
+        except OSError:
+            pass
+
+
 # the converters other than chdman, by task mode (which mode applies: rommlib.CONVERTERS)
+def convert_ps3(src, tmp):
+    """PS3 disc image (loose or the .iso in a zip, read in place) -> the
+    "Name.ps3" game folder RPCS3 boots, decrypted with the disc's key when it's
+    encrypted. Every file is written from the image; EBOOT.BIN and PARAM.SFO
+    are checked, and a zip's checksum is checked by reading it to the end."""
+    def progress(frac):
+        status(step="Making the game folder", pct=round(frac * 100))
+    _drop(tmp)                                      # half a folder from an interrupted run
+    try:
+        key = rommlib.ps3_to_folder(src, tmp, pause=_idle, progress=progress)
+    except (rommlib.Ps3Error, OSError, zipfile.BadZipFile) as e:
+        return 1, str(e)
+    for dp, _, fns in os.walk(tmp):                 # on disk before the image is deleted
+        for fn in fns:
+            _sync_file(os.path.join(dp, fn))
+        _sync_dir(dp)
+    if key:
+        note("chd: decrypted %s with the disc key %s" % (os.path.basename(src), key))
+    return 0, ""
+
+
+def _drop(path):
+    """Remove a finished or partial output: a file, or a game folder (PS3)."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, ignore_errors=True)
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
 RUNNERS = {
     "rvz": lambda src, tmp, threads: convert_rvz(src, tmp),
     "squashfs": lambda src, tmp, threads: convert_squashfs(src, tmp, threads),
     "z3ds": lambda src, tmp, threads: convert_z3ds(src, tmp, threads),
     "zar": lambda src, tmp, threads: convert_zar(src, tmp),
+    "cso": lambda src, tmp, threads: convert_cso(src, tmp, threads),
+    "ps3": lambda src, tmp, threads: convert_ps3(src, tmp),
 }
 
 
@@ -581,7 +677,7 @@ def convert(task):
         for src in srcs:
             try:
                 conv.check(src)
-            except (rommlib.Z3dsError, OSError) as e:
+            except rommlib.CHECK_ERRORS as e:
                 # nothing to retry: an encrypted dump stays encrypted (and Azahar can't run it either)
                 note("chd: SKIP %s %s: %s" % (mode, os.path.basename(src), e))
                 return False
@@ -669,6 +765,11 @@ def convert(task):
     cfg = rommlib.load_config()
     need = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
     need *= conv.space_factor if conv else 1     # e.g. .zar: extracted files + archive beside the image
+    if conv and conv.space:
+        try:
+            need = max(need, sum(conv.space(s) for s in srcs))    # e.g. .cso: the decoded ISO + the CHD
+        except rommlib.CHECK_ERRORS:
+            pass                                  # checked above; the converter reports it
     free, keep = rommlib.free_bytes(out_dir), rommlib.keep_free_bytes(cfg)
     if free - need < keep:
         # the CHD sits next to the original until it's verified: wait for room
@@ -707,16 +808,14 @@ def convert(task):
             note("chd: STOPPED %s: %s; %s" % (os.path.basename(src), g,
                         "will try again later" if g.retry else "leaving it as it is"))
             for m in made + [tmp]:
-                if os.path.exists(m):
-                    os.remove(m)
+                _drop(m)
             if g.retry:
                 return None
             return False
         if rc != 0:
             note("chd: FAIL %s rc=%d %s" % (src, rc, err))
             for m in made + [tmp]:
-                if os.path.exists(m):
-                    os.remove(m)
+                _drop(m)
             return False
         # the output must be on disk before any original is deleted: after a power
         # cut a renamed-but-unflushed file comes back empty (seen on ext4)
@@ -741,13 +840,13 @@ def convert(task):
              % os.path.basename(changed[0]))
         for m in made:
             try:
-                os.remove(m)
+                _drop(m)
             except OSError:
                 pass
         return False
     old_to_new = {os.path.normpath(s): o for s, o in plan}
     in_size = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
-    out_size = sum(os.path.getsize(m) for m in made)
+    out_size = sum(rommlib.path_size(m) for m in made)
     m3us = fix_m3us(sysdir, old_to_new)
     hide = []
     if multi:

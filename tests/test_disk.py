@@ -460,3 +460,78 @@ def test_xiso_rename_never_overwrites(isolated, tmp_path):
     a.write_bytes(b"x")
     b.write_bytes(b"y")
     assert rommlib.xiso_to_iso(str(a)) == str(a) and b.read_bytes() == b"y"
+
+
+def test_forecast_reserves_every_converters_working_space():
+    J = rommlib.Job
+    cfg = dict(rommlib.DEFAULT_CONFIG, zar=True)
+    x360 = J({"id": 1, "fs_size_bytes": 8 * GiB}, "xbox360")            # .zar: files + archive, 2x
+    gba = J({"id": 2, "fs_size_bytes": 1 * GiB}, "gba")
+    size = rommlib.space_needed(x360.rom, "xbox360")
+    base = size + GiB
+    with_tools = dict(cfg)
+    import unittest.mock as m
+    with m.patch.object(rommlib, "zar_enabled", lambda c, s=None: bool(c.get("zar"))):
+        assert rommlib.queue_forecast([x360, gba], 0, 0, cfg=with_tools)["need"] == base + 2 * size
+        assert rommlib.queue_forecast([x360, gba], 0, 0, cfg=dict(cfg, zar=False))["need"] == base
+    ps3 = J({"id": 3, "fs_size_bytes": 10 * GiB}, "ps3")                 # the folder beside the zip
+    assert rommlib.queue_forecast([ps3], 0, 0, cfg=cfg)["need"] == 2 * rommlib.space_needed(ps3.rom, "ps3")
+    assert rommlib.queue_forecast([ps3], 0, 0, cfg=dict(cfg, ps3_folders=False))["need"] == \
+        rommlib.space_needed(ps3.rom, "ps3")
+    assert rommlib.queue_forecast([ps3], 0, 0)["need"] == rommlib.space_needed(ps3.rom, "ps3")   # no cfg: CHD only
+
+
+def test_leftovers_offer_copies_of_converted_games_and_unfinished_folders(isolated):
+    R = rommlib.ROMS_ROOT
+
+    def w(rel, size=10):
+        p = os.path.join(R, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "wb").write(b"x" * size)
+        return p
+    w("gamecube/Lorem Crossing (USA).7z", 100)                    # beside its RVZ: a copy
+    w("gamecube/Lorem Crossing (USA).rvz")
+    w("psx/Ipsum (USA) (Track 1).bin", 30)                        # loose tracks beside the CHD
+    w("psx/Ipsum (USA) (Track 2).bin", 20)
+    w("psx/Ipsum (USA).chd")
+    w("psx/Dolor (USA).cue")                                      # no converted copy: a game, not a leftover
+    w("psx/Dolor (USA).bin")
+    w("xbox/Sit (USA).iso", 40)                                   # beside X.iso.squashfs
+    w("xbox/Sit (USA).iso.squashfs")
+    w("ps3/Amet (USA).zip", 50)                                   # beside its game folder
+    w("ps3/Amet (USA).ps3/PS3_GAME/USRDIR/EBOOT.BIN")
+    w("ps3/Amet (USA).ps3/PS3_GAME/USRDIR/cache.tmp.part")        # inside a game folder: never looked at
+    w("ps3/Elit (USA).ps3.part/PS3_GAME/PARAM.SFO", 60)           # an interrupted PS3 folder
+    w("ps3/Queued (USA).zip", 5)                                  # a queued conversion's source stays
+    w("ps3/Queued (USA).ps3/PS3_GAME/USRDIR/EBOOT.BIN")
+    w("mame/sitgame.zip")                                         # arcade sets keep zip + chd together
+    w("mame/sitgame.chd")
+    os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
+    json.dump({"system": "ps3", "mode": "ps3", "sources": [os.path.join(R, "ps3/Queued (USA).zip")]},
+              open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-1-ps3.json"), "w"))
+    items = rommlib.find_leftovers(chd_busy=False)
+    found = {os.path.relpath(i["path"], R): (i["kind"], i.get("note")) for i in items}
+    copy = "Copy of a converted game"
+    assert found == {
+        "gamecube/Lorem Crossing (USA).7z": (copy, "Already here as Lorem Crossing (USA).rvz"),
+        "psx/Ipsum (USA) (Track 1).bin": (copy, "Already here as Ipsum (USA).chd"),
+        "psx/Ipsum (USA) (Track 2).bin": (copy, "Already here as Ipsum (USA).chd"),
+        "xbox/Sit (USA).iso": (copy, "Already here as Sit (USA).iso.squashfs"),
+        "ps3/Amet (USA).zip": (copy, "Already here as Amet (USA).ps3"),
+        "ps3/Elit (USA).ps3.part": ("Unfinished conversion", None)}
+    assert rommlib.find_leftovers(chd_busy=True) == []            # never while a conversion may be writing
+    assert rommlib.delete_leftovers(items) == 100 + 30 + 20 + 40 + 50 + 60
+    assert not os.path.exists(os.path.join(R, "ps3/Elit (USA).ps3.part"))
+    for kept in ("gamecube/Lorem Crossing (USA).rvz", "psx/Ipsum (USA).chd", "psx/Dolor (USA).bin",
+                 "ps3/Amet (USA).ps3/PS3_GAME/USRDIR/EBOOT.BIN", "ps3/Queued (USA).zip", "mame/sitgame.zip"):
+        assert os.path.exists(os.path.join(R, kept)), kept
+
+
+def test_a_copy_stays_when_its_converted_game_looks_broken(isolated, monkeypatch):
+    R = rommlib.ROMS_ROOT
+    for rel in ("psx/Lorem (USA).zip", "psx/Lorem (USA).chd", "ps3/Ipsum (USA).zip"):
+        os.makedirs(os.path.dirname(os.path.join(R, rel)), exist_ok=True)
+        open(os.path.join(R, rel), "wb").write(b"x")
+    os.makedirs(os.path.join(R, "ps3", "Ipsum (USA).ps3", "PS3_GAME"))          # no EBOOT.BIN in it
+    monkeypatch.setattr(rommlib, "disc_incomplete", lambda p, *a: (10, 100, True))   # the CHD is cut short
+    assert rommlib.find_leftovers(chd_busy=False) == []

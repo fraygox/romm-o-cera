@@ -5,6 +5,11 @@ On the box: **Pygame → RomM-o-Cera → Settings**. Settings are grouped
 the panel beside the list explains the selected one. Everything is saved to
 `/userdata/system/romm-browser/config.json` straight away.
 
+**Pair with RomM** (in RomM server) signs the box in with the short code
+RomM shows when you press Pair on a client API token, instead of typing the
+token: see [Connecting](connecting.md#signing-in-pair-with-a-code). It stores
+the token in `token`.
+
 **Reset settings** (in This app) puts every setting back to its default,
 including the server address and token. The old file is kept beside it as
 `config.json.bad-<date>`, so nothing is lost.
@@ -33,6 +38,8 @@ including the server address and token. The old file is kept beside it as
 | `xbox_bootable` | `true` | Xbox: keep only the game partition xemu boots; rename `.xiso` to `.iso` |
 | `squashfs` | `false` | pack Xbox images into zstd squashfs (Batocera mounts them at launch) |
 | `z3ds` | `true` | compress decrypted 3DS images to Azahar's `.zcci` |
+| `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
+| `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |

@@ -4,11 +4,13 @@ post-processing (extract / CHD hand-off / gamelist hand-off) for Batocera.
 No pygame imports here, so it can be exercised from a shell on the box.
 Python 3.9+ (dev venvs) and 3.12 (Batocera 43).
 """
+import io
 import json
 import os
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import threading
@@ -21,7 +23,7 @@ from typing import Callable, Optional
 
 import requests
 
-VERSION = "0.7.0"            # changes only for a real GitHub release
+VERSION = "0.7.1"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -57,7 +59,7 @@ def chd_results_path():
     return os.path.join(DATA_DIR, "chd-results.jsonl")  # finished tasks, for the Conversions screen
 USERDATA = os.environ.get("ROMM_BROWSER_USERDATA") or os.path.dirname(ROMS_ROOT.rstrip("/"))
 BIOS_DB = os.environ.get("ROMM_BROWSER_BIOS_DB", "/usr/bin/batocera-systems")
-RELEASE_DATE = "2026-10-11"   # bump with VERSION (tools/build-release.sh refuses a stale one)
+RELEASE_DATE = "2026-10-12"   # bump with VERSION (tools/build-release.sh refuses a stale one)
 AUTHOR = "fraygox"
 PROJECT_URL = "https://github.com/fraygox/romm-o-cera"
 UPDATE_REPO = os.environ.get("ROMM_BROWSER_UPDATE_REPO", "fraygox/romm-o-cera")
@@ -148,6 +150,8 @@ DEFAULT_CONFIG = {
     "squashfs": False,         # pack Xbox images into zstd squashfs (Batocera mounts them at launch)
     "z3ds": True,              # compress decrypted 3DS cartridge images to Azahar's .zcci (lossless)
     "zar": False,              # Xbox 360 images -> .zar for xenia-canary (downloads two small tools)
+    "ps3_folders": True,       # PS3 disc images (.iso, zipped .iso) -> "Name.ps3" game folders
+    "ps3_decrypt": False,      # decrypt encrypted PS3 discs with the user's own disc keys (bios/ps3keys)
     "cache_limit_mb": 1024,    # cover cache size cap; least recently used covers go first (0 = no cap)
     "download_hours": "any",   # "any", or "S-E" local hours (e.g. "1-7"): downloads only run then
     "background_downloads": True,  # keep downloading after the app exits
@@ -1151,6 +1155,690 @@ def install_x360_tools(progress=None, url=None, sha256=None):
     return x360_tools()
 
 
+# ---------------------------------------------------------- PSP .cso (compressed ISO) -> CHD
+# CSO ("CISO"): a 24-byte header (magic, header size, uncompressed size u64,
+# block size u32, version u8, index alignment u8), then one u32 per block plus
+# an end marker: the block's file offset >> align. Version 0/1: the top bit
+# marks a block stored as it is, else it's raw deflate. Version 2 (maxcso) uses
+# the top bit for LZ4 instead and stores a block when its size reaches the
+# block size; Batocera has no LZ4 for Python, so only deflate-only v2 files are
+# read, and ZSO (LZ4 throughout) is refused. Decoded to a temporary ISO that
+# chdman createdvd packs (Batocera has no maxcso/ciso tool).
+CSO_MAGIC = b"CISO"
+CSO_HEADER = 0x18
+CSO_MAX_BYTES = 64 << 30                # far past any UMD (1.8 GB): bigger is a broken header
+CSO_TEMP_SUFFIX = ".cso-iso.part"       # the decoded ISO beside the CHD while it's packed (ES never lists it)
+CSO_NO_LZ4 = "CSO v2/ZSO isn't supported (needs LZ4)"
+
+
+class CsoError(Exception):
+    """A .cso that can't be decoded: damaged, cut short, or a variant this can't read."""
+
+
+# what a converter's check() raises for a file it can't convert (planner and worker skip it)
+CHECK_ERRORS = (Z3dsError, CsoError, OSError)
+
+
+def cso_info(path):
+    """Read and validate a .cso's header and block index: {"total", "block",
+    "align", "version", "offsets"} (offsets: the n+1 index entries as
+    (file offset, top bit) pairs). CsoError for anything that isn't a CSO
+    this can decode without guessing."""
+    import struct
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        h = f.read(CSO_HEADER)
+        if h[:4] == b"ZISO":
+            raise CsoError(CSO_NO_LZ4)
+        if len(h) < CSO_HEADER or h[:4] != CSO_MAGIC:
+            raise CsoError("not a CSO image")
+        hsize, total, block, version, align = struct.unpack_from("<IQIBB", h, 4)
+        if version not in (0, 1, 2):
+            raise CsoError("CSO version %d isn't supported" % version)
+        if version == 2 and hsize != CSO_HEADER:
+            raise CsoError("damaged CSO header (v2 header size %d)" % hsize)
+        if block < 2048 or block > 1 << 24 or block & (block - 1):
+            raise CsoError("damaged CSO header (block size %d)" % block)
+        if not 0 < total <= CSO_MAX_BYTES:
+            raise CsoError("damaged CSO header (image size %d)" % total)
+        if total % 2048:
+            raise CsoError("not a whole number of 2048-byte sectors (%d bytes)" % total)
+        if align > 31:
+            raise CsoError("damaged CSO header (index alignment %d)" % align)
+        n = -(-total // block)
+        end_index = CSO_HEADER + 4 * (n + 1)
+        raw = f.read(4 * (n + 1)) if end_index <= size else b""
+    if len(raw) != 4 * (n + 1):
+        raise CsoError("cut short (the block index doesn't fit in the file)")
+    entries = struct.unpack("<%dI" % (n + 1), raw)
+    offsets = [((e & 0x7FFFFFFF) << align, e >> 31) for e in entries]
+    if version == 2 and any(top for _, top in offsets[:-1]):
+        raise CsoError(CSO_NO_LZ4)
+    prev = end_index
+    for i, (off, _) in enumerate(offsets):
+        if off < prev or (i and off == prev):        # every block holds at least one byte
+            raise CsoError("damaged block index (entry %d of %d)" % (i, n + 1))
+        prev = off
+    if offsets[-1][0] > size:
+        raise CsoError("cut short (%d of %d bytes)" % (size, offsets[-1][0]))
+    return {"total": total, "block": block, "align": align, "version": version, "offsets": offsets}
+
+
+def cso_decode(src, dst, pause=None, progress=None):
+    """Decode a .cso to the plain image at dst; returns its SHA-1 (hex),
+    computed while writing. Every block must decode to exactly the block
+    size (the last one: what's left of the image, or a whole block that's
+    then cut to it) and the total to the header's size; CsoError otherwise
+    (dst is left for the caller to remove). pause(): called between blocks
+    (waits while a game runs); progress(fraction)."""
+    import hashlib
+    import zlib
+    info = cso_info(src)
+    total, block, version, offs = info["total"], info["block"], info["version"], info["offsets"]
+    slack = 1 << info["align"]                      # padding allowed after a block's data
+    n = len(offs) - 1
+    sha = hashlib.sha1()
+    written = 0
+    with open(src, "rb") as f, open(dst, "wb") as out:
+        for i in range(n):
+            if not i % 512:
+                if pause:
+                    pause()
+                if progress:
+                    progress(written / total)
+            start, top = offs[i]
+            span = offs[i + 1][0] - start
+            want = min(block, total - written)
+            f.seek(start)
+            data = f.read(span)
+            if len(data) != span:
+                raise CsoError("cut short (block %d of %d)" % (i, n))
+            if (top if version < 2 else span >= block):          # stored as it is
+                if not want <= span < want + slack:
+                    raise CsoError("damaged block %d of %d (stored, %d bytes for %d)" % (i, n, span, want))
+                plain = data[:want]
+            else:
+                d = zlib.decompressobj(-15)
+                try:
+                    plain = d.decompress(data, block + 1)
+                except zlib.error as e:
+                    raise CsoError("damaged block %d of %d (%s)" % (i, n, e)) from None
+                if not d.eof or len(d.unused_data) >= slack:
+                    raise CsoError("damaged block %d of %d (incomplete deflate data)" % (i, n))
+                if len(plain) == block and want < block:
+                    plain = plain[:want]                # a last block padded to the full size
+                if len(plain) != want:
+                    raise CsoError("damaged block %d of %d (%d bytes, expected %d)" % (i, n, len(plain), want))
+            out.write(plain)
+            sha.update(plain)
+            written += want
+    if written != total:
+        raise CsoError("decoded %d of %d bytes" % (written, total))
+    if progress:
+        progress(1.0)
+    return sha.hexdigest()
+
+
+# ---------------------------------------------------------- PS3 discs
+# A PS3 disc image (Redump's .iso, often zipped) becomes a "Name.ps3" game folder,
+# the layout RPCS3 installs updates and DLC for. Redump images are encrypted: sector
+# 0 lists the plain regions, and every sector in the gaps between them is AES-128-CBC
+# with the disc's key (IV = the sector number). Keys are the user's own, for games
+# they own, and never shipped or downloaded from anywhere but the user's RomM:
+# bios/ps3keys/ (.key, .dkey, or zips of them), also copied from RomM's PS3
+# firmware. Decrypting is off unless turned on; a decrypted image needs no key.
+
+PS3_SECTOR = 2048
+PS3_MAGIC = b"PlayStation3"            # sector 1 of every PS3 disc
+PS3_EBOOT = "PS3_GAME/USRDIR/EBOOT.BIN"
+PS3_SFO = "PS3_GAME/PARAM.SFO"
+PS3_KEY_EXTS = (".key", ".dkey")
+PS3_KEY_MAX = 4096                     # one key file: 16 bytes, or 32 hex digits and a newline
+PS3_KEYZIP_MAX = 256 << 20             # a zip of key files (Redump's whole set is under 1 MB)
+PS3_RANKED = 50                        # keys tried in name-likeness order before all the rest
+PS3_CHUNK = 8 << 20
+
+
+class Ps3Error(Exception):
+    """A PS3 disc that can't become a folder: not a PS3 disc, damaged, or encrypted
+    with no key for it (or decrypting turned off)."""
+
+
+CHECK_ERRORS = CHECK_ERRORS + (Ps3Error,)
+
+
+def ps3_keys_dir():
+    return os.path.join(USERDATA, "bios", "ps3keys")
+
+
+def ps3_decrypt_supported():
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _ps3_key_bytes(data):
+    """16 raw bytes, or 32 hex digits (Redump's .key and .dkey); else None."""
+    if len(data) == 16:
+        return bytes(data)
+    try:
+        t = bytes(data).decode("ascii").strip()
+        return bytes.fromhex(t) if len(t) == 32 else None
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
+def _ps3_keys_from_zip(z, keys, depth=0):
+    for info in z.infolist():
+        name, low = info.filename, info.filename.lower()
+        if info.is_dir():
+            continue
+        if low.endswith(PS3_KEY_EXTS) and info.file_size <= PS3_KEY_MAX:
+            k = _ps3_key_bytes(z.read(info))
+            if k:
+                keys.setdefault(os.path.splitext(os.path.basename(name))[0], k)
+        elif low.endswith(".zip") and depth == 0 and info.file_size <= PS3_KEYZIP_MAX:
+            try:                                    # Redump's set: one small zip per disc
+                with zipfile.ZipFile(io.BytesIO(z.read(info))) as inner:
+                    _ps3_keys_from_zip(inner, keys, 1)
+            except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError):
+                continue
+
+
+_PS3_KEYS = {"sig": None, "keys": {}}
+
+
+def ps3_keys(folder=None):
+    """{disc name: 16-byte key} from the keys folder: loose .key/.dkey files and
+    zips of them (one level of zips inside zips). Read in place, cached until a
+    file there changes; unreadable files are skipped."""
+    folder = folder or ps3_keys_dir()
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return {}
+    sig = [folder]
+    for n in names:
+        try:
+            st = os.stat(os.path.join(folder, n))
+            sig.append((n, st.st_size, st.st_mtime_ns))
+        except OSError:
+            pass
+    if _PS3_KEYS["sig"] == sig:
+        return _PS3_KEYS["keys"]
+    keys = {}
+    for n in names:
+        p, low = os.path.join(folder, n), n.lower()
+        if not os.path.isfile(p):
+            continue
+        try:
+            if low.endswith(PS3_KEY_EXTS) and os.path.getsize(p) <= PS3_KEY_MAX:
+                with open(p, "rb") as f:
+                    k = _ps3_key_bytes(f.read())
+                if k:
+                    keys.setdefault(os.path.splitext(n)[0], k)
+            elif low.endswith(".zip") and os.path.getsize(p) <= PS3_KEYZIP_MAX:
+                with zipfile.ZipFile(p) as z:
+                    _ps3_keys_from_zip(z, keys)
+        except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError) as e:
+            log("ps3: skipped key file %s (%s)" % (n, e.__class__.__name__))
+    _PS3_KEYS.update(sig=sig, keys=keys)
+    return keys
+
+
+def _ps3_words(name):
+    return set(re.findall(r"[a-z0-9]+", name.lower()))
+
+
+def _ps3_grams(name):
+    s = re.sub(r"[^a-z0-9]+", " ", name.lower())
+    return {s[i:i + 3] for i in range(len(s) - 2)}
+
+
+def ps3_key_order(stem, keys):
+    """Key names to try for a disc called stem: the exact name first (any case),
+    then the most alike by words and letter shingles, then every other key.
+    Order only saves time: each key is checked against the disc itself."""
+    want = stem.casefold()
+    exact = [n for n in keys if n.casefold() == want]
+    words, grams = _ps3_words(stem), _ps3_grams(stem)
+
+    def likeness(n):
+        w, g = _ps3_words(n), _ps3_grams(n)
+        return (len(words & w) / (len(words | w) or 1)) + (len(grams & g) / (len(grams | g) or 1))
+    rest = [n for n in keys if n.casefold() != want]
+    scored = sorted(((likeness(n), n) for n in rest), key=lambda t: (-t[0], t[1]))
+    ranked = [n for s, n in scored[:PS3_RANKED] if s > 0]
+    seen = set(ranked)
+    return exact + ranked + sorted(n for n in rest if n not in seen)
+
+
+def _ps3_iv(lba):
+    return b"\0" * 12 + struct.pack(">I", lba & 0xFFFFFFFF)
+
+
+class Ps3Disc:
+    """A PS3 disc image read through a file object (a loose .iso, or the .iso
+    inside a zip, read forward as a stream): its regions, its ISO 9660 files,
+    and decrypted reads once a key is set."""
+    ZERO = bytes(PS3_SECTOR)
+    # files whose first bytes are known, to test a key on (and tell a decrypted disc):
+    # the nearest to the start, and the next one when it's close by (a key is checked
+    # without reading far into a zip; the finished folder is checked again anyway)
+    PROBE_NEAR = (256 << 20) // PS3_SECTOR
+    PROBES = ((lambda p: p.endswith("/LIC.DAT"), b"PS3LICDA"),
+              (lambda p: p.endswith(".PNG"), b"\x89PNG\r\n\x1a\n"),
+              (lambda p: p.endswith("/PARAM.SFO"), b"\0PSF"),
+              (lambda p: p.endswith(("/EBOOT.BIN", ".SELF", ".SPRX")), b"SCE\0"))
+
+    def __init__(self, f, size, name="", reopen=None):
+        self.f, self.size, self.name = f, size, name
+        self.reopen = reopen           # a zip member: read forward only (its checksum stays checked)
+        self.pos = 0 if reopen else None
+        self.key = None
+        if size < 32 * PS3_SECTOR or size % PS3_SECTOR:
+            raise Ps3Error("not a PS3 disc image (size)")
+        head = self.raw(0, 2)
+        if head[PS3_SECTOR:PS3_SECTOR + len(PS3_MAGIC)] != PS3_MAGIC:
+            raise Ps3Error("not a PS3 disc image")
+        self.regions = self._regions(head[:PS3_SECTOR])
+        self.files = self._walk()
+        if PS3_EBOOT not in self.files or PS3_SFO not in self.files:
+            raise Ps3Error("no game to boot on it (no PS3_GAME/USRDIR/EBOOT.BIN); left as it is")
+        self.probes = self._probes()
+        self.plain = all(data[:len(m)] == m for _, data, m in self.probes)
+
+    @staticmethod
+    def _regions(s0):
+        n = struct.unpack(">I", s0[:4])[0]
+        if not 0 < n <= (PS3_SECTOR - 8) // 8:
+            raise Ps3Error("damaged region table")
+        out, prev = [], 0
+        for i in range(n):
+            start, last = struct.unpack(">II", s0[8 + 8 * i:16 + 8 * i])
+            if start > last or (i and start < prev):
+                raise Ps3Error("damaged region table")
+            if i and prev < start:
+                out.append((prev, start))            # a gap between plain regions: encrypted
+            prev = last + 1
+        return out
+
+    def encrypted(self, lba):
+        return any(a <= lba < b for a, b in self.regions)
+
+    def raw(self, lba, count):
+        off = lba * PS3_SECTOR
+        if self.reopen is not None:
+            if off < self.pos:                 # back in a zip: from the start again
+                self.f.close()
+                self.f, self.pos = self.reopen(), 0
+            while self.pos < off:              # forward: read past (never seek: that skips the checksum)
+                skip = self.f.read(min(PS3_CHUNK, off - self.pos))
+                if not skip:
+                    raise Ps3Error("cut short at byte %d" % self.pos)
+                self.pos += len(skip)
+        elif self.pos != off:
+            self.f.seek(off)
+        data = self.f.read(count * PS3_SECTOR)
+        if len(data) != count * PS3_SECTOR:
+            raise Ps3Error("cut short at sector %d" % (lba + len(data) // PS3_SECTOR))
+        self.pos = off + len(data)
+        return data
+
+    def decrypt(self, data, lba, key=None):
+        """data (whole sectors from lba) with every encrypted, non-empty sector decrypted."""
+        key = key or self.key
+        if self.plain or not key:
+            return data
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        n = len(data) // PS3_SECTOR
+        out = None
+        for a, b in self.regions:
+            lo, hi = max(a, lba), min(b, lba + n)
+            if lo >= hi:
+                continue
+            if out is None:
+                out = bytearray(data)
+            s, e = (lo - lba) * PS3_SECTOR, (hi - lba) * PS3_SECTOR
+            chunk = bytes(data[s:e])
+            # CBC with one IV per sector, done as one ECB pass: P = D(C) xor previous block
+            dec = Cipher(algorithms.AES(key), modes.ECB()).decryptor().update(chunk)
+            prev = bytearray(16) + chunk[:-16]
+            for i in range(hi - lo):
+                prev[i * PS3_SECTOR:i * PS3_SECTOR + 16] = _ps3_iv(lo + i)
+            plain = (int.from_bytes(dec, "big") ^ int.from_bytes(prev, "big")).to_bytes(len(chunk), "big")
+            out[s:e] = plain
+            for i in range(hi - lo):                 # empty sectors were never encrypted
+                o = i * PS3_SECTOR
+                if chunk[o:o + PS3_SECTOR] == self.ZERO:
+                    out[s + o:s + o + PS3_SECTOR] = self.ZERO
+        return data if out is None else bytes(out)
+
+    def _probes(self):
+        """[(lba, first sector as on the disc, magic)] for one or two files with a known
+        start whose first sector is encrypted (EBOOT.BIN when there are none)."""
+        found = []
+        for path, exts in self.files.items():
+            lba, length = exts[0]
+            if length < 16 or not self.encrypted(lba):
+                continue
+            for match, magic in self.PROBES:
+                if match(path):
+                    found.append((lba, magic))
+                    break
+        found.sort()
+        if not found:
+            found = [(self.files[PS3_EBOOT][0][0], b"SCE\0")]
+        found = found[:1] + [f for f in found[1:2] if f[0] - found[0][0] <= self.PROBE_NEAR]
+        return [(lba, self.raw(lba, 1), magic) for lba, magic in found]
+
+    def _walk(self):
+        """{"DIR/FILE": [(lba, length), ...]} from the primary volume descriptor
+        (Joliet's names when the disc has them). Names are checked: no paths out."""
+        pvd = joliet = None
+        for lba in range(16, 32):
+            d = self.raw(lba, 1)
+            if d[1:6] != b"CD001":
+                raise Ps3Error("no ISO 9660 file system")
+            if d[0] == 1 and pvd is None:
+                pvd = d
+            elif d[0] == 2 and d[88:91] in (b"%/@", b"%/C", b"%/E"):
+                joliet = d
+            elif d[0] == 255:
+                break
+        vd = joliet or pvd
+        if vd is None:
+            raise Ps3Error("no ISO 9660 file system")
+        wide = vd is joliet
+        import heapq
+        files, seen = {}, set()
+        todo = [(struct.unpack("<I", vd[158:162])[0], "", vd[156:190])]
+        while todo:                                      # in disc order: a zip is read forward
+            _, prefix, rec = heapq.heappop(todo)
+            lba, length = struct.unpack("<I", rec[2:6])[0], struct.unpack("<I", rec[10:14])[0]
+            if lba in seen or len(seen) > 100000 or length > 64 << 20:
+                raise Ps3Error("damaged file system")
+            seen.add(lba)
+            data = self.raw(lba, (length + PS3_SECTOR - 1) // PS3_SECTOR)
+            pos, pending = 0, None
+            while pos < length:
+                rl = data[pos]
+                if rl == 0:                              # records never cross a sector
+                    pos = (pos // PS3_SECTOR + 1) * PS3_SECTOR
+                    continue
+                r = data[pos:pos + rl]
+                pos += rl
+                nl = r[32]
+                raw_name = r[33:33 + nl]
+                if raw_name in (b"\0", b"\1"):
+                    continue
+                name = raw_name.decode("utf-16-be" if wide else "latin-1", "replace").split(";")[0]
+                if not wide:
+                    name = name.rstrip(".")
+                if not name or name in (".", "..") or "/" in name or "\\" in name or "\0" in name:
+                    raise Ps3Error("unsafe name on the disc: %r" % name)
+                path = prefix + name
+                ext = (struct.unpack("<I", r[2:6])[0], struct.unpack("<I", r[10:14])[0])
+                if r[25] & 2:
+                    heapq.heappush(todo, (ext[0], path + "/", r))
+                    continue
+                if pending and pending[0] == path:
+                    files[path].append(ext)              # the next piece of a file over 4 GB
+                else:
+                    if path in files:
+                        raise Ps3Error("two files named %s" % path)
+                    files[path] = [ext]
+                pending = (path,) if r[25] & 0x80 else None
+        return files
+
+    def find_key(self, keys):
+        """The name of the key that opens this disc (checked on the first sectors of
+        files with a known start), or None."""
+        for name in ps3_key_order(self.name, keys):
+            k = keys[name]
+            if all(self.decrypt(data, lba, k)[:len(m)] == m for lba, data, m in self.probes):
+                return name
+        return None
+
+    def total(self):
+        return sum(length for exts in self.files.values() for _, length in exts)
+
+    def extract(self, out, pause=None, progress=None):
+        """Write every file under out/ (which must not exist), reading the image
+        forward, decrypting as needed. Checks EBOOT.BIN and PARAM.SFO after."""
+        pieces, offset = [], {}
+        for path, exts in self.files.items():
+            at = 0
+            for lba, length in exts:
+                pieces.append((lba, length, path, at))
+                at += length
+        pieces.sort()
+        total, done = self.total() or 1, 0
+        os.makedirs(out)
+        real = os.path.realpath(out)
+        made = set()
+        for lba, length, path, at in pieces:
+            dest = os.path.join(out, *path.split("/"))
+            if not os.path.realpath(dest).startswith(real + os.sep):
+                raise Ps3Error("unsafe name on the disc: %s" % path)
+            if path not in made:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                open(dest, "wb").close()
+                made.add(path)
+            with open(dest, "r+b") as f:
+                f.seek(at)
+                left, cur = length, lba
+                while left > 0:
+                    if pause:
+                        pause()
+                    n = min(PS3_CHUNK, left)
+                    secs = (n + PS3_SECTOR - 1) // PS3_SECTOR
+                    data = self.decrypt(self.raw(cur, secs), cur)
+                    f.write(data[:n])
+                    left -= n
+                    cur += secs
+                    done += n
+                    if progress:
+                        progress(done / total)
+        for path, magic in ((PS3_EBOOT, b"SCE\0"), (PS3_SFO, b"\0PSF")):
+            with open(os.path.join(out, *path.split("/")), "rb") as f:
+                if f.read(4) != magic:
+                    raise Ps3Error("%s didn't come out right (wrong key?)" % path)
+        return made
+
+
+def ps3_disc(src):
+    """(Ps3Disc, closer) for a loose .iso or the one .iso in a .zip (read in place),
+    named after the file."""
+    name = os.path.splitext(os.path.basename(src))[0]
+    if not src.lower().endswith(".zip"):
+        f = open(src, "rb")
+        try:
+            return Ps3Disc(f, os.path.getsize(src), name), f.close
+        except Exception:
+            f.close()
+            raise
+    z = zipfile.ZipFile(src)
+    try:
+        isos = [i for i in z.infolist() if i.filename.lower().endswith(".iso") and not i.is_dir()]
+        others = [i for i in z.infolist() if i not in isos and not i.is_dir()
+                  and not i.filename.lower().endswith((".txt", ".nfo", ".md5", ".sfv"))]
+        if len(isos) != 1 or others:
+            raise Ps3Error("the zip doesn't hold exactly one disc image")
+        disc = Ps3Disc(z.open(isos[0]), isos[0].file_size, name, reopen=lambda: z.open(isos[0]))
+    except Exception:
+        z.close()
+        raise
+    return disc, lambda: (disc.f.close(), z.close())
+
+
+def ps3_image_size(src):
+    """Bytes of the disc image: the .iso, or the one inside a zip."""
+    if src.lower().endswith(".zip"):
+        with zipfile.ZipFile(src) as z:
+            return sum(i.file_size for i in z.infolist() if i.filename.lower().endswith(".iso"))
+    return os.path.getsize(src)
+
+
+def ps3_zip_is_disc(path):
+    """True for a zip holding one PS3 disc image (and maybe notes): kept zipped
+    for the PS3 converter, which reads it in place."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = [i.filename.lower() for i in z.infolist() if not i.is_dir()]
+    except (zipfile.BadZipFile, OSError):
+        return False
+    isos = [n for n in names if n.endswith(".iso")]
+    return len(isos) == 1 and all(n in isos or n.endswith((".txt", ".nfo", ".md5", ".sfv")) for n in names)
+
+
+def ps3_key_files(api, platform_id):
+    """RomM's PS3 firmware files that carry disc keys: .key/.dkey files and zips
+    whose name says keys (keys.zip). The user's own; RomM-o-Cera ships none."""
+    out = []
+    for fw in api.firmware(platform_id) if platform_id else []:
+        n = (fw.get("file_name") or "").lower()
+        if n.endswith(PS3_KEY_EXTS) or (n.endswith(".zip") and "key" in n):
+            out.append(fw)
+    return out
+
+
+def fetch_ps3_keys(api, platform_id):
+    """Copy the disc keys in RomM's PS3 firmware into bios/ps3keys/ (a file already
+    there with the same size and MD5 is kept). Returns how many keys the folder
+    now holds. A file with no keys in it isn't kept."""
+    folder = ps3_keys_dir()
+    os.makedirs(folder, exist_ok=True)
+    real = os.path.realpath(folder)
+    for fw in ps3_key_files(api, platform_id):
+        name = os.path.basename(fw["file_name"])
+        dest = os.path.join(folder, name)
+        if not os.path.realpath(dest).startswith(real + os.sep) or name.startswith("."):
+            continue
+        if os.path.isfile(dest) and os.path.getsize(dest) == fw.get("file_size_bytes") \
+                and fw.get("md5_hash") and file_md5(dest) == fw["md5_hash"].lower():
+            continue
+        part = dest + ".part"
+        try:
+            r = api.s.get("%s/api/firmware/%d/content/%s" % (api.base, fw["id"], urllib.parse.quote(name)),
+                          timeout=60, stream=True)
+        except Exception as e:
+            raise RommError("Key download failed (%s)" % e.__class__.__name__) from None
+        try:
+            if r.status_code != 200:
+                raise RommError("Key download failed: HTTP %d" % r.status_code)
+            n = 0
+            with open(part, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    n += len(chunk)
+                    if n > PS3_KEYZIP_MAX:
+                        raise RommError("%s is too big for a key file; not kept." % name)
+                    f.write(chunk)
+        except (RommError, requests.RequestException, OSError) as e:
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+            if isinstance(e, RommError):
+                raise
+            raise RommError("Key download failed (%s)" % e.__class__.__name__) from None
+        finally:
+            r.close()
+        found = {}
+        try:
+            if name.lower().endswith(".zip"):
+                with zipfile.ZipFile(part) as z:
+                    _ps3_keys_from_zip(z, found)
+            else:
+                with open(part, "rb") as f:
+                    k = _ps3_key_bytes(f.read(PS3_KEY_MAX + 1))
+                found = {name: k} if k else {}
+        except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError):
+            found = {}
+        if not found:
+            os.remove(part)
+            log("ps3: %s from RomM holds no disc keys; not kept" % name)
+            continue
+        os.replace(part, dest)
+        log("ps3: disc keys from RomM: %s (%d)" % (name, len(found)))
+    return len(ps3_keys(folder))
+
+
+_PS3_CHECKED = {}
+
+
+def ps3_check(src, cfg=None):
+    """What a PS3 disc needs: {"plain": True} or {"plain": False, "key": name}.
+    Ps3Error when it can't become a folder (and why: decrypting off, no key).
+    Remembered until the file, the keys folder or the setting changes."""
+    cfg = load_config() if cfg is None else cfg
+    try:
+        st = os.stat(src)
+    except OSError as e:
+        raise Ps3Error("can't read it (%s)" % (e.strerror or e)) from None
+    keys = ps3_keys() if cfg.get("ps3_decrypt") else {}
+    memo = (src, st.st_size, st.st_mtime_ns, bool(cfg.get("ps3_decrypt")), id(keys), len(keys))
+    hit = _PS3_CHECKED.get(src)
+    if hit and hit[0] == memo:
+        if isinstance(hit[1], Ps3Error):
+            raise Ps3Error(str(hit[1]))
+        return dict(hit[1])
+    try:
+        res = _ps3_check(src, cfg)
+    except Ps3Error as e:
+        _PS3_CHECKED[src] = (memo, e)
+        raise
+    if len(_PS3_CHECKED) > 512:
+        _PS3_CHECKED.clear()
+    _PS3_CHECKED[src] = (memo, res)
+    return dict(res)
+
+
+def _ps3_check(src, cfg):
+    try:
+        disc, close = ps3_disc(src)
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as e:
+        raise Ps3Error("can't read it (%s)" % e.__class__.__name__) from None
+    try:
+        if disc.plain:
+            return {"plain": True, "size": disc.total()}
+        if not cfg.get("ps3_decrypt"):
+            raise Ps3Error("encrypted; turn on Decrypt PS3 discs (uses disc keys for games you own)")
+        if not ps3_decrypt_supported():
+            raise Ps3Error("encrypted, and Python's cryptography module isn't on this system")
+        name = disc.find_key(ps3_keys())
+        if name is None:
+            raise Ps3Error("encrypted, and bios/ps3keys has no disc key for it (add the key for "
+                           "this game you own)")
+        return {"plain": False, "key": name, "size": disc.total()}
+    finally:
+        close()
+
+
+def ps3_to_folder(src, out, cfg=None, pause=None, progress=None):
+    """Turn a PS3 disc (.iso or zipped .iso) into the game folder out (Name.ps3),
+    decrypting with its key when needed. A zip's own checksum is checked by
+    reading it to the end. Returns the key's name (None: no key needed)."""
+    info = ps3_check(src, cfg)
+    disc, close = ps3_disc(src)
+    try:
+        if not info["plain"]:
+            disc.key = ps3_keys()[info["key"]]
+        disc.extract(out, pause, progress)
+        if src.lower().endswith(".zip"):
+            try:                               # the rest of the stream: the zip checks its CRC at the end
+                while disc.f.read(PS3_CHUNK):
+                    if pause:
+                        pause()
+            except zipfile.BadZipFile as e:
+                raise Ps3Error("the zip is damaged (%s)" % e) from None
+        return info.get("key")
+    finally:
+        close()
+
+
 # ---------------------------------------------------------- which conversion applies
 # One table answers "this file on this system becomes that, if turned on" for
 # every place that asks: the download post-processing (Downloader._maybe_chd),
@@ -1171,7 +1859,8 @@ class Converter:
     chd: bool = False          # made by chdman (createcd / createdvd)
     keep_image_ext: bool = False   # the image's own extension stays in the name: "X.iso.squashfs"
     space_factor: int = 1      # room needed per source byte while the output is verified
-    check: Optional[Callable] = None   # check(src) raises Z3dsError/OSError when it can't be converted
+    space: Optional[Callable] = None   # space(src) -> bytes needed beside it, when the size alone can't tell
+    check: Optional[Callable] = None   # check(src) raises one of CHECK_ERRORS when it can't be converted
     renamed_sources: tuple = ()    # found by the planner too: renamed to a source first ("X.xiso" -> "X.iso")
     planner_skips_done: bool = False   # the planner leaves a source alone when its output is already there
 
@@ -1211,6 +1900,12 @@ CONVERTERS = (
     Converter("createdvd", "CHD", "chd", frozenset(CHD_DVD_SYSTEMS), {".iso": ".chd"},
               "chd", "Compress disc games to CHD", "turned off",
               lambda cfg, system: bool((cfg or {}).get("chd", True)), chd=True),
+    # PSP .cso: decoded to a temporary ISO beside the CHD, then createdvd like an .iso
+    # (mode "cso" is stored in queue tasks: never rename it)
+    Converter("cso", "CHD", "chd", frozenset({"psp"}), {".cso": ".chd"},
+              "chd", "Compress disc games to CHD", "turned off",
+              lambda cfg, system: bool((cfg or {}).get("chd", True)), chd=True, space_factor=2,
+              check=lambda src: cso_info(src), space=lambda src: cso_info(src)["total"] + os.path.getsize(src)),
     Converter("rvz", "RVZ", "rvz", frozenset(RVZ_SYSTEMS), dict.fromkeys(RVZ_SOURCES, ".rvz"),
               "rvz", "GameCube and Wii to RVZ", "turned off, or dolphin-tool isn't installed",
               lambda cfg, system: rvz_enabled(cfg)),
@@ -1228,6 +1923,12 @@ CONVERTERS = (
     Converter("zar", "ZAR", "zar", frozenset(ZAR_SYSTEMS), {".iso": ".zar"},
               "zar", "Xbox 360 to .zar", "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True),
+    # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
+    # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
+    Converter("ps3", "PS3 folder", "ps3", frozenset({"ps3"}), {".iso": ".ps3", ".zip": ".ps3"},
+              "ps3_folders", "PS3 games as folders", "turned off",
+              lambda cfg, system: bool((cfg or {}).get("ps3_folders", True)),
+              check=lambda src: ps3_check(src), space=lambda src: ps3_image_size(src)),
 )
 CONVERTER = {c.mode: c for c in CONVERTERS}
 
@@ -1309,16 +2010,75 @@ def _leftover_folder(sysdir, d):
 
 # an archive's single top entry that may never land directly in roms/<system>/
 ARCHIVE_RESERVED_TOPS = {"", ".", "gamelist.xml", "_info.txt"} | MEDIA_DIRS
-# unfinished outputs of the converters other than chdman (whose .chd.part is listed on its own)
+# unfinished outputs of the converters other than chdman (whose .chd.part is listed on its own),
+# and the ISO a .cso is decoded to
 CONVERT_PARTS = tuple(dict.fromkeys([e + ".part" for c in CONVERTERS if not c.chd for e in c.outputs] +
-                                    [e + ".part" for e in Z3DS_EXTS]))
+                                    [e + ".part" for e in Z3DS_EXTS] + [CSO_TEMP_SUFFIX]))
+
+
+# a converted game folder (PS3): never looked inside; its unfinished one is a leftover
+FOLDER_OUTPUTS = tuple(e for c in CONVERTERS for e in c.outputs if e == ".ps3")
+# what can sit beside a converted copy of the same game: originals, archives, loose tracks
+COPY_SOURCES = tuple(dict.fromkeys(list(ARCHIVE_EXTS) + [e for c in CONVERTERS for e in c.sources + c.renamed_sources]
+                                   + [".bin", ".img", ".sub", ".sbi", ".raw"]))
+COPY_OUTPUTS = tuple(dict.fromkeys(e for c in CONVERTERS for e in c.outputs))
+_TRACK = re.compile(r"\s*\(track \d+\)$", re.I)
+
+
+def _converted_copy(name, here):
+    """The converted game in the same folder that the file name is another copy of
+    ("X.7z" beside "X.rvz", "X (Track 2).bin" beside "X.chd", "X.iso" beside
+    "X.iso.squashfs" or "X.ps3"), from here: {lower name: name}; else None."""
+    stem, ext = os.path.splitext(name)
+    if ext.lower() not in COPY_SOURCES:
+        return None
+    for base in dict.fromkeys((stem, _TRACK.sub("", stem))):
+        for out in [base + e for e in COPY_OUTPUTS] + [name + ".squashfs"]:
+            hit = here.get(out.lower())
+            if hit and hit.lower() != name.lower():
+                return hit
+    return None
+
+
+def _converted_ok(path, checked):
+    """A converted game that looks whole: a game folder with its EBOOT.BIN, an
+    image or CHD that isn't cut short (disc_incomplete). Memoised in checked."""
+    if path not in checked:
+        if os.path.isdir(path):
+            checked[path] = os.path.isfile(os.path.join(path, *PS3_EBOOT.split("/")))
+        else:
+            try:
+                checked[path] = os.path.getsize(path) > 0 and not disc_incomplete(path)
+            except OSError:
+                checked[path] = False
+    return checked[path]
 
 
 def find_leftovers(pending_roms=(), chd_busy=None):
-    """Files and folders interrupted downloads/conversions left behind:
-    [{"path", "kind", "size"}]. Never a partial download that's still
-    queued or paused (it resumes from it), never a CHD being written."""
+    """Files and folders interrupted downloads/conversions left behind, and
+    copies of games already here converted: [{"path", "kind", "size"}, plus
+    "note" naming the converted game for a copy]. Never a partial download
+    that's still queued or paused (it resumes from it), never a CHD being
+    written, never a file a queued conversion will use, never a copy whose
+    converted game looks broken, nothing inside a converted game folder (X.ps3)."""
     busy = chd_worker_busy() if chd_busy is None else chd_busy
+    queued, sure = set(), not busy               # sure: we know every source a queued task will use
+    checked = {}
+    if sure:
+        try:
+            tasks = [t for t in os.listdir(CHD_QUEUE_DIR) if t.endswith(".json")]
+        except FileNotFoundError:
+            tasks = []
+        except OSError:
+            tasks, sure = [], False
+        for t in tasks:
+            try:
+                with open(os.path.join(CHD_QUEUE_DIR, t)) as f:
+                    queued.update(os.path.normpath(x) for x in json.load(f).get("sources") or [])
+            except FileNotFoundError:
+                continue                             # done meanwhile
+            except (OSError, ValueError, AttributeError, TypeError):
+                sure = False                         # can't tell what's queued: no copies offered
     keep = set()
     for rom, system in pending_roms:
         name = safe_name(rom.get("fs_name") or "")
@@ -1337,12 +2097,33 @@ def find_leftovers(pending_roms=(), chd_busy=None):
         sysdir = os.path.join(ROMS_ROOT, system)
         if not os.path.isdir(sysdir) or os.path.islink(sysdir):
             continue
+        # copies only where a converter works (arcade sets keep game.zip beside game.chd)
+        copies = bool(converters_for(system)) and sure
         for dp, dns, fns in os.walk(sysdir, topdown=False):
-            if any(part in MEDIA_DIRS for part in os.path.relpath(dp, sysdir).split(os.sep)):
-                continue
+            parts = os.path.relpath(dp, sysdir).split(os.sep)
+            if any(part in MEDIA_DIRS or part.lower().endswith(FOLDER_OUTPUTS)
+                   or part.lower().endswith(tuple(e + ".part" for e in FOLDER_OUTPUTS)) for part in parts):
+                continue                                 # inside a game folder (or a half-made one)
+            for dn in dns:
+                p = os.path.join(dp, dn)
+                if dn.lower().endswith(tuple(e + ".part" for e in FOLDER_OUTPUTS)) and not busy \
+                        and not os.path.islink(p) and not kept(p):
+                    out.append({"path": p, "kind": "Unfinished conversion", "size": path_size(p)})
+            here = {n.lower(): n for n in fns + dns}
             for fn in fns:
                 p = os.path.join(dp, fn)
                 low = fn.lower()
+                copy = _converted_copy(fn, here) if copies and not kept(p) and os.path.normpath(p) not in queued \
+                    else None
+                if copy and not _converted_ok(os.path.join(dp, copy), checked):
+                    copy = None                          # the converted one may be the broken copy: keep this
+                if copy:
+                    try:
+                        out.append({"path": p, "kind": "Copy of a converted game", "size": os.path.getsize(p),
+                                    "note": "Already here as %s" % copy})
+                    except OSError:
+                        pass
+                    continue
                 if low.endswith((".chd.part", ".tmp.chd")):
                     kind = "Unfinished CHD"
                     if busy:
@@ -1403,6 +2184,341 @@ def delete_leftovers(items):
             d = os.path.dirname(d)
     log("LEFTOVERS: removed %d (%s)" % (len(items), human_size(freed)))
     return freed
+
+
+# ------------------------------------------------- games ES can't see
+
+# EmulationStation lists only files whose extension is in the system's
+# <extension> list (es_systems.cfg); anything else in roms/<system>/ is
+# silently ignored. find_unseen() names those files and why.
+SYSTEM_LABELS = {"psx": "PlayStation", "ps2": "PS2", "ps3": "PS3", "psp": "PSP", "psvita": "PS Vita",
+                 "gamecube": "GameCube", "wii": "Wii", "wiiu": "Wii U", "n64": "N64", "nds": "DS",
+                 "3ds": "3DS", "switch": "Switch", "gb": "Game Boy", "gbc": "Game Boy Color",
+                 "gba": "GBA", "nes": "NES", "snes": "SNES", "megadrive": "Mega Drive",
+                 "mastersystem": "Master System", "megacd": "Mega-CD", "saturn": "Saturn",
+                 "dreamcast": "Dreamcast", "xbox": "Xbox", "xbox360": "Xbox 360",
+                 "pcengine": "PC Engine", "pcenginecd": "PC Engine CD", "neogeocd": "Neo Geo CD",
+                 "triforce": "Triforce"}
+# never games, whatever folder they sit in: notes, pictures, saves, Batocera's pad configs
+UNSEEN_IGNORE = (".txt", ".nfo", ".diz", ".md", ".pdf", ".xml", ".htm", ".html", ".jpg", ".jpeg",
+                 ".png", ".gif", ".bmp", ".webp", ".srm", ".sav", ".state", ".ini", ".log", ".db",
+                 ".keys", ".p2k.cfg", ".sfv", ".md5", ".sha1", ".url", ".lnk")
+# loose disc-image parts named like the game ES lists beside them (Game.ccd + Game.img/.sub)
+UNSEEN_COMPANIONS = {".bin", ".img", ".sub", ".sbi", ".mdf", ".ecm"}
+# housekeeping, never games: backups (gamelist.xml.bak-…, X.bak-gdi), parked or half-done files
+UNSEEN_HOUSEKEEPING = (".disabled", ".sqlite", ".torrent", ".part", ".tmp", ".tmp.chd")
+# launchers that list almost anything: never a reason to say "this belongs elsewhere"
+UNSEEN_CATCH_ALL = {"ports", "pygame", "windows", "windows_installers", "steam", "flatpak", "lutris",
+                    "epic", "heroic"}
+UNSEEN_MAX_TO = 3      # .rvz: GameCube/Triforce/Wii; more (.bin, .iso) doesn't say which system
+GC_MAGIC, WII_MAGIC = b"\xc2\x33\x9f\x3d", b"\x5d\x1c\x9e\xa3"
+
+
+def system_label(system):
+    return SYSTEM_LABELS.get(system, system)
+
+
+def gc_or_wii(path):
+    """'gamecube' / 'wii' from a plain disc image's header (.iso/.gcm), else None."""
+    try:
+        with open(path, "rb") as f:
+            h = f.read(0x20)
+    except OSError:
+        return None
+    if h[0x1C:0x20] == GC_MAGIC:
+        return "gamecube"
+    if h[0x18:0x1C] == WII_MAGIC:
+        return "wii"
+    return None
+
+
+def _unseen_why(kind, system, ext, to, path=None):
+    if kind == "archive" and system == "ps3" and ext == ".zip" and path and ps3_zip_is_disc(path):
+        try:
+            need = ps3_check(path)
+        except Ps3Error as e:
+            return "PS3 disc in a zip: %s" % e
+        except (OSError, zipfile.BadZipFile):
+            return "PS3 disc in a zip that can't be read"
+        return "PS3 disc in a zip: Unpack makes it a game folder%s" % (
+            "" if need["plain"] else " (its disc key is here)")
+    if kind == "archive":
+        return "%s doesn't list %s — ES can't see it" % (system_label(system), ext)
+    if kind == "wrong":
+        names = "/".join([system_label(s) for s in to[:3]] + (["…"] if len(to) > 3 else []))
+        what = "image" if ext in DISC_EXTS else "game"
+        return "%s %s %s in %s/" % ("an" if names[:1] in "AEIOU" else "a", names, what, system)
+    if to:                               # "unknown" but other systems list it: too generic to pick one
+        return "%s doesn't list %s — ES can't list it here" % (system_label(system), ext)
+    return "ES can't list this file: no system takes %s" % ext
+
+
+def find_unseen(es, cancel=None):
+    """Files in roms/<system>/ EmulationStation silently ignores: [{"system",
+    "path", "kind", "ext", "to", "size", "why"}], by system then path.
+    kind: "archive" (a .zip/.7z/.rar the system doesn't list: unpack it),
+    "wrong" (a loose file in the system folder whose extension at most three
+    other systems list: move it to one of "to"), "unknown" (no system lists it, only launchers like ports do, or so
+    many do that it says nothing: .bin, .iso). Backups (.bak…), parked and
+    numbered files are housekeeping, not findings. Local only, no hashing. Skipped: media
+    folders, gamelist.xml, hidden and unfinished files, notes/pictures/saves,
+    whatever ES lists (a folder ES lists as a game isn't entered), the tracks
+    and discs a sheet or playlist names, a sheet whose tracks ES lists, the
+    other files of a game folder that holds a game ES lists, and the inside of
+    game folders on folder-game systems (PS3, ports…)."""
+    out = []
+    try:
+        systems = sorted(os.listdir(ROMS_ROOT))
+    except OSError:
+        return out
+    for system in systems:
+        exts = es.get(system)
+        sysdir = os.path.join(ROMS_ROOT, system)
+        if exts is None or not os.path.isdir(sysdir) or os.path.islink(sysdir):
+            continue
+        folders = system in FOLDER_GAME_SYSTEMS
+        refs = set()
+        for dp, dns, fns in os.walk(sysdir):
+            if cancel is not None and cancel.is_set():
+                return out
+            top = dp == sysdir
+            dns[:] = sorted(d for d in dns if not d.startswith(".") and d not in MEDIA_DIRS
+                            and not folders and os.path.splitext(d)[1].lower() not in exts
+                            and not os.path.islink(os.path.join(dp, d)))
+            names = [n for n in fns if not n.startswith(".")]
+            listed = [n for n in names if os.path.splitext(n)[1].lower() in exts]
+            if listed and not top:
+                continue                         # a game folder: the rest are its own files
+            sheets = {}
+            for n in names:
+                if n.lower().endswith((".cue", ".gdi", ".m3u")):
+                    p = os.path.join(dp, n)
+                    srcs = [os.path.normpath(q) for q in
+                            (m3u_paths(p) if n.lower().endswith(".m3u") else sheet_sources(p))]
+                    sheets[n] = srcs
+                    refs.update(srcs)
+            stems = {os.path.splitext(n)[0].lower() for n in listed}
+            for n in sorted(names):
+                low = n.lower()
+                ext = os.path.splitext(low)[1]
+                if not ext or ext in exts or low in ("gamelist.xml", "_info.txt") or ".bak" in low \
+                        or low.endswith(UNSEEN_IGNORE + UNSEEN_HOUSEKEEPING) or ext[1:].isdigit():
+                    continue
+                p = os.path.join(dp, n)
+                if os.path.normpath(p) in refs or os.path.islink(p):
+                    continue
+                if ext in UNSEEN_COMPANIONS and os.path.splitext(low)[0] in stems:
+                    continue
+                if any(os.path.splitext(q)[1].lower() in exts for q in sheets.get(n, ())):
+                    continue                     # ES lists its tracks (PS2 lists .bin, not .cue)
+                if ext in ARCHIVE_EXTS:
+                    kind, to = "archive", []
+                else:
+                    to = sorted(s for s, e in es.items()
+                                if s != system and s not in UNSEEN_CATCH_ALL and ext in e)
+                    if {"gamecube", "wii"} <= set(to) and ext in (".iso", ".gcm"):
+                        hw = gc_or_wii(p)
+                        to = [hw] if hw else to
+                    to.sort(key=lambda s: not os.path.isdir(os.path.join(ROMS_ROOT, s)))   # on the box first
+                    kind = "wrong" if top and 0 < len(to) <= UNSEEN_MAX_TO else "unknown"   # in a folder: part of a set
+                try:
+                    size = os.path.getsize(p)
+                except OSError:
+                    continue
+                why = _unseen_why(kind, system, ext, to, p)
+                out.append({"system": system, "path": p, "kind": kind, "ext": ext,
+                            "to": to if kind == "wrong" else [], "size": size, "why": why})
+    return out
+
+
+def archive_contents(dl, path):
+    """[(member name, size or None)] of a .zip/.7z/.rar, for the confirm."""
+    if path.lower().endswith(".zip"):
+        with zipfile.ZipFile(path) as z:
+            return [(i.filename, i.file_size) for i in z.infolist() if not i.is_dir()]
+    out, name = [], None
+    res = subprocess.run([dl._7z(), "l", "-slt", "-ba", path], capture_output=True, text=True,
+                         errors="replace").stdout
+    for line in res.splitlines() + [""]:
+        if line.startswith("Path = "):
+            name, size, folder = line[7:], None, False
+        elif line.startswith("Size = ") and name is not None:
+            size = int(line[7:]) if line[7:].strip().isdigit() else None
+        elif line.startswith("Folder = +"):
+            folder = True
+        elif not line.strip() and name is not None:
+            if not folder:
+                out.append((name, size))
+            name = None
+    return out
+
+
+def _recorded(library, paths):
+    """True when an install record (ours: installed.json) holds one of paths."""
+    with library.lock:
+        library._reload()
+        recs = list(library.installed.values())
+    return any(p in (rec.get("paths") or []) for rec in recs for p in paths)
+
+
+def unpack_unseen(dl, finding):
+    """Unpack an archive ES can't see exactly as after a download (the
+    Downloader's safety checks, then the conversion it queues); the archive
+    goes once it's unpacked. Returns (paths, conversion task name or None)."""
+    path, system = finding["path"], finding["system"]
+    sysdir = os.path.join(ROMS_ROOT, system)
+    if not os.path.isfile(path) or not _inside(path, sysdir):
+        raise RommError("%s isn't there any more" % os.path.basename(path))
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in ARCHIVE_EXTS or system in ZIP_NATIVE or dl._accepts(system, ext):
+        raise RommError("ES lists %s files in %s/: nothing to unpack" % (ext, system))
+    # not a RomM game: id None matches no install record, so "already on the
+    # box under that name" refuses to unpack over any game that's there
+    j = Job({"id": None, "name": os.path.splitext(os.path.basename(path))[0],
+             "fs_name": os.path.basename(path)}, system)
+    ps3 = system == "ps3" and ext == ".zip" and ps3_zip_is_disc(path) \
+        and conversion_for(system, path, dl.cfg, dl._accepts) is not None
+    if ps3:
+        try:                                        # say now why it can't become a game folder
+            ps3_check(path, dl.cfg)
+        except Ps3Error as e:
+            raise RommError("%s: %s" % (os.path.basename(path), e)) from None
+    out = dl._postprocess_file(j, path)
+    if ps3 and j.chd_task:
+        log("UNSEEN queued %s for a PS3 game folder (%s)" % (path, j.chd_task))
+        return out, j.chd_task                      # the worker reads the zip in place
+    if os.path.exists(path):
+        raise RommError("%s wasn't unpacked" % os.path.basename(path))
+    if _recorded(dl.library, [path]):
+        dl.library.rename_paths({path: out[0]}, out[1:])              # it was ours: the record follows
+    append_gamelist({"system": system, "rename": {path: out[0]}})     # ES lists it after a reload
+    log("UNSEEN unpacked %s -> %s%s" % (path, out, " (queued %s)" % j.chd_task if j.chd_task else ""))
+    return out, j.chd_task
+
+
+def _move_file(src, dst):
+    """Move without ever replacing dst: a hard link fails when dst exists.
+    (Filesystems without hard links: rename, after checking dst again.)"""
+    import errno
+    try:
+        os.link(src, dst)
+    except OSError as e:
+        if isinstance(e, FileExistsError) or e.errno == errno.EXDEV:
+            raise
+        if os.path.lexists(dst):
+            raise FileExistsError(errno.EEXIST, "exists", dst) from None
+        os.rename(src, dst)
+        return
+    os.unlink(src)
+
+
+def move_unseen(finding, dest, library=None, es=None):
+    """Move a game in the wrong system folder to roms/<dest>/ (same place
+    inside it), with the tracks its .cue/.gdi or the discs its .m3u name.
+    All or nothing, never over an existing file. An install record follows
+    (and its game info); ES lists the game after a reload. Returns the new path."""
+    src, system = os.path.normpath(finding["path"]), finding["system"]
+    sysdir, dsys = os.path.join(ROMS_ROOT, system), os.path.join(ROMS_ROOT, dest)
+    if dest == system or os.sep in dest or dest in ("", ".", "..") or (es is not None and dest not in es):
+        raise RommError("Can't move to %s" % dest)
+    if not os.path.isfile(src) or not _inside(src, sysdir):
+        raise RommError("%s isn't there any more" % os.path.basename(src))
+    if os.path.islink(dsys) or (os.path.exists(dsys) and not os.path.isdir(dsys)):
+        raise RommError("roms/%s isn't a plain folder; not moving into it" % dest)
+    files = [src] + [p for p in game_files(src) if p != src]
+    moves = []
+    for p in files:
+        if not os.path.isfile(p) or os.path.islink(p):
+            raise RommError("%s isn't a plain file; not moving it" % os.path.basename(p))
+        moves.append((p, os.path.join(dsys, os.path.relpath(p, sysdir))))
+    for _, d in moves:
+        if os.path.lexists(d):
+            raise RommError("%s is already in %s/; not moving over it" % (os.path.basename(d), dest))
+    done = []
+    try:
+        for s, d in moves:
+            os.makedirs(os.path.dirname(d), exist_ok=True)
+            _move_file(s, d)
+            done.append((s, d))
+    except OSError as e:
+        for s, d in reversed(done):                  # all or nothing
+            try:
+                _move_file(d, s)
+            except OSError:
+                pass
+        if isinstance(e, FileExistsError):
+            raise RommError("Something is already in %s/ under that name; not moving over it" % dest) from None
+        raise RommError("Couldn't move %s (%s)" % (os.path.basename(src), e.strerror or e)) from None
+    for d in sorted({os.path.dirname(s) for s, _ in moves}, key=len, reverse=True):
+        while _inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
+    rename = dict(moves)
+    new = rename[src]
+    entries = [{"system": dest, "rename": {src: new}}]
+    if library is not None and _recorded(library, rename):
+        library.rename_paths(rename)
+        moved = set(rename.values())
+
+        def resystem(inst):
+            for rec in inst.values():
+                ps = rec.get("paths") or []
+                if rec.get("system") == system and ps and any(p in moved for p in ps) \
+                        and all(_inside(p, dsys) for p in ps):
+                    rec["system"] = dest
+                    if isinstance(rec.get("meta"), dict):
+                        rec["meta"] = dict(rec["meta"], system=dest, paths=list(ps))
+                        entries.append(rec["meta"])          # its game info follows
+        library.update(resystem)
+        library.rescan(system)
+        library.rescan(dest)
+    append_gamelist(*entries)
+    log("UNSEEN moved %s -> %s" % (src, new))
+    return new
+
+
+def delete_unseen(finding, library=None):
+    """Delete a file ES can't see, with the tracks its .cue/.gdi or the discs
+    its .m3u name (game_files: never outside its system folder). Saves and
+    states live elsewhere and stay. Our install record forgets those files
+    (and goes once none are left), and their gamelist entries go. Returns (paths, bytes freed)."""
+    src, system = os.path.normpath(finding["path"]), finding["system"]
+    sysdir = os.path.join(ROMS_ROOT, system)
+    if os.path.islink(src) or not os.path.isfile(src) or not _inside(src, sysdir):
+        raise RommError("%s isn't there any more" % os.path.basename(src))
+    paths = [p for p in [src] + [q for q in game_files(src) if q != src]
+             if os.path.isfile(p) and not os.path.islink(p) and _inside(p, sysdir)]
+    freed = 0
+    for p in paths:
+        try:
+            size = os.path.getsize(p)
+            os.remove(p)
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            raise RommError("Couldn't delete %s (%s)" % (os.path.basename(p), e.strerror or e)) from None
+        freed += size
+    for d in sorted({os.path.dirname(p) for p in paths}, key=len, reverse=True):
+        while _inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
+    if library is not None and _recorded(library, paths):
+        gone = set(paths)
+
+        def forget(inst):
+            for k, rec in list(inst.items()):
+                ps = rec.get("paths") or []
+                if gone & set(ps):
+                    left = [p for p in ps if p not in gone]
+                    if left:
+                        rec["paths"] = left
+                    else:
+                        inst.pop(k)
+        library.update(forget)
+        library.rescan(system)
+    append_gamelist({"system": system, "remove": paths})
+    log("UNSEEN deleted %s (%s)" % (paths, human_size(freed)))
+    return paths, freed
 
 
 def es_notify(msg):
@@ -1973,8 +3089,86 @@ class Api:
             pass
         return None
 
+    def exchange_pair_code(self, code):
+        return exchange_pair_code(self.base, code, self.s.verify)
 
-COVER_MAX = 32 << 20       # a cover bigger than this isn't a cover
+
+# ----------------------------------------------------------------- pairing
+# RomM 5.x: the owner of a client API token presses Pair on it in RomM's web
+# UI and gets a short single-use code (8 characters, valid about a minute);
+# the device swaps it for the token, unauthenticated. RomM gives the token a
+# NEW secret when it's exchanged, so anything else using that token stops
+# working: one token per device.
+
+PAIR_CODE_LEN = 8
+PAIR_BAD_CODE = "That code isn't valid or has expired — make a new one in RomM"
+
+
+def normalize_pair_code(code):
+    """The code as RomM wants it (spaces/dashes dropped, upper case), or
+    raise RommError with what's wrong. RomM's codes use A-Z and 2-9."""
+    c = re.sub(r"[\s\-_.]", "", code or "").upper()
+    if not c:
+        raise RommError("Type the pairing code from RomM")
+    if not re.fullmatch(r"[A-Z0-9]+", c):
+        raise RommError("A pairing code is only letters and digits")
+    if len(c) != PAIR_CODE_LEN:
+        raise RommError("A pairing code has %d characters (that was %d)" % (PAIR_CODE_LEN, len(c)))
+    return c
+
+
+def valid_token(tok):
+    """A client API token the app can send: rmm_ + a sane, header-safe body."""
+    return isinstance(tok, str) and tok.startswith("rmm_") and 20 <= len(tok) <= 512 \
+        and re.fullmatch(r"[\x21-\x7e]+", tok) is not None
+
+
+def exchange_pair_code(url, code, verify_tls=True, timeout=20):
+    """Swap a RomM pairing code for a client API token. Returns
+    {"token", "name", "scopes"}. Sends no Authorization header (the exchange
+    is unauthenticated; a stale token has no business going along). Errors
+    are RommError with a message for the user; the token never appears in one."""
+    base = (url or "").strip().rstrip("/")
+    if not base:
+        raise RommError("Set the server address first")
+    if url_has_userinfo(base):
+        raise RommError("Remove user:password@ from the server URL — the token is the login")
+    c = normalize_pair_code(code)
+    try:
+        r = requests.post(base + "/api/client-tokens/exchange", json={"code": c},
+                          headers={"User-Agent": UA}, timeout=timeout,
+                          verify=norm_verify(verify_tls), allow_redirects=False)
+    except requests.exceptions.SSLError:
+        raise RommError("TLS certificate rejected — set verify_tls in Settings") from None
+    except requests.RequestException as e:
+        raise RommError("Can't reach RomM (%s)" % e.__class__.__name__) from None
+    except Exception as e:
+        raise RommError("Request failed (%s)" % e.__class__.__name__) from None
+    st = r.status_code
+    if st in (400, 404, 410, 422):
+        raise RommError(PAIR_BAD_CODE)
+    if st == 429:
+        raise RommError("Too many tries — wait a minute, then make a new code in RomM")
+    if st == 403:
+        raise RommError("RomM refused: the token's owner is disabled (HTTP 403)")
+    if st == 405 or 300 <= st < 400:
+        raise RommError("Not a RomM API response — check the URL (auth proxy in front?)")
+    if st != 200:
+        raise RommError("RomM error HTTP %d while pairing" % st)
+    try:
+        body = r.json()
+    except ValueError:
+        raise RommError("Not a RomM API response — check the URL (auth proxy in front?)") from None
+    tok = body.get("raw_token") if isinstance(body, dict) else None
+    if not valid_token(tok):
+        raise RommError("RomM's reply had no usable token (is this RomM 5 or newer?)")
+    name = body.get("name") if isinstance(body.get("name"), str) else ""
+    scopes = [s for s in body.get("scopes") or [] if isinstance(s, str)]
+    log("paired with RomM: token %r, %d scopes" % (name[:60], len(scopes)))
+    return {"token": tok, "name": name[:60], "scopes": scopes}
+
+
+COVER_MAX = 32 << 20      # a cover bigger than this isn't a cover
 BIOS_MAX = 1 << 30         # the largest Batocera firmware files are a few hundred MB
 
 
@@ -2129,21 +3323,27 @@ def space_needed(rom, system):
     return int(size * (2.2 if system in EXPANDS else 1.0))
 
 
-def queue_forecast(jobs, free, keep, chd=True):
+def queue_forecast(jobs, free, keep, chd=True, cfg=None):
     """Space the unfinished downloads still need, and whether it fits.
     Each job: what's left of its download (done bytes are already on disk);
-    plus, for disc games the CHD worker converts, the biggest one's working
-    space (original and CHD side by side until the CHD is verified)."""
-    need, chd_peak, n = 0, 0, 0
+    plus the biggest conversion's working space (original and output side by
+    side until the output is verified): every converter that's on for the
+    job's system (cfg; without it, CHD only, as chd says), times its
+    space_factor (.zar: the extracted files and the archive)."""
+    need, peak, n = 0, 0, 0
     for j in jobs:
         if not (j.active or j.state == Job.PAUSED):
             continue
         n += 1
         size = space_needed(j.rom, j.system)
         need += max(0, size - (j.done_bytes or 0))
-        if chd and j.system in CHD_CD_SYSTEMS | CHD_DVD_SYSTEMS:
-            chd_peak = max(chd_peak, size)
-    total = need + chd_peak
+        if cfg is None:
+            factor = 1 if chd and j.system in CHD_CD_SYSTEMS | CHD_DVD_SYSTEMS else 0
+        else:
+            factor = max([c.space_factor for c in converters_for(j.system)
+                          if (c.chd and chd) or (not c.chd and c.enabled(cfg, j.system))] or [0])
+        peak = max(peak, size * factor)
+    total = need + peak
     return {"jobs": n, "need": total, "free": free, "keep": keep,
             "fits": free - total >= keep, "short": max(0, total + keep - free)}
 
@@ -4396,6 +5596,10 @@ class Downloader:
         path = self._xbox_names(j.system, [path])[0]
         ext = os.path.splitext(path)[1].lower()
         system = j.system
+        if system == "ps3" and ext == ".zip" and conversion_for(system, path, self.cfg, self._accepts) \
+                and ps3_zip_is_disc(path):
+            self._maybe_chd(j, system, [path], [path])   # read in place: no unzipped copy beside it
+            return [path]
         if ext not in ARCHIVE_EXTS or system in ZIP_NATIVE:
             if ext in DISC_EXTS:                   # a bare .iso/.cue/...: convert it like an extracted one
                 self._maybe_chd(j, system, [path], [path])

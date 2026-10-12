@@ -927,7 +927,7 @@ class App:
         except OSError:
             return None
         return st.f_bavail * st.f_frsize - rommlib.queue_forecast(
-            self.downloader.jobs, 0, 0, self.cfg.get("chd", True))["need"]
+            self.downloader.jobs, 0, 0, self.cfg.get("chd", True), self.cfg)["need"]
 
     def plan_text(self, rom, system):
         """One game's download in a sentence: size, unpacked size, conversion,
@@ -941,7 +941,9 @@ class App:
         elif (rom.get("fs_extension") or "").lower() in ("zip", "7z", "rar") and system in rommlib.EXPANDS:
             lands = rommlib.space_needed(rom, system)
             parts.append("about %s once unpacked" % human_size(lands))
-        if lay and lay["convert"]:
+        if lay and lay["convert"] == rommlib.CONVERTER["ps3"].label:
+            parts.append("then made into a .ps3 game folder in the background (read from the zip)")
+        elif lay and lay["convert"]:
             parts.append("then compressed to %s in the background" % lay["convert"])
         out = ", ".join(parts) + ". Saved to roms/%s" % system
         after, keep = self.free_after_queue(), rommlib.keep_free_bytes(self.cfg)
@@ -1054,7 +1056,7 @@ class App:
     def space_check(self):
         """After queueing: warn when the whole queue won't fit (it waits for room)."""
         fc = rommlib.queue_forecast(self.downloader.jobs, rommlib.free_bytes(),
-                                    rommlib.keep_free_bytes(self.cfg), self.cfg.get("chd", True))
+                                    rommlib.keep_free_bytes(self.cfg), self.cfg.get("chd", True), self.cfg)
         if fc["jobs"] and not fc["fits"]:
             self.toast("The queue needs %s more space than this box has free (keeping %s free). "
                        "Downloads wait until there's room." % (human_size(fc["short"]), human_size(fc["keep"])),
@@ -3110,7 +3112,8 @@ class DownloadsScreen(Screen):
                 if os.path.isdir(rommlib.CHD_QUEUE_DIR) else 0
             self._chd_st = {}
             self._fc = rommlib.queue_forecast(d.jobs, rommlib.free_bytes(),
-                                              rommlib.keep_free_bytes(self.app.cfg), self.app.cfg.get("chd", True))
+                                              rommlib.keep_free_bytes(self.app.cfg), self.app.cfg.get("chd", True),
+                                              self.app.cfg)
         fc = self._fc
         if fc["jobs"]:
             line = "Queue needs about %s · %s free · keeping %s free" % (
@@ -3343,6 +3346,7 @@ class SettingsScreen(Screen):
              "Plain HTTP: the token isn't encrypted"
              if (cfg.get("url") or "").lower().startswith("http://") else "{A} to edit (http:// or https://)"),
             ("token", "API token", masked, "Create one in RomM under Profile, Client API tokens"),
+            ("pair", "Pair with RomM", "Enter code", "Type the code from RomM's Pair button"),
             ("tls", "Verify TLS certificate", tls_s, "Off only for a self-signed cert"),
             ("test", "Test connection", "", "Fetch the platform list now"),
             sec("Controller"),
@@ -3378,6 +3382,11 @@ class SettingsScreen(Screen):
             ("z3ds", "3DS to .zcci", onoff(cfg.get("z3ds")) if rommlib.z3ds_supported() else "Not available",
              "Compressed copies Azahar opens directly"),
             ("zar", "Xbox 360 to .zar", zar["label"], zar["help"]),
+            ("ps3folders", "PS3 games as folders", onoff(cfg.get("ps3_folders", True)),
+             "Disc images become .ps3 folders RPCS3 can update"),
+            ("ps3decrypt", "Decrypt PS3 discs",
+             onoff(cfg.get("ps3_decrypt")) if rommlib.ps3_decrypt_supported() else "Not available",
+             "Uses disc keys for games you own"),
             ("chdthreads", "Compression threads",
              ("Auto (%d of %d)" % (rommlib.auto_chd_threads(), rommlib.cpu_threads()))
              if str(cfg.get("chd_threads", "auto")) == "auto" else
@@ -3409,6 +3418,31 @@ class SettingsScreen(Screen):
         ] + ([("rollback", "Go back to the previous version", "v" + self.prev, "Undo the last update")]
              if self.prev else [])
 
+    def pair(self):
+        """Settings, Pair with RomM: type RomM's short code, get the token."""
+        app, cfg = self.app, self.app.cfg
+        if not (cfg.get("url") or "").strip():
+            app.toast("Set the server address first, then pair", AMBER)
+            return
+
+        def paired(res):
+            cfg["token"] = res["token"]
+            app.apply_config(reconnect=True)
+            app.toast("Paired with RomM" + (" (%s)" % res["name"] if res.get("name") else "")
+                      + " — reconnecting", GREEN)
+
+        def submit(v):
+            try:
+                code = rommlib.normalize_pair_code(v)
+            except rommlib.RommError as e:
+                app.toast(str(e), RED)
+                return
+            app.toast("Pairing…")
+            url, verify = cfg.get("url"), cfg.get("verify_tls", True)
+            app.bg(lambda: rommlib.exchange_pair_code(url, code, verify), paired,
+                   lambda e: app.toast(str(e), RED))
+        app.push(TextInputScreen(app, "Pairing code from RomM", "", submit))
+
     @staticmethod
     def section(title):
         return ("§", title, "", "")
@@ -3425,7 +3459,7 @@ class SettingsScreen(Screen):
     def crumbs(self):
         return ["Settings"]
 
-    ACTIONS = ("url", "token", "test", "cache", "update", "rollback", "bios", "credits")
+    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits")
 
     def hints(self):
         items = self.items()
@@ -3470,6 +3504,8 @@ class SettingsScreen(Screen):
                     app.toast("Token saved — reconnecting", GREEN)
                 app.push(TextInputScreen(app, "RomM client API token", cfg.get("token") or "",
                                          save_tok, secret=True))
+            elif key == "pair" and a == "ok":
+                self.pair()
             elif key == "tls":
                 cur = rommlib.norm_verify(cfg.get("verify_tls", True))
                 ca = cfg.get("verify_tls_ca") or ""
@@ -3563,6 +3599,12 @@ class SettingsScreen(Screen):
                     app.downloader.cfg = cfg
             elif key == "zar":
                 self._toggle_zar()
+            elif key == "ps3folders":
+                cfg["ps3_folders"] = not cfg.get("ps3_folders", True)
+                app.apply_config()
+                app.downloader.cfg = cfg
+            elif key == "ps3decrypt":
+                self._toggle_ps3_decrypt()
             elif key == "z3ds":
                 if not rommlib.z3ds_supported():
                     app.toast("libzstd isn't on this system", AMBER)
@@ -3675,6 +3717,28 @@ class SettingsScreen(Screen):
                             "version Batocera uses, GPL-2.0-or-later, checked by SHA-256 before use. "
                             "Credits are in Settings." % (t["version"], size),
                             "Download", lambda: (app.toast("Downloading dolphin-tool…"), app.bg(install, done, failed)))
+
+    def _toggle_ps3_decrypt(self):
+        """On: copy the disc keys in RomM's PS3 firmware (if any) into bios/ps3keys."""
+        app, cfg = self.app, self.app.cfg
+        if not rommlib.ps3_decrypt_supported():
+            app.toast("Python's cryptography module isn't on this system", AMBER)
+            return
+        cfg["ps3_decrypt"] = not cfg.get("ps3_decrypt")
+        app.apply_config()
+        app.downloader.cfg = cfg
+        if not cfg["ps3_decrypt"]:
+            return
+        pid = next((p["id"] for p in app.platforms if p.get("_system") == "ps3"), None)
+
+        def done(n):
+            if n:
+                app.toast("%s disc keys ready in bios/ps3keys" % "{:,}".format(n), GREEN)
+            else:
+                app.toast("No disc keys yet: put the keys for games you own in bios/ps3keys, or add "
+                          "them to RomM's PS3 firmware", AMBER)
+        app.bg(lambda: rommlib.fetch_ps3_keys(app.api, pid) if pid and app.api else len(rommlib.ps3_keys()),
+               done, lambda e: (app.toast(str(e), RED), done(len(rommlib.ps3_keys()))))
 
     def _toggle_zar(self):
         app, cfg = self.app, self.app.cfg
@@ -3829,6 +3893,9 @@ SETTING_HELP = {
     "url": "Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// works but "
            "sends the token unencrypted.",
     "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
+    "pair": "The easy way to sign in: in RomM's web page open Profile, Client API tokens, press Pair on "
+            "a token, then type its 8-character code here within a minute. RomM gives that token a new "
+            "secret, so pair each box with its own token.",
     "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or "
            "point it at your own CA bundle in config.json.",
     "test": "Asks RomM for its platform list right now and says how many it found.",
@@ -3859,6 +3926,16 @@ SETTING_HELP = {
             "smaller; Azahar opens them directly and saves stay where they are. Lossless: every block is "
             "read back and checked against the original before it's deleted. Encrypted dumps (which "
             "Azahar can't run anyway) are left alone. Uses the zstd library already on Batocera.",
+    "ps3folders": "Turns PS3 disc images (.iso, or the .iso in a zip, read without unzipping it) into "
+                  ".ps3 game folders, the layout RPCS3 installs updates and DLC for. Every file comes from "
+                  "the image and the game's start files are checked before the image is deleted. A zip "
+                  "needs no room for an unzipped copy: only the folder's size. An encrypted disc needs "
+                  "Decrypt PS3 discs; until then it stays as it is and ES doesn't list it.",
+    "ps3decrypt": "Encrypted PS3 discs (Redump's images are) need their disc key to become a game folder. "
+                  "Uses disc keys for games you own, which you put in bios/ps3keys (.key or .dkey files, or "
+                  "zips of them) or add to RomM as PS3 firmware; turning this on copies RomM's into "
+                  "bios/ps3keys. RomM-o-Cera comes with no keys. A key is matched to its disc by name, "
+                  "and checked against the disc itself, so a wrong one is never used.",
     "zar": "Turns Xbox 360 disc images into .zar, a compressed archive xenia-canary opens directly, "
            "often 40-60% smaller. It keeps the game's files and leaves out the rest of the disc "
            "(video partition, padding), so it isn't a copy of the original image. Every file is checked "
@@ -5305,8 +5382,9 @@ class FreeUpScreen(Screen):
 
 
 class LeftoversScreen(Screen):
-    """Partial files and empty folders that interrupted downloads or CHD
-    conversions left behind. Partial downloads still queued are kept."""
+    """Partial files and empty folders that interrupted downloads or
+    conversions left behind, and copies of games already here converted (a
+    .7z beside its .rvz). Partial downloads still queued are kept."""
     ROWS, ROW_H = 9, 56
 
     def __init__(self, app):
@@ -5354,9 +5432,13 @@ class LeftoversScreen(Screen):
                                      lambda: self.remove([it]), danger=True)
         elif a == "y":
             tot = sum(i["size"] for i in self.items)
+            copies = sum(1 for i in self.items if i.get("note"))
             self.app.modal = Confirm(self.app, "Delete all %d leftovers?" % len(self.items),
-                                     "Frees %s. Partial downloads that are still queued or paused are not "
-                                     "listed and are kept." % human_size(tot), "Delete all",
+                                     "Frees %s.%s Partial downloads that are still queued or paused are not "
+                                     "listed and are kept." % (human_size(tot), (
+                                         " Includes %s of games already here converted; the converted ones "
+                                         "stay." % plural(copies, "copy", "copies")) if copies else ""),
+                                     "Delete all",
                                      lambda: self.remove(list(self.items)), danger=True)
         else:
             super().action(a)
@@ -5367,8 +5449,9 @@ class LeftoversScreen(Screen):
             return
         if not self.items:
             text(c, self.f.h3, "Nothing to clean up.", (56, 86), GREEN)
-            text(c, self.f.body, "No partial files or empty game folders. Partial downloads still in "
-                 "the queue are kept so they can resume.", (56, 124), DIM, maxw=W - 112)
+            text(c, self.f.body, "No partial files, empty game folders or copies of converted games. "
+                 "Partial downloads still in the queue are kept so they can resume.", (56, 124), DIM,
+                 maxw=W - 112)
             return
         text(c, self.f.h3, "%d leftovers · %s" % (len(self.items), human_size(sum(i["size"] for i in self.items))),
              (56, 86), TEXT)
@@ -5390,7 +5473,8 @@ class LeftoversScreen(Screen):
                 if p.startswith(root + "/"):
                     p = os.path.relpath(p, os.path.dirname(root))
             text(c, self.f.row, p, (r.left + 22, r.top + 6), TEXT if on else DIM, maxw=r.width - 200)
-            text(c, self.f.small, it["kind"], (r.left + 22, r.top + 32), FAINT)
+            text(c, self.f.small, it["kind"] + (" · " + it["note"] if it.get("note") else ""),
+                 (r.left + 22, r.top + 32), FAINT, maxw=r.width - 200)
             text(c, self.f.small, human_size(it["size"]) if it["size"] else "", (r.right - 20, r.centery),
                  DIM, "midright")
             y += self.ROW_H
@@ -5557,7 +5641,7 @@ class AuditScreen(Screen):
                     rommlib.log("audit save: %s" % e)
         app.bg(run, done, lambda e: (setattr(self, "findings", []), app.toast(str(e), RED)))
 
-    base = 0            # sel of the first finding (CheckScreen puts two tiles above them)
+    base = 0            # sel of the first finding (CheckScreen puts three tiles above them)
 
     @staticmethod
     def order(findings):
@@ -5697,13 +5781,14 @@ class AuditScreen(Screen):
 
 
 class CheckScreen(AuditScreen):
-    """Check games, from On this box: start a quick or full check, and the
-    last finished check's findings (files changed since drop out), each one
-    downloadable again from here."""
+    """Check games, from On this box: start a quick or full check, look for
+    games ES can't see, and the last finished check's findings (files changed
+    since drop out), each one downloadable again from here."""
     ROWS = 7
-    TILES = (("Quick check", "Missing tracks, damaged zips, cut-short discs, sizes against RomM"),
-             ("Full check", "Also checksums every file and verifies CHDs. Hours for a big library"))
-    base = 2
+    TILES = (("Quick check", "Missing tracks, bad zips, short discs"),
+             ("Full check", "Also checksums every file (slow)"),
+             ("Games ES can't see", "Archives and games in the wrong folder"))
+    base = 3
 
     def __init__(self, app):
         Screen.__init__(self, app)
@@ -5713,18 +5798,24 @@ class CheckScreen(AuditScreen):
         self.sel = self.scroll = 0
         self.last = None
         self.findings, self.stats = [], {}
+        self.unseen = None                 # files ES can't see (counted in the background)
 
     def enter(self):
         self.last = rommlib.load_audit()
         self.findings = self.order(self.last["findings"]) if self.last else []
         self.stats = (self.last or {}).get("stats") or {}
-        self.sel = min(self.sel, 1 + len(self.findings))
+        self.sel = min(self.sel, self.base - 1 + len(self.findings))
+        es = self.app.downloader.es
+        self.app.bg(lambda: len(rommlib.find_unseen(es)), lambda n: setattr(self, "unseen", n),
+                    lambda e: setattr(self, "unseen", None))
 
     def crumbs(self):
         return self.trail("Check games")
 
     def hints(self):
-        if self.sel < 2:
+        if self.sel == 2:
+            h = [("A", "Look")]
+        elif self.sel < 2:
             h = [("A", "Start")]
         else:
             h = [("A", "Download again")]
@@ -5735,23 +5826,26 @@ class CheckScreen(AuditScreen):
     def action(self, a):
         app = self.app
         n = len(self.findings)
-        if a in ("left", "right") and self.sel < 2:
-            self.sel = 1 - self.sel
+        b = self.base
+        if a in ("left", "right") and self.sel < b:
+            self.sel = max(0, min(b - 1, self.sel + (1 if a == "right" else -1)))
         elif a == "down" and n:
-            self.sel = 2 if self.sel < 2 else min(1 + n, self.sel + 1)
+            self.sel = b if self.sel < b else min(b - 1 + n, self.sel + 1)
         elif a == "up":
-            self.sel = 0 if self.sel == 2 else max(0, self.sel - 1) if self.sel > 2 else self.sel
-        elif a in ("l1", "r1") and self.sel >= 2:
-            self.sel = max(2, min(1 + n, self.sel + (self.ROWS if a == "r1" else -self.ROWS)))
+            self.sel = 0 if self.sel == b else max(0, self.sel - 1) if self.sel > b else self.sel
+        elif a in ("l1", "r1") and self.sel >= b:
+            self.sel = max(b, min(b - 1 + n, self.sel + (self.ROWS if a == "r1" else -self.ROWS)))
         elif a == "ok":
-            if self.sel < 2:
+            if self.sel == 2:
+                app.push(UnseenScreen(app))
+            elif self.sel < 2:
                 if not app.platforms:              # offline: a check would find nothing and say all is well
                     app.load_platforms()
                     app.toast(app.error or "Still loading platforms…", AMBER)
                     return
                 app.push(AuditScreen(app, deep=self.sel == 1))
             elif n:
-                self.open_finding(self.findings[self.sel - 2])
+                self.open_finding(self.findings[self.sel - b])
         elif a == "y" and self.redownloadable():
             self.redownload_all()
         else:
@@ -5762,7 +5856,8 @@ class CheckScreen(AuditScreen):
         self.action("ok")
 
     def draw(self, c):
-        tw = (W - 96 - 16) // 2
+        k = len(self.TILES)
+        tw = (W - 96 - 16 * (k - 1)) // k
         for i, (label, sub) in enumerate(self.TILES):
             r = pygame.Rect(48 + i * (tw + 16), 80, tw, 64)
             self.app.hit(r, lambda i=i: self.tap_tile(i))
@@ -5771,8 +5866,12 @@ class CheckScreen(AuditScreen):
                 focus_box(c, r, 12)
             else:
                 rrect(c, PANEL, r, 12)
-            text(c, self.f.h3, label, (r.left + 22, r.top + 10), TEXT if on else DIM)
-            text(c, self.f.small, sub, (r.left + 22, r.top + 37), FAINT, maxw=r.width - 44)
+            col = FAINT
+            if i == 2 and self.unseen is not None:
+                sub, col = ("%s ES can't see" % plural(self.unseen, "file"), AMBER) if self.unseen else \
+                    ("ES sees every game file", GREEN)
+            text(c, self.f.h3, label, (r.left + 20, r.top + 10), TEXT if on else DIM, maxw=r.width - 40)
+            text(c, self.f.small, sub, (r.left + 20, r.top + 37), col, maxw=r.width - 40)
         hline(c, LINE, (56, 160), (W - 56, 160))
         a = self.last
         if not a:
@@ -5798,6 +5897,288 @@ class CheckScreen(AuditScreen):
         if dif:
             text(c, self.f.h3, "%d differ from RomM" % dif, (x, 176), AMBER)
         self.draw_rows(c, 212, self.ROWS)
+
+
+class UnseenScreen(Screen):
+    """Check games › Games ES can't see: files in roms/<system>/ that
+    EmulationStation ignores because the system doesn't list their extension
+    (rommlib.find_unseen). Archives can be unpacked (as after a download),
+    games in the wrong system folder moved, and anything deleted after a
+    confirmation that names what goes. {X} picks files for doing several at
+    once: unpack every picked archive, or delete them all."""
+    ROWS, ROW_H = 9, 56
+    MOVE_CHOICES = 5                   # the menu has no scrolling: the likeliest systems first
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.items = None
+        self.sel = self.scroll = 0
+        self.busy = False
+        self.marks = set()             # picked paths
+        self.progress = ""             # "Unpacking 3 of 13…" while a batch runs
+        self.load()
+
+    def load(self):
+        es = self.app.downloader.es
+        self.app.bg(lambda: rommlib.find_unseen(es), self._loaded,
+                    lambda e: (setattr(self, "items", []), self.app.toast(str(e), RED)))
+
+    def _loaded(self, items):
+        self.items = items
+        self.marks &= {i["path"] for i in items}
+        self.sel = max(0, min(self.sel, len(items) - 1))
+
+    def crumbs(self):
+        return self.trail("Games ES can't see")
+
+    def picked(self):
+        return [i for i in self.items or [] if i["path"] in self.marks]
+
+    def hints(self):
+        if not self.items:
+            return [("B", "Back")]
+        if self.marks:
+            every = len(self.marks) == len(self.items)
+            return [("A", "Do %d picked" % len(self.marks)), ("X", "Pick"),
+                    ("Y", "Clear picks" if every else "Pick all"), ("B", "Clear picks")]
+        return [("A", "Options"), ("X", "Pick"), ("Y", "Pick all"), ("B", "Back")]
+
+    def action(self, a):
+        if not self.items or self.busy:
+            if self.busy and a in ("ok", "x", "y"):
+                self.app.toast("Still working on the last one…", AMBER)
+                return
+            return super().action(a)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
+        if a in mv:
+            self.sel = max(0, min(len(self.items) - 1, self.sel + mv[a]))
+        elif a == "ok":
+            if self.marks:
+                self.bulk_menu()
+            else:
+                self.menu(self.items[self.sel])
+        elif a == "x":                                  # pick, then on to the next file
+            self.marks.symmetric_difference_update({self.items[self.sel]["path"]})
+            self.sel = min(len(self.items) - 1, self.sel + 1)
+        elif a == "y":
+            every = {i["path"] for i in self.items}
+            self.marks = set() if self.marks == every else every
+        elif a == "back" and self.marks:
+            self.marks.clear()
+        else:
+            super().action(a)
+
+    def bulk_menu(self):
+        todo = self.picked()
+        arcs = [i for i in todo if i["kind"] == "archive"]
+        size = sum(i["size"] for i in todo)
+        e = [("Unpack %s" % plural(len(arcs), "archive"),
+              "%s, as after a download" % human_size(sum(i["size"] for i in arcs)) if arcs
+              else "None of the picked files is an archive", (lambda: self.ask_unpack_many(arcs)) if arcs else None),
+             ("Delete %s" % plural(len(todo), "file"), "%s, after you confirm" % human_size(size),
+              lambda: self.ask_delete_many(todo)),
+             None,
+             ("Clear picks", "", self.marks.clear)]
+        self.app.modal = ActionMenu(self.app, "%d picked" % len(todo), e)
+
+    def ask_unpack_many(self, arcs):
+        app = self.app
+        systems = sorted({i["system"] for i in arcs})
+        app.modal = Confirm(app, "Unpack %s?" % plural(len(arcs), "archive"),
+                            "Each is unpacked into its own system folder (%s) as after a download, compressed if "
+                            "that's on, and deleted once it's out. One that can't be unpacked is left as it is."
+                            % ", ".join(systems), "Unpack %d" % len(arcs), lambda: self.run_many("unpack", arcs))
+
+    def ask_delete_many(self, todo):
+        app = self.app
+        size, extra = 0, 0
+        for it in todo:
+            size += it["size"]
+            extra += len([p for p in rommlib.game_files(it["path"])
+                          if os.path.normpath(p) != os.path.normpath(it["path"])])
+        also = ", with %s they name" % plural(extra, "file") if extra else ""
+        app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "file"),
+                            "Deletes %s (%s)%s. Saves and states stay. This can't be undone."
+                            % (plural(len(todo), "file"), human_size(size), also),
+                            "Delete %d" % len(todo), lambda: self.run_many("delete", todo), danger=True)
+
+    def run_many(self, what, todo):
+        """Unpack or delete the picked files one after another; a failure is
+        noted and the rest go on."""
+        app = self.app
+        verb = {"unpack": "Unpacking", "delete": "Deleting"}[what]
+        self.busy = True
+
+        def run():
+            done, failed, freed, tasks = 0, [], 0, False
+            for n, it in enumerate(todo, 1):
+                self.progress = "%s %d of %d…" % (verb, n, len(todo))
+                if not os.path.lexists(it["path"]):
+                    done += 1                       # went with a sheet picked before it
+                    continue
+                try:
+                    if what == "unpack":
+                        tasks = bool(rommlib.unpack_unseen(app.downloader, it)[1]) or tasks
+                    else:
+                        freed += rommlib.delete_unseen(it, app.library)[1]
+                    done += 1
+                except Exception as e:              # a damaged archive is noted, the rest go on
+                    why = str(e) if isinstance(e, rommlib.RommError) else "can't be read (%s)" % (
+                        e.strerror if isinstance(e, OSError) and e.strerror else e.__class__.__name__)
+                    failed.append((os.path.basename(it["path"]), why))
+            return done, failed, freed, tasks
+
+        def ok(res):
+            done, failed, freed, tasks = res
+            self.progress = ""
+            self.marks.clear()
+            if tasks and not app.headless:
+                app.spawn_helper("rb_chd.py")          # flock'd: no-op if already running
+            if what == "unpack":
+                msg = "Unpacked %d%s" % (done, ", compressing in the background" if tasks else "")
+            else:
+                msg = "Deleted %d, freed %s" % (done, human_size(freed))
+            if failed:
+                msg += " — %d couldn't be: %s (%s)" % (len(failed), failed[0][0], failed[0][1])
+                rommlib.log("UNSEEN %s failed: %s" % (what, failed))
+            self._done(msg, AMBER if failed else GREEN)
+
+        def err(e):
+            self.progress = ""
+            self._failed(e)
+        app.bg(run, ok, err)
+
+    def menu(self, it):
+        app = self.app
+        name = os.path.basename(it["path"])
+        leave = ("Leave it", "Stays where it is", lambda: None)
+        delete = ("Delete", "Removes it from the box after you confirm", lambda: self.ask_delete(it))
+        if self.busy:
+            app.toast("Still working on the last one…", AMBER)
+            return
+        if it["kind"] == "archive":
+            entries = [("Unpack", "Shows what's inside first; unpacked here as after a download",
+                        lambda: self.ask_unpack(it)), delete, leave]
+        elif it["kind"] == "wrong":
+            entries = [("Move to %s/" % s, "%s · roms/%s/%s" % (rommlib.system_label(s), s,
+                        "" if os.path.isdir(os.path.join(rommlib.ROMS_ROOT, s)) else " (new folder)"),
+                        lambda s=s: self.move(it, s)) for s in it["to"][:self.MOVE_CHOICES]] + [delete, leave]
+        else:
+            entries = [("Leave it", "ES can't list it here; it does no harm", lambda: None), delete]
+        app.modal = ActionMenu(app, name, entries)
+
+    def ask_unpack(self, it):
+        app = self.app
+        name = os.path.basename(it["path"])
+
+        def shown(members):
+            if not members:
+                app.toast("%s is empty or can't be read" % name, RED)
+                return
+            parts = ["%s (%s)" % (os.path.basename(m) or m, human_size(sz)) if sz is not None else m
+                     for m, sz in members[:3]]
+            more = " and %d more" % (len(members) - 3) if len(members) > 3 else ""
+            app.modal = Confirm(app, "Unpack %s?" % name,
+                                "Inside: %s%s. Unpacked into roms/%s/ as after a download (compressed "
+                                "if that's on); the archive is deleted once it's out."
+                                % (", ".join(parts), more, it["system"]), "Unpack", lambda: self.unpack(it))
+        app.bg(lambda: rommlib.archive_contents(app.downloader, it["path"]), shown,
+               lambda e: app.toast("Can't read %s (%s)" % (name, e), RED))
+
+    def ask_delete(self, it):
+        app = self.app
+        name = os.path.basename(it["path"])
+        extra = [p for p in rommlib.game_files(it["path"]) if os.path.normpath(p) != os.path.normpath(it["path"])]
+        also = " with %s it names" % plural(len(extra), "file") if extra else ""
+        app.modal = Confirm(app, "Delete %s?" % name,
+                            "Deletes %s (%s)%s from roms/%s/. Saves and states stay. This can't be undone."
+                            % (name, human_size(it["size"]), also, it["system"]),
+                            "Delete", lambda: self.delete(it), danger=True)
+
+    def delete(self, it):
+        app = self.app
+        name = os.path.basename(it["path"])
+        self.busy = True
+        app.bg(lambda: rommlib.delete_unseen(it, app.library),
+               lambda res: self._done("Deleted %s, freed %s" % (name, human_size(res[1]))), self._failed)
+
+    def _done(self, msg, color=GREEN):
+        self.busy = False
+        self.app.toast(msg, color)
+        self.load()
+
+    def _failed(self, e):
+        self._done(str(e), RED)
+
+    def unpack(self, it):
+        app = self.app
+        name = os.path.basename(it["path"])
+        self.busy = True
+        app.toast("Unpacking %s…" % name)
+
+        def ok(res):
+            out, task = res
+            if task and not app.headless:
+                app.spawn_helper("rb_chd.py")      # flock'd: no-op if already running
+            self._done("Unpacked %s%s — ES lists it when you leave RomM-o-Cera" % (
+                name, ", compressing in the background" if task else ""))
+        app.bg(lambda: rommlib.unpack_unseen(app.downloader, it), ok, self._failed)
+
+    def move(self, it, system):
+        app = self.app
+        self.busy = True
+        app.bg(lambda: rommlib.move_unseen(it, system, app.library, app.downloader.es),
+               lambda new: self._done("Moved to roms/%s/ — ES lists it when you leave RomM-o-Cera" % system),
+               self._failed)
+
+    def draw(self, c):
+        if self.items is None:
+            text(c, self.f.h2, "Looking through roms/…", (W // 2, H // 2), DIM, "center")
+            return
+        if not self.items:
+            text(c, self.f.h3, "ES sees every game file here.", (56, 86), GREEN)
+            text(c, self.f.body, "No archives a system doesn't take and no games in the wrong system folder.",
+                 (56, 124), DIM, maxw=W - 112)
+            return
+        n_sys = len({i["system"] for i in self.items})
+        head = "%s ES can't see, in %s" % (plural(len(self.items), "file"), plural(n_sys, "system"))
+        if self.marks:
+            head += " · %d picked (%s)" % (len(self.marks), human_size(sum(i["size"] for i in self.picked())))
+        text(c, self.f.h3, head, (56, 86), TEXT)
+        if self.progress:
+            text(c, self.f.small, self.progress, (W - 56, 90), AMBER, "topright")
+        rows = self.ROWS
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + rows:
+            self.scroll = self.sel - rows + 1
+        y = 124
+        for i in range(self.scroll, min(len(self.items), self.scroll + rows)):
+            it = self.items[i]
+            on = i == self.sel
+            r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
+            if on:
+                focus_box(c, r)
+            col = FAINT if it["kind"] == "unknown" else AMBER
+            if self.marks:
+                picked, ix = it["path"] in self.marks, r.left + 18
+                rrect(c, ACCENT if picked else LINE, (ix - 9, r.top + 9, 18, 18), 4, 0 if picked else 2)
+                if picked:
+                    polyline(c, TEXT, [(ix - 4, r.top + 18), (ix - 1, r.top + 21), (ix + 4, r.top + 15)], 2)
+            else:
+                circle(c, col, (r.left + 18, r.top + 18), 5)
+            rel = os.path.relpath(it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))
+            text(c, self.f.row, rel, (r.left + 34, r.top + 6), TEXT if on else DIM, maxw=r.width - 260)
+            why = it["why"][:1].upper() + it["why"][1:]
+            text(c, self.f.small, why, (r.left + 34, r.top + 32), col, maxw=r.width - 260)
+            tag = it["system"]
+            tw = int(measure(self.f.tiny, tag)) + 14
+            tr = pygame.Rect(r.right - 20 - tw, r.top + 8, tw, 20)
+            rrect(c, BG2, tr, 6)
+            text(c, self.f.tiny, tag, tr.center, FAINT, "center")
+            text(c, self.f.small, human_size(it["size"]), (r.right - 20, r.top + 40), DIM, "midright")
+            y += self.ROW_H
 
 
 # ------------------------------------------------------------------ modals

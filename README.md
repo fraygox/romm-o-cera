@@ -46,6 +46,10 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   systems, PS2 and PSP; RVZ for GameCube and Wii; squashfs for Xbox; .zcci for 3DS; .zar for Xbox 360. Xbox
   downloads are made bootable for xemu. Games already on the box can be
   compressed too, one or a whole system at a time. → [Disc compression](docs/disc-compression.md)
+- **PS3 games as game folders**: disc images become `.ps3` folders RPCS3 boots
+  and updates, read straight from the zip. Encrypted discs use disc keys for
+  games you own, from `bios/ps3keys` or your RomM (off by default; none are
+  included). → [PS3 games](docs/ps3.md#where-disc-keys-go)
 - **Feels native**: button labels match your controller (Xbox, PlayStation,
   Nintendo) or keyboard, settings explain themselves, updates install from the
   box with one-step rollback. → [Controls](docs/controls.md),
@@ -83,7 +87,9 @@ Pick one:
 ### 3. First launch
 
 On the box: **Main Menu → Game Settings → Update Gamelists**, then open
-**Pygame → RomM-o-Cera → Settings** and enter your RomM address and token.
+**Pygame → RomM-o-Cera → Settings** enter your RomM address, then
+**Pair with RomM** and type the code RomM shows when you press **Pair** on the
+token (or type the token itself under API token).
 **Hotkey + Start** exits.
 
 Plain HTTP, self-signed certificates and auth proxies:
@@ -106,6 +112,7 @@ went missing. Your config, queue and logs are never touched.
 | [Browsing and downloading](docs/browsing-and-downloading.md) | finding games, the queue, space, download hours, game info |
 | [On this box](docs/on-this-box.md) | installed games, space, compressing what's here, BIOS, Check games, conversions, game info |
 | [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, 3DS, Xbox 360, converting a library you already have |
+| [PS3 games](docs/ps3.md) | `.ps3` game folders, encrypted discs, where disc keys go (`bios/ps3keys`), keys in RomM |
 | [Settings](docs/settings.md) | every setting and `config.json` key, resetting settings |
 | [Connecting to RomM](docs/connecting.md) | HTTPS, certificates, network share, auth proxies |
 | [Controls](docs/controls.md) | controller, keyboard, touch |

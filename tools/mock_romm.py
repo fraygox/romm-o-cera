@@ -6,7 +6,8 @@ without a real server — or a real library.
 
 Then point the app at it: ROMM_URL=http://127.0.0.1:8765 ROMM_TOKEN=demo.
 Implements only what the app uses (platforms, collections, roms list/detail,
-content downloads with Range, covers). Any bearer token is accepted.
+content downloads with Range, covers, pairing). Any bearer token is accepted;
+the pairing code ABCD2345 works once.
 
 The library is made of freely distributed homebrew / open-source games (with
 descriptions written for this mock, not copied) plus invented "lorem ipsum"
@@ -383,6 +384,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    # pairing: like RomM 5.x, a code works once (then 404). ABCD2345 is
+    # there from the start; POST /mock/pair-code mints more (tests).
+    pair_codes = {"ABCD2345"}
+    pair_seen = []                 # Authorization header (or None) per exchange call
+
+    def do_POST(self):
+        path = urllib.parse.urlparse(self.path).path
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b""
+        if path == "/mock/pair-code":
+            code = "".join(random.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
+            Handler.pair_codes.add(code)
+            return self._json({"code": code, "expires_in": 60})
+        if path == "/mock/pair-seen":
+            return self._json(Handler.pair_seen)
+        if path == "/api/client-tokens/exchange":
+            Handler.pair_seen.append(self.headers.get("Authorization"))
+            try:
+                code = str(json.loads(raw or b"{}")["code"])
+            except (ValueError, KeyError, TypeError):
+                return self._json({"detail": [{"msg": "Field required"}]}, 422)
+            code = code.replace("-", "").upper()
+            if code not in Handler.pair_codes:
+                return self._json({"detail": "Invalid or expired pairing code"}, 404)
+            Handler.pair_codes.discard(code)
+            return self._json({"id": 1, "name": "batocera", "scopes": ["roms.read", "platforms.read"],
+                               "expires_at": None, "last_used_at": None,
+                               "created_at": "2026-01-01T00:00:00Z", "user_id": 1, "device_id": None,
+                               "raw_token": "rmm_" + hashlib.sha256(code.encode()).hexdigest()})
+        return self._json({"detail": "Not Found"}, 404)
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)

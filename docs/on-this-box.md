@@ -24,8 +24,15 @@ for downloads.
   pick enough to free 10–100 GB, and delete them in one go. Saves and states
   are kept.
 - **Clean up leftovers**: partial files and empty folders that interrupted
-  downloads or conversions left behind. Partial downloads still queued are
-  kept so they can resume.
+  downloads or conversions left behind (including a half-made `.ps3` game
+  folder), and **copies of games already here converted**: an archive, image
+  or loose tracks next to the same game's `.chd`, `.rvz`, `.iso.squashfs`,
+  `.zcci`, `.zar` or `.ps3` folder (say `Game.7z` beside `Game.rvz`). Each
+  copy names the converted game it duplicates. A copy is only offered when
+  the converted game looks whole, never while a conversion runs, never for a
+  file a queued conversion will use, and not on arcade systems (where
+  `game.zip` and `game.chd` belong together). Partial downloads still queued
+  are kept so they can resume.
 - **By system**: where the space went in each system, in the same colours as
   the bar. Pick a system to free up space in just that one.
 
@@ -73,6 +80,45 @@ saves move to the new name and playlists follow.
 Red findings are certain (a part the game needs to boot is missing); amber
 ones are worth a look (some complete discs list dummy files past their end;
 a trimmed image is smaller than RomM's copy).
+
+### Games ES can't see
+
+The third tile. EmulationStation only lists files whose extension the system
+takes (its list in `es_systems.cfg`: PS2 and PSP take no `.zip`, N64 takes no
+`.rvz`…) and silently skips the rest. This looks through every system folder
+— no RomM needed, nothing is checksummed — and lists, by system:
+
+- **Archives the system doesn't take** (a `.zip`/`.7z`/`.rar` in `ps2/`, say).
+  **Unpack** shows what's inside, then unpacks it exactly as after a download:
+  same safety checks (no paths or links out of the folder, never into a game
+  that's already there under that name), converted to CHD/RVZ/… if that's on,
+  and the archive is deleted once it's out.
+- **Games in the wrong system folder** (a GameCube image in `n64/`): a loose
+  file whose extension one to three other systems take. **Move to …** offers
+  each of them (a plain GameCube/Wii `.iso` is told apart by its disc header). The game's
+  tracks or playlist discs move with it; nothing is ever moved over a file
+  that's already there.
+- **Files ES can't list here**: no system takes the extension, only launchers
+  like Ports do, so many do that it says nothing (`.bin`, `.iso`), or the file
+  sits inside a folder (a BIOS chip set, say). Listed so you know.
+
+Every file also has **Delete**, for a leftover you don't want (an archive of a
+game that's already here, say). It asks first, naming the size and any tracks
+a `.cue`/`.gdi` (or discs an `.m3u`) names, which go with it; saves and states
+stay. If RomM-o-Cera installed the file, it forgets it.
+
+To do several at once, **X** picks a file (and moves to the next one) and
+**Y** picks them all; **B** clears the picks. With files picked, **A** offers
+**Unpack** for every picked archive or **Delete** for all of them, each after
+one confirmation. They're done one after another; one that can't be (a damaged
+archive, say) is left as it is and named at the end, and the rest go on.
+
+Skipped: media folders, `gamelist.xml`, hidden and unfinished files, notes,
+pictures and saves, backups and parked files (`.bak…`, `.disabled`,
+`.torrent`, numbered copies), the tracks a `.cue`/`.gdi` (or the discs an `.m3u`)
+names, and the other files of a game folder ES lists a game in. Nothing is
+deleted unless you choose Delete and confirm. ES shows unpacked or moved games after its next reload (when
+you leave RomM-o-Cera); game info RomM-o-Cera added follows a moved game.
 
 ## Conversions
 
