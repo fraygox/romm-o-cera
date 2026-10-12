@@ -146,3 +146,58 @@ def test_a_repeated_toast_draws_its_count(app, rb, monkeypatch):
     app.draw_toasts(app.canvas)
     assert seen == ["Queued: Lorem  ×3"]
 
+
+# ------------------------------------------------------------ what Compress can't convert
+
+def _encrypted_3ds(name):
+    h = bytearray(0x400)
+    h[0x100:0x104] = b"NCCH"                       # NCCH flags[7] without "no crypto": encrypted
+    return _put("3ds/%s.3ds" % name, bytes(h))
+
+
+def test_compress_lists_what_it_cant_convert_and_never_queues_it(app, rb, monkeypatch):
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG, z3ds=True))
+    enc = _encrypted_3ds("Lorem Cart (Encrypted)")
+    _put("psx/Ipsum (USA)/Ipsum (USA).cue", b'FILE "Ipsum (USA).bin" BINARY\n  TRACK 01 MODE2/2352\n')
+    _put("psx/Ipsum (USA)/Ipsum (USA).bin", b"x" * 5000)
+    sc = rb.CompressScreen(app)
+    app.push(sc)
+    sc.enter()
+    assert [r["system"] for r in sc.rows] == ["psx", "3ds"] and sc.rows[1]["cant"]
+    assert [c["system"] for c in sc.cands] == ["psx"]          # nothing to queue from 3ds
+    sc.draw(app.canvas)
+    sc.sel = 1
+    assert sc.hints()[0] == ("A", "Why")
+    sc.action("x")
+    assert app.modal is None and "can't be converted" in app.toasts[-1][0]
+    sc.action("ok")
+    why = app.stack[-1]
+    assert isinstance(why, rb.CantConvertScreen) and why.items == [(enc, "an encrypted dump (Azahar runs "
+                                                                         "decrypted ones only)")]
+    why.draw(app.canvas)
+    why.action("ok")
+    assert app.stack[-1] is why and app.modal is None
+
+
+def test_compress_with_only_games_it_cant_convert(app, rb, monkeypatch):
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG, z3ds=True))
+    _encrypted_3ds("Lorem Cart (Encrypted)")
+    sc = rb.CompressScreen(app)
+    app.push(sc)
+    sc.enter()
+    assert sc.cands == [] and [r["system"] for r in sc.rows] == ["3ds"]
+    sc.draw(app.canvas)                             # "Nothing left to compress", then the row
+    sc.action("ok")
+    assert isinstance(app.stack[-1], rb.CantConvertScreen)
+
+
+def test_a_failed_compress_scan_lists_nothing(app, rb, monkeypatch):
+    sc = rb.CompressScreen(app)
+    app.push(sc)
+    sc._loaded([], [("3ds", "/r/3ds/x.3ds", "an encrypted dump")])
+    assert sc.rows
+    monkeypatch.setattr(rb, "compress_scan", lambda skipped=None: 1 / 0)
+    sc.enter()
+    assert sc.rows == [] and sc.load_error
+    sc.action("ok")
+    assert app.stack[-1] is sc
