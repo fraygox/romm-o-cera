@@ -136,3 +136,35 @@ def test_going_back_closes_too(app, rb, monkeypatch):
     st = _settings(app, rb)
     st._swap(None, lambda: calls.append("rollback") or "0.9.0")
     assert calls == ["stop", "rollback"] and app.running is False
+
+
+@pytest.fixture
+def es(isolated, monkeypatch):
+    """A fake ES (not the fake_es fixture: that one makes time.sleep a no-op)."""
+    from fake_es import FakeES
+    e = FakeES(rommlib.ROMS_ROOT, {"gba": {".zip"}})
+    monkeypatch.setattr(rommlib, "ES_API", e.url)
+    yield e
+    e.close()
+
+
+def test_the_app_is_reopened_once_it_has_quit(es, tmp_path):
+    app = str(tmp_path / "app")
+    es.running = os.path.join(app, "rommbrowser.pygame")          # still open while the update installs
+    assert rommlib.relaunch_when_closed(app)
+    time.sleep(1.0)
+    assert es.launched == []                                      # not while it runs
+    es.running = None                                             # it quits
+    for _ in range(60):
+        if es.launched:
+            break
+        time.sleep(0.1)
+    assert es.launched == [os.path.join(app, "rommbrowser.pygame")]
+
+
+def test_nothing_is_reopened_over_a_game_started_meanwhile(es, tmp_path):
+    assert rommlib.relaunch_when_closed(str(tmp_path))
+    time.sleep(0.5)
+    es.running = "/userdata/roms/gba/Lorem.zip"                   # a game starts in the pause
+    time.sleep(2.5)
+    assert es.launched == []

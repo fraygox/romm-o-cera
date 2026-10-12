@@ -55,6 +55,7 @@ class FakeES:
         self.posts = []
         self.notes = []                                  # /notify texts
         self.messages = []                               # /messagebox texts
+        self.launched = []                               # /launch paths
         self.calls = []                                  # (method, path) of every request
         self.busy = False                                # scraping, hashing, installing...
         self.has_isidle = True                           # False: an ES before /isIdle
@@ -114,6 +115,10 @@ class FakeES:
                 if p in ("/notify", "/messagebox") or p.startswith("/addgames/"):
                     if not body:
                         return self._send(400, b"400 bad request - body is missing", "text/html")
+                if p == "/launch":                       # ES starts the game (here: just says it runs)
+                    fake.running = body.decode("utf-8")
+                    fake.launched.append(fake.running)
+                    return self._send(200, b"")
                 if p in ("/notify", "/messagebox"):
                     (fake.notes if p == "/notify" else fake.messages).append(body.decode("utf-8"))
                     return self._send(200, b"")
