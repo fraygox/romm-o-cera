@@ -439,3 +439,26 @@ def test_a_menu_taller_than_the_screen_scrolls_to_the_selected_row(isolated, rb,
     m.sel = 0
     frame()
     assert m.off == 0                                    # back at the top
+
+
+def test_a_key_tapped_after_a_tapped_match_types_instead_of_reopening_it(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    app.bg = lambda fn, done=None, err=None: None
+    app.push(rb.HomeScreen(app))
+    sc = rb.SearchScreen(app)
+    app.push(sc)
+    sc.query = "lorem"
+    sc.preview = [{"id": i, "name": "Lorem %d" % i, "platform_id": 1, "fs_size_bytes": 1} for i in range(5)]
+    sc.preview_total = 5
+    monkeypatch.setattr(app, "rom_status", lambda rom: ("remote", None))
+    opened = []
+    monkeypatch.setattr(rb, "DownloadConfirm", lambda a, rom: opened.append(rom["id"]) or "dl")
+    sc.tap_pick(1)                                  # a Top match tapped: its prompt opens
+    assert opened == [1] and app.modal == "dl"
+    app.modal = None                                # and is closed
+    sc.tap_key(1, 0)                                # then the Q key
+    assert opened == [1] and sc.query == "loremq"

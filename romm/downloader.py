@@ -550,15 +550,15 @@ class Downloader:
     def _failed(self, j, e):
         """Record how a job ended when it didn't finish (shared by both threads)."""
         if isinstance(e, Cancelled):
-            if not j.pause:
-                self._drop_parts(j)        # before the state flips: "Cancelled" means cleaned up
-            with self.cv:                  # a resume decides under the same lock
+            with self.cv:                  # pause/resume/cancel decide under the same lock
                 if j.pause and j.resume:   # resumed before it stopped: the .part resumes it
                     j.requeue()
                     self.cv.notify_all()
-                else:
-                    j.state = Job.PAUSED if j.pause else Job.CANCELLED
-                    j.message = "Paused" if j.pause else "Cancelled"
+                    return
+                if not j.pause:
+                    self._drop_parts(j)    # before the state flips: "Cancelled" means cleaned up
+                j.state = Job.PAUSED if j.pause else Job.CANCELLED
+                j.message = "Paused" if j.pause else "Cancelled"
         elif isinstance(e, _core.NoSpace):
             if not j.short_space:
                 _core.log("SPACE %s: %s (keeping %s free)" % (j.name, e, _core.human_size(_config.keep_free_bytes(self.cfg))))

@@ -302,7 +302,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         ids = []
         for n in names:
             rom = index.get(n.lower()) or index.get(
-                (n if os.path.isdir(os.path.join(sysdir, n)) else _core.stem_of(n)).lower())
+                (n if os.path.isdir(os.path.join(sysdir, n)) else _core.stem_of(n)).lower()) or \
+                index.get(os.path.splitext(n)[0].lower())         # a Game.ps3 folder: RomM's Game.zip/.iso
             if rom:
                 ids.append(rom["id"])
         with _api.Prefetch(api.rom, ids) as records:
