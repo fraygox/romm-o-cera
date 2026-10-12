@@ -279,6 +279,16 @@ def es_notify(msg):
         return False
 
 
+def es_messagebox(msg):
+    """A message box in EmulationStation that stays until the player closes
+    it (POST /messagebox): for problems that need them, not for news (that's
+    es_notify). Best effort."""
+    try:
+        return EsClient().post("/messagebox", msg).ok
+    except EsError:
+        return False
+
+
 def gamelist_xml(system, games):
     """A partial gamelist.xml (bytes) for games of a system: {absolute path:
     {tag: text}}; paths are written relative to the system folder."""

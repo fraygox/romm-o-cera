@@ -61,7 +61,9 @@ download only what fits.
   size"), so a broken server can't fill the drive.
 - They **keep going after you exit** and while you play (optionally
   speed-capped while a game runs), with a popup in EmulationStation when
-  they're done.
+  they're done. If they're stuck on something only you can fix (the drive
+  is full, or RomM no longer accepts the box's token), EmulationStation
+  shows a message box once you're back in its menus.
 - **Download while extracting** (Settings, on by default): the next game
   downloads while the last one unpacks. Turn it off for slow storage (SD
   cards, USB sticks).

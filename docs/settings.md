@@ -89,7 +89,7 @@ Theme row shows what's on screen ("Default (now PlayStation)").
 | `download_hours` | `any` | `any`, or a local-time window like `1-7` / `22-6` |
 | `keep_free_gb` | `20` | downloads and conversions leave at least this much free (GB); a download that doesn't fit waits for space (`0` = no reserve beyond a small margin) |
 | `extract_parallel` | `true` | start the next download while the last one is extracted (`false` for slow storage) |
-| `notify` | `true` | EmulationStation popup when background downloads finish or fail |
+| `notify` | `true` | EmulationStation popup when background downloads finish or fail (a full drive or a refused token gets a message box either way) |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
 | `chd` | `true` | background CHD compression of extracted disc games |
 | `chd_threads` | `auto` | conversion threads: `auto` (N−2 with 6+ threads, N−1 with 3–5) or a number |

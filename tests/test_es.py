@@ -279,3 +279,93 @@ def test_conversion_pauses_while_es_is_busy(es, monkeypatch):
     monkeypatch.setattr(rb_chd.time, "sleep", sleep)
     rb_chd._idle()
     assert steps == ["Paused while EmulationStation is busy"]
+
+
+# ------------------------------------------------------------ /messagebox (idea 37)
+
+def test_app_side_messagebox(es, monkeypatch):
+    assert rommlib.es_messagebox("Lorem ipsum") is True and es.messages == ["Lorem ipsum"]
+    assert rommlib.es_messagebox("") is False                  # ES: 400, body is missing
+    monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
+    assert rommlib.es_messagebox("x") is False
+
+
+def _jobs(*specs):
+    class D:
+        jobs = []
+    for i, (state, message, short) in enumerate(specs):
+        j = rommlib.Job({"id": i, "name": "Lorem %d" % i}, "gba")
+        j.state, j.message, j.short_space = state, message, short
+        D.jobs.append(j)
+    return D
+
+
+def test_background_downloads_waiting_for_space_get_one_message_box(es):
+    import rb_dl
+    n = rb_dl.Notes({"notify": False})                         # shown even with popups off
+    d = _jobs(("Queued", "Waiting for space: free 3.0 GB more", 3 << 30), ("Queued", "", 0))
+    es.running = "/userdata/roms/gba/Other.zip"
+    n.collect(d)
+    n.flush()
+    assert es.messages == []                                    # not over a game
+    es.running = None
+    n.collect(d)
+    n.flush()
+    assert len(es.messages) == 1 and "waiting for disk space" in es.messages[0] and "3.0 GB" in es.messages[0]
+    n.collect(d)
+    n.flush()
+    assert len(es.messages) == 1 and es.notes == []             # once per run; no popup with notify off
+
+
+def test_space_freed_before_anyone_saw_it_shows_nothing(es):
+    import rb_dl
+    n = rb_dl.Notes({"notify": True})
+    d = _jobs(("Queued", "Waiting for space", 1 << 30))
+    es.running = "/userdata/roms/gba/Other.zip"
+    n.collect(d)
+    n.flush()
+    d.jobs[0].short_space = 0
+    es.running = None
+    n.collect(d)
+    n.flush()
+    assert es.messages == []
+
+
+def test_refused_token_gets_a_message_box_and_the_popup(es):
+    import rb_dl
+    n = rb_dl.Notes({"notify": True})
+    d = _jobs(("Failed", "RomM rejected the token (HTTP 401)", 0), ("Failed", "Download failed: HTTP 403", 0),
+              ("Failed", "Download failed: HTTP 500", 0), ("Done", "", 0))
+    n.collect(d)
+    n.flush()
+    assert len(es.messages) == 1 and "pair it again" in es.messages[0]
+    assert es.notes == ["RomM-o-Cera: 1 game ready: Lorem 3; 3 failed: Lorem 0, Lorem 1, Lorem 2"]
+
+
+def test_ordinary_failures_stay_a_popup(es):
+    import rb_dl
+    n = rb_dl.Notes({"notify": True})
+    n.collect(_jobs(("Failed", "Download failed: HTTP 500", 0), ("Failed", "Can't reach RomM.", 0)))
+    n.flush()
+    assert es.messages == [] and len(es.notes) == 1
+
+
+def test_message_box_retried_when_es_did_not_take_it(es, monkeypatch):
+    import rb_dl
+    n = rb_dl.Notes({"notify": False})
+    d = _jobs(("Failed", "RomM rejected the token (HTTP 401)", 0))
+    monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
+    monkeypatch.setattr(rommlib, "es_running_game", lambda: "")
+    n.collect(d)
+    n.flush()
+    monkeypatch.setattr(rommlib, "ES_API", es.url)
+    n.flush()
+    assert len(es.messages) == 1
+
+
+def test_every_refusal_of_the_token_gets_the_message_box():
+    import rb_dl
+    for m in ("RomM rejected the token (HTTP 401)", "RomM refused: the token's owner is disabled (HTTP 403)",
+              "Download failed: HTTP 401", "Download failed: HTTP 403"):
+        assert rb_dl._rejected(m), m
+    assert not rb_dl._rejected("Download failed: HTTP 500")

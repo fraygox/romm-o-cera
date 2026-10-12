@@ -27,16 +27,54 @@ def write_status(d):
     rommlib.atomic_write_json(rommlib.DL_STATUS, st, sync=False)     # rewritten every second
 
 
+def messagebox(text):
+    """A message box in EmulationStation that stays until the player closes
+    it (POST /messagebox, in Batocera's ES since 2020). Best effort."""
+    # next release: the ES client in romm/es.py (rommlib.es_messagebox; v0.9.0 lacks it)
+    import urllib.request
+    try:
+        req = urllib.request.Request(rommlib.ES_API + "/messagebox", data=text.encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "text/plain; charset=utf-8"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status < 300
+    except Exception:
+        return False
+
+
+# problems the queue can't get past without the player: a message box (once
+# per run), not just a popup that goes by
+ALERTS = {
+    "space": "RomM-o-Cera: background downloads are waiting for disk space. "
+             "Free %s on the games drive and they carry on by themselves.",
+    "token": "RomM-o-Cera: RomM no longer accepts this box's token, so background downloads "
+             "stopped. Open RomM-o-Cera and pair it again (Settings > Pair with RomM).",
+}
+
+
+def _rejected(message):
+    m = message or ""
+    return m.startswith(("RomM rejected the token", "RomM refused:")) or m in ("Download failed: HTTP 401", "Download failed: HTTP 403")
+
+
 class Notes:
     """Finished/failed downloads, shown as one EmulationStation popup once
-    ES is back in its menus (a popup during a game would go unseen)."""
+    ES is back in its menus (a popup during a game would go unseen); a
+    problem only the player can fix (no space, token refused) as a message
+    box, once."""
 
     def __init__(self, cfg):
         self.on = cfg.get("notify", rommlib.DEFAULT_CONFIG["notify"])
         self.ready, self.failed = [], []
         self.seen = set()
+        self.alerts = {}               # ALERTS key -> text, waiting to be shown
+        self.alerted = set()
 
     def collect(self, d):
+        short = max((j.short_space or 0 for j in d.jobs if j.state == rommlib.Job.QUEUED), default=0)
+        if short and "space" not in self.alerted:
+            self.alerts["space"] = ALERTS["space"] % rommlib.human_size(short)
+        elif not short:
+            self.alerts.pop("space", None)         # room again before anyone saw it
         for j in d.jobs:
             if id(j) in self.seen:
                 continue
@@ -44,6 +82,8 @@ class Notes:
                 self.ready.append(j.name)
             elif j.state == rommlib.Job.FAILED:
                 self.failed.append(j.name)
+                if _rejected(j.message) and "token" not in self.alerted:
+                    self.alerts["token"] = ALERTS["token"]
             else:
                 continue
             self.seen.add(id(j))
@@ -60,11 +100,15 @@ class Notes:
         return "RomM-o-Cera: " + "; ".join(parts)
 
     def flush(self, force=False):
-        if not self.on or not (self.ready or self.failed):
+        if not (self.alerts or self.on and (self.ready or self.failed)):
             return
         if not force and rommlib.es_running_game() != "":
             return                      # a game is up (or ES unreachable): later
-        if rommlib.es_notify(self.text()):
+        for k, text in list(self.alerts.items()):     # shown whatever "notify" says: they need the player
+            if messagebox(text):
+                self.alerted.add(k)
+                del self.alerts[k]
+        if self.on and (self.ready or self.failed) and rommlib.es_notify(self.text()):
             self.ready, self.failed = [], []
 
 
@@ -132,7 +176,7 @@ def after_downloads(cfg, notes):
     import rb_finalize
     rb_finalize.main()                           # waits until ES is idle; no-op with nothing queued
     if notes is not None:
-        if notes.on and (notes.ready or notes.failed):
+        if notes.alerts or notes.on and (notes.ready or notes.failed):
             rb_finalize.wait_idle()              # (finalize may have had nothing to wait for)
         notes.flush()                            # games are listed now: tell the player
 
