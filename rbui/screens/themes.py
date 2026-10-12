@@ -548,7 +548,8 @@ class CustomThemeScreen(Screen):
         for n, ln in enumerate(wrap(self.f.body, custom_summary(*self.values()), w, 2)):
             text(c, self.f.body, ln, (x, p.top + 84 + 25 * n), theme.DIM)
         pal = {k: getattr(theme, k) for k in theme.PALETTE}
-        mini = pygame.Rect(0, p.top + 130, round(220 * 176 / 118), 220)
+        h = min(220, p.bottom - 60 - 3 * 31 - 18 - (p.top + 130))      # the colour key fits above the badge
+        mini = pygame.Rect(0, p.top + 130, round(h * 176 / 118), h)
         mini.centerx = p.centerx
         draw_mini(c, mini, pal)
         draw_meanings(c, self.f, x, mini.bottom + 18, w)
