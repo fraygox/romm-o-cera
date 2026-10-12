@@ -67,8 +67,25 @@ verified by checksum), what's missing everywhere, and what was fetched when.
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files
 whose size doesn't match RomM. **Full check** also checksums every file and
-verifies CHDs — slow, hours for a big library. Without `chdman` on the box,
-CHDs are counted as not verified rather than flagged.
+verifies CHDs — slow, hours for a big library.
+
+Games converted on the box are checked against RomM's copy of what they were
+made from:
+
+| Format | Quick check | Full check also |
+|---|---|---|
+| CHD | sectors against RomM's image | `chdman verify` |
+| RVZ | its headers, cut short, disc size against RomM's image | `dolphin-tool` reads the whole disc; its CRC32/SHA-1 must be RomM's |
+| `.iso.squashfs` | its superblock, cut short, the image inside and its size (an Xbox game partition cut here counts as right) | the image read out whole; uncut, its CRC32 must be RomM's |
+| `.zcci` | its header, cut short, size against RomM's original | every block decoded; CRC32 against RomM's |
+| `.zar` | its footer, cut short | its whole SHA-256 |
+| `.ps3` folder | `EBOOT.BIN`, `PARAM.SFO` (with the game's ID), `PS3_DISC.SFB` | every file read to its end |
+
+A check that needs a tool the box doesn't have (`chdman`; `dolphin-tool`,
+which turning on GameCube and Wii to RVZ installs; `unsquashfs` 4.5 or later)
+counts the game as not verified, and the screen names the tool, rather than
+flagging it. A `.ps3` folder is matched with RomM's disc image (`Game.zip`
+or `Game.iso` for `Game.ps3`).
 
 If RomM can't be reached, or a list can't be read, the screen says so in red
 instead of showing an empty, all-clear list. Go back and open it again to retry.

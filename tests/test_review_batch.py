@@ -209,7 +209,7 @@ def test_the_check_screen_says_chds_went_unverified(app, rb, monkeypatch):
     monkeypatch.setattr(rommlib, "save_audit", lambda *a: None)
     scr = rb.AuditScreen(app, deep=True)
     app.push(scr)
-    assert "2 CHDs not verified (chdman isn't installed)" in _drawn(rb, monkeypatch, scr)
+    assert "2 games not verified (missing chdman)" in _drawn(rb, monkeypatch, scr)
 
 
 # ------------------------------------------------------------ 7. startup on a full disk

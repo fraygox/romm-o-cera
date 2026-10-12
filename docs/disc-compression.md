@@ -57,6 +57,13 @@ commit Batocera 43.1 uses. Each image is verified by dolphin-tool first
 (anything that isn't a GameCube/Wii disc is left alone) and the RVZ must hash
 to the original's CRC32 before the original is deleted. Usually much smaller.
 
+Check games reads an RVZ's headers (cut short, or made from a different image
+than RomM's); a full check has dolphin-tool read the whole disc and compares
+its CRC32 and SHA-1 with RomM's image. When RomM keeps the game as `.wbfs`
+or another compressed form, its checksums aren't the disc's: a full check
+then only shows what dolphin-tool itself finds (data it can't read, Wii
+blocks whose hashes are wrong).
+
 ## Make Xbox images bootable — on by default
 
 xemu boots only an Xbox disc's game partition (an "XISO"). A full disc image,
@@ -84,6 +91,12 @@ original is deleted. Packing takes a few minutes of CPU per game.
 Inside, next to the image, a `.ROM` link points at it. Batocera uses either
 that link or the `Game.iso.squashfs` naming to find the image; without one
 of them it would hand xemu the folder and the game wouldn't start.
+
+Check games reads the squashfs header (cut short) and lists what's inside
+with `unsquashfs`: the image must be there, the size of RomM's copy or of its
+game partition. A full check reads the image out whole and, when it wasn't
+cut, compares its CRC32 with RomM's. Without `unsquashfs` (4.5 or later for
+a full check) the game counts as not verified.
 
 **zstd, not xz**: xz packs about 5% smaller but reads about 20× slower (each
 read decompresses a whole 1 MB block), which shows up as loading time.

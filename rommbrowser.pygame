@@ -6020,7 +6020,8 @@ class AuditScreen(ListScreen):
         dif = len(self.findings) - dmg
         head = "%d checked, %d matched to RomM. " % (st.get("checked", 0), st.get("matched", 0))
         if st.get("unverified"):
-            head += "%s not verified (chdman isn't installed). " % plural(st["unverified"], "CHD")
+            tools = st.get("unverified_tools") or ["chdman"]        # a check saved by v0.9.0: CHDs only
+            head += "%s not verified (missing %s). " % (plural(st["unverified"], "game"), ", ".join(tools))
         if not self.findings:
             text(c, self.f.h3, head + "Everything looks right.", (56, 86), GREEN)
             text(c, self.f.body, "Games not in RomM under the same file name aren't checked (%d)."

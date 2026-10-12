@@ -540,3 +540,69 @@ def ps3_to_folder(src, out, cfg=None, pause=None, progress=None):
         return info.get("key")
     finally:
         close()
+
+
+PS3_SFB = "PS3_DISC.SFB"
+
+
+def ps3_sfo(path):
+    """{key: value} from a PARAM.SFO (text and numbers), or None if it isn't a
+    whole one."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(1 << 20)
+    except OSError:
+        return None
+    if len(data) < 20 or data[:4] != b"\0PSF":
+        return None
+    keys, vals, n = struct.unpack("<III", data[8:20])
+    if 20 + 16 * n > min(keys, len(data)) or vals > len(data):
+        return None
+    out = {}
+    for i in range(n):
+        ko, fmt, length, _, do = struct.unpack("<HHIII", data[20 + 16 * i:36 + 16 * i])
+        end = data.find(b"\0", keys + ko)
+        raw = data[vals + do:vals + do + length]
+        if end < 0 or len(raw) != length:
+            return None
+        out[data[keys + ko:end].decode("latin-1")] = int.from_bytes(raw, "little") if fmt == 0x0404 else \
+            raw.split(b"\0", 1)[0].decode("utf-8", "replace")
+    return out
+
+
+def ps3_folder_check(path, full=False):
+    """Check games on a .ps3 game folder made here: None if it looks whole, else
+    (problem, severity). Always: what RPCS3 boots it by (EBOOT.BIN, a PARAM.SFO
+    naming the game) and the disc's PS3_DISC.SFB. full: every file read to its
+    end. Nothing to compare with RomM: its copy is the disc image."""
+    if not os.path.isdir(path):
+        return None
+    for rel, magic, severity in ((PS3_EBOOT, b"SCE\0", "damaged"), (PS3_SFO, b"\0PSF", "damaged"),
+                                 (PS3_SFB, b".SFB", "differs")):
+        try:
+            with open(os.path.join(path, *rel.split("/")), "rb") as f:
+                head = f.read(4)
+        except FileNotFoundError:
+            return "Missing file: %s" % rel, severity
+        except OSError as e:
+            return "Can't read %s (%s)" % (rel, e.strerror or e), "damaged"
+        if head != magic:
+            return "Damaged file: %s" % rel, severity
+    if not (ps3_sfo(os.path.join(path, *PS3_SFO.split("/"))) or {}).get("TITLE_ID"):
+        return "Damaged file: %s" % PS3_SFO, "damaged"
+    if full:
+        for dp, dns, fns in os.walk(path):
+            dns.sort()
+            for fn in sorted(fns):
+                p = os.path.join(dp, fn)
+                rel = os.path.relpath(p, path)
+                try:
+                    with open(p, "rb") as f:
+                        want, got = os.fstat(f.fileno()).st_size, 0
+                        for chunk in iter(lambda: f.read(PS3_CHUNK), b""):
+                            got += len(chunk)
+                except OSError as e:
+                    return "Can't read %s (%s)" % (rel, e.strerror or e), "damaged"
+                if got != want:
+                    return "Can't read %s to its end" % rel, "damaged"
+    return None

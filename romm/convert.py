@@ -328,6 +328,215 @@ def xiso_listing(exe, iso):
     return out or None
 
 
+# ---------------------------------------------------------- Check games on a converter's output
+# Converter.audit(path, orig, deep) checks a file this box made: None if it
+# looks whole, else (problem, severity) as Check games reports it ("damaged":
+# won't play; "differs": not RomM's copy). orig: RomM's copy of what it was
+# made from, {"name", "size", "crc", "sha1"} (None if RomM has no such file).
+# deep: a full check, which reads it all. A check that needs a tool the box
+# doesn't have raises NotVerified(tool): counted as not verified, never flagged.
+
+class NotVerified(Exception):
+    """Check games can't verify this file here: args[0] names the missing tool."""
+
+
+def _differs(size, want):
+    return "Packed from a different file than RomM's (%s vs %s)" % (_core.human_size(size), _core.human_size(want))
+
+
+def z3ds_audit(path, orig, deep):
+    hdr = z3ds_header(path)
+    if hdr is None:
+        return "Not a readable .zcci (damaged header)", "damaged"
+    if not hdr["complete"]:
+        return "Compressed file cut short", "damaged"
+    if orig and orig["size"] and hdr["size"] != orig["size"]:
+        return _differs(hdr["size"], orig["size"]), "differs"
+    if deep:
+        try:
+            got, _ = z3ds_verify(path)
+        except (Z3dsError, OSError) as e:
+            return "Compressed file damaged: %s" % e, "damaged"
+        if orig and orig["crc"] and got != orig["crc"]:
+            return "Checksum doesn't match RomM's copy", "differs"
+    return None
+
+
+def zar_audit(path, orig, deep):
+    # packed here from the disc's files: RomM's image hashes can't match by design
+    bad = zar_check(path, full=deep)
+    return ("Compressed file %s" % bad, "damaged") if bad else None
+
+
+RVZ_MAGICS = (b"RVZ\x01", b"WIA\x01")
+
+
+def rvz_header(path):
+    """{"size": the disc's size, "complete": the file is as long as its header
+    says} from an RVZ (or WIA) file whose two headers match their SHA-1s, as
+    Dolphin checks them when it opens one; None otherwise."""
+    import hashlib
+    try:
+        with open(path, "rb") as f:
+            h = f.read(0x48)
+            if len(h) < 0x48 or h[:4] not in RVZ_MAGICS or hashlib.sha1(h[:0x34]).digest() != h[0x34:]:
+                return None
+            if hashlib.sha1(f.read(int.from_bytes(h[0x0C:0x10], "big"))).digest() != h[0x10:0x24]:
+                return None
+            end = os.fstat(f.fileno()).st_size
+    except OSError:
+        return None
+    return {"size": int.from_bytes(h[0x24:0x2C], "big"), "complete": end == int.from_bytes(h[0x2C:0x34], "big")}
+
+
+def rvz_audit(path, orig, deep):
+    """Quick: the headers, the file's length, and the disc's size against RomM's
+    image. Full: dolphin-tool reads the whole disc (Wii: checking its block
+    hashes too), and its CRC32/SHA-1 must be RomM's image's."""
+    hdr = rvz_header(path)
+    if hdr is None:
+        return "Not a readable RVZ (damaged header)", "damaged"
+    if not hdr["complete"]:
+        return "Compressed file cut short", "damaged"
+    # only a plain image's size and hashes are the disc's own (not a .wbfs, .ciso or .gcz)
+    raw = orig if orig and os.path.splitext(orig["name"].lower())[1] in (".iso", ".gcm") else None
+    if raw and raw["size"] and hdr["size"] != raw["size"]:
+        return _differs(hdr["size"], raw["size"]), "differs"
+    if not deep:
+        return None
+    exe = _tools.dolphin_tool_path()
+    if not exe:
+        raise NotVerified("dolphin-tool")
+    # its own throwaway Dolphin user folder (the worker may be using one), gone after
+    user = os.path.join(_core.tmp_dir(), "dolphin-check-%d" % os.getpid())
+    try:
+        os.makedirs(user, exist_ok=True)
+        p = subprocess.run(["nice", "-n", "19", exe, "verify", "-u", user, "-i", path],
+                           capture_output=True, text=True, errors="replace")
+    except OSError:
+        raise NotVerified("dolphin-tool") from None
+    finally:
+        shutil.rmtree(user, ignore_errors=True)
+    if p.returncode in (126, 127):                             # nice: couldn't run it
+        raise NotVerified("dolphin-tool")
+    crc = re.search(r"CRC32: ([0-9a-f]{8})", p.stdout)
+    sha1 = re.search(r"SHA1: ([0-9a-f]{40})", p.stdout)
+    # a read error leaves the hashes "not computed" (and Dolphin says so; not "the filesystem … could not be read")
+    if p.returncode != 0 or not crc or "Some of the data could not be read" in p.stdout:
+        return "Compressed file damaged (dolphin-tool couldn't read all of it)", "damaged"
+    if raw and (raw["crc"] or raw["sha1"]):
+        if (raw["crc"] and raw["crc"] != crc.group(1)) or (raw["sha1"] and sha1 and raw["sha1"] != sha1.group(1)):
+            return "Checksum doesn't match RomM's copy", "differs"
+        return None                 # RomM's own image: any problem dolphin-tool lists came with the dump
+    bad = re.search(r"Errors were found in (\d+) blocks", p.stdout)
+    if bad:
+        return "dolphin-tool found errors in %s blocks (damaged, or a bad dump)" % bad.group(1), "differs"
+    return None
+
+
+def squashfs_header(path):
+    """{"used": the bytes its superblock says it fills, "complete": the file
+    holds them all} from a squashfs 4 file, or None if it isn't one."""
+    try:
+        with open(path, "rb") as f:
+            sb = f.read(96)
+            end = os.fstat(f.fileno()).st_size
+    except OSError:
+        return None
+    if len(sb) < 96 or sb[:4] != b"hsqs" or int.from_bytes(sb[28:30], "little") != 4:
+        return None
+    used = int.from_bytes(sb[40:48], "little")
+    return {"used": used, "complete": end >= used}
+
+
+def _unsquashfs():
+    exe = shutil.which("unsquashfs")
+    if not exe:
+        raise NotVerified("unsquashfs")
+    return exe
+
+
+def squashfs_listing(path):
+    """{name: (size, link target or None)} of the files in a squashfs
+    (unsquashfs -lls), or None if unsquashfs can't read it."""
+    exe = _unsquashfs()
+    try:
+        p = subprocess.run([exe, "-lls", path], capture_output=True, text=True, errors="surrogateescape", timeout=300)
+    except OSError:
+        raise NotVerified("unsquashfs") from None
+    except subprocess.TimeoutExpired:
+        return None
+    if p.returncode != 0:
+        return None
+    out = {}
+    for line in p.stdout.splitlines():
+        m = re.match(r"^([-dlcbps])\S{9}\s+\S+\s+(\d+)\s+\S+\s+\S+\s+squashfs-root/(.+)$", line)
+        if m:
+            name, link = m.group(3), None
+            if m.group(1) == "l" and " -> " in name:
+                name, link = name.split(" -> ", 1)
+            out[name] = (int(m.group(2)), link)
+    return out
+
+
+def squashfs_crc(path, name):
+    """(CRC32, size) of one file in a squashfs, read through unsquashfs -cat
+    (squashfs-tools 4.5+); None if it can't be read to the end."""
+    import tempfile
+    import zlib
+    exe = _unsquashfs()
+    crc, n = 0, 0
+    with tempfile.TemporaryFile() as err:
+        try:
+            p = subprocess.Popen(["nice", "-n", "19", exe, "-no-wildcards", "-cat", path, name],
+                                 stdout=subprocess.PIPE, stderr=err)
+        except OSError:
+            raise NotVerified("unsquashfs") from None
+        with p.stdout:
+            for chunk in iter(lambda: p.stdout.read(8 << 20), b""):
+                crc = zlib.crc32(chunk, crc)
+                n += len(chunk)
+        rc = p.wait()
+        err.seek(0)
+        said = err.read(64 << 10)
+    if rc in (126, 127):                                       # nice: couldn't run it
+        raise NotVerified("unsquashfs")
+    if rc and not n and b"SYNTAX" in said:                     # its usage text: no -cat before 4.5
+        raise NotVerified("unsquashfs 4.5+")
+    return None if rc else ("%08x" % (crc & 0xffffffff), n)
+
+
+def squashfs_audit(path, orig, deep):
+    """Quick: the superblock, the file's length, and for "X.iso.squashfs" the
+    image inside, its size against RomM's (or RomM's less the Xbox partition
+    cut here). Full: the image read out whole; uncut, its CRC32 is RomM's."""
+    hdr = squashfs_header(path)
+    if hdr is None:
+        return "Not a readable squashfs (damaged header)", "damaged"
+    if not hdr["complete"]:
+        return "Compressed file cut short (%s of %s)" % (_core.human_size(os.path.getsize(path)),
+                                                         _core.human_size(hdr["used"])), "damaged"
+    inner = os.path.basename(path)[:-len(".squashfs")]
+    if os.path.splitext(inner)[1].lower() not in _core.DISC_EXTS:
+        return None                 # not a disc image packed here ("X.iso.squashfs"): nothing to compare
+    listing = squashfs_listing(path)
+    if listing is None:
+        return "Not a readable squashfs (unsquashfs can't list it)", "damaged"
+    if inner not in listing or listing[inner][1] is not None:
+        return "The disc image inside is missing (%s)" % inner, "damaged"
+    size, want = listing[inner][0], orig and orig["size"]
+    if want and size != want and want - size not in _core.XBOX_PARTITIONS:
+        return _differs(size, want), "differs"
+    if not deep:
+        return None
+    got = squashfs_crc(path, inner)
+    if got is None or got[1] != size:
+        return "Compressed file damaged (unsquashfs couldn't read all of it)", "damaged"
+    if want == size and orig["crc"] and got[0] != orig["crc"]:
+        return "Checksum doesn't match RomM's copy", "differs"
+    return None
+
+
 # what a converter's check() raises for a file it can't convert (planner and worker skip it)
 CHECK_ERRORS = (Z3dsError, _discs.CsoError, OSError, _ps3.Ps3Error)
 
@@ -356,6 +565,8 @@ class Converter:
     check: Optional[Callable] = None   # check(src) raises one of CHECK_ERRORS when it can't be converted
     renamed_sources: tuple = ()    # found by the planner too: renamed to a source first ("X.xiso" -> "X.iso")
     planner_skips_done: bool = False   # the planner leaves a source alone when its output is already there
+    audit: Optional[Callable] = None   # audit(path, orig, deep): how Check games checks an output (see NotVerified)
+    audit_exts: tuple = ()     # other files audit checks as if they were its output (Azahar's own .zcia)
 
     @property
     def sources(self):
@@ -401,29 +612,41 @@ CONVERTERS = (
               check=lambda src: _discs.cso_info(src), space=lambda src: _discs.cso_info(src)["total"] + os.path.getsize(src)),
     Converter("rvz", "RVZ", "rvz", frozenset(_core.RVZ_SYSTEMS), dict.fromkeys(_core.RVZ_SOURCES, ".rvz"),
               "rvz", _config.SETTING["rvz"].label, "turned off, or dolphin-tool isn't installed",
-              lambda cfg, system: rvz_enabled(cfg)),
+              lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit),
     # Xbox: images are made bootable (make_xiso, .xiso -> .iso) first, when xbox_bootable is on
     Converter("squashfs", "squashfs", "squashfs", frozenset(_core.SQUASH_SYSTEMS), {".iso": ".squashfs"},
               "squashfs", _config.SETTING["squashfs"].label, "turned off, or mksquashfs is missing",
               lambda cfg, system: squashfs_enabled(cfg, system), keep_image_ext=True,
-              renamed_sources=(".xiso",)),
+              renamed_sources=(".xiso",), audit=squashfs_audit),
     # encrypted dumps are skipped (Azahar can't run them either)
     Converter("z3ds", "ZCCI", "z3ds", frozenset(Z3DS_SYSTEMS), dict(Z3DS_SOURCES),
               "z3ds", _config.SETTING["z3ds"].label, "turned off, or libzstd is missing",
               lambda cfg, system: z3ds_enabled(cfg, system), check=lambda src: z3ds_info(src),
-              planner_skips_done=True),
+              planner_skips_done=True, audit=z3ds_audit, audit_exts=(".zcia",)),
     # the extracted files and the .zar sit next to the image until it's verified
     Converter("zar", "ZAR", "zar", frozenset(_tools.ZAR_SYSTEMS), {".iso": ".zar"},
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
-              lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True),
+              lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
+              audit=zar_audit),
     # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
     # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
     Converter("ps3", "PS3 folder", "ps3", frozenset({"ps3"}), {".iso": ".ps3", ".zip": ".ps3"},
               "ps3_folders", _config.SETTING["ps3_folders"].label, "turned off",
               lambda cfg, system: bool(_config.config_value(cfg, "ps3_folders")),
-              check=lambda src: _ps3.ps3_check(src), space=lambda src: _ps3.ps3_image_size(src)),
+              check=lambda src: _ps3.ps3_check(src), space=lambda src: _ps3.ps3_image_size(src),
+              audit=lambda path, orig, deep: _ps3.ps3_folder_check(path, deep)),
 )
 CONVERTER = {c.mode: c for c in CONVERTERS}
+
+
+def output_converter(path):
+    """The Converter a file or folder here is the output of, by its extension,
+    when Check games has a check for it (CHDs are checked their own way); else None."""
+    ext = _ext(path)
+    for c in CONVERTERS:
+        if c.audit and (ext in c.outputs or ext in c.audit_exts):
+            return c
+    return None
 
 
 def converters_for(system):
