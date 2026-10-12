@@ -181,11 +181,12 @@ def test_retry_after_dates_and_junk():
 # ------------------------------------------------------------ an overloaded server
 
 def test_an_overloaded_server_gets_fewer_requests_instead_of_all_failing(serve, quick):
-    """RomM (or its proxy) answers 503 past 4 requests at once. 12 threads ask
+    """RomM (or its proxy) answers 503 past 6 requests at once. 12 threads ask
     for 60 things: the session backs off to what the server takes, and every
-    request gets its answer."""
+    request gets its answer. (Past GATE_FLOOR: a server that takes fewer than
+    the floor stays overloaded by design.)"""
     def plan(path, inflight):
-        return (503, {}, b"busy") if inflight > 4 else (200, {}, b"[]")
+        return (503, {}, b"busy") if inflight > 6 else (200, {}, b"[]")
     s = serve(plan, delay=0.05)
     api = rommlib.Api(s.url, "t")
     out = rommlib.fetch_many(lambda k: api.get("/api/roms/%d" % k), range(60), workers=12)
