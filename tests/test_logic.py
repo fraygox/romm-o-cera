@@ -445,6 +445,7 @@ def test_chdman_with_huge_progress_output_does_not_hang(isolated, tmp_path, monk
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", "%s:%s" % (bindir, os.environ["PATH"]))
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     import threading
@@ -539,6 +540,7 @@ def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypat
     import rb_chd
     os.makedirs(rommlib.CHD_QUEUE_DIR)
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     done, spawned = [], []
 
     def fake_convert(task):
@@ -548,7 +550,8 @@ def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypat
         return True
     monkeypatch.setattr(rb_chd, "convert", fake_convert)
     monkeypatch.setattr(rb_chd, "finalize_later", lambda: spawned.append(1))
-    monkeypatch.setattr(rb_chd.rb_finalize, "main", lambda: pytest.fail("finalize ran inline"))
+    import rb_finalize
+    monkeypatch.setattr(rb_finalize, "main", lambda: pytest.fail("finalize ran inline"))
     json.dump({"n": 1}, open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-psx.json"), "w"))
     rb_chd.main()
     assert done == [1, 2] and spawned and not os.listdir(rommlib.CHD_QUEUE_DIR)
@@ -790,6 +793,7 @@ def test_chd_one_folder_two_releases_two_playlists(isolated, monkeypatch, fake_e
     assert sorted((os.path.relpath(r, sysdir), len(fs), n) for r, fs, n in plan) == [
         ("RE2 (USA)", 2, "RE2 (USA)"), ("RE2 (USA)", 2, "RE2 - Dual Shock Ver. (USA)")]
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd, "chdman", lambda mode, *a: (
         mode == "verify" or open(a[a.index("-o") + 1], "w").write("chd")) and (0, ""))
     for r, fs, n in plan:
@@ -809,6 +813,7 @@ def test_chd_refuses_two_sources_with_one_output_name(isolated, monkeypatch):
         os.makedirs(os.path.join(sysdir, d))
         open(os.path.join(sysdir, d, "game.cue"), "w").write("x")
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("must not convert"))
     srcs = [os.path.join(sysdir, "G/CD1/game.cue"), os.path.join(sysdir, "G/CD2/game.cue")]
     assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": srcs,
@@ -1002,6 +1007,7 @@ def test_dvd_conversions_leave_out_flac(isolated, tmp_path, monkeypatch):
                      "open(%r, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
                      "a = sys.argv[1:]\nif a[0] != 'verify': open(a[a.index('-o') + 1], 'w').write('chd')" % str(log))
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
     sysdir = os.path.join(rommlib.ROMS_ROOT, "ps2")
     os.makedirs(sysdir)
@@ -1019,6 +1025,7 @@ def test_memory_guard_stops_chdman_and_keeps_originals(isolated, tmp_path, monke
                      "for i in range(0, len(blob), 4096): blob[i] = 1\n"
                      "time.sleep(30)")
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd, "MEM_SHARE_MAX", (32 << 20) / max(1, rb_chd._meminfo().get("MemTotal", 1)))
     real_sleep = time.sleep
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: real_sleep(0.3))

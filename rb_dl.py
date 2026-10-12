@@ -26,20 +26,6 @@ def write_status(d):
     rommlib.atomic_write_json(rommlib.DL_STATUS, st, sync=False)     # rewritten every second
 
 
-def messagebox(text):
-    """A message box in EmulationStation that stays until the player closes
-    it (POST /messagebox, in Batocera's ES since 2020). Best effort."""
-    # next release: the ES client in romm/es.py (rommlib.es_messagebox; v0.9.0 lacks it)
-    import urllib.request
-    try:
-        req = urllib.request.Request(rommlib.ES_API + "/messagebox", data=text.encode("utf-8"), method="POST",
-                                     headers={"Content-Type": "text/plain; charset=utf-8"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return r.status < 300
-    except Exception:
-        return False
-
-
 # problems the queue can't get past without the player: a message box (once
 # per run), not just a popup that goes by
 ALERTS = {
@@ -104,7 +90,7 @@ class Notes:
         if not force and rommlib.es_running_game() != "":
             return                      # a game is up (or ES unreachable): later
         for k, text in list(self.alerts.items()):     # shown whatever "notify" says: they need the player
-            if messagebox(text):
+            if rommlib.es_messagebox(text):
                 self.alerted.add(k)
                 del self.alerts[k]
         if self.on and (self.ready or self.failed) and rommlib.es_notify(self.text()):

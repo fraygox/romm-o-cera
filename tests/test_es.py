@@ -244,14 +244,14 @@ def test_workers_wait_while_es_is_busy(es):
     back to the running game."""
     import rb_chd
     import rb_finalize
-    assert rb_finalize.es_busy() == "" and rb_finalize.game_running() is False and rb_chd.busy_reason() == ""
+    assert rommlib.es_busy(app_busy=True) == "" and rb_finalize.game_running() is False and rb_chd.busy_reason() == ""
     es.busy = True
-    assert rb_finalize.es_busy() == "es" and rb_finalize.game_running() is True and rb_chd.busy_reason() == "es"
+    assert rommlib.es_busy(app_busy=True) == "es" and rb_finalize.game_running() is True and rb_chd.busy_reason() == "es"
     es.busy = False
     es.running = APP
     assert rb_finalize.game_running() is True and rb_chd.busy_reason() == ""
     es.running = "/userdata/roms/gba/Lorem.zip"
-    assert rb_finalize.es_busy() == "game" and rb_chd.busy_reason() == "game"
+    assert rommlib.es_busy(app_busy=True) == "game" and rb_chd.busy_reason() == "game"
     es.running = None
     es.has_isidle = False
     es.busy = True                                  # unseen without /isIdle
@@ -263,7 +263,7 @@ def test_workers_treat_unreachable_es_as_busy(isolated, monkeypatch):
     import rb_chd
     import rb_finalize
     monkeypatch.setattr(rb_finalize.rommlib, "ES_API", "http://127.0.0.1:9")
-    assert rb_finalize.es_idle() is None and rb_finalize.game_running() is True
+    assert rommlib.es_is_idle() is None and rb_finalize.game_running() is True
     assert rb_chd.busy_reason() == "game"
 
 

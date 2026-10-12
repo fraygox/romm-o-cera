@@ -203,6 +203,7 @@ def chd(isolated, tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_LOG", str(tmp_path / "chdman.log"))
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
     monkeypatch.setattr(rommlib, "keep_free_bytes", lambda cfg: 0)
     return rb_chd

@@ -203,8 +203,8 @@ The rules (`tests/test_package.py` checks them):
 
 Worker files an OLD process loads lazily after an in-app update swapped the
 folder must only use rommlib names the previous release has: a UI left open
-imports rb_chd_plan on the Compress screen (and with it rb_chd and
-rb_finalize) and rb_dl to take over downloads. A name new in this release
+imports rb_chd_plan on the Compress screen (and with it rb_chd) and rb_dl
+to take over downloads (and with it rb_finalize). A name new in this release
 reaches the workers in the next one. Read settings there as
 `cfg.get(key, rommlib.DEFAULT_CONFIG[key])`, not `config_value`.
 `tests/test_package.py` pins the names they may use (`PREVIOUS_RELEASE_NAMES`,

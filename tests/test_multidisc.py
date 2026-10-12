@@ -168,6 +168,7 @@ def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, 
     _fake_chdman(tmp_path, monkeypatch)
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     tasks = sorted(os.listdir(rommlib.CHD_QUEUE_DIR))
     assert len(tasks) == 3
     for t in tasks:
@@ -218,6 +219,7 @@ def test_chd_before_set_finishes(isolated, mock_url, tmp_path, monkeypatch):
     _fake_chdman(tmp_path, monkeypatch)
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     t = os.listdir(rommlib.CHD_QUEUE_DIR)[0]
     assert rb_chd.convert(json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, t))))
     os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, t))

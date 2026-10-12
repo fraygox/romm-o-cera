@@ -144,19 +144,18 @@ def es_is_idle(get=None):
 def es_busy(app_busy=False, get=None):
     """Why background work (conversions, handing games to ES) should wait:
     "" it may run, "game" a game runs (this app only with app_busy) or ES
-    can't be asked, "es" ES is busy itself (scraping, hashing...). /isIdle
-    first; without it (older ES), the running game alone decides. While
-    this app runs /isIdle says False whatever ES does, so then only the
-    running game counts."""
-    idle = es_is_idle(get)
-    if idle:
-        return ""
+    can't be asked, "es" ES is busy itself (scraping, hashing...: /isIdle).
+    The running game first; /isIdle after it, so a game that just quit can't
+    leave a stale False, and only when nothing runs: while this app runs
+    /isIdle says False whatever ES does, so then the app alone counts (busy
+    with app_busy, idle without). Without /isIdle (older ES) the running
+    game alone decides."""
     path = es_running_game(app_busy=True, get=get)
     if path is None:
         return "game"
     if path:
         return "game" if app_busy or not path.endswith("rommbrowser.pygame") else ""
-    return "es" if idle is False else ""
+    return "es" if es_is_idle(get) is False else ""
 
 
 def _es_json(path, timeout=10):

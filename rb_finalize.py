@@ -30,9 +30,7 @@ import os
 import sys
 import tempfile
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,45 +61,10 @@ def deferred_path():
 
 # ------------------------------------------------------------------ ES API
 
-def es_get(path, timeout=5):
-    return rommlib.es_get(path, timeout, base=rommlib.ES_API)
-
-
-def es_idle():
-    """ES's /isIdle (Batocera 36+): False while a game runs or ES scrapes,
-    installs content, hashes or updates; None when ES can't say (404 before
-    it existed, ES not running, an odd reply)."""
-    # next release: rommlib.es_is_idle (romm/es.py; v0.9.0 lacks it)
-    try:
-        status, body = es_get("/isIdle")
-        v = json.loads(body)
-    except Exception:
-        return None
-    return v[0] if isinstance(v, list) and len(v) == 1 and isinstance(v[0], bool) else None
-
-
-def es_busy(app_busy=True):
-    """Why work on ES must wait: "" it may go ahead, "game" a game runs (this
-    app too, with app_busy) or ES can't be asked, "es" ES is busy itself
-    (scraping, hashing, installing, updating: /isIdle). Without /isIdle (an
-    older ES) the running game alone decides; while this app runs /isIdle is
-    False whatever ES does, so then too."""
-    # next release: rommlib.es_busy (romm/es.py; v0.9.0 lacks it)
-    idle = es_idle()
-    if idle:
-        return ""
-    path = rommlib.es_running_game(app_busy=True, get=es_get)
-    if path is None:
-        return "game"
-    if path:
-        return "game" if app_busy or not path.endswith("rommbrowser.pygame") else ""
-    return "es" if idle is False else ""
-
-
 def game_running():
     """True when ES is busy: a game runs (this app included), ES is busy
     itself (/isIdle), or ES is unreachable."""
-    return es_busy() != ""
+    return rommlib.es_busy(app_busy=True) != ""
 
 
 def wait_idle(max_wait=6 * 3600):
@@ -126,14 +89,10 @@ class EsApi:
         self._games = {}
 
     def _req(self, method, path, data=None, ctype=None, timeout=30):
-        # next release: the ES client in romm/es.py (rommlib.EsClient; v0.9.0 lacks it)
-        req = urllib.request.Request(self.base + path, data=data, method=method,
-                                     headers={"Content-Type": ctype} if ctype else {})
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.status, r.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.read()
+        """(status, body); HTTP errors come back as a status, EsError when ES
+        can't be asked."""
+        r = rommlib.EsClient(self.base).request(method, path, data, ctype, timeout, errors=False)
+        return r.status, r.body
 
     def games(self, system, refresh=False):
         """{absolute path: game dict} for a system ES lists, or None."""
@@ -177,17 +136,14 @@ class EsApi:
                           data, ctype, timeout=120)
         return st == 200
 
-    def add_games(self, system, body):
-        """POST /addgames/<system> with a partial gamelist.xml: the status
-        (see rommlib.es_add_games), or None when ES can't be asked."""
-        # next release: rommlib.es_add_games (romm/es.py; v0.9.0 lacks it)
-        try:
-            return self._req("POST", "/addgames/%s" % urllib.parse.quote(system), body, "application/xml")[0]
-        except Exception:
-            return None
+    def add_games(self, system, games):
+        """List games ({absolute path: {tag: text}}) with POST /addgames/<system>:
+        the status (see rommlib.es_add_games), or None when ES can't be asked.
+        ValueError/UnicodeError: a name XML can't carry."""
+        return rommlib.es_add_games(system, games)
 
     def reload(self):
-        es_get("/reloadgames", timeout=120)
+        rommlib.EsClient(self.base).get("/reloadgames", timeout=120)
 
 
 # ------------------------------------------------------------------ helpers
@@ -501,18 +457,6 @@ def wanted(entries, es):
     return want
 
 
-def gamelist_xml(sysdir, games):
-    """A partial gamelist.xml (bytes): {absolute path: {tag: text}}."""
-    # next release: rommlib.gamelist_xml (romm/es.py; v0.9.0 lacks it)
-    root = ET.Element("gameList")
-    for path, fields in games.items():
-        g = ET.SubElement(root, "game")
-        ET.SubElement(g, "path").text = rel(sysdir, path)
-        for k, v in fields.items():
-            ET.SubElement(g, k).text = v
-    return ET.tostring(root, encoding="utf-8")
-
-
 def add_games(esapi, entries, es):
     """List a batch's new files in ES without a full reload: per system, POST
     /addgames/<system> with just the games ES doesn't list yet (an entry for
@@ -535,17 +479,15 @@ def add_games(esapi, entries, es):
                 want.setdefault(e["system"], set())
     reloading = False
     for system, paths in want.items():
-        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
         listed = esapi.games(system, refresh=True) or {}
         new = {p: ({"name": names[p]} if names.get(p) else {}) for p in sorted(paths) if p not in listed}
         new.update({h: {"hidden": "true"} for h in sorted(hides.get(system, ())) if h not in listed and h not in new})
         if not new:
             continue
         try:
-            body = gamelist_xml(sysdir, new)
+            st = esapi.add_games(system, new)
         except (ValueError, UnicodeError):          # a name XML can't carry: reload instead
             return False
-        st = esapi.add_games(system, body)
         if st == 201:                               # a system ES hadn't loaded: it reloads by itself
             rommlib.log("finalize: %d game(s) added to ES (%s, new system; ES reloads)" % (len(new), system))
             reloading = True

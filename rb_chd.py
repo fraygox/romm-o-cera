@@ -33,7 +33,6 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
-import rb_finalize  # noqa: E402
 
 JUNK_EXTS = {".txt", ".nfo", ".md5", ".sfv", ".sha1", ".jpg", ".jpeg", ".png", ".m3u",
              ".dat", ".url", ".log", ".xml", ".pdf", ".cfg", ".ini", ".lic"}
@@ -44,23 +43,15 @@ TOOL_POLL = 3         # seconds between progress / running-game / memory checks 
 def running_game():
     """Path of the running game ('' when idle or only the browser runs);
     None when ES can't be asked (treated as busy)."""
-    return rommlib.es_running_game(get=rb_finalize.es_get)
+    return rommlib.es_running_game()
 
 
 def busy_reason():
     """Why conversions wait: "" they may run, "game" a game runs (or ES
     can't be asked), "es" ES scrapes, hashes, installs or updates (/isIdle,
     Batocera 36+; without it the running game alone decides). The browser
-    alone counts as idle: /isIdle is False while it runs, so then only the
-    running game counts."""
-    # next release: rommlib.es_busy (romm/es.py; v0.9.0 lacks it)
-    if running_game() != "":
-        return "game"
-    # /isIdle after runningGame, so a game that just quit can't leave a stale
-    # False; False with only the browser running isn't ES being busy
-    if rb_finalize.es_idle() is False and rommlib.es_running_game(app_busy=True, get=rb_finalize.es_get) == "":
-        return "es"
-    return ""
+    alone counts as idle (rommlib.es_busy without app_busy)."""
+    return rommlib.es_busy()
 
 
 PAUSED = {"game": "a game runs", "es": "EmulationStation is busy"}

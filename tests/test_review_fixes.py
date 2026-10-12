@@ -38,6 +38,7 @@ def chd(isolated, tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "%s:%s" % (b, os.environ["PATH"]))
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd.time, "sleep", lambda s: None)
     monkeypatch.setattr(rommlib, "keep_free_bytes", lambda cfg: 0)
     return rb_chd
@@ -380,8 +381,7 @@ def test_odd_es_running_game_replies_dont_crash_the_worker(isolated, monkeypatch
     """rb_chd.running_game raised on a JSON reply that isn't an object (the
     worker crashed mid-queue); rommlib's twin already treats it as idle."""
     import rb_chd
-    import rb_finalize
-    monkeypatch.setattr(rb_finalize, "es_get", lambda path: (200, body))
+    monkeypatch.setattr(rommlib, "es_get", lambda path: (200, body))
     assert rb_chd.running_game() == ""
 
     class R:
@@ -407,7 +407,7 @@ def test_odd_es_running_game_replies_dont_crash_finalize(isolated, monkeypatch, 
     non-string path a running game; its twins in rb_chd/rommlib treat both
     as idle."""
     import rb_finalize
-    monkeypatch.setattr(rb_finalize, "es_get", lambda path: (200, body))
+    monkeypatch.setattr(rommlib, "es_get", lambda path: (200, body))
     assert rb_finalize.game_running() is False
 
 

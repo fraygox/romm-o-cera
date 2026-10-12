@@ -80,6 +80,7 @@ def test_encrypted_and_foreign_files_refused(isolated, tmp_path):
 def test_worker_converts_verifies_and_keeps_refused(isolated, monkeypatch):
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG, z3ds=True, keep_free_gb=0))
     sysdir = os.path.join(rommlib.ROMS_ROOT, "3ds")
     good = _cart(os.path.join(sysdir, "Lorem Quest (USA).3ds"))

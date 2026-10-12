@@ -161,6 +161,7 @@ def test_chd_refuses_incomplete_source_and_replaces_incomplete_chd(isolated, mon
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     cut = _cue(os.path.join(sysdir, "Cut (USA)"), "Cut (USA)", 18, 4000)        # cut before the root: certain
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("must not convert an incomplete image"))
     assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": [cut],
                            "roots": [os.path.dirname(cut)]}) is False
@@ -184,6 +185,7 @@ def test_chd_waits_for_space(isolated, monkeypatch):
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     src = _cue(os.path.join(sysdir, "Big (USA)"), "Big (USA)", 400, 400)
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("no room: must wait"))
     monkeypatch.setattr(rommlib, "free_bytes", lambda p=None: 5 * GiB)
     monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG))   # keeps 20 GB free

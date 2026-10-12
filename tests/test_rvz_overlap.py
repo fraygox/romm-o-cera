@@ -166,6 +166,7 @@ def test_rvz_conversion_verified_junk_and_mismatch_refused(isolated, tmp_path, m
     import rb_chd
     _install_fake_tool(monkeypatch, tmp_path)
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG, rvz=True, keep_free_gb=0))
     sysdir = os.path.join(rommlib.ROMS_ROOT, "gamecube")
     good = _gc(os.path.join(sysdir, "Commodo Cab (USA).iso"))
@@ -188,6 +189,7 @@ def test_rvz_skipped_when_off_and_planner(isolated, tmp_path, monkeypatch):
     import rb_chd_plan
     _install_fake_tool(monkeypatch, tmp_path)
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG, rvz=False))
     src = _gc(os.path.join(rommlib.ROMS_ROOT, "wii", "Game (USA).wbfs"))
     assert rb_chd.convert({"system": "wii", "mode": "rvz", "sources": [src], "roots": [src]}) is False

@@ -97,6 +97,7 @@ def test_install_from_pinned_archive(isolated, tmp_path, monkeypatch):
 def test_worker_converts_and_checks_every_file(tools, monkeypatch):
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     _cfg(monkeypatch, zar=True)
     sysdir = os.path.join(rommlib.ROMS_ROOT, "xbox360")
     iso = _disc(tools[0], os.path.join(sysdir, "Lorem Racer (USA).iso"))
@@ -116,6 +117,7 @@ def test_worker_converts_and_checks_every_file(tools, monkeypatch):
 def test_refusals_keep_the_image(tools, monkeypatch):
     import rb_chd
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     _cfg(monkeypatch, zar=True)
     sysdir = os.path.join(rommlib.ROMS_ROOT, "xbox360")
 
