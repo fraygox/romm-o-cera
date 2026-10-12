@@ -11,6 +11,7 @@ def kb(rb, monkeypatch):
     pygame.init()
     clock = [1000.0]
     monkeypatch.setattr(rb.time, "time", lambda: clock[0])
+    monkeypatch.setitem(rb.INPUT_MODE, "kb", rb.INPUT_MODE.get("kb", False))   # a key press sets it
     inp = rb.Input(False)
 
     def key(kind, k):

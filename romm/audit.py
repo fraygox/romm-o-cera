@@ -508,13 +508,16 @@ LIST_PAGE = 250       # games per listing page: RomM's records are ~16 KB, and 5
 
 def _names_here(sysdir, names):
     """Every name a game here can be listed under in RomM: its file or folder
-    name and its stem, lower case."""
+    name and its stem, and the disc images inside a folder, lower case."""
     out = set()
     for n in names:
         out.add(n.lower())
-        if not os.path.isdir(os.path.join(sysdir, n)):
+        path = os.path.join(sysdir, n)
+        if not os.path.isdir(path):
             out.add(_core.stem_of(n).lower())
             out.add(os.path.splitext(n)[0].lower())
+        else:                               # discs kept in a game's folder are looked up by their own names
+            out.update(os.path.splitext(os.path.basename(i))[0].lower() for i in _images_in(path))
     return out
 
 

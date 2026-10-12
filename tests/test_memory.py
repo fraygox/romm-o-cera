@@ -127,3 +127,22 @@ def test_a_small_box_keeps_half_as_much(rb, monkeypatch):
     monkeypatch.setattr(rommlib, "total_ram", lambda: 2 << 30)
     rb.fit_memory_budgets()
     assert rb.TEXT_BUDGET == rb.COVER_BUDGET == 32 << 20
+
+
+def test_a_long_list_keeps_only_the_rows_near_the_cursor(app, rb):
+    scr = rb.GameListScreen(app, "Lorem", search="x")
+    scr.total = 5000
+    scr.items = [{"id": i} for i in range(5000)]
+    scr.sel = 2500
+    scr.forget_far()
+    kept = [i for i, r in enumerate(scr.items) if r is not None]
+    assert kept[0] <= 2500 - scr.KEEP_ROWS and kept[-1] >= 2500 + scr.KEEP_ROWS
+    assert len(kept) <= 2 * scr.KEEP_ROWS + 2 * scr.PAGE and scr.items[2500] is not None
+    asked = []
+    scr.fetch_page = asked.append
+    scr.ensure(10)                                  # scrolled back: fetched again
+    assert asked == [0]
+    static = rb.GameListScreen(app, "More like this", static=[{"id": i} for i in range(3000)])
+    static.items, static.sel = list(static.static), 2900
+    static.forget_far()
+    assert all(r is not None for r in static.items)   # a fixed list is never trimmed

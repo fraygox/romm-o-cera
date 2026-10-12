@@ -1307,7 +1307,8 @@ class App:
 
     def trim_covers(self, keep=None):
         """Least recently drawn covers out of memory past COVER_BUDGET (or
-        COVER_ENTRIES); a load still on its way for one
+        COVER_ENTRIES; it can run over by the cover just loaded when every
+        other one was drawn more recently); a load still on its way for one
         is ignored. They come back from the disk cache when drawn again."""
         while self.cover_order and (self.cover_bytes > COVER_BUDGET or len(self.cover_order) > COVER_ENTRIES):
             old = self.cover_order[0]
@@ -2119,14 +2120,15 @@ class HomeScreen(Screen):
                 img = app.cover(rom)
                 if img:
                     sc = self.shelf.get(rom["id"])
-                    if sc is None or sc[0] is not img:
+                    if sc is None or sc[0] != id(img):
                         pc = SR(cr)
                         iw, ih = img.get_size()
                         f = max(pc.width / iw, pc.height / ih)      # fill the slot, crop overflow
                         scaled = smooth_scale(img, (max(1, int(iw * f)), max(1, int(ih * f))))
                         crop = pygame.Rect(0, 0, pc.width, pc.height)
                         crop.center = scaled.get_rect().center
-                        sc = (img, scaled.subsurface(crop.clip(scaled.get_rect())).copy())
+                        # the crop and the cover's id, not the cover: an evicted cover is freed
+                        sc = (id(img), scaled.subsurface(crop.clip(scaled.get_rect())).copy())
                         if len(self.shelf) > 24:
                             self.shelf.clear()
                         self.shelf[rom["id"]] = sc
@@ -2721,6 +2723,7 @@ class GameListScreen(ListScreen):
             for k, rom in enumerate(got):
                 if offset + k < total:
                     self.items[offset + k] = rom
+            self.forget_far()
             self.refresh_menu()
             if want_ci and page.get("char_index"):
                 merged = {}
@@ -2771,6 +2774,20 @@ class GameListScreen(ListScreen):
             self.total = len(self.items)
             app.toast(str(e), RED)
         app.bg(lambda: self._query(off, 120), done, err)
+
+    KEEP_ROWS = 600     # rows kept either side of the cursor: RomM's records are ~16 KB each
+
+    def forget_far(self):
+        """Drop loaded pages far from the cursor (paging a 60,000-game platform
+        end to end kept every record: ~1 GB); ensure() fetches them again on
+        the way back. Only the sparse, page-addressed lists."""
+        if self.static is not None or self.dense or len(self.items) <= 2 * self.KEEP_ROWS:
+            return
+        lo = max(0, (self.sel - self.KEEP_ROWS) // self.PAGE * self.PAGE)
+        hi = (self.sel + self.KEEP_ROWS) // self.PAGE * self.PAGE + self.PAGE
+        for start in range(0, len(self.items), self.PAGE):
+            if (start + self.PAGE <= lo or start >= hi) and self.items[start] is not None:
+                self.items[start:start + self.PAGE] = [None] * len(self.items[start:start + self.PAGE])
 
     def ensure(self, i):
         """Make sure the page holding row i is loaded (or loading)."""
@@ -6827,13 +6844,14 @@ def tame_malloc():
         import ctypes
         libc = ctypes.CDLL("libc.so.6")
         libc.mallopt(-8, 2)                        # M_ARENA_MAX
-    except (OSError, AttributeError):
+        malloc_trim = libc.malloc_trim
+    except (ImportError, OSError, AttributeError):
         return
 
     def trim():
         while True:
             time.sleep(30)
-            libc.malloc_trim(0)
+            malloc_trim(0)
     threading.Thread(target=trim, daemon=True, name="malloc-trim").start()
 
 
