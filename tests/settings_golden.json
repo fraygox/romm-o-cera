@@ -1711,7 +1711,7 @@
   "bare/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "paper"
    },
    "gone": [],
    "modal": null,
@@ -5421,7 +5421,7 @@
   "full/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "paper"
    },
    "gone": [],
    "modal": null,
@@ -7175,7 +7175,7 @@
   "full/odd/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "paper"
    },
    "gone": [],
    "modal": null,
@@ -10828,7 +10828,7 @@
   "tools/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "paper"
    },
    "gone": [],
    "modal": null,
@@ -11319,8 +11319,8 @@
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
-  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red, each also as OLED (pure black, for OLED TVs). High contrast is black and white with a yellow highlight; High contrast light is black on white.",
-  "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses that maker's colours instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast themes are always kept.",
+  "theme": "Colours for the whole app: Default (RomM violet), PlayStation, Xbox and Kyoto, each also as OLED (pure black, for OLED TVs), High contrast and High contrast light, and twenty more after old consoles, screens and classic palettes. Every one is as easy to read as Default.",
+  "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it (PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast themes are always kept.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and restarts the app to install it. Downloads pause and carry on when it's back. The current version is kept so you can go back.",
@@ -12001,7 +12001,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -12267,7 +12267,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -12533,7 +12533,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -12799,7 +12799,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -13059,7 +13059,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -13319,7 +13319,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -13579,7 +13579,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",
@@ -13839,7 +13839,7 @@
     "themeauto",
     "Match theme to controller",
     "Off",
-    "PlayStation, Xbox or Nintendo colours"
+    "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
     "sounds",

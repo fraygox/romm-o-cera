@@ -181,11 +181,11 @@ SETTINGS = (
             kind="choice", choices=("normal", "quiet", "off"), effects=("sounds",),
             valid=lambda v: v in ("normal", "quiet", "off"),
             help="Clicks and chimes while you browse."),
-    Setting("theme", "default",         # colours: default, playstation, xbox, nintendo (+ "_oled": pure black)
+    Setting("theme", "default",         # colours: a THEMES key (rbui/theme.py), e.g. default, xbox_oled, synthwave
             row="theme", label="Theme", sub="Colours for the whole app; OLED: pure black",
-            help="Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo "
-                 "red, each also as OLED (pure black, for OLED TVs). High contrast is black and white with a "
-                 "yellow highlight; High contrast light is black on white."),
+            help="Colours for the whole app: Default (RomM violet), PlayStation, Xbox and Kyoto, each also as OLED "
+                 "(pure black, for OLED TVs), High contrast and High contrast light, and twenty more after old "
+                 "consoles, screens and classic palettes. Every one is as easy to read as Default."),
     Setting("update_channel", "stable",  # stable: releases only; nightly: also the nightly build
             row="channel", label="Update channel", sub="Stable releases, or nightly builds",
             kind="choice", choices=("stable", "nightly"), effects=("update_channel",),
@@ -194,12 +194,12 @@ SETTINGS = (
                  "land: new fixes sooner, less tested. Updates finds the newest straight away. Going back to "
                  "Stable keeps the nightly you have until a release is newer; Go back to the previous version "
                  "undoes an update."),
-    Setting("theme_auto", False,        # True: a PlayStation / Xbox / Nintendo pad picks its maker's theme
-            row="themeauto", label="Match theme to controller", sub="PlayStation, Xbox or Nintendo colours",
+    Setting("theme_auto", False,        # True: a PlayStation / Xbox / Nintendo pad picks the theme made for it
+            row="themeauto", label="Match theme to controller", sub="Follows a PlayStation, Xbox or Nintendo pad",
             kind="onoff", valid=lambda v: isinstance(v, bool),
-            help="With a PlayStation, Xbox or Nintendo controller connected, the app uses that maker's colours "
-                 "instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or "
-                 "another controller, your Theme. High contrast themes are always kept."),
+            help="With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it "
+                 "(PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED "
+                 "one. With a keyboard or another controller, your Theme. High contrast themes are always kept."),
     Setting("platform_map", {},         # per-slug overrides of PLATFORM_MAP (null hides)
             valid=_parses(lambda v: dict(v or {}))),
 )

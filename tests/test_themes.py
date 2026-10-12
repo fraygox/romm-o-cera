@@ -32,8 +32,9 @@ def themed(rb):
 def test_every_theme_is_readable_and_keeps_status_apart_from_the_accent(themed):
     """Floors are the Default palette's own levels: no theme is harder to read."""
     rb = themed
-    assert list(rb.THEMES)[0] == "default" and len(rb.THEMES) == 10
+    assert list(rb.THEMES)[0] == "default" and len(rb.THEMES) == 30
     for name, (label, _) in rb.THEMES.items():
+        assert "Nintendo" not in label, name                          # the Nintendo-inspired ones have own names
         assert rb.apply_theme(name) == name
         p = {k: getattr(rb, k) for k in rb.PALETTE}
         for k, v in p.items():

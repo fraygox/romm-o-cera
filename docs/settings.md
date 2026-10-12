@@ -54,19 +54,30 @@ The rows that aren't a setting do something when you press confirm:
 on for boxes with less than 4 GB of RAM, and the row says which it is and
 why ("Auto (Off, 8.0 GB RAM)").
 
-**Theme** (in This app) sets the colours of the whole app: Default (RomM
-violet), PlayStation, Xbox or Nintendo, each also as an **OLED** version with
-a pure black background, plus **High contrast** (black and white with a
-yellow highlight) and **High contrast light** (black on white). Left
-and right change the theme, and the app repaints straight away. Every theme
-keeps text at least as readable as Default, and warnings never share a
-colour with the highlight (in the Nintendo themes, warnings are coral, not
-red). A new install starts on Default.
+**Theme** (in This app) sets the colours of the whole app. Built in:
+Default (RomM violet), PlayStation, Xbox and Kyoto (red), each also as an
+**OLED** version with a pure black background, plus **High contrast** (black
+and white with a yellow highlight) and **High contrast light** (black on
+white). Twenty more:
 
-**Match theme to controller** (off by default) uses the colours of the
-controller the app sees instead of your Theme: PlayStation, Xbox or Nintendo,
-in its OLED version if your Theme is an OLED one. With a keyboard, or a
-controller whose name doesn't say who made it, your Theme stays. When Button
+- **Consoles**: Brick (four greens), Red Visor OLED (red on true black), Red &
+  White (maroon, cream and gold), Lavender (greys and purple), Mega Drive
+  (black and red), Dreamcast (a light theme, white and orange), Indigo Cube,
+  Sixty-Four (charcoal and green), TurboGrafx (black and orange), Neo Geo
+  (black and gold), Atari 2600 (woodgrain and orange) and Commodore 64.
+- **Screens and moods**: Green phosphor, Amber monitor, Synthwave and Sakura.
+- **Classic palettes**: Nord, Solarized, Dracula and Paper (a warm light
+  theme).
+
+Left and right change the theme, and the app repaints straight away. Every
+theme keeps text at least as readable as Default, and warnings never share a
+colour with the highlight (in Kyoto, warnings are coral, not red). A new
+install starts on Default.
+
+**Match theme to controller** (off by default) uses the theme made for the
+controller the app sees instead of your Theme: PlayStation, Xbox or Kyoto for a
+Nintendo controller, in its OLED version if your Theme is an OLED one. With a
+keyboard, or a controller whose name doesn't say who made it, your Theme stays. When Button
 labels is set by hand, it follows that instead. High contrast themes are never
 replaced. It changes as soon as a controller connects or disconnects, and the
 Theme row shows what's on screen ("Default (now PlayStation)").
@@ -74,7 +85,7 @@ Theme row shows what's on screen ("Default (now PlayStation)").
 | | |
 |---|---|
 | ![PlayStation OLED theme](../screenshots/themes/playstation-oled.png) | ![Xbox theme](../screenshots/themes/xbox.png) |
-| ![Nintendo theme](../screenshots/themes/nintendo.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
+| ![Kyoto theme](../screenshots/themes/nintendo.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
 
 ## `config.json`
 
@@ -105,8 +116,8 @@ Theme row shows what's on screen ("Default (now PlayStation)").
 | `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
 | `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
-| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo`, or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light` |
-| `theme_auto` | `false` | `true`: a PlayStation, Xbox or Nintendo controller picks its maker's theme (Match theme to controller) |
+| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo` (Kyoto), or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `dmg` (Brick), `virtualboy_oled` (Red Visor OLED), `famicom` (Red & White), `snes` (Lavender), `megadrive`, `dreamcast`, `gamecube` (Indigo Cube), `n64` (Sixty-Four), `turbografx`, `neogeo`, `atari`, `c64`, `phosphor`, `amber`, `synthwave`, `sakura`, `nord`, `solarized`, `dracula`, `paper` |
+| `theme_auto` | `false` | `true`: a PlayStation, Xbox or Nintendo controller picks the theme made for it (Match theme to controller) |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
