@@ -172,7 +172,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/tools.py` | the tools a converter downloads (dolphin-tool, the Xbox 360 tools), each described once as a `ToolSpec` (pinned archives, Settings row state, credits' commits) that its Converter names (`Converter.tool`), and their one installer |
 | `romm/bios.py` | BIOS checks and fetching |
 | `romm/ps3.py` | PS3 discs |
-| `romm/convert.py` | conversions: the Converter table, Z3DS, .zar checks, the conversion queue |
+| `romm/convert.py` | conversions: the Converter table, Z3DS, .zar checks, the conversion queue (the screens read what the worker publishes through `conversions_state()`, never its files) |
 | `romm/library.py` | installed.json (`Library`: everything outside reads its records through `snapshot()`, never its lock or fields), multi-disc sets, gamelist entries |
 | `romm/leftovers.py` | files a download or conversion left behind |
 | `romm/update.py` | release checks and the in-app updater |

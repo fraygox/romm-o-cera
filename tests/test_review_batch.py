@@ -160,6 +160,25 @@ def test_the_conversions_menu_survives_a_task_that_moved_on(app, rb):
     assert len(toasts) == 2 and all("converting now, or done" in t for t in toasts)
 
 
+def test_conversion_rows_come_from_the_published_state(isolated, rb, tmp_path):
+    src = tmp_path / "Lorem.cue"
+    src.write_text("x" * 10)
+    _queued("1-00-00001.json", {"system": "psx", "mode": "createcd", "sources": [str(src)]})
+    _queued("1-00-00002.json")
+    with open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-00-00003.json"), "w") as f:
+        f.write('{"sys')                                              # half-written: left out
+    rommlib.atomic_write_json(rommlib.chd_current_path(), {"task": "1-00-00002.json", "pct": 5})
+    rommlib.atomic_write_text(rommlib.chd_results_path(), "".join(json.dumps(
+        {"task": "0-%d.json" % i, "result": r, "sources": ["/r/psx/Ipsum %d.cue" % i], "time": i}) + "\n"
+        for i, r in enumerate(("done", "failed"))))
+    rows = rb.conversion_rows()
+    assert [(r["kind"], r["name"]) for r in rows] == [
+        ("running", "1-00-00002.json"), ("queued", "1-00-00001.json"), ("failed", "0-1.json"), ("done", "0-0.json")]
+    assert rows[0]["cur"]["pct"] == 5 and rows[1]["cur"] is None
+    assert (rows[1]["title"], rows[1]["size"], rows[1]["discs"]) == ("Lorem", 10, 1)
+    assert rows[2]["title"] == "Ipsum 1" and rows[2]["message"] == ""
+
+
 # ------------------------------------------------------------ 4. set deletes wake conversions
 
 def test_deleting_a_disc_set_frees_space_for_waiting_conversions(app, monkeypatch):

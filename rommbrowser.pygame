@@ -6,7 +6,6 @@ Launched by Batocera's pygame system (roms/pygame/rommbrowser/). Renders a
 1280x720 logical canvas scaled to the screen. Exit: Hotkey+Start (evmapy
 sends Alt+F4), or Home -> Exit. Backend lives in the romm/ package, through rommlib.py.
 """
-import json
 import os
 import re
 import shutil
@@ -3906,8 +3905,7 @@ class DownloadsScreen(ListScreen):
         now = time.time()
         if now - getattr(self, "_chd_at", 0) > 1.0:   # disk reads once a second, not every frame
             self._chd_at = now
-            self._chd_n = len([f for f in os.listdir(rommlib.CHD_QUEUE_DIR) if f.endswith(".json")]) \
-                if os.path.isdir(rommlib.CHD_QUEUE_DIR) else 0
+            self._chd_n = rommlib.conversions_waiting()
             self._chd_st = {}
             self._fc = rommlib.queue_forecast(d.jobs, rommlib.free_bytes(),
                                               rommlib.keep_free_bytes(self.app.cfg), self.app.cfg["chd"],
@@ -4926,24 +4924,12 @@ def pending_roms(app):
 
 def conversion_rows():
     """Conversions: the one running, the queue, then recent results (newest
-    first). The worker (rb_chd.py) publishes chd-current.json and chd-results.jsonl."""
-    qdir = rommlib.CHD_QUEUE_DIR
-    cur = {}
-    try:
-        with open(rommlib.chd_current_path()) as f:
-            cur = json.load(f)
-    except (OSError, ValueError):
-        pass
+    first), from what the worker (rb_chd.py) publishes: rommlib.conversions_state()."""
+    state = rommlib.conversions_state()
+    cur = state["current"]
     rows = []
-    try:
-        names = sorted(n for n in os.listdir(qdir) if n.endswith(".json"))
-    except OSError:
-        names = []
-    for n in names:
-        try:
-            with open(os.path.join(qdir, n)) as f:
-                t = json.load(f)
-        except (OSError, ValueError):
+    for n, t in state["queue"]:
+        if t is None:
             continue
         srcs = t.get("sources") or []
         size = 0
@@ -4956,12 +4942,7 @@ def conversion_rows():
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0] if srcs else n,
                      "discs": len(srcs), "size": size, "cur": cur if n == cur.get("task") else None})
     rows.sort(key=lambda r: r["kind"] != "running")
-    try:
-        with open(rommlib.chd_results_path()) as f:
-            done = [json.loads(l) for l in f.readlines()[-60:] if l.strip()]
-    except (OSError, ValueError):
-        done = []
-    for d in reversed(done):
+    for d in reversed(state["results"]):
         srcs = d.get("sources") or [""]
         rows.append({"kind": d.get("result"), "name": d.get("task"), "task": d.get("retry"),
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0], "discs": len(srcs),

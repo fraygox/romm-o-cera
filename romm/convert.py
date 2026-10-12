@@ -724,6 +724,48 @@ def conversions_pending():
         return False
 
 
+def conversions_waiting():
+    """How many tasks the conversion queue holds (names only: the Downloads
+    screen asks every second, and the queue can hold thousands)."""
+    try:
+        return sum(1 for t in os.listdir(_core.CHD_QUEUE_DIR) if t.endswith(".json"))
+    except OSError:
+        return 0
+
+
+def conversions_state(recent=60):
+    """What the conversion worker (rb_chd.py) has published, as plain data:
+    "current": chd-current.json, the task it's converting now (task, since,
+    file, step, pct; {} when idle); "queue": [(name, task)] for each waiting
+    *.json task in queue order, task None when its file can't be read
+    (half-written, or taken meanwhile); "results": the last `recent` lines of
+    chd-results.jsonl, oldest first. A missing or unreadable file reads as
+    empty."""
+    cur = {}
+    try:
+        with open(_core.chd_current_path()) as f:
+            cur = json.load(f)
+    except (OSError, ValueError):
+        pass
+    try:
+        names = sorted(n for n in os.listdir(_core.CHD_QUEUE_DIR) if n.endswith(".json"))
+    except OSError:
+        names = []
+    queue = []
+    for n in names:
+        try:
+            with open(os.path.join(_core.CHD_QUEUE_DIR, n)) as f:
+                queue.append((n, json.load(f)))
+        except (OSError, ValueError):
+            queue.append((n, None))
+    try:
+        with open(_core.chd_results_path()) as f:
+            results = [json.loads(l) for l in f.readlines()[-recent:] if l.strip()]
+    except (OSError, ValueError):
+        results = []
+    return {"current": cur, "queue": queue, "results": results}
+
+
 def start_conversions(python=None):
     """Start the conversion worker when the queue holds a task."""
     return conversions_pending() and _core.spawn_detached("rb_chd.py", python)

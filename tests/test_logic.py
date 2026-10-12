@@ -507,6 +507,30 @@ def test_chd_status_follows_the_worker(isolated):
     assert rommlib.chd_status(None) is None
 
 
+def test_conversions_state_reads_what_the_worker_publishes(isolated):
+    assert rommlib.conversions_state() == {"current": {}, "queue": [], "results": []}    # nothing yet
+    q = rommlib.CHD_QUEUE_DIR
+    os.makedirs(q)
+    json.dump({"sources": ["/r/psx/Lorem.cue"]}, open(os.path.join(q, "2-psx.json"), "w"))
+    json.dump({"sources": ["/r/psx/Ipsum.cue"]}, open(os.path.join(q, "1-psx.json"), "w"))
+    open(os.path.join(q, "3-psx.json"), "w").write('{"sour')          # half-written
+    open(os.path.join(q, ".3-psx.json.1-2.tmp"), "w").write("{}")     # being published: not a task yet
+    json.dump({"task": "1-psx.json", "pct": 42}, open(rommlib.chd_current_path(), "w"))
+    with open(rommlib.chd_results_path(), "w") as f:
+        for i in range(70):
+            f.write(json.dumps({"task": "%d-old.json" % i, "result": "done"}) + "\n")
+        f.write("\n")
+    st = rommlib.conversions_state()
+    assert st["current"] == {"task": "1-psx.json", "pct": 42}
+    assert st["queue"] == [("1-psx.json", {"sources": ["/r/psx/Ipsum.cue"]}),
+                           ("2-psx.json", {"sources": ["/r/psx/Lorem.cue"]}), ("3-psx.json", None)]
+    assert [r["task"] for r in st["results"]] == ["%d-old.json" % i for i in range(11, 70)]   # last 60 lines
+    open(rommlib.chd_current_path(), "w").write('{"task": "1-p')       # mid-rewrite
+    open(rommlib.chd_results_path(), "a").write('{"task": "70-o')
+    st = rommlib.conversions_state()
+    assert st["current"] == {} and st["results"] == [] and len(st["queue"]) == 3
+
+
 def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypatch):
     """Regression: after its last disc the worker ran the gamelist merge
     inline, which waits for ES to go idle (forever while the app is open),
@@ -1176,3 +1200,11 @@ def test_one_m3u_reading_and_one_sheet_parser(tmp_path):
     assert rommlib.sheet_sources(str(tmp_path / "gone.cue")) == []
     with pytest.raises(OSError):
         rb_chd.sources_of(str(tmp_path / "gone.cue"))
+
+
+def test_conversions_waiting_counts_the_queue_by_name(isolated):
+    assert rommlib.conversions_waiting() == 0
+    os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
+    for n in ("1-a.json", "2-b.json", ".3-c.json.1-2.tmp"):
+        open(os.path.join(rommlib.CHD_QUEUE_DIR, n), "w").write("{")      # half-written still counts
+    assert rommlib.conversions_waiting() == 2
