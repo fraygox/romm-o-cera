@@ -42,7 +42,7 @@ The rows that aren't a setting do something when you press confirm:
 - **Updates** checks GitHub now. When a newer version is out, the row names
   it, and confirm downloads it, checks it, installs it and keeps the version
   you had; then the app closes, and you open it again.
-- **Go back to the previous version** (only after an update) swaps the
+- **Go back to the previous version** (only after an update or a `deploy.sh`) swaps the
   version you had back in. The one you leave is kept, so this can be undone
   too.
 
@@ -124,6 +124,14 @@ pick **Reset settings** (in that message, or in Settings) and enter the
 server and token again.
 
 ## `deploy.sh` (installing from a clone)
+
+`deploy.sh <box>` ships the same files as the release zip and swaps the whole
+app folder in one step, as an in-app update does: it uploads the new copy to
+`/userdata/system/romm-browser/app-staging`, checks that it compiles on the
+box, and only then swaps it in; the version it replaces is kept for **Go back
+to the previous version**. A copy that fails the check changes nothing. It
+won't deploy while a game (or the app) is running unless `FORCE=1`, and never
+restarts anything.
 
 | Variable | |
 |---|---|

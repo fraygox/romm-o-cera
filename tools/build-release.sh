@@ -21,20 +21,15 @@ elif [ "$REL" != "$(date +%F)" ] && [ -z "${ALLOW_OLD_DATE:-}" ]; then
     echo "rommlib.RELEASE_DATE is $REL, not today ($(date +%F)): bump it (or ALLOW_OLD_DATE=1)" >&2
     exit 1
 fi
-rm -rf "$OUT"; mkdir -p "$OUT/stage/rommbrowser"
-for f in rommbrowser.pygame rommbrowser.pygame.keys rommlib.py rb_finalize.py rb_chd.py \
-         rb_chd_plan.py rb_dl.py rb_repair.py icon.png LICENSE; do
-    cp "$HERE/$f" "$OUT/stage/rommbrowser/"
-done
+rm -rf "$OUT"; mkdir -p "$OUT/stage"
+# shellcheck source=tools/app-files.sh
+. "$HERE/tools/app-files.sh"            # the same file set deploy.sh ships
+copy_app_files "$HERE" "$OUT/stage/rommbrowser"
 if [ -n "$NIGHTLY" ]; then
     sed -i "s/^BUILD = \"\" /BUILD = \"$NIGHTLY\" /" "$OUT/stage/rommbrowser/rommlib.py"
     grep -q "^BUILD = \"$NIGHTLY\"" "$OUT/stage/rommbrowser/rommlib.py" || { echo "couldn't stamp BUILD" >&2; exit 1; }
     VER="$VER+$NIGHTLY"
 fi
-mkdir -p "$OUT/stage/rommbrowser/romm"
-cp "$HERE"/romm/*.py "$OUT/stage/rommbrowser/romm/"
-mkdir -p "$OUT/stage/rommbrowser/fonts"
-cp "$HERE"/fonts/*.ttf "$HERE"/fonts/OFL-Rubik.txt "$OUT/stage/rommbrowser/fonts/"
 cat > "$OUT/stage/rommbrowser/INSTALL.txt" <<TXT
 RomM-o-Cera v$VER — a RomM client for Batocera, by fraygox
 

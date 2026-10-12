@@ -283,7 +283,9 @@ newest 1 MB.
 | `rb_chd_plan.py` | finds games already on the box that could be compressed and queues them (On this box → Compress games already here, or its command line); makes Xbox images bootable |
 | `rb_dl.py` | background downloader (finishes the queue after exit) |
 | `fonts/` | Rubik (SIL Open Font License) |
-| `deploy.sh` | copy to a box + write config |
+| `deploy.sh` | install a checkout on a box over SSH + write config: stages the release's file set with BUILD stamped, then `tools/deploy_swap.py` checks and swaps it in on the box (the in-app updater's one-step swap; the old app becomes `app-backup`) |
+| `tools/app-files.sh` | the app's file set, shared by `deploy.sh` and `tools/build-release.sh` |
+| `tools/deploy_swap.py` | deploy.sh's on-box step (stdlib only, run as `python3 -` over ssh); `tests/test_deploy.py` runs it and deploy.sh locally |
 | `tools/mock_romm.py` | fake RomM API with a demo library, for development |
 | `tools/shoot.py` | headless screenshot driver (one scripted path) |
 | `tools/shots.py` | screenshot harness: every screen and dialog in every control style + contact sheet |
