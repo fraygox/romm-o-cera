@@ -442,7 +442,7 @@
   "bare/defaults/chdlowmem/ok": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": true
    },
    "gone": [],
    "modal": null,
@@ -463,7 +463,7 @@
   "bare/defaults/chdlowmem/right": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": true
    },
    "gone": [],
    "modal": null,
@@ -544,6 +544,69 @@
    ],
    "wake": 0
   },
+  "bare/defaults/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
   "bare/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -575,6 +638,50 @@
    "wake": 0
   },
   "bare/defaults/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -1604,7 +1711,7 @@
   "bare/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -2397,7 +2504,7 @@
   "full/changed/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": "auto"
    },
    "gone": [],
    "modal": null,
@@ -2490,6 +2597,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -2521,6 +2676,50 @@
    "wake": 0
   },
   "full/changed/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -4067,7 +4266,7 @@
   "full/defaults/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": true
+    "chd_low_memory": false
    },
    "gone": [],
    "modal": null,
@@ -4160,6 +4359,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/defaults/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -4191,6 +4438,50 @@
    "wake": 0
   },
   "full/defaults/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -5019,7 +5310,7 @@
   "full/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -5744,7 +6035,7 @@
   "full/odd/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": true
+    "chd_low_memory": false
    },
    "gone": [],
    "modal": null,
@@ -5831,6 +6122,51 @@
    "toasts": [],
    "wake": 0
   },
+  "full/odd/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/odd/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -5860,6 +6196,47 @@
    "wake": 0
   },
   "full/odd/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -6639,7 +7016,7 @@
   "full/odd/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -7357,7 +7734,7 @@
   "tools/changed/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": false
+    "chd_low_memory": "auto"
    },
    "gone": [],
    "modal": null,
@@ -7450,6 +7827,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/changed/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/changed/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -7481,6 +7906,50 @@
    "wake": 0
   },
   "tools/changed/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -9051,7 +9520,7 @@
   "tools/defaults/chdlowmem/left": {
    "bg": 0,
    "cfg": {
-    "chd_low_memory": true
+    "chd_low_memory": false
    },
    "gone": [],
    "modal": null,
@@ -9144,6 +9613,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/checkupdates/left": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/checkupdates/ok": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/checkupdates/right": {
+   "bg": 0,
+   "cfg": {
+    "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -9175,6 +9692,50 @@
    "wake": 0
   },
   "tools/defaults/credits/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/docs/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/docs/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "DocsScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/docs/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -10015,7 +10576,7 @@
   "tools/defaults/theme/left": {
    "bg": 0,
    "cfg": {
-    "theme": "high_contrast_light"
+    "theme": "auto_oled"
    },
    "gone": [],
    "modal": null,
@@ -10436,9 +10997,11 @@
   "cachelimit": "How much space game covers may take. The least recently seen go first.",
   "channel": "Stable gets tested releases. Nightly also gets builds of the newest changes, made as they land: new fixes sooner, less tested. Updates finds the newest straight away. Going back to Stable keeps the nightly you have until a release is newer; Go back to the previous version undoes an update.",
   "chd": "Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background while nothing runs. Lossless, verified before the original is deleted.",
-  "chdlowmem": "chdman's FLAC codec leaks memory on some builds. On boxes under 4 GB RAM this is on by default: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless.",
+  "chdlowmem": "chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right pick Auto, On or Off.",
   "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the menus.",
+  "checkupdates": "Once a day, asks GitHub whether a newer version is out on your update channel, and says so when there is one. The request carries nothing about you or your games. Off: no daily check, but Updates still checks whenever you select it.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
+  "docs": "Point your phone's camera at the code to open the documentation: setting up, every setting, and what to do when something goes wrong. {A} shows it bigger.",
   "hours": "Downloads only start inside this window, e.g. overnight. A download running when it closes pauses and picks up next time. \"Download now\" in Downloads skips the wait.",
   "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits (\"Waiting for space\") and starts once there's room; smaller ones behind it keep going.",
   "manuals": "Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation.",
@@ -10456,7 +11019,7 @@
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
-  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red. Each has an OLED version with a pure black background, which keeps black areas dark on OLED TVs. High contrast is black and white with a yellow highlight; High contrast light is black on white. Left and right change it, and the app repaints straight away.",
+  "theme": "Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo red, each also as OLED (pure black, for OLED TVs). Auto follows your controller (Default with a keyboard). High contrast is black and white with a yellow highlight; High contrast light is black on white.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer RomM-o-Cera, then downloads, checks and installs it. The current version is kept so you can go back.",
@@ -10584,7 +11147,31 @@
     "Back"
    ]
   ],
+  "checkupdates": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
   "credits": [
+   [
+    "A",
+    "Open"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "docs": [
    [
     "A",
     "Open"
@@ -11130,6 +11717,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Can't be read",
@@ -11146,6 +11739,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "Off",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -11332,7 +11931,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "On (auto, 2.0 GB RAM)",
+    "Auto (On, 2.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -11378,6 +11977,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Can't be read",
@@ -11394,6 +11999,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -11580,7 +12191,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "On (auto, 2.0 GB RAM)",
+    "Auto (On, 2.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -11626,6 +12237,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Can't be read",
@@ -11642,6 +12259,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -11874,6 +12497,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -11890,6 +12519,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "Off",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -12070,7 +12705,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "Off (auto, 8.0 GB RAM)",
+    "Auto (Off, 8.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -12116,6 +12751,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -12132,6 +12773,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -12312,7 +12959,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "Off (auto, 8.0 GB RAM)",
+    "Auto (Off, 8.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -12358,6 +13005,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -12374,6 +13027,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -12600,6 +13259,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -12616,6 +13281,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "Off",
+    "Updates still checks when you ask"
    ],
    [
     "update",
@@ -12796,7 +13467,7 @@
    [
     "chdlowmem",
     "Low-memory mode",
-    "Off (auto, 8.0 GB RAM)",
+    "Auto (Off, 8.0 GB RAM)",
     "Skips chdman's leaky FLAC codec for CDs"
    ],
    [
@@ -12842,6 +13513,12 @@
     "The software RomM-o-Cera uses or downloads"
    ],
    [
+    "docs",
+    "Documentation",
+    "QR code",
+    "Open it on your phone"
+   ],
+   [
     "resetcfg",
     "Reset settings",
     "Reset",
@@ -12858,6 +13535,12 @@
     "Update channel",
     "Stable",
     "Stable releases, or nightly builds"
+   ],
+   [
+    "checkupdates",
+    "Check for updates daily",
+    "On",
+    "Updates still checks when you ask"
    ],
    [
     "update",

@@ -68,7 +68,12 @@ SETTINGS = (
             row="style", label="Button labels", sub="Match the symbols on your controller",
             valid=_str_or_null,
             help="Which symbols the hints show. Auto picks them from the controller's name."),
-    Setting("check_updates", True),     # once a day, ask GitHub if a newer release exists
+    Setting("check_updates", True,      # once a day, ask GitHub if a newer release exists
+            row="checkupdates", label="Check for updates daily", sub="Updates still checks when you ask",
+            kind="onoff",
+            help="Once a day, asks GitHub whether a newer version is out on your update channel, and says so "
+                 "when there is one. The request carries nothing about you or your games. Off: no daily "
+                 "check, but Updates still checks whenever you select it."),
     Setting("chd", True,                # background CHD conversion of extracted disc games
             row="chd", label="Compress disc games to CHD", sub="CD systems, PS2 and PSP, in the background",
             kind="onoff", effects=("downloader",),
@@ -80,8 +85,9 @@ SETTINGS = (
     Setting("chd_low_memory", "auto",   # CDs without chdman's leaky FLAC codec: "auto" (on under 4 GB RAM), true, false
             row="chdlowmem", label="Low-memory mode", sub="Skips chdman's leaky FLAC codec for CDs",
             valid=lambda v: isinstance(v, bool) or v == "auto",
-            help="chdman's FLAC codec leaks memory on some builds. On boxes under 4 GB RAM this is on by "
-                 "default: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless."),
+            help="chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB "
+                 "RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right "
+                 "pick Auto, On or Off."),
     Setting("keep_free_gb", 20,         # downloads and CHD conversions never leave less than this free (GB)
             row="keepfree", label="Keep free on disk", sub="Downloads wait instead of filling the drive",
             kind="choice", choices=KEEP_FREE_CHOICES, effects=("downloader",),
@@ -175,12 +181,12 @@ SETTINGS = (
             kind="choice", choices=("normal", "quiet", "off"), effects=("sounds",),
             valid=lambda v: v in ("normal", "quiet", "off"),
             help="Clicks and chimes while you browse."),
-    Setting("theme", "default",         # colours: default, playstation, xbox, nintendo (+ "_oled": pure black)
+    Setting("theme", "default",         # colours: auto, default, playstation, xbox, nintendo (+ "_oled": pure black)
             row="theme", label="Theme", sub="Colours for the whole app; OLED: pure black",
             help="Colours for the whole app: Default (RomM violet), PlayStation blue, Xbox green or Nintendo "
-                 "red. Each has an OLED version with a pure black background, which keeps black areas dark on "
-                 "OLED TVs. High contrast is black and white with a yellow highlight; High contrast light is "
-                 "black on white. Left and right change it, and the app repaints straight away."),
+                 "red, each also as OLED (pure black, for OLED TVs). Auto follows your controller (Default "
+                 "with a keyboard). High contrast is black and white with a yellow highlight; High contrast "
+                 "light is black on white."),
     Setting("update_channel", "stable",  # stable: releases only; nightly: also the nightly build
             row="channel", label="Update channel", sub="Stable releases, or nightly builds",
             kind="choice", choices=("stable", "nightly"), effects=("update_channel",),

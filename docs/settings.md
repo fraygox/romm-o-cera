@@ -5,28 +5,70 @@ On the box: **Pygame → RomM-o-Cera → Settings**. Settings are grouped
 the panel beside the list explains the selected one. Everything is saved to
 `/userdata/system/romm-browser/config.json` straight away.
 
-**Pair with RomM** (in RomM server) signs the box in with the short code
-RomM shows when you press Pair on a client API token, instead of typing the
-token: see [Connecting](connecting.md#signing-in-pair-with-a-code). It stores
-the token in `token`.
+The rows that aren't a setting do something when you press confirm:
+
+**RomM server**
+
+- **Pair with RomM** signs the box in with the short code RomM shows when
+  you press Pair on a client API token, instead of typing the token: see
+  [Connecting](connecting.md#signing-in-pair-with-a-code). It stores the token
+  in `token`.
+- **Test connection** asks RomM for its platform list right now and says how
+  many platforms it found, or why it couldn't.
+
+**This app**
+
+- **Clear cover cache** deletes every cached cover (the row shows how much
+  they take); they download again as you browse.
+- **BIOS files** opens the BIOS check: what each system needs, what's
+  missing, and what your RomM can fill in.
+- **Credits and licenses** lists the software RomM-o-Cera is built on or
+  downloads, and its licenses.
+- **Documentation** shows a QR code for this documentation in the panel
+  beside the list; point your phone's camera at it to open the site. Confirm
+  shows the code full size, for a far couch.
+- **Reset settings** puts every setting back to its default, including the
+  server address and token. The old file is kept beside it as
+  `config.json.bad-<date>`, so nothing is lost.
+
+**Updates**
+
+- **Update channel** picks Stable (tested releases) or Nightly (also builds
+  of the newest changes); switching asks GitHub again straight away
+  ([Updating](../README.md#updating)).
+- **Check for updates daily**: once a day the app asks GitHub whether a
+  newer version is out on your channel, and says so. Off, there's no daily
+  check, but **Updates** still checks whenever you select it.
+- **Updates** checks GitHub now. When a newer version is out, the row names
+  it, and confirm downloads it, checks it, installs it and keeps the version
+  you had; then the app closes, and you open it again.
+- **Go back to the previous version** (only after an update) swaps the
+  version you had back in. The one you leave is kept, so this can be undone
+  too.
+
+**Low-memory mode** (in Disc compression) is Auto, On or Off: Auto turns it
+on for boxes with less than 4 GB of RAM, and the row says which it is and
+why ("Auto (Off, 8.0 GB RAM)").
 
 **Theme** (in This app) sets the colours of the whole app: Default (RomM
 violet), PlayStation, Xbox or Nintendo, each also as an **OLED** version with
 a pure black background, plus **High contrast** (black and white with a
-yellow highlight) and **High contrast light** (black on white). Left and
-right change it, and the app repaints
-straight away. Every theme keeps text at least as readable as Default, and
-warnings never share a colour with the highlight (in the Nintendo themes,
-warnings are coral, not red).
+yellow highlight) and **High contrast light** (black on white). **Auto**
+follows your controller: the PlayStation, Xbox or Nintendo theme for the
+controller the app sees (the one Button labels picks from), and Default with a
+keyboard or a controller whose name doesn't say who made it. When Button
+labels is set by hand, Auto follows that instead. **Auto OLED** does the
+same with the OLED versions. It changes as soon as a controller connects or
+disconnects, and the row shows what Auto picked ("Auto (PlayStation)"). Left
+and right change the theme, and the app repaints straight away. Every theme
+keeps text at least as readable as Default, and warnings never share a
+colour with the highlight (in the Nintendo themes, warnings are coral, not
+red). A new install starts on Default.
 
 | | |
 |---|---|
 | ![PlayStation OLED theme](../screenshots/themes/playstation-oled.png) | ![Xbox theme](../screenshots/themes/xbox.png) |
 | ![Nintendo theme](../screenshots/themes/nintendo.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
-
-**Reset settings** (in This app) puts every setting back to its default,
-including the server address and token. The old file is kept beside it as
-`config.json.bad-<date>`, so nothing is lost.
 
 ## `config.json`
 
@@ -35,9 +77,10 @@ including the server address and token. The old file is kept beside it as
 | `url` | — | RomM base URL |
 | `token` | — | client API token |
 | `verify_tls` | `true` | `false` or a CA-bundle path for self-signed certs ([Connecting](connecting.md)) |
+| `verify_tls_ca` | — | written by the app: the CA-bundle path `verify_tls` last held, so the Settings row can cycle back to it after On or Off |
 | `swap_ab` | `false` | `false`: south button confirms (Batocera's default) |
 | `button_style` | `auto` | `auto`, `xbox`, `playstation` or `nintendo` button labels |
-| `check_updates` | `true` | daily check of GitHub for a newer release (sends no data beyond the request) |
+| `check_updates` | `true` | daily check of GitHub for a newer version (sends no data beyond the request); `false`: only when you select Updates |
 | `update_channel` | `stable` | `stable`: releases; `nightly`: also builds of the newest changes ([Updating](../README.md#updating)) |
 | `background_downloads` | `true` | keep downloading after the app exits |
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
@@ -56,7 +99,7 @@ including the server address and token. The old file is kept beside it as
 | `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
 | `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
-| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo`, or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light` |
+| `theme` | `default` | colours: `default`, `playstation`, `xbox`, `nintendo`, or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `auto` or `auto_oled` follow the controller |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
