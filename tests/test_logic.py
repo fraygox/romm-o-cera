@@ -909,8 +909,11 @@ def test_cover_load_retries_when_cache_file_vanishes(isolated, rb, monkeypatch):
         calls.append(1)
         return os.path.join(rommlib.DATA_DIR, "gone.png") if len(calls) == 1 else good
     app.api.fetch_cover = fetch_cover
-    app.bg = lambda fn, done=None, err=None: done(fn())
+    app.cover_loader.WORKERS = 0                    # run it here, not on a worker thread
     app.cover({"id": 5})
+    assert app.cover_loader.run_one(wait=False)
+    for fn in app.events_from_threads:
+        fn()
     assert len(calls) == 2 and app.covers[5].get_size() == (4, 6)
 
 

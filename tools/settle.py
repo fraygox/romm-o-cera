@@ -1,7 +1,8 @@
 """Settle detection for the headless drivers (tools/shots.py, tools/shoot.py).
 
-Every background load in the app goes through App.bg: a worker thread runs
-the call, then its done/err callback is posted to the main loop. install()
+Every background load in the app goes through App.bg (covers through
+App.cover_loader): a worker thread runs the call, then its done/err callback
+is posted to the main loop. install()
 wraps App.bg to count those calls (the callbacks themselves run unchanged),
 so a driver can move on as soon as nothing is in flight or queued instead of
 after a fixed wait. The fixed wait stays the upper bound in both drivers.
@@ -58,6 +59,8 @@ def install(app, downloads=False):
         with app.lock:
             if busy["n"] or app.events_from_threads:
                 return False
+        if app.cover_loader.pending():          # covers load on their own threads, not App.bg
+            return False
         if any(getattr(o, "pending_at", None) for o in (app.stack[-1] if app.stack else None, app.modal)):
             return False
         return not downloads or downloads_quiet()

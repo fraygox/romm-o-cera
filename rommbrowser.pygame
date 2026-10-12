@@ -914,6 +914,68 @@ class Input:
 
 # ------------------------------------------------------------------- app
 
+class CoverLoader:
+    """Covers come in on up to WORKERS threads, the newest request first, so
+    the screen you're looking at fills before rows you scrolled past. A request
+    for a cover nobody has drawn for STALE seconds is dropped when its turn
+    comes; drawing that game again asks again."""
+    WORKERS, STALE = 12, 1.5
+
+    def __init__(self, app):
+        self.app = app
+        self.cv = threading.Condition()
+        self.todo = []              # (rid, load, done, failed, dropped), newest last
+        self.seen = {}              # rid -> when cover() last asked for it (drawn)
+        self.busy = self.threads = 0
+
+    def want(self, rid, load, done, failed, dropped):
+        with self.cv:
+            self.todo.append((rid, load, done, failed, dropped))
+            if self.threads < min(self.WORKERS, self.busy + len(self.todo)):
+                self.threads += 1
+                threading.Thread(target=self._work, daemon=True).start()
+            self.cv.notify()
+
+    def drawn(self, rid):
+        now = self.seen[rid] = time.monotonic()
+        if len(self.seen) > 2000:
+            self.seen = {r: t for r, t in self.seen.items() if now - t < self.STALE}
+
+    def pending(self):
+        """Requests not finished yet (the screenshot harness waits for 0)."""
+        with self.cv:
+            return self.busy + len(self.todo)
+
+    def run_one(self, wait=True):
+        """Take the newest request and run it on this thread; False if there was none."""
+        with self.cv:
+            while not self.todo:
+                if not wait:
+                    return False
+                self.cv.wait()
+            rid, load, done, failed, dropped = self.todo.pop()
+            self.busy += 1
+        try:
+            if time.monotonic() - self.seen.get(rid, 0) > self.STALE:
+                self.app.post(dropped)
+            else:
+                try:
+                    res = load()
+                except Exception as e:
+                    rommlib.log("cover %s: %s" % (rid, e.__class__.__name__))
+                    self.app.post(failed)
+                else:
+                    self.app.post(lambda: done(res))
+        finally:
+            with self.cv:
+                self.busy -= 1
+        return True
+
+    def _work(self):
+        while True:
+            self.run_one()
+
+
 class App:
     def __init__(self, screen, headless=False):
         global K
@@ -953,6 +1015,7 @@ class App:
         self.lock = threading.Lock()
         self.covers = {}             # rom_id -> Surface | "loading" | None
         self.cover_order = []
+        self.cover_loader = CoverLoader(self)
         self.running = True
         self.status = "Connecting…"
         self.error = None
@@ -1079,6 +1142,7 @@ class App:
 
     def cover(self, rom):
         rid = rom["id"]
+        self.cover_loader.drawn(rid)
         c = self.covers.get(rid)
         if c is not None or rid in self.covers:
             return None if c == "loading" else c
@@ -1107,7 +1171,16 @@ class App:
 
         def done(img):
             self.covers[rid] = img
-        self.bg(load, done, lambda e: self.covers.__setitem__(rid, None))
+
+        def failed():
+            self.covers[rid] = None
+
+        def dropped():                  # scrolled away before its turn: asked again when drawn
+            if self.covers.get(rid) == "loading":
+                del self.covers[rid]
+                if rid in self.cover_order:
+                    self.cover_order.remove(rid)
+        self.cover_loader.want(rid, load, done, failed, dropped)
         return None
 
     def resolve_style(self):

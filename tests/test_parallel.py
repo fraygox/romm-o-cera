@@ -272,3 +272,98 @@ def test_bios_check_asks_every_platform_at_once(isolated, monkeypatch):
     assert [m["file"] for m, _ in rows["saturn"]["offers"]] == ["sat.bin"]
     assert "gba" not in rows
     assert rommlib.bios_status(None, {"psx": [10]}, {"psx"})[0]["offers"] == []
+
+
+# ------------------------------------------------------------ cover loader
+
+@pytest.fixture
+def app(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    a = rb.App(None, headless=True)
+    good = os.path.join(rommlib.DATA_DIR, "c.png")
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    pygame.image.save(pygame.Surface((4, 6)), good)
+    a.good = good
+    return a
+
+
+def _run_posted(app):
+    fns, app.events_from_threads = app.events_from_threads, []
+    for fn in fns:
+        fn()
+
+
+def test_covers_load_newest_first_and_skip_what_scrolled_away(app):
+    asked = []
+
+    def fetch_cover(rom, large=False):
+        asked.append(rom["id"])
+        return app.good
+    app.api.fetch_cover = fetch_cover
+    loader = app.cover_loader
+    loader.WORKERS = 0
+    for rid in (1, 2, 3):
+        assert app.cover({"id": rid}) is None
+    assert loader.pending() == 3
+    loader.seen[1] -= loader.STALE + 1                   # not drawn for a while: scrolled away
+    while loader.run_one(wait=False):
+        pass
+    _run_posted(app)
+    assert asked == [3, 2]                               # newest first; 1 never fetched
+    assert app.covers[3].get_size() == (4, 6) and app.covers[2] is not None
+    assert 1 not in app.covers and 1 not in app.cover_order and loader.pending() == 0
+    app.cover({"id": 1})                                 # drawn again: asked again
+    loader.run_one(wait=False)
+    _run_posted(app)
+    assert asked == [3, 2, 1] and app.covers[1] is not None
+
+
+def test_a_cover_that_fails_shows_none_and_is_not_asked_again(app):
+    calls = []
+
+    def fetch_cover(rom, large=False):
+        calls.append(1)
+        raise OSError("disk")
+    app.api.fetch_cover = fetch_cover
+    app.cover_loader.WORKERS = 0
+    app.cover({"id": 9})
+    app.cover_loader.run_one(wait=False)
+    _run_posted(app)
+    assert app.covers[9] is None and app.cover({"id": 9}) is None
+    assert app.cover_loader.pending() == 0 and calls == [1]
+
+
+def test_covers_use_a_bounded_set_of_threads(app):
+    o = Overlap(0.03)
+    app.api.fetch_cover = lambda rom, large=False: o(rom["id"], lambda k: app.good)
+    for rid in range(60):
+        app.cover({"id": rid})
+    deadline = time.time() + 10
+    while app.cover_loader.pending() and time.time() < deadline:
+        for rid in range(60):
+            app.cover_loader.drawn(rid)                  # all still on screen
+        time.sleep(0.01)
+    _run_posted(app)
+    assert app.cover_loader.pending() == 0
+    assert o.most <= app.cover_loader.WORKERS and app.cover_loader.threads <= app.cover_loader.WORKERS
+    assert sorted(o.asked) == list(range(60)) and all(app.covers[r] is not None for r in range(60))
+
+
+def test_the_screenshot_harness_waits_for_covers(app):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "settle", os.path.join(os.path.dirname(__file__), "..", "tools", "settle.py"))
+    settle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(settle)
+    settled = settle.install(app)
+    app.api.fetch_cover = lambda rom, large=False: app.good
+    app.cover_loader.WORKERS = 0
+    app.cover({"id": 4})
+    assert not settled()
+    app.cover_loader.run_one(wait=False)
+    assert not settled()                                 # its result still waits for the main loop
+    _run_posted(app)
+    assert settled()
