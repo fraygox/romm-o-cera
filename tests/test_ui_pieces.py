@@ -52,6 +52,213 @@ def _entries(menu):
     return [e for e in menu.entries if e]
 
 
+# ------------------------------------------------------------ search keyboard
+
+def test_search_keyboard_types_deletes_clears_and_wraps(app, rb):
+    sc = rb.SearchScreen(app)
+    app.push(sc)
+    assert (sc.r, sc.c) == (1, 0)                  # starts on Q
+    sc.action("ok")
+    assert sc.query == "q" and sc.pending_at       # letters type lower case; the live search waits a moment
+    sc.action("up")
+    sc.action("ok")
+    assert sc.query == "q1"                        # the digit row
+    sc.action("y")
+    assert sc.query == "q1 "
+    sc.action("x")
+    assert sc.query == "q1"
+    sc.action("left")
+    assert sc.c == len(sc.ROWS[0]) - 1             # left from the first key wraps
+    sc.action("up")
+    assert sc.r == len(sc.ROWS)                    # up from the top wraps to Space/Delete/Clear/Search
+    assert sc.c == len(sc.SPECIAL) - 1             # clamped to that shorter row
+    sc.c = [k for k, _ in sc.SPECIAL].index("Clear")
+    sc.preview, sc.preview_total = [_rom()], 1
+    sc.action("ok")
+    assert sc.query == "" and sc.preview == [] and sc.preview_total is None
+    sc.type_text("a" * 70)
+    assert len(sc.query) == 60                     # capped
+
+
+def test_search_needs_two_characters_then_opens_the_results(app, rb):
+    sc = rb.SearchScreen(app, platform=app.platform_by_id[7])
+    app.push(sc)
+    assert sc.crumbs() == ["Search", "PlayStation"]
+    sc.type_text(" a ")
+    sc.action("start")
+    assert app.stack[-1] is sc and any("at least 2" in t[0] for t in app.toasts)
+    sc.type_text("b")
+    sc.r, sc.c = len(sc.ROWS), [k for k, _ in sc.SPECIAL].index("Search")
+    sc.action("ok")
+    gl = app.stack[-1]
+    assert isinstance(gl, rb.GameListScreen) and gl.search == "a b" and gl.platform is sc.platform
+
+
+def test_search_live_preview_ranks_and_drops_a_stale_answer(app, rb, monkeypatch):
+    sc = rb.SearchScreen(app)
+    app.push(sc)
+    asked = []
+
+    def roms(**kw):
+        asked.append(kw)
+        if kw["search"] == "lo":
+            sc.query = "lor"                       # typed on while RomM answered: that answer is old
+        return {"items": [_rom(1, "Lorem Quest"), _rom(2, "Lo")], "total": 2}
+    monkeypatch.setattr(app.api, "roms", roms)
+    sc.query, sc.pending_at = "lo", 1
+    sc.live_preview()
+    assert asked[0]["platform_ids"] == [7] and sc.preview == [] and sc.preview_total is None
+    sc.pending_at = 1
+    sc.live_preview()
+    assert sc.preview_total == 2 and [r["name"] for r in sc.preview][0] in ("Lo", "Lorem Quest")
+    sc.query, sc.pending_at = "l", 1               # one character: no request, no results
+    sc.live_preview()
+    assert len(asked) == 2 and sc.preview == []
+
+
+def test_search_hints_follow_the_input(app, rb, monkeypatch):
+    sc = rb.SearchScreen(app)
+    monkeypatch.setitem(rb.INPUT_MODE, "kb", False)
+    assert ("START", "Search") in sc.hints()
+    monkeypatch.setitem(rb.INPUT_MODE, "kb", True)
+    assert ("TYPE", "Letters") in sc.hints()
+
+
+# ------------------------------------------------------------ the menu of a game on the box
+
+def test_manage_menu_deletes_after_a_confirm_or_downloads_again(app, rb, monkeypatch):
+    rom = _rom()
+    p = _put("psx/Lorem Quest (USA).chd", b"x" * 4096)
+    app.library.mark(rom, "psx", [p])
+    m = rb.ManageMenu(app, rom)
+    labels = [e[0] for e in _entries(m)]
+    assert m.title == "Lorem Quest (USA)" and labels == ["Delete from this box", "Download again"]
+    assert "1 file" in _entries(m)[0][1]
+    gone = []
+    monkeypatch.setattr(app, "uninstall", lambda r, s, then=None: gone.append((r["id"], s)))
+    app.modal = m
+    m.action("ok")                                 # the first row: delete, but ask first
+    assert isinstance(app.modal, rb.Confirm) and app.modal.danger and "Lorem Quest (USA).chd" in app.modal.body
+    assert gone == []
+    app.modal.action("ok")
+    assert gone == [(1, "psx")] and app.modal is None
+    app.modal = m = rb.ManageMenu(app, rom)
+    m.action("down")
+    m.action("ok")
+    assert isinstance(app.modal, rb.DownloadConfirm) and "Already on this box" in app.modal.body
+
+
+def test_manage_menu_with_no_files_cant_delete(app, rb):
+    m = rb.ManageMenu(app, _rom(name="Nowhere (USA)"))
+    first = _entries(m)[0]
+    assert first[0] == "Delete from this box" and first[2] is None
+    assert m.sel == 1                              # the first row it can run
+
+
+def test_manage_menu_of_a_disc_set_deletes_every_disc(app, rb, monkeypatch):
+    discs = [_rom(10 + i, "Ipsum Saga (USA) (Disc %d)" % (i + 1)) for i in range(2)]
+    group = {"id": "g1", "base": "Ipsum Saga (USA)", "title": "Ipsum Saga", "rom_ids": [10, 11]}
+    for r in discs:
+        app.library.mark(r, "psx", [_put("psx/%s.chd" % r["name"])], group=group)
+    m = rb.ManageMenu(app, discs[0])
+    assert m.title == "Ipsum Saga"
+    assert [e[0] for e in _entries(m)] == ["Delete all 2 discs", "Download this disc again"]
+    assert _entries(m)[0][1] == "Frees %s" % rb.human_size(2000)
+    calls = []
+    monkeypatch.setattr(app, "uninstall_group", lambda g, s, t, then=None: calls.append((g["id"], s, t)))
+    app.modal = m
+    m.action("ok")
+    assert app.modal.title == "Delete all 2 discs of Ipsum Saga?"
+    app.modal.action("ok")
+    assert calls == [("g1", "psx", "Ipsum Saga")]
+
+
+# ------------------------------------------------------------ the download prompt
+
+def test_download_confirm_queues_on_a(app, rb, monkeypatch):
+    rom = _rom()
+    app.details[rom["id"]] = {}
+    got = []
+    monkeypatch.setattr(app, "start_download", lambda r: got.append(r["id"]))
+    app.modal = dc = rb.DownloadConfirm(app, rom)
+    assert dc.title == "Lorem Quest (USA)" and dc.ok_label == "Download" and not dc.pending
+    assert "300.0 MB to download" in dc.body and "Already" not in dc.body
+    dc.action("back")
+    assert app.modal is None and got == []
+    app.modal = dc = rb.DownloadConfirm(app, rom)
+    dc.action("ok")
+    assert got == [1] and app.modal is None
+
+
+def test_download_confirm_says_why_it_cant(app, rb, monkeypatch):
+    dc = rb.DownloadConfirm(app, _rom(platform_id=99))
+    assert "no Batocera system" in dc.body and dc.ok_label == "OK"
+    rom = _rom()
+    monkeypatch.setattr(app, "rom_status", lambda r: ("active", None))
+    dc = rb.DownloadConfirm(app, rom)
+    assert dc.body == "Already downloading." and dc.ok_label == "OK"
+
+
+def test_download_confirm_mentions_whats_here(app, rb):
+    rom = _rom()
+    app.details[rom["id"]] = {}
+    app.library.mark(rom, "psx", [_put("psx/Lorem Quest (USA).chd")])
+    assert rb.DownloadConfirm(app, rom).body.startswith("Already on this box. Download again anyway?")
+    other = _rom(2, "Lorem Quest (Europe)")
+    app.details[2] = {}
+    assert "You already have" in rb.DownloadConfirm(app, other).body
+
+
+def test_download_confirm_of_a_disc_offers_the_set(app, rb, monkeypatch):
+    rom = _rom(20, "Dolor Odyssey (USA) (Disc 1)")
+    disc2 = _rom(21, "Dolor Odyssey (USA) (Disc 2)")
+    app.details[20] = {}
+    monkeypatch.setattr(rommlib, "find_disc_set", lambda api, r: ([(1, rom), (2, disc2)], [3]))
+    sets = []
+    monkeypatch.setattr(app, "download_set", lambda r, discs: sets.append([d["id"] for _, d in discs]))
+    dc = rb.DownloadConfirm.__new__(rb.DownloadConfirm)
+    app.modal = dc                                 # open while RomM is asked (the lookup answers at once here)
+    dc.__init__(app, rom)
+    m = app.modal
+    assert isinstance(m, rb.ActionMenu)
+    labels = [e[0] for e in _entries(m)]
+    assert labels == ["Download all 2 discs", "Disc 3 not in RomM", "Only disc 1"]
+    assert _entries(m)[1][2] is None               # a missing disc is a note, not an action
+    m.action("ok")
+    assert sets == [[20, 21]]
+
+
+def test_download_confirm_waits_for_the_disc_lookup(app, rb, monkeypatch):
+    rom = _rom(20, "Dolor Odyssey (USA) (Disc 1)")
+    app.details[20] = {}
+    monkeypatch.setattr(app, "bg", lambda fn, done=None, err=None: None)   # RomM hasn't answered yet
+    got = []
+    monkeypatch.setattr(app, "start_download", lambda r: got.append(r))
+    app.modal = dc = rb.DownloadConfirm(app, rom)
+    assert dc.pending and "Looking for the other discs" in dc.body
+    dc.action("ok")
+    assert app.modal is dc and got == []           # A does nothing until the answer is in
+    dc._lookup_failed("300.0 MB to download.", RuntimeError("timed out"))
+    assert not dc.pending and "Couldn't look up the other discs: timed out" in dc.body
+    dc.action("ok")
+    assert got == [rom]
+
+
+# ------------------------------------------------------------ queue_info
+
+def test_queue_info_appends_whole_lines_and_nothing_for_nothing(isolated):
+    assert not os.path.exists(rommlib.DATA_DIR)
+    rommlib.queue_info([])
+    assert not os.path.exists(rommlib.GAMELIST_QUEUE)  # an empty plan doesn't even make the data folder
+    a = {"system": "psx", "path": "./A.chd", "name": "A", "fill": True}
+    b = {"system": "psx", "path": "./B.chd", "name": "B", "fill": True}
+    rommlib.queue_info([a])
+    rommlib.queue_info([b])
+    with open(rommlib.GAMELIST_QUEUE) as f:
+        lines = f.read().splitlines()
+    assert [json.loads(ln) for ln in lines] == [a, b]
+
+
 # ------------------------------------------------------------ cancelling a paused download
 
 def _paused_job(rb, app, part=b""):
