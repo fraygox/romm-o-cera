@@ -375,12 +375,18 @@ def test_touch_taps_rows_hints_and_dialogs(isolated, rb, monkeypatch):
     okr = next(r for r, fn in app.targets[app.modal_from:] if fn and r.width == 260)
     app.tap(okr.center)
     assert hits == [1] and app.modal is None
-    # drag up = scroll down
+    # a finger's drag up = scroll down (SDL marks every event a touch makes)
+    acts = []
+    app.pointer(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(400, 400), touch=True), acts)
+    app.pointer(pygame.event.Event(pygame.MOUSEMOTION, buttons=(1, 0, 0), pos=(400, 300), touch=True), acts)
+    app.pointer(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(400, 300), touch=True), acts)
+    assert acts == ["down", "down"]
+    # a mouse doesn't drag: a click must never turn into a scroll (the wheel scrolls)
     acts = []
     app.pointer(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(400, 400)), acts)
-    app.pointer(pygame.event.Event(pygame.MOUSEMOTION, buttons=(1, 0, 0), pos=(400, 300), touch=True), acts)
+    app.pointer(pygame.event.Event(pygame.MOUSEMOTION, buttons=(1, 0, 0), pos=(400, 300)), acts)
     app.pointer(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(400, 300)), acts)
-    assert acts == ["down", "down"]
+    assert acts == []
 
 
 def test_no_move_sound_at_list_edges(isolated, rb, monkeypatch):

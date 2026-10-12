@@ -9,17 +9,28 @@ always says what each button does on the screen you're on.
 **Controller:** south button confirms (switch in Settings) · east back ·
 Select downloads · Start home · **Hotkey + Start exits**. What X and Y do
 depends on the screen (see [Lists](#lists)). `rommbrowser.pygame.keys` turns
-off Batocera's pad-to-keyboard mapping for this app.
+off Batocera's pad-to-keyboard mapping for this app. A pad SDL has no
+mapping for still works: with 10 or more buttons, buttons 6 and 7 are L2/R2
+and 8 and 9 Select/Start (with fewer, 6 and 7 are Select/Start), and axes that
+rest fully back are L2 then R2.
 
 **Keyboard:** arrows move · Enter confirm · Esc back · X and Y as on a pad ·
 PgUp/PgDn page · `[` `]` as L2/R2 · Tab downloads · Home home. Search and text
 fields take typing directly (Enter runs the search / saves). A keyboard and a
 pad work side by side.
 
-**Touch / mouse (basic):** tap a list row to select it, tap again to open
-(while picking, one tap picks it); tap menu entries, keys, buttons and the
-hint bar; tap the logo for Home and the breadcrumbs to go back; drag or
-scroll the wheel to move through lists.
+**Touch / mouse (basic):** tap a list row to select it, tap again to open (while picking, one tap picks it); tap
+menu entries, keys, buttons and the hint bar; tap the logo for Home and the
+breadcrumbs to go back; drag a finger or scroll the wheel to move through
+lists (a mouse click never scrolls). A click acts on what was under it when
+pressed, if let go on the same thing. On a setting or menu row with a choice,
+a tap left of the value's middle (where ‹ is) steps back, anywhere else steps
+on; the hint bar's left/right and L2/R2 glyphs work both ways too.
+
+**Search's top matches:** move right past the end of a keyboard row (or left
+past its start) to reach them; up/down picks one, A opens it, B or left/right
+returns to the keyboard. A game already on the box opens its menu (delete or
+download again), as in a game list; tapping a match does the same.
 
 ## Lists
 

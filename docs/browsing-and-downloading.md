@@ -10,7 +10,8 @@
   count, next to RomM's total), including games you copied over yourself.
 - **Recently added**, on the home screen and as a full list.
 - **Search** with an on-screen keyboard and live top matches (or just type on
-  a keyboard).
+  a keyboard). Move right past the keyboard to pick a match with the pad or
+  arrow keys ([Controls](controls.md)).
 - **L2/R2** jump letter by letter; **L/R** or left/right page.
 
 ## The detail panel
