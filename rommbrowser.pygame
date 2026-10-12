@@ -1093,6 +1093,7 @@ class App:
         self.cfg = rommlib.load_config()
         apply_theme(self.cfg["theme"])
         self.targets, self.modal_from, self.ptr = [], 0, None
+        self.tapped, self.ptr_later = False, []    # a tap acted since the last frame; events held back
         self.sfx = Sfx(self.cfg["sounds"] if screen is not None else "off")
         self.input = Input(self.cfg["swap_ab"])
         self.headless = headless
@@ -1644,7 +1645,7 @@ class App:
                     (pygame.key.start_text_input if want_text else pygame.key.stop_text_input)()
                 except Exception:
                     pass
-            for ev in pygame.event.get():
+            for ev in self.pointer_later() + pygame.event.get():
                 if ev.type == pygame.QUIT:
                     actions.append("quit")
                 elif not self.pointer(ev, actions):
@@ -1679,46 +1680,80 @@ class App:
     DRAG_STEP = 46
 
     def pointer(self, ev, actions):
-        """Tap = press what's under the finger; drag/wheel = scroll. Returns
-        True if the event was a pointer event."""
+        """A tap or click acts on what was under it when pressed, if it's let go
+        on the same thing; a finger's drag and the wheel scroll. Returns True
+        if the event was a pointer event."""
         t = ev.type
+        if t not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+            return False
+        if self.tapped or self.ptr_later:
+            # a tap acted since the last frame was drawn: what's on screen is
+            # about to change, so the rest waits for the next frame's targets
+            self.ptr_later.append(ev)
+            return True
         if t == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            touch = bool(getattr(ev, "touch", False))
             # show the cursor for a real mouse click only (evmapy maps the right
             # stick to a mouse, which must not make it pop up; touch needs none)
-            if not getattr(ev, "touch", False) and not self.headless:
+            if not touch and not self.headless:
                 pygame.mouse.set_visible(True)
             p = self.to_logical(ev.pos)
-            self.ptr = {"start": p, "y": p[1], "moved": False}
+            self.ptr = {"start": p, "y": p[1], "moved": False, "touch": touch,
+                        "hit": self.target_at(p), "on": (self.stack[-1], self.modal)}
         elif t == pygame.MOUSEMOTION:
             if self.ptr and ev.buttons and ev.buttons[0]:
                 p = self.to_logical(ev.pos)
                 if abs(p[1] - self.ptr["start"][1]) > 14 or abs(p[0] - self.ptr["start"][0]) > 14:
                     self.ptr["moved"] = True
-                while p[1] - self.ptr["y"] <= -self.DRAG_STEP:     # finger up: content moves on
+                # only a finger drags the list (up: content moves on): a mouse has its
+                # wheel, and a click must never turn into a scroll (the pointer can jump while held)
+                while self.ptr["touch"] and p[1] - self.ptr["y"] <= -self.DRAG_STEP:
                     actions.append("down")
                     self.ptr["y"] -= self.DRAG_STEP
-                while p[1] - self.ptr["y"] >= self.DRAG_STEP:
+                while self.ptr["touch"] and p[1] - self.ptr["y"] >= self.DRAG_STEP:
                     actions.append("up")
                     self.ptr["y"] += self.DRAG_STEP
         elif t == pygame.MOUSEBUTTONUP and ev.button == 1:
-            if self.ptr and not self.ptr["moved"]:
-                self.tap(self.to_logical(ev.pos))
-            self.ptr = None
+            ptr, self.ptr = self.ptr, None
+            if ptr and not (ptr["moved"] and ptr["touch"]) and ptr["on"] == (self.stack[-1], self.modal):
+                hit = self.target_at(self.to_logical(ev.pos))
+                if self.same_target(hit, ptr["hit"]):
+                    self.tapped = True
+                    self.press(hit)
         elif t == pygame.MOUSEWHEEL:
             actions += ["up" if ev.y > 0 else "down"] * min(5, abs(ev.y))
-        else:
-            return False
         return True
 
-    def tap(self, pt):
+    def pointer_later(self):
+        """Pointer events held back until a frame was drawn after a tap."""
+        later, self.ptr_later = self.ptr_later, []
+        return later
+
+    def target_at(self, pt):
+        """(rect, fn) of the topmost tap target under pt in the frame on
+        screen (only the dialog's while one is open), or None."""
         cands = self.targets[self.modal_from:] if self.modal else self.targets
-        for rect, fn in reversed(cands):
-            if rect.collidepoint(pt):
-                if fn:
-                    self.sfx.play("ok")
-                    fn()
-                return
-        if self.modal:
+        return next(((r, fn) for r, fn in reversed(cands) if r.collidepoint(pt)), None)
+
+    @staticmethod
+    def same_target(a, b):
+        """The same thing on screen: same place, and the same row (a target's
+        fn is a lambda with its row in its defaults, made anew each frame)."""
+        if a is None or b is None:
+            return a is b
+        fa, fb = a[1], b[1]
+        return a[0] == b[0] and (fa is fb or (fa is not None and fb is not None and
+                                             fa.__code__ is fb.__code__ and fa.__defaults__ == fb.__defaults__))
+
+    def tap(self, pt):
+        self.press(self.target_at(pt))
+
+    def press(self, hit):
+        if hit:
+            if hit[1]:
+                self.sfx.play("ok")
+                hit[1]()
+        elif self.modal:
             self.dispatch("back")              # tap outside a dialog closes it
 
     def dispatch(self, a):
@@ -1801,7 +1836,7 @@ class App:
     def draw(self):
         c = self.canvas
         c.fill(BG)
-        self.targets = []
+        self.targets, self.tapped = [], False
         # subtle top glow
         rrect(c, BG2, (0, 0, W, 64), 0)
         hline(c, LINE, (0, 64), (W, 64))
@@ -3922,11 +3957,19 @@ class SettingsScreen(Screen):
     def selectable(self):
         return [i for i, it in enumerate(self.items()) if it[0] != "§"]
 
+    tapped = None                  # the row a tap picked: drawing doesn't scroll it away
+
+    def tap_now(self, i, a="ok"):
+        """Touch: act on the row at once ("left" on the left of a value steps back)."""
+        self.sel = self.tapped = i
+        self.action(a)
+
     def action(self, a):
         idx = self.selectable()
         if self.sel not in idx:
             self.sel = idx[0]
         if a in ("up", "down", "l1", "r1"):
+            self.tapped = None
             k = idx.index(self.sel)
             step = {"up": -1, "down": 1, "l1": -6, "r1": 6}[a]
             k = (k + step) % len(idx) if a in ("up", "down") else max(0, min(len(idx) - 1, k + step))
@@ -4221,7 +4264,9 @@ class SettingsScreen(Screen):
             y += self.HEAD_H if key == "§" else self.ROW_H
         total, view = y, self.BOTTOM - self.TOP
         top_of = ys[self.sel] - (self.HEAD_H if self.sel and items[self.sel - 1][0] == "§" else 0)
-        if top_of < self.scroll:
+        if self.tapped == self.sel and -2 <= ys[self.sel] - self.scroll <= view - 52:
+            pass                               # a tapped row stays under the finger
+        elif top_of < self.scroll:
             self.scroll = top_of
         elif ys[self.sel] + self.ROW_H > self.scroll + view:
             need = ys[self.sel] + self.ROW_H - view

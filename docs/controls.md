@@ -17,4 +17,6 @@ and a pad work side by side.
 
 **Touch / mouse (basic):** tap a list row to select it, tap again to open; tap
 menu entries, keys, buttons and the hint bar; tap the logo for Home and the
-breadcrumbs to go back; drag or scroll the wheel to move through lists.
+breadcrumbs to go back; drag a finger or scroll the wheel to move through
+lists (a mouse click never scrolls). A click acts on what was under it when
+pressed, if let go on the same thing.
