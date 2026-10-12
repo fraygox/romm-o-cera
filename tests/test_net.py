@@ -352,7 +352,7 @@ def test_a_cover_romm_couldnt_send_is_asked_again_later(app, rb, monkeypatch):
     app.cover_retry[7] = (0, 2)
     app.cover(rom)
     _run(app)
-    assert app.covers[7].get_size() == (4, 6) and 7 not in app.cover_retry
+    assert app.covers[7].get_size() == rb.cover_fit(__import__("pygame").Surface((4, 6))).get_size() and 7 not in app.cover_retry
     assert app.cover_order.count(7) == 1
 
 

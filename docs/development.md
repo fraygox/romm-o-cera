@@ -205,6 +205,21 @@ open imports rb_chd_plan on the Compress screen. Read settings there as
 script in the app folder (sys.path[0]), and install.sh's version check puts
 the app folder first too.
 
+### Memory
+
+At 4K one rendered line of text is ~180 KB and a cover several MB, so what
+the app keeps is bounded by size, never by count. Rendered text
+(`TEXT_BUDGET`) and decoded covers (`COVER_BUDGET`) are least-recently-drawn
+caches; each budget is halved on a box with under 3 GB of RAM. A cover is
+scaled once, when it loads, to the game panel's box (`COVER_BOX`, the largest
+any screen draws), so no full-size copy and no second copy for the panel is
+kept. At most two covers decode at once. glibc gets two heaps instead of one
+per thread, and freed memory goes back to the system every 30 s. Whole-platform
+listings (Check games, Fill in game info) keep only the games on the box,
+filtered page by page (`roms_all(keep=…)`). Measured at 4K on a 2 GB VM
+against a 64,000-game RomM: 48 pages of search results peak at ~480 MB
+(v0.8.0: 1.17 GB, leaving the box 25 MB).
+
 ### HTTP
 
 Every request to RomM goes through `Api.s`, and every request to GitHub

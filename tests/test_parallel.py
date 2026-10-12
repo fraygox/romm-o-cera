@@ -339,7 +339,7 @@ def _run_posted(app):
         fn()
 
 
-def test_covers_load_newest_first_and_skip_what_scrolled_away(app):
+def test_covers_load_newest_first_and_skip_what_scrolled_away(app, rb):
     asked = []
 
     def fetch_cover(rom, large=False):
@@ -356,7 +356,7 @@ def test_covers_load_newest_first_and_skip_what_scrolled_away(app):
         pass
     _run_posted(app)
     assert asked == [3, 2]                               # newest first; 1 never fetched
-    assert app.covers[3].get_size() == (4, 6) and app.covers[2] is not None
+    assert app.covers[3].get_size() == rb.cover_fit(__import__("pygame").Surface((4, 6))).get_size() and app.covers[2] is not None
     assert 1 not in app.covers and 1 not in app.cover_order and loader.pending() == 0
     app.cover({"id": 1})                                 # drawn again: asked again
     loader.run_one(wait=False)
@@ -364,8 +364,8 @@ def test_covers_load_newest_first_and_skip_what_scrolled_away(app):
     assert asked == [3, 2, 1] and app.covers[1] is not None
 
 
-def test_a_cover_pushed_out_while_queued_is_never_loaded_twice_or_kept(app):
-    """Over 160 covers, the oldest leaves memory while its load still waits:
+def test_a_cover_pushed_out_while_queued_is_never_loaded_twice_or_kept(app, rb):
+    """Past COVER_ENTRIES covers, the oldest leaves memory while its load still waits:
     drawing it again must not end in two loads (the loser came back blank) or
     a Surface nothing tracks; nor may a stale duplicate cancel the new request."""
     asked = []
@@ -376,17 +376,18 @@ def test_a_cover_pushed_out_while_queued_is_never_loaded_twice_or_kept(app):
     app.api.fetch_cover = fetch_cover
     loader = app.cover_loader
     loader.WORKERS = 0
-    for rid in range(170):
+    n = rb.COVER_ENTRIES + 10
+    for rid in range(n):
         app.cover({"id": rid})
     assert 0 not in app.covers                           # pushed out, its load still queued
     app.cover({"id": 0})                                 # drawn again
-    for rid in range(170):
+    for rid in range(n):
         loader.seen[rid] = time.monotonic()
     while loader.run_one(wait=False):
         pass
     _run_posted(app)
     assert asked.count(0) == 1 and len(asked) == len(set(asked))
-    assert set(app.covers) == set(app.cover_order) and len(app.cover_order) <= 160
+    assert set(app.covers) == set(app.cover_order) and len(app.cover_order) <= rb.COVER_ENTRIES
     assert app.covers[0] is not None and app.cover_req == {}
 
 

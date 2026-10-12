@@ -13,6 +13,7 @@ import shutil
 import sys
 import threading
 import time
+from collections import OrderedDict
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_DIR)
@@ -316,16 +317,34 @@ def measure(font, s):
     return sum(f.size(chunk)[0] for f, chunk in _runs(font, s)) / K
 
 
-_TEXT_CACHE = {}
+# Memory: rendered text and decoded covers are kept in RAM by size, not by
+# count: at 4K one line of text is ~180 KB and one cover several MB, so a count
+# limit let a long scroll reach gigabytes. What's dropped comes back from the
+# fonts / the disk cache, in milliseconds.
+TEXT_BUDGET = 64 << 20          # rendered strings (a full screen of 4K text is ~25 MB)
+COVER_BUDGET = 64 << 20         # decoded covers, already shrunk to what's drawn (~1.8 MB each at 4K)
+COVER_ENTRIES = 400            # covers tracked at once, loading and "no cover" ones included
+COVER_DECODES = threading.BoundedSemaphore(2)   # a 4000 px cover is ~100 MB while it decodes
+
+
+def surface_bytes(img):
+    return img.get_width() * img.get_height() * img.get_bytesize() if isinstance(img, pygame.Surface) else 0
+
+
+_TEXT_CACHE = OrderedDict()     # (font, text, colour) -> Surface, least recently drawn first
+_TEXT_BYTES = [0]
 
 
 def render_cached(font, s, color):
     key = (id(font), s, color)
     img = _TEXT_CACHE.get(key)
-    if img is None:
-        if len(_TEXT_CACHE) > 3000:
-            _TEXT_CACHE.clear()
-        img = _TEXT_CACHE[key] = render(font, s, color)
+    if img is not None:
+        _TEXT_CACHE.move_to_end(key)
+        return img
+    img = _TEXT_CACHE[key] = render(font, s, color)
+    _TEXT_BYTES[0] += surface_bytes(img)
+    while _TEXT_BYTES[0] > TEXT_BUDGET and len(_TEXT_CACHE) > 1:
+        _TEXT_BYTES[0] -= surface_bytes(_TEXT_CACHE.popitem(last=False)[1])
     return img
 
 
@@ -534,6 +553,21 @@ def as_rgba(img):
     out = pygame.Surface(img.get_size(), pygame.SRCALPHA, 32)
     out.blit(img, (0, 0))
     return out
+
+
+COVER_BOX = (192, 256)          # the game panel's cover (logical): the largest any screen draws
+
+
+def cover_fit(img):
+    """A decoded cover scaled once to the game panel's cover box, the largest
+    any screen draws it (Home's smaller shelf crops from it). RomM's large
+    covers are often 1000-4000 px: kept whole they cost ~10x the RAM, and a
+    smaller one needed a second, enlarged copy for the panel."""
+    iw, ih = img.get_size()
+    pw, ph = SR(pygame.Rect((0, 0), COVER_BOX)).size
+    f = min(pw / iw, ph / ih)
+    size = (max(1, int(iw * f)), max(1, int(ih * f)))
+    return img if size == (iw, ih) else smooth_scale(img, size)
 
 
 def smooth_scale(img, size):
@@ -1071,6 +1105,7 @@ class App:
         self.events_from_threads = []
         self.lock = threading.Lock()
         self.covers = {}             # rom_id -> Surface | "loading" | None
+        self.cover_bytes = 0         # what the covers' Surfaces take (trim_covers keeps it in budget)
         self.cover_order = []
         self.cover_req = {}          # rom_id -> the request the app waits for (stale ones are ignored)
         self.cover_retry = {}        # rom_id -> (monotonic time to ask again, failures): RomM was busy
@@ -1204,6 +1239,9 @@ class App:
         self.cover_loader.drawn(rid)
         c = self.covers.get(rid)
         if c is not None or rid in self.covers:
+            if self.cover_order[-1] != rid:            # most recently drawn last: trimmed last
+                self.cover_order.remove(rid)
+                self.cover_order.append(rid)
             return None if c == "loading" else c
         retry = self.cover_retry.get(rid)
         if retry and time.monotonic() < retry[0]:
@@ -1211,10 +1249,7 @@ class App:
         self.covers[rid] = "loading"
         req = self.cover_req[rid] = object()
         self.cover_order.append(rid)
-        if len(self.cover_order) > 160:
-            old = self.cover_order.pop(0)
-            self.covers.pop(old, None)
-            self.cover_req.pop(old, None)         # a load still on its way for it is ignored
+        self.trim_covers()
 
         def current():
             return self.cover_req.get(rid) is req
@@ -1225,7 +1260,8 @@ class App:
                 if not path:
                     return None
                 try:
-                    return as_rgba(pygame.image.load(path))
+                    with COVER_DECODES:
+                        return cover_fit(as_rgba(pygame.image.load(path)))
                 except (pygame.error, OSError):
                     # trimmed from the cache between finding and reading it
                     # (or unreadable): drop it and fetch once more
@@ -1239,7 +1275,9 @@ class App:
             if current():
                 del self.cover_req[rid]
                 self.covers[rid] = img
+                self.cover_bytes += surface_bytes(img)
                 self.cover_retry.pop(rid, None)
+                self.trim_covers(keep=rid)
 
         def failed():                       # RomM busy or unreachable: ask again after a wait
             if current():
@@ -1260,8 +1298,22 @@ class App:
         self.cover_loader.want(rid, load, done, failed, dropped, current)
         return None
 
+    def trim_covers(self, keep=None):
+        """Least recently drawn covers out of memory past COVER_BUDGET (or
+        COVER_ENTRIES); a load still on its way for one
+        is ignored. They come back from the disk cache when drawn again."""
+        while self.cover_order and (self.cover_bytes > COVER_BUDGET or len(self.cover_order) > COVER_ENTRIES):
+            old = self.cover_order[0]
+            if old == keep:
+                break
+            self.cover_order.pop(0)
+            self.cover_bytes -= surface_bytes(self.covers.pop(old, None))
+            self.cover_req.pop(old, None)
+            self.scaled_covers.pop(old, None)
+
     def forget_covers(self):
         """Drop every cover in memory (new server, cache cleared); loads on their way are ignored."""
+        self.cover_bytes = 0
         self.covers.clear()
         self.cover_order.clear()
         self.cover_req.clear()
@@ -2068,6 +2120,8 @@ class HomeScreen(Screen):
                         crop = pygame.Rect(0, 0, pc.width, pc.height)
                         crop.center = scaled.get_rect().center
                         sc = (img, scaled.subsurface(crop.clip(scaled.get_rect())).copy())
+                        if len(self.shelf) > 24:
+                            self.shelf.clear()
                         self.shelf[rom["id"]] = sc
                     c.blit(sc[1], SR(cr).topleft)
                 else:
@@ -3013,7 +3067,7 @@ class GameListScreen(ListScreen):
         app = self.app
         p = pygame.Rect(728, 80, 520, 576)
         rrect(c, PANEL, p, 16)
-        cov = pygame.Rect(p.left + 24, p.top + 24, 192, 256)
+        cov = pygame.Rect((p.left + 24, p.top + 24), COVER_BOX)
         img = app.cover(rom)
         if img:
             pc = SR(cov)
@@ -3021,9 +3075,9 @@ class GameListScreen(ListScreen):
             if sc is None or sc[0] is not img:
                 iw, ih = img.get_size()
                 f = min(pc.width / iw, pc.height / ih)
-                sc = (img, smooth_scale(
-                    img, (max(1, int(iw * f)), max(1, int(ih * f)))))
-                if len(app.scaled_covers) > 64:
+                size = (max(1, int(iw * f)), max(1, int(ih * f)))
+                sc = (img, img if abs(size[0] - iw) <= 1 and abs(size[1] - ih) <= 1 else smooth_scale(img, size))
+                if len(app.scaled_covers) > 24:
                     app.scaled_covers.clear()
                 app.scaled_covers[rom["id"]] = sc
             c.blit(sc[1], sc[1].get_rect(midtop=(pc.centerx, pc.top)))
@@ -6749,7 +6803,36 @@ def register_self():
     write_marker(".registered", rommlib.VERSION_LABEL)
 
 
+def fit_memory_budgets():
+    """A box with under 3 GB of RAM keeps half as much text and covers in memory."""
+    global TEXT_BUDGET, COVER_BUDGET
+    ram = rommlib.total_ram()
+    if ram and ram < 3 << 30:
+        TEXT_BUDGET, COVER_BUDGET = 32 << 20, 32 << 20
+
+
+def tame_malloc():
+    """glibc gives each thread its own heap (up to 8 per core) and keeps what's
+    freed: with a dozen cover threads decoding images, the app's memory only
+    ever grew (~200 MB more at 4K on a 2 GB box). Two heaps, and freed memory
+    handed back to the system every 30 s. Best effort: not glibc, no change."""
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        libc.mallopt(-8, 2)                        # M_ARENA_MAX
+    except (OSError, AttributeError):
+        return
+
+    def trim():
+        while True:
+            time.sleep(30)
+            libc.malloc_trim(0)
+    threading.Thread(target=trim, daemon=True, name="malloc-trim").start()
+
+
 def main():
+    tame_malloc()
+    fit_memory_budgets()
     try:
         pygame.mixer.pre_init(44100, -16, 2, 512)    # small buffer: blips land on the press
     except Exception:

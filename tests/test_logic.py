@@ -914,7 +914,7 @@ def test_cover_load_retries_when_cache_file_vanishes(isolated, rb, monkeypatch):
     assert app.cover_loader.run_one(wait=False)
     for fn in app.events_from_threads:
         fn()
-    assert len(calls) == 2 and app.covers[5].get_size() == (4, 6)
+    assert len(calls) == 2 and app.covers[5].get_size() == rb.cover_fit(pygame.Surface((4, 6))).get_size()
 
 
 def _fake_chdman_bin(tmp_path, monkeypatch, body):

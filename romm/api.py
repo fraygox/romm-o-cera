@@ -139,36 +139,40 @@ class Api:
         finally:
             r.close()
 
-    def roms_all(self, limit=500, cap=None, cancel=None, **kw):
+    def roms_all(self, limit=500, cap=None, cancel=None, keep=None, **kw):
         """Every page of a roms() listing, in order: the first page gives the
         total, the rest are fetched PAGE_WORKERS at a time. cap: stop at that
-        many (rounded up to a page). None if cancel was set."""
-        first = self.roms(offset=0, limit=limit, **kw)
-        items = list(first.get("items") or [])
-        step, total = len(items), first.get("total") or 0
+        many (rounded up to a page). keep(rom): only the games it's True for
+        are kept, each page filtered as it arrives (a big platform's full
+        listing is hundreds of MB once parsed). None if cancel was set."""
+        def page_at(off):
+            page = self.roms(offset=off, limit=limit, **kw)
+            got = page.get("items") or []
+            return len(got), page.get("total") or 0, [r for r in got if keep(r)] if keep else got
+        step, total, items = page_at(0)
         if not step:
             return items
+        seen = step
         limit_to = total if cap is None else min(total, cap)
         offsets = list(range(step, limit_to, step))
-        pages = fetch_many(lambda off: self.roms(offset=off, limit=limit, **kw), offsets, PAGE_WORKERS, cancel)
+        pages = fetch_many(page_at, offsets, PAGE_WORKERS, cancel)
         if cancel is not None and cancel.is_set():
             return None
         for off in offsets:
-            got = fetched(pages[off]).get("items") or []
+            n, total, got = fetched(pages.pop(off))
             items.extend(got)
-            total = pages[off].get("total") or 0
-            if len(got) < step:                       # the library shrank meanwhile: that's all
+            seen += n
+            if n < step:                              # the library shrank meanwhile: that's all
                 return items
         # it grew meanwhile: the rest one page at a time, as before
-        while len(items) < (total if cap is None else min(total, cap)):
+        while seen < (total if cap is None else min(total, cap)):
             if cancel is not None and cancel.is_set():
                 return None
-            page = self.roms(offset=len(items), limit=limit, **kw)
-            got = page.get("items") or []
-            if not got:
+            n, total, got = page_at(seen)
+            if not n:
                 break
             items.extend(got)
-            total = page.get("total") or 0
+            seen += n
         return items
 
     def similar(self, rom_id, limit=30):

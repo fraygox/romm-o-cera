@@ -293,8 +293,9 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         if not names:               # Batocera makes every system's folder: don't list RomM's games for none
             continue
         index = {}
+        here = _names_here(sysdir, names)
         for pid in platforms_by_system[system]:
-            listed = api.roms_all(platform_ids=[pid], cancel=cancel)
+            listed = api.roms_all(platform_ids=[pid], cancel=cancel, limit=LIST_PAGE, keep=lambda r: _listed_as(r) & here)
             if listed is None:
                 return findings, stats
             for r in listed:
@@ -502,6 +503,25 @@ def load_audit():
 INFO_TAGS = ("name", "desc", "image")
 
 
+LIST_PAGE = 250       # games per listing page: RomM's records are ~16 KB, and 5 pages are in flight
+
+
+def _names_here(sysdir, names):
+    """Every name a game here can be listed under in RomM: its file or folder
+    name and its stem, lower case."""
+    out = set()
+    for n in names:
+        out.add(n.lower())
+        if not os.path.isdir(os.path.join(sysdir, n)):
+            out.add(_core.stem_of(n).lower())
+            out.add(os.path.splitext(n)[0].lower())
+    return out
+
+
+def _listed_as(r):
+    return {(r.get("fs_name_no_ext") or "").lower(), (r.get("fs_name") or "").lower()}
+
+
 def _gamelist_info(sysdir):
     """{relative path: set of filled tags} from roms/<sys>/gamelist.xml (read only)."""
     out = {}
@@ -526,10 +546,18 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
     if not os.path.isdir(sysdir):
         return [], stats
     index, sets = {}, {}
+    names = sorted(os.listdir(sysdir))
+    here = _names_here(sysdir, names)
+
+    def wanted(r):                          # on the box under its file name, or as a disc of a playlist here
+        if _listed_as(r) & here:
+            return True
+        d = _library.disc_info(r.get("fs_name_no_ext") or "")
+        return bool(d) and d[0].lower() in here
     for pid in platform_ids:
         if cancel is not None and cancel.is_set():
             return [], stats
-        listed = api.roms_all(platform_ids=[pid], cancel=cancel)
+        listed = api.roms_all(platform_ids=[pid], cancel=cancel, limit=LIST_PAGE, keep=wanted)
         if listed is None:
             return [], stats
         for r in listed:
@@ -539,7 +567,6 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
             if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
                 sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
     have = _gamelist_info(sysdir)
-    names = sorted(os.listdir(sysdir))
     in_m3u = set()
     for n in names:
         if n.lower().endswith(".m3u"):
