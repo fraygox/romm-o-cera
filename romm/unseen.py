@@ -176,9 +176,7 @@ def archive_contents(dl, path):
 
 def _recorded(library, paths):
     """True when an install record (ours: installed.json) holds one of paths."""
-    with library.lock:
-        library._reload()
-        recs = list(library.installed.values())
+    recs = library.snapshot().values()
     return any(p in (rec.get("paths") or []) for rec in recs for p in paths)
 
 

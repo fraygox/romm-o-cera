@@ -169,7 +169,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/bios.py` | BIOS checks and fetching |
 | `romm/ps3.py` | PS3 discs |
 | `romm/convert.py` | conversions: the Converter table, Z3DS, .zar checks, the conversion queue |
-| `romm/library.py` | installed.json (`Library`), multi-disc sets, gamelist entries |
+| `romm/library.py` | installed.json (`Library`: everything outside reads its records through `snapshot()`, never its lock or fields), multi-disc sets, gamelist entries |
 | `romm/leftovers.py` | files a download or conversion left behind |
 | `romm/update.py` | release checks and the in-app updater |
 | `romm/downloader.py` | downloads: the queue, the workers, space planning |

@@ -707,9 +707,7 @@ def chd_status(task_name, library=None, rom_id=None, mode=None):
     if os.path.exists(os.path.join(_core.CHD_QUEUE_DIR, task_name)):
         return "queued"
     if library is not None and rom_id is not None:
-        with library.lock:
-            library._reload()
-            rec = library.installed.get(str(rom_id)) or {}
+        rec = library.snapshot().get(str(rom_id)) or {}
         outs = CONVERT_OUTPUTS.get(mode) or tuple(e for v in CONVERT_OUTPUTS.values() for e in v)
         if any(p.lower().endswith(outs) and os.path.exists(p) for p in rec.get("paths", [])):
             return "done"

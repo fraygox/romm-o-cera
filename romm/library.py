@@ -60,6 +60,14 @@ class Library:
         except ValueError:
             _core._keep_unreadable(_core.STATE_PATH)         # the next write replaces it: keep what's there
 
+    def snapshot(self):
+        """installed.json's records as they are now ({rom id: record}), re-read
+        first if another process changed it. A new dict, safe to iterate
+        outside the lock; the records themselves are shared: read-only."""
+        with self.lock:
+            self._reload()
+            return dict(self.installed)
+
     def update(self, fn):
         """Apply fn(installed) to the freshest installed.json and write it back."""
         import fcntl

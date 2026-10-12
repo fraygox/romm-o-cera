@@ -560,6 +560,19 @@ def test_rom_dest_stays_inside_the_system_folder(isolated, tmp_path):
     assert rommlib.rom_dest({"fs_name": "Out"}, "psx") is None
 
 
+def test_library_snapshot_is_fresh_and_a_copy(isolated):
+    lib = rommlib.Library()
+    lib.mark({"id": 1, "name": "A"}, "psx", ["/r/psx/A.chd"])
+    other = rommlib.Library()                       # another process writes installed.json
+    other.mark({"id": 2, "name": "B"}, "psx", ["/r/psx/B.chd"])
+    st = os.stat(rommlib.STATE_PATH)
+    os.utime(rommlib.STATE_PATH, ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))     # within a clock tick of lib's write
+    snap = lib.snapshot()
+    assert sorted(snap) == ["1", "2"]
+    snap.pop("1")
+    assert sorted(lib.snapshot()) == ["1", "2"]
+
+
 # ------------------------------------------------------------ gamelist write safety
 
 

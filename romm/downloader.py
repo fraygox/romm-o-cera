@@ -835,9 +835,8 @@ class Downloader:
         system plays playlists), hide the single discs in ES and give the
         playlist the game's metadata. Idempotent."""
         lib = self.library
-        with lib.lock:
-            lib._reload()
-            recs = [lib.installed.get(str(rid)) for rid in group["rom_ids"]]
+        inst = lib.snapshot()
+        recs = [inst.get(str(rid)) for rid in group["rom_ids"]]
         if not all(r and any(os.path.exists(p) for p in r.get("paths", [])) for r in recs):
             return None
         if not self._accepts(system, ".m3u"):
@@ -879,14 +878,11 @@ class Downloader:
     def repair_groups(self):
         """Re-check every disc set on the box (e.g. a CHD conversion finished
         while the playlist was being written). Cheap; file checks only."""
-        lib = self.library
-        with lib.lock:
-            lib._reload()
-            seen = {}
-            for rec in lib.installed.values():
-                g = rec.get("group")
-                if g and g.get("id") not in seen:
-                    seen[g["id"]] = (g, rec["system"])
+        seen = {}
+        for rec in self.library.snapshot().values():
+            g = rec.get("group")
+            if g and g.get("id") not in seen:
+                seen[g["id"]] = (g, rec["system"])
         for g, system in seen.values():
             try:
                 self._finish_group(g, system)
@@ -1014,10 +1010,7 @@ class Downloader:
             o = os.path.normpath(old)
             if o == d or o.startswith(d + os.sep) or d.startswith(o + os.sep):
                 return True
-        with self.library.lock:
-            self.library._reload()
-            recs = list(self.library.installed.items())
-        for rid, rec in recs:
+        for rid, rec in self.library.snapshot().items():
             for p in rec.get("paths", []):
                 q = os.path.normpath(p)
                 if q == d or q.startswith(d + os.sep) or d.startswith(q + os.sep):

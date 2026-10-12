@@ -4879,10 +4879,7 @@ def installed_games(lib):
     """Games RomM-o-Cera installed that are still on the box, biggest first.
     A multi-disc set is one row."""
     out, sets = [], {}
-    with lib.lock:
-        lib._reload()
-        recs = list(lib.installed.items())
-    for rid, rec in recs:
+    for rid, rec in lib.snapshot().items():
         paths = [p for p in rec.get("paths", []) if os.path.exists(p)]
         if not paths:
             continue
@@ -4906,9 +4903,7 @@ def installed_games(lib):
 
 def storage_by_system(lib):
     """Space per system: RomM-o-Cera's games, other games, and media."""
-    with lib.lock:
-        lib._reload()
-        ours = {os.path.normpath(p) for rec in lib.installed.values() for p in rec.get("paths", [])}
+    ours = {os.path.normpath(p) for rec in lib.snapshot().values() for p in rec.get("paths", [])}
     out = []
     for system in sorted(os.listdir(rommlib.ROMS_ROOT)):
         sysdir = os.path.join(rommlib.ROMS_ROOT, system)
