@@ -4323,7 +4323,7 @@ class SettingsScreen(Screen):
     def hints(self):
         items = self.items()
         key = items[min(self.sel, len(items) - 1)][0]
-        if key in self.ACTIONS:
+        if key in self.STEPLESS:
             return [("A", "Open" if key in ("bios", "credits", "docs") else "Select"), ("B", "Back")]
         return [("A", "Change"), ("LEFT RIGHT", "Choose"), ("B", "Back")]
 
@@ -7264,19 +7264,33 @@ class ActionMenu:
         veil = pygame.Surface(c.get_size(), pygame.SRCALPHA)
         veil.fill((0, 0, 0, 170))
         c.blit(veil, (0, 0))
-        body = sum(self._height(e) for e in self.entries)
-        r = pygame.Rect(0, 0, 680, 78 + body + 18)
+        tops, body = [], 0
+        for e in self.entries:
+            tops.append(body)
+            body += self._height(e)
+        r = pygame.Rect(0, 0, 680, min(78 + body + 18, H - 40))    # a long menu scrolls
         r.center = (W // 2, H // 2)
         self.app.hit(r, None)                    # taps on the dialog itself don't close it
         rrect(c, PANEL, r, 18)
         rrect(c, LINE, r, 18, 1)
         text(c, f.h2, self.title, (r.left + 28, r.top + 24), TEXT, maxw=r.width - 56)
-        y = r.top + 72
+        view = r.height - 96                     # what the rows get
+        off = getattr(self, "off", 0)
+        if self.entries:                         # keep the selected row in view
+            st, sh = tops[self.sel], self._height(self.entries[self.sel])
+            off = min(max(off, st + sh - view), st)
+        self.off = off = max(0, min(off, body - view))
+        for up, show in ((True, off > 0), (False, off + view < body)):
+            if show:                             # more rows above / below
+                cy, d = (r.top + 62, -5) if up else (r.bottom - 10, 5)
+                polyline(c, FAINT, [(r.centerx - 8, cy - d), (r.centerx, cy + d), (r.centerx + 8, cy - d)], 2)
         for i, e in enumerate(self.entries):
             h = self._height(e)
+            y = r.top + 72 + tops[i] - off
+            if y < r.top + 72 or y + h > r.top + 72 + view:
+                continue                                # scrolled out of the dialog
             if e is None:                               # divider between actions and view controls
                 hline(c, LINE, (r.left + 28, y + h // 2), (r.right - 28, y + h // 2))
-                y += h
                 continue
             label, sub, fn = e[:3]
             value = e[3] if len(e) > 3 else None
@@ -7316,7 +7330,6 @@ class ActionMenu:
                     text(c, f.small, sub, (row.left + 18, row.top + 30), FAINT, maxw=row.width - 36 - vw)
             else:
                 text(c, f.body, label, (row.left + 18, row.centery), col, "midleft", maxw=row.width - 36 - vw)
-            y += h
 
 
 class ManageMenu(ActionMenu):

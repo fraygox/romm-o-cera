@@ -408,3 +408,34 @@ def test_a_failed_compress_scan_lists_nothing(app, rb, monkeypatch):
     assert sc.rows == [] and sc.load_error
     sc.action("ok")
     assert app.stack[-1] is sc
+
+
+def test_a_menu_taller_than_the_screen_scrolls_to_the_selected_row(isolated, rb, monkeypatch):
+    """A game list's X menu with picks and BIOS on offer could run past the
+    screen's bottom, its last rows unreachable by touch and unseen."""
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    picked = []
+    entries = [("Entry %d" % i, "a line under it", lambda i=i: picked.append(i)) for i in range(25)]
+    m = rb.ActionMenu(app, "A long menu", entries)
+
+    def frame():
+        app.targets = []
+        m.draw(app.canvas)
+        return [(r, fn) for r, fn in app.targets if fn]
+    rows = frame()
+    dialog = max((r for r, fn in app.targets if fn is None), key=lambda r: r.height)
+    assert dialog.height <= rb.H - 40 and dialog.top >= 0
+    assert len(rows) < 25                               # not everything fits
+    for _ in range(24):
+        m.action("down")
+    rows = frame()
+    assert all(dialog.top <= r.top and r.bottom <= dialog.bottom for r, _ in rows)
+    rows[-1][1]()                                       # the last one drawn is the last entry, tappable
+    assert picked == [24]
+    m.sel = 0
+    frame()
+    assert m.off == 0                                    # back at the top
