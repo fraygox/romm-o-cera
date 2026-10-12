@@ -17,6 +17,10 @@ import time
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_DIR)
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+# Batocera's screenshot hotkey flashes a fullscreen window for 0.1 s; SDL would
+# minimise this fullscreen app when it takes focus, and ES (white while a
+# "game" runs) would be left showing
+os.environ.setdefault("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0")
 
 import pygame  # noqa: E402
 import rommlib  # noqa: E402
