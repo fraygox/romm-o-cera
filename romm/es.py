@@ -128,6 +128,37 @@ def es_running_game(app_busy=False, get=None):
     return "" if path.endswith("rommbrowser.pygame") and not app_busy else path
 
 
+def es_is_idle(get=None):
+    """ES's own word on background work (GET /isIdle, Batocera 36+): False
+    while a game runs (this app included) or ES scrapes, installs content,
+    computes RetroAchievements hashes or updates Batocera; None when ES can't
+    say (an older ES answers 404; not running). get: as in es_running_game."""
+    try:
+        status, body = (get or es_get)("/isIdle")
+        v = json.loads(body)
+    except Exception:
+        return None
+    return v[0] if isinstance(v, list) and len(v) == 1 and isinstance(v[0], bool) else None
+
+
+def es_busy(app_busy=False, get=None):
+    """Why background work (conversions, handing games to ES) should wait:
+    "" it may run, "game" a game runs (this app only with app_busy) or ES
+    can't be asked, "es" ES is busy itself (scraping, hashing...). /isIdle
+    first; without it (older ES), the running game alone decides. While
+    this app runs /isIdle says False whatever ES does, so then only the
+    running game counts."""
+    idle = es_is_idle(get)
+    if idle:
+        return ""
+    path = es_running_game(app_busy=True, get=get)
+    if path is None:
+        return "game"
+    if path:
+        return "game" if app_busy or not path.endswith("rommbrowser.pygame") else ""
+    return "es" if idle is False else ""
+
+
 def _es_json(path, timeout=10):
     return EsClient().json(path, timeout)
 

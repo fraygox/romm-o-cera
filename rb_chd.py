@@ -5,7 +5,9 @@ Spawned detached (by the browser after a download, or after rb_chd_plan.py
 queues existing library games); one instance (flock). Works through
 chd-queue/*.json in name order. Only starts a disc while nothing but the
 browser is running in ES, and SIGSTOPs its own chdman while a game is up
-(SIGCONT when ES is idle again), so it never competes with a game. Every CHD
+(SIGCONT when ES is idle again), so it never competes with a game; with
+/isIdle (Batocera 36+) it also waits while ES scrapes, hashes, installs or
+updates. Every CHD
 is `chdman verify`d before the sources are deleted; on any failure the
 originals stay (they play fine).
 
@@ -44,6 +46,25 @@ def running_game():
     """Path of the running game ('' when idle or only the browser runs);
     None when ES can't be asked (treated as busy)."""
     return rommlib.es_running_game(get=rb_finalize.es_get)
+
+
+def busy_reason():
+    """Why conversions wait: "" they may run, "game" a game runs (or ES
+    can't be asked), "es" ES scrapes, hashes, installs or updates (/isIdle,
+    Batocera 36+; without it the running game alone decides). The browser
+    alone counts as idle: /isIdle is False while it runs, so then only the
+    running game counts."""
+    # next release: rommlib.es_busy (romm/es.py; v0.9.0 lacks it)
+    if running_game() != "":
+        return "game"
+    # /isIdle after runningGame, so a game that just quit can't leave a stale
+    # False; False with only the browser running isn't ES being busy
+    if rb_finalize.es_idle() is False and rommlib.es_running_game(app_busy=True, get=rb_finalize.es_get) == "":
+        return "es"
+    return ""
+
+
+PAUSED = {"game": "a game runs", "es": "EmulationStation is busy"}
 
 
 class ChdmanMissing(Exception):
@@ -229,14 +250,15 @@ def run_tool(argv, keep_stdout=False):
                     status(pct=min(100.0, float(m[-1])))
             except (OSError, ValueError):
                 pass
-            busy = running_game() != ""
+            why = busy_reason()
+            busy = why != ""
             guard = memory_check(p.pid, busy)
             if guard:
                 break                             # finally: resume + stop chdman
             if busy and not paused:
                 p.send_signal(signal.SIGSTOP)
                 paused = True
-                note("chd: paused (game running)")
+                note("chd: paused (%s)" % PAUSED[why])
             elif not busy and paused:
                 p.send_signal(signal.SIGCONT)
                 paused = False
@@ -309,7 +331,7 @@ def _crc32_file(path):
     crc, n = 0, 0
     with open(path, "rb") as f:
         while True:
-            while running_game() != "":        # None: ES can't be asked, treated as busy
+            while busy_reason():               # ES can't be asked: treated as busy
                 time.sleep(10)
             chunk = f.read(8 << 20)
             if not chunk:
@@ -369,8 +391,11 @@ def convert_squashfs(src, tmp, threads):
 def _idle():
     """Between frames of an in-process conversion: wait while a game runs
     (the subprocess tools get SIGSTOP instead)."""
-    while running_game() != "":            # None: ES can't be asked, treated as busy
-        status(step="Paused while a game runs")
+    while True:
+        why = busy_reason()                # ES can't be asked: treated as busy
+        if not why:
+            return
+        status(step="Paused while " + PAUSED[why])
         time.sleep(10)
 
 
@@ -901,7 +926,7 @@ def work(lockf):
                 break
             finalize_later()        # merge what's done (once ES is idle), in its own process
             break
-        if running_game() != "":
+        if busy_reason():
             time.sleep(20)
             continue
         path = os.path.join(rommlib.CHD_QUEUE_DIR, tasks[0])

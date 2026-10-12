@@ -206,3 +206,76 @@ def test_app_side_add_games(es, monkeypatch):
     assert rommlib.es_add_games("gba", {rom: {}}) == 204
     monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
     assert rommlib.es_add_games("gba", {rom: {}}) is None
+
+
+# ------------------------------------------------------------ /isIdle (idea 29)
+
+APP = "/userdata/roms/ports/romm-o-cera/rommbrowser.pygame"
+
+
+def test_is_idle_as_the_real_es_reports_it(es, monkeypatch):
+    assert rommlib.es_is_idle() is True and rommlib.es_busy() == ""
+    es.busy = True                                  # scraping, hashing, installing, updating
+    assert rommlib.es_is_idle() is False and rommlib.es_busy() == "es"
+    es.busy = False
+    es.running = "/userdata/roms/gba/Lorem.zip"
+    assert rommlib.es_is_idle() is False and rommlib.es_busy() == "game"
+    es.running = APP                                # only this app: idle unless app_busy
+    assert rommlib.es_busy() == "" and rommlib.es_busy(app_busy=True) == "game"
+    es.running = None
+    es.has_isidle = False                           # before Batocera 36: 404
+    assert rommlib.es_is_idle() is None
+    es.busy = True                                  # ...so nothing tells us; the running game decides
+    assert rommlib.es_busy() == ""
+    es.running = "/userdata/roms/gba/Lorem.zip"
+    assert rommlib.es_busy() == "game"
+    monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
+    assert rommlib.es_is_idle() is None and rommlib.es_busy() == "game"
+
+
+@pytest.mark.parametrize("body", [b"[]", b'"x"', b"[1]", b"null", b"<html>"])
+def test_odd_is_idle_replies_count_as_unknown(isolated, body):
+    assert rommlib.es_is_idle(get=lambda path: (200, body)) is None
+
+
+def test_workers_wait_while_es_is_busy(es):
+    """rb_finalize (the app counts as busy) and rb_chd (the browser alone
+    counts as idle) wait while ES itself is busy; without /isIdle they fall
+    back to the running game."""
+    import rb_chd
+    import rb_finalize
+    assert rb_finalize.es_busy() == "" and rb_finalize.game_running() is False and rb_chd.busy_reason() == ""
+    es.busy = True
+    assert rb_finalize.es_busy() == "es" and rb_finalize.game_running() is True and rb_chd.busy_reason() == "es"
+    es.busy = False
+    es.running = APP
+    assert rb_finalize.game_running() is True and rb_chd.busy_reason() == ""
+    es.running = "/userdata/roms/gba/Lorem.zip"
+    assert rb_finalize.es_busy() == "game" and rb_chd.busy_reason() == "game"
+    es.running = None
+    es.has_isidle = False
+    es.busy = True                                  # unseen without /isIdle
+    assert rb_finalize.game_running() is False and rb_chd.busy_reason() == ""
+    assert [c for c in es.calls if c[1] == "/isIdle"]
+
+
+def test_workers_treat_unreachable_es_as_busy(isolated, monkeypatch):
+    import rb_chd
+    import rb_finalize
+    monkeypatch.setattr(rb_finalize.rommlib, "ES_API", "http://127.0.0.1:9")
+    assert rb_finalize.es_idle() is None and rb_finalize.game_running() is True
+    assert rb_chd.busy_reason() == "game"
+
+
+def test_conversion_pauses_while_es_is_busy(es, monkeypatch):
+    """The in-process converters' pause (rb_chd._idle) holds while ES scrapes."""
+    import rb_chd
+    es.busy = True
+    steps = []
+    monkeypatch.setattr(rb_chd, "status", lambda **kw: steps.append(kw.get("step")))
+
+    def sleep(s):
+        es.busy = False                              # the scrape ends
+    monkeypatch.setattr(rb_chd.time, "sleep", sleep)
+    rb_chd._idle()
+    assert steps == ["Paused while EmulationStation is busy"]

@@ -9,7 +9,8 @@ editing gamelist.xml behind its back can always be overwritten — that lost
 game info after CHD conversions up to v0.6.3. Since v0.6.4 nothing here
 writes gamelist.xml. Instead:
 
-  1. wait until no game (and not this app) is running;
+  1. wait until ES is idle: no game (and not this app) running, nothing
+     scraping, hashing, installing or updating (/isIdle, Batocera 36+);
   2. read, from gamelist.xml (read only), the info of games about to be
      renamed (CHD conversions), so it can be carried to the new file;
   3. let ES list new files: downloads go in with POST /addgames/<system>
@@ -67,10 +68,41 @@ def es_get(path, timeout=5):
     return rommlib.es_get(path, timeout, base=rommlib.ES_API)
 
 
-def game_running():
-    """True when ES reports a running game, this app included (or ES is unreachable)."""
+def es_idle():
+    """ES's /isIdle (Batocera 36+): False while a game runs or ES scrapes,
+    installs content, hashes or updates; None when ES can't say (404 before
+    it existed, ES not running, an odd reply)."""
+    # next release: rommlib.es_is_idle (romm/es.py; v0.9.0 lacks it)
+    try:
+        status, body = es_get("/isIdle")
+        v = json.loads(body)
+    except Exception:
+        return None
+    return v[0] if isinstance(v, list) and len(v) == 1 and isinstance(v[0], bool) else None
+
+
+def es_busy(app_busy=True):
+    """Why work on ES must wait: "" it may go ahead, "game" a game runs (this
+    app too, with app_busy) or ES can't be asked, "es" ES is busy itself
+    (scraping, hashing, installing, updating: /isIdle). Without /isIdle (an
+    older ES) the running game alone decides; while this app runs /isIdle is
+    False whatever ES does, so then too."""
+    # next release: rommlib.es_busy (romm/es.py; v0.9.0 lacks it)
+    idle = es_idle()
+    if idle:
+        return ""
     path = rommlib.es_running_game(app_busy=True, get=es_get)
-    return path is None or bool(path)
+    if path is None:
+        return "game"
+    if path:
+        return "game" if app_busy or not path.endswith("rommbrowser.pygame") else ""
+    return "es" if idle is False else ""
+
+
+def game_running():
+    """True when ES is busy: a game runs (this app included), ES is busy
+    itself (/isIdle), or ES is unreachable."""
+    return es_busy() != ""
 
 
 def wait_idle(max_wait=6 * 3600):

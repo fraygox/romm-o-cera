@@ -2,7 +2,8 @@
 
 Disc games can be compressed in the background after they download. All of
 it is lossless, runs only while no game is playing (a conversion pauses when
-you start one), and checks the result against the original before the
+you start one, and also while EmulationStation scrapes, installs from the
+content store, computes RetroAchievements hashes or updates Batocera), and checks the result against the original before the
 original is deleted. Settings → **Disc compression**. Games already on the
 box can be compressed too (see
 [Converting a library you already have](#converting-a-library-you-already-have)).
