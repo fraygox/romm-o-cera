@@ -127,8 +127,10 @@ def candidates(systems=None, cfg=None, skipped=None):
     back by its switch here (asking for it is the point). Xbox: "xiso" when the
     file is still named .xiso, "cut" the bytes a full redump image will lose
     to become bootable (both done by queue(), only with Make Xbox images
-    bootable on). skipped: a list that gets (system, file, reason) for images
-    that can't be converted (e.g. encrypted 3DS dumps)."""
+    bootable on). With that on but Xbox to squashfs off, an image that still
+    needs either is offered as "prep": made bootable, nothing compressed.
+    skipped: a list that gets (system, file, reason) for images that can't be
+    converted (e.g. encrypted 3DS dumps)."""
     cfg = cfg if cfg is not None else rommlib.load_config()
     queued = queued_sources()
     out = []
@@ -158,16 +160,20 @@ def candidates(systems=None, cfg=None, skipped=None):
             if any(f in queued for f in files):
                 continue
             size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f) if os.path.isfile(p))
+            enabled = conv.chd or conv.enabled(cfg, system)
+            prep = not enabled and bool(xiso or cut)          # bootable without squashfs: just the prep
             out.append({"system": system, "root": root, "files": files, "name": name, "mode": conv.mode,
-                        "label": conv.label, "size": size, "setting": conv.setting_name,
-                        "enabled": conv.chd or conv.enabled(cfg, system), "xiso": xiso, "cut": cut})
+                        "label": "bootable .iso" if prep else conv.label, "size": size,
+                        "setting": conv.setting_name, "enabled": enabled or prep, "prep": prep,
+                        "xiso": xiso, "cut": cut})
     return out
 
 
 def queue(cands, seq=None, say=None):
     """Queue candidates (enabled ones only) for the worker, doing Xbox's
-    bootable prep first (.xiso -> .iso, cut to the game partition). Returns
-    how many were queued. say(text): progress lines (the command line)."""
+    bootable prep first (.xiso -> .iso, cut to the game partition; a "prep"
+    candidate stops there). Returns how many were queued or made bootable.
+    say(text): progress lines (the command line)."""
     import time
     seq = seq or int(time.time() * 1000)
     order = {s: i for i, s in enumerate(ORDER)}
@@ -192,6 +198,9 @@ def queue(cands, seq=None, say=None):
             if say:
                 say("%-9s cut to the game partition (-%s): %s" % (
                     c["system"], rommlib.human_size(c["cut"]), os.path.basename(files[0])))
+        if c.get("prep"):                     # bootable now; squashfs is off: nothing to queue
+            n += 1
+            continue
         task = {"system": c["system"], "mode": c["mode"], "sources": files, "roots": [root], "queued": seq}
         if c["name"]:
             task["name"] = c["name"]          # playlist name: the folder holds other titles too

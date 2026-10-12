@@ -3,10 +3,7 @@ import io
 import os
 import re
 import struct
-import urllib.parse
 import zipfile
-
-import requests
 
 from . import core as _core, config as _config, bios as _bios
 
@@ -450,31 +447,8 @@ def fetch_ps3_keys(api, platform_id):
                 and fw.get("md5_hash") and _bios.file_md5(dest) == fw["md5_hash"].lower():
             continue
         part = dest + ".part"
-        try:
-            r = api.s.get("%s/api/firmware/%d/content/%s" % (api.base, fw["id"], urllib.parse.quote(name)),
-                          timeout=60, stream=True)
-        except Exception as e:
-            raise _core.RommError("Key download failed (%s)" % e.__class__.__name__) from None
-        try:
-            if r.status_code != 200:
-                raise _core.RommError("Key download failed: HTTP %d" % r.status_code)
-            n = 0
-            with open(part, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    n += len(chunk)
-                    if n > PS3_KEYZIP_MAX:
-                        raise _core.RommError("%s is too big for a key file; not kept." % name)
-                    f.write(chunk)
-        except (_core.RommError, requests.RequestException, OSError) as e:
-            try:
-                os.remove(part)
-            except OSError:
-                pass
-            if isinstance(e, _core.RommError):
-                raise
-            raise _core.RommError("Key download failed (%s)" % e.__class__.__name__) from None
-        finally:
-            r.close()
+        api.download_firmware(fw["id"], name, part, PS3_KEYZIP_MAX, "Key",
+                              "%s is too big for a key file; not kept." % name)
         found = {}
         try:
             if name.lower().endswith(".zip"):

@@ -2,9 +2,6 @@
 import json
 import os
 import time
-import urllib.parse
-
-import requests
 
 from . import core as _core, api as _api
 
@@ -168,32 +165,8 @@ def _fetch_bios_into(api, offers, system, written, record):
             continue
         os.makedirs(os.path.dirname(m["path"]), exist_ok=True)
         part = m["path"] + ".part"
-        try:
-            r = api.s.get("%s/api/firmware/%d/content/%s" % (
-                api.base, fw["id"], urllib.parse.quote(fw["file_name"])), timeout=60, stream=True)
-        except Exception as e:
-            raise _core.RommError("BIOS download failed (%s)" % e.__class__.__name__) from None
-        if r.status_code != 200:
-            r.close()
-            raise _core.RommError("BIOS download failed: HTTP %d" % r.status_code)
-        try:                                     # streamed to disk, capped: never whole in memory
-            n = 0
-            with open(part, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    n += len(chunk)
-                    if n > _api.BIOS_MAX:
-                        raise _core.RommError("BIOS download larger than %s; refused." % _core.human_size(_api.BIOS_MAX))
-                    f.write(chunk)
-        except (_core.RommError, requests.RequestException, OSError) as e:
-            try:
-                os.remove(part)
-            except OSError:
-                pass
-            if isinstance(e, _core.RommError):
-                raise
-            raise _core.RommError("BIOS download failed (%s)" % e.__class__.__name__) from None
-        finally:
-            r.close()
+        api.download_firmware(fw["id"], fw["file_name"], part, _api.BIOS_MAX, "BIOS",
+                              "BIOS download larger than %s; refused." % _core.human_size(_api.BIOS_MAX))
         if file_md5(part) != m["md5"]:
             os.remove(part)
             raise _core.RommError("BIOS checksum mismatch for %s" % m["file"])

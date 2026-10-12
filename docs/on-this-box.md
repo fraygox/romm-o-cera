@@ -67,7 +67,11 @@ verified by checksum), what's missing everywhere, and what was fetched when.
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files
 whose size doesn't match RomM. **Full check** also checksums every file and
-verifies CHDs — slow, hours for a big library.
+verifies CHDs — slow, hours for a big library. Without `chdman` on the box,
+CHDs are counted as not verified rather than flagged.
+
+If RomM can't be reached, or a list can't be read, the screen says so in red
+instead of showing an empty, all-clear list. Go back and open it again to retry.
 
 The last check's results stay here until you check again. A game whose file
 has changed since (replaced or deleted) drops off the list.

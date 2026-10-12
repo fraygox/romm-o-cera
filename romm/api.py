@@ -3,6 +3,7 @@ import os
 import queue
 import re
 import threading
+import urllib.parse
 from concurrent.futures import Future
 
 import requests
@@ -103,6 +104,40 @@ class Api:
 
     def rom(self, rom_id):
         return self.get("/api/roms/%d" % rom_id)
+
+    def download_firmware(self, fw_id, name, part, cap, what, too_big):
+        """Stream a RomM firmware file to `part`: capped at `cap` bytes, never
+        whole in memory, and on disk (fsync) before it returns, so a power cut
+        can't leave an empty file once the caller renames it in. Raises
+        RommError ("<what> download failed …", or too_big past the cap) with
+        `part` removed."""
+        try:
+            r = self.s.get("%s/api/firmware/%d/content/%s" % (self.base, fw_id, urllib.parse.quote(name)),
+                           timeout=60, stream=True)
+        except Exception as e:
+            raise _core.RommError("%s download failed (%s)" % (what, e.__class__.__name__)) from None
+        try:
+            if r.status_code != 200:
+                raise _core.RommError("%s download failed: HTTP %d" % (what, r.status_code))
+            n = 0
+            with open(part, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    n += len(chunk)
+                    if n > cap:
+                        raise _core.RommError(too_big)
+                    f.write(chunk)
+                f.flush()
+                os.fsync(f.fileno())
+        except (_core.RommError, requests.RequestException, OSError) as e:
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+            if isinstance(e, _core.RommError):
+                raise
+            raise _core.RommError("%s download failed (%s)" % (what, e.__class__.__name__)) from None
+        finally:
+            r.close()
 
     def roms_all(self, limit=500, cap=None, cancel=None, **kw):
         """Every page of a roms() listing, in order: the first page gives the

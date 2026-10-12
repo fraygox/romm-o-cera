@@ -1282,6 +1282,16 @@ class App:
                 then()
         self.bg(lambda: self.library.uninstall(rom, system), done)
 
+    def uninstall_group(self, group, system, title, then=None):
+        """Every disc of a set and its playlist; like uninstall(), conversions
+        waiting for room hear about the space."""
+        def done(res):
+            self.toast("Deleted %s — %s freed" % (title, human_size(res[1])), GREEN)
+            self.space_freed()
+            if then:
+                then()
+        self.bg(lambda: self.library.uninstall_group(group, system), done)
+
     def start_download(self, rom):
         system = self.system_for(rom)
         if not system:
@@ -1483,18 +1493,10 @@ class App:
         if not tag:
             return
         self.update_tag = tag
-        seen = os.path.join(rommlib.DATA_DIR, ".update-notified")
-        try:
-            if open(seen).read().strip() == tag:
-                return
-        except OSError:
-            pass
+        if read_marker(".update-notified") == tag:
+            return
         self.toast("%s %s is out. Settings shows how to update." % (APP_NAME, tag), BLUE)
-        try:
-            with open(seen, "w") as f:
-                f.write(tag)
-        except OSError:
-            pass
+        write_marker(".update-notified", tag)
 
     def on_pad_change(self):
         if (self.cfg["button_style"] or "auto") == "auto":
@@ -1840,6 +1842,27 @@ class Screen:
 
     def draw(self, c):
         pass
+
+    load_error = None               # why the screen's list couldn't load: drawn instead of "nothing here"
+    LOAD_ERROR_HEAD = "Couldn't load this list"
+
+    def load_failed(self, attr):
+        """The err callback of a list load: an empty list, and the reason kept so
+        draw() says what went wrong instead of a reassuring "nothing here"."""
+        def failed(e):
+            self.load_error = str(e) or e.__class__.__name__
+            setattr(self, attr, [])
+            self.app.toast(self.load_error, RED)
+        return failed
+
+    def draw_load_error(self, c, y=86):
+        """True (and drawn) when the last load failed."""
+        if not self.load_error:
+            return False
+        text(c, self.f.h3, self.LOAD_ERROR_HEAD, (56, y), RED)
+        text(c, self.f.body, "%s. Go back and open it again to try once more." % self.load_error.rstrip("."),
+             (56, y + 38), DIM, maxw=W - 112)
+        return True
 
     def tap_row(self, i):
         """Touch: first tap selects (detail panels update), second opens."""
@@ -2225,8 +2248,7 @@ class CollectionScreen(ListScreen):
             app.bg(self._load_top, self._loaded_top, lambda e: self._failed(e))
 
     def _failed(self, e):
-        self.items = []
-        self.app.toast(str(e), RED)
+        self.load_failed("items")(e)
 
     def enter(self):
         self.here = {}                      # back from a list: downloads/deletes may have changed it
@@ -2386,6 +2408,8 @@ class CollectionScreen(ListScreen):
         if self.items is None:
             text(c, self.f.h2, "Loading…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         if not self.items:
             text(c, self.f.h2, "No collections", (W // 2, 300), DIM, "center")
             return
@@ -2517,6 +2541,7 @@ class GameListScreen(ListScreen):
         # so jumping to a letter loads just that page, not everything before it
         self.items = []
         self.total = None
+        self.load_error = None
         self.pending = set()
         self.failed = {}          # offset -> (retry after, failures)
         self.starts = []          # [(offset, letter)] from RomM's char_index
@@ -2604,6 +2629,7 @@ class GameListScreen(ListScreen):
             if gen != self.gen:
                 return
             self.pending.discard(offset)
+            self.load_error = None
             total = page.get("total", len(page.get("items", [])))
             self.server_total = total
             if self.total is None or total != self.total:
@@ -2630,6 +2656,7 @@ class GameListScreen(ListScreen):
             self.pending.discard(offset)
             if self.total is None:
                 self.total = 0
+                self.load_error = str(e) or e.__class__.__name__     # not "No games found": it couldn't ask
             n = self.failed.get(offset, (0, 0))[1] + 1
             self.failed[offset] = (time.time() + min(60, 5 * 2 ** (n - 1)), n)
             if n == 1:
@@ -2881,7 +2908,8 @@ class GameListScreen(ListScreen):
         elif self.dense:
             cnt = "{:,}{} not on this box".format(self.total, "" if self.exhausted else "+")
         else:
-            cnt = "{:,} games".format(self.total) if self.total else "No games found"
+            cnt = "{:,} games".format(self.total) if self.total else \
+                "Couldn't load: %s" % self.load_error if self.load_error else "No games found"
         flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
                                    (self.mark_mode, "%d picked" % len(self.marks))) if on]
         if flt:
@@ -2892,7 +2920,9 @@ class GameListScreen(ListScreen):
         else:
             for k, ln in enumerate(wrap(self.f.small, title, 520)[:2]):
                 text(c, self.f.small, ln, (lx + 8, ly - 2 + k * 18), TEXT)
-        text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), FAINT, "topright")
+        failed = not self.total and self.load_error
+        text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), RED if failed else FAINT, "topright",
+             maxw=300 if failed else None)
         ly += 40
         multi_plat = self.platform is None
         for i, r, on in self.row_rects(ly, x=lx, w=lw):
@@ -4896,8 +4926,13 @@ def compress_queue(app, cands, done=None):
         return rb_chd_plan.queue(cands)
 
     def ok(n):
-        app.spawn_helper("rb_chd.py")
-        app.toast("Queued %s: they compress in the background (On this box, Conversions)" % plural(n, "game"), GREEN)
+        prep = sum(1 for c in cands if c.get("prep") and c["enabled"])
+        if n > prep:
+            app.spawn_helper("rb_chd.py")
+            app.toast("Queued %s: they compress in the background (On this box, Conversions)"
+                      % plural(n - prep, "game") + ("; %d Xbox made bootable" % prep if prep else ""), GREEN)
+        else:
+            app.toast("Made %s bootable" % plural(n, "Xbox game"), GREEN)
         if done:
             done()
     app.bg(run, ok)
@@ -4914,7 +4949,8 @@ class CompressScreen(ListScreen):
         self.sel = self.scroll = 0
 
     def enter(self):
-        self.app.bg(compress_scan, self._loaded, lambda e: (setattr(self, "cands", []), self.app.toast(str(e), RED)))
+        self.load_error = None
+        self.app.bg(compress_scan, self._loaded, self.load_failed("cands"))
 
     def _loaded(self, cands):
         self.cands = cands
@@ -4955,6 +4991,8 @@ class CompressScreen(ListScreen):
         if self.cands is None:
             text(c, self.f.h2, "Looking through every system…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         if not self.cands:
             text(c, self.f.h3, "Nothing left to compress.", (56, 86), GREEN)
             text(c, self.f.body, "Every disc game here that a converter supports is compressed already, "
@@ -4990,8 +5028,8 @@ class CompressSystemScreen(ListScreen):
 
     def enter(self):
         import rb_chd_plan
-        self.app.bg(lambda: rb_chd_plan.candidates([self.system]), self._loaded,
-                    lambda e: (setattr(self, "cands", []), self.app.toast(str(e), RED)))
+        self.load_error = None
+        self.app.bg(lambda: rb_chd_plan.candidates([self.system]), self._loaded, self.load_failed("cands"))
 
     def _loaded(self, cands):
         self.cands = cands
@@ -5034,6 +5072,8 @@ class CompressSystemScreen(ListScreen):
         if self.cands is None:
             text(c, self.f.h2, "Looking…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         if not self.cands:
             text(c, self.f.h3, "Nothing left to compress here.", (56, 86), GREEN)
             return
@@ -5070,7 +5110,8 @@ class InstalledScreen(ListScreen):
         self.load()
 
     def load(self):
-        self.app.bg(lambda: installed_games(self.app.library), self._loaded)
+        self.load_error = None
+        self.app.bg(lambda: installed_games(self.app.library), self._loaded, self.load_failed("items"))
 
     def _loaded(self, items):
         self.items = items
@@ -5094,16 +5135,12 @@ class InstalledScreen(ListScreen):
             it = self.items[self.sel]
             rom = {"id": it["id"], "name": it["name"]}
             if it.get("group"):
-                lib, g, app = self.app.library, it["group"], self.app
-
-                def gone(res):
-                    app.toast("Deleted %s — %s freed" % (it["name"], human_size(res[1])), GREEN)
-                    app.space_freed()
-                    self.load()
+                app = self.app
                 self.app.modal = Confirm(app, "Delete %s?" % it["name"],
                                          "Removes every disc and the playlist from roms/%s (%s). Saves and "
                                          "states are kept." % (it["system"], human_size(it["size"])), "Delete",
-                                         lambda: app.bg(lambda: lib.uninstall_group(g, it["system"]), gone),
+                                         lambda: app.uninstall_group(it["group"], it["system"], it["name"],
+                                                                     self.load),
                                          danger=True)
                 return
             self.app.modal = Confirm(self.app, "Delete %s?" % it["name"],
@@ -5116,6 +5153,8 @@ class InstalledScreen(ListScreen):
     def draw(self, c):
         if self.items is None:
             text(c, self.f.h2, "Measuring…", (W // 2, H // 2), DIM, "center")
+            return
+        if self.draw_load_error(c):
             return
         try:
             st = os.statvfs(rommlib.ROMS_ROOT)
@@ -5202,15 +5241,20 @@ class ConversionsScreen(ListScreen):
 
     def menu(self, r):
         app = self.app
-        q = rommlib.CHD_QUEUE_DIR
         e = []
         if r["kind"] == "queued":
+            def gone():
+                app.toast("It's converting now, or done already", AMBER)
+                self.refresh()
+
             def first():
-                os.replace(os.path.join(q, r["name"]), os.path.join(q, "0000000000000-" + r["name"]))
+                if not rommlib.queue_task_first(r["name"]):
+                    return gone()
                 self.refresh()
 
             def drop():
-                os.remove(os.path.join(q, r["name"]))
+                if not rommlib.drop_queue_task(r["name"]):
+                    return gone()
                 app.toast("Removed from the queue — the original stays as it is")
                 self.refresh()
             e += [("Convert next", "", first), ("Remove from the queue", "The original is kept as it is", drop)]
@@ -5393,7 +5437,8 @@ class FreeUpScreen(ListScreen):
             for g in games:
                 g["size"] = sum(rommlib.path_size(p) for p in rommlib.game_files(g["path"]))
             return [g for g in games if g["size"]]
-        self.app.bg(scan, self._loaded, lambda e: (setattr(self, "items", []), self.app.toast(str(e), RED)))
+        self.load_error = None
+        self.app.bg(scan, self._loaded, self.load_failed("items"))
 
     def _loaded(self, items):
         self.items = items
@@ -5486,6 +5531,8 @@ class FreeUpScreen(ListScreen):
         if self.items is None or self.busy:
             text(c, self.f.h2, "Deleting…" if self.busy else "Measuring games…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         free = rommlib.free_bytes()
         n, size = len(self.marks), sum(g["size"] for g in self.marked())
         head = "%d games · %s free" % (len(self.items), human_size(free))
@@ -5529,8 +5576,8 @@ class LeftoversScreen(ListScreen):
 
     def load(self):
         pend = pending_roms(self.app)
-        self.app.bg(lambda: rommlib.find_leftovers(pend), self._loaded,
-                    lambda e: (setattr(self, "items", []), self.app.toast(str(e), RED)))
+        self.load_error = None
+        self.app.bg(lambda: rommlib.find_leftovers(pend), self._loaded, self.load_failed("items"))
 
     def _loaded(self, items):
         self.items = items
@@ -5580,6 +5627,8 @@ class LeftoversScreen(ListScreen):
         if self.items is None:
             text(c, self.f.h2, "Looking for leftovers…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         if not self.items:
             text(c, self.f.h3, "Nothing to clean up.", (56, 86), GREEN)
             text(c, self.f.body, "No partial files, empty game folders or copies of converted games. "
@@ -5622,7 +5671,8 @@ class BiosScreen(ListScreen):
         def loaded(rows):
             self.items = rows
             self.clamp(scroll=True)
-        app.bg(lambda: bios_rows(app), loaded, lambda e: (setattr(self, "items", []), app.toast(str(e), RED)))
+        self.load_error = None
+        app.bg(lambda: bios_rows(app), loaded, self.load_failed("items"))
 
     def crumbs(self):
         return self.trail("BIOS files")
@@ -5684,6 +5734,8 @@ class BiosScreen(ListScreen):
         if self.items is None:
             text(c, self.f.h2, "Checking BIOS files…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         if not self.items:
             text(c, self.f.h2, "No BIOS needed", (W // 2, 300), DIM, "center")
             text(c, self.f.body, "None of the systems with games on this box needs BIOS files.",
@@ -5719,6 +5771,7 @@ class AuditScreen(ListScreen):
     """Check what's on the box against RomM; damaged games can be downloaded
     again. Red: damaged or incomplete. Amber: not RomM's copy (another dump,
     a trimmed image…), which may well play."""
+    LOAD_ERROR_HEAD = "The check didn't finish"
     ROWS, ROW_H = 8, 62
 
     def __init__(self, app, deep=False):
@@ -5749,7 +5802,7 @@ class AuditScreen(ListScreen):
                     rommlib.save_audit(self.findings, self.stats, deep)
                 except OSError as e:
                     rommlib.log("audit save: %s" % e)
-        app.bg(run, done, lambda e: (setattr(self, "findings", []), app.toast(str(e), RED)))
+        app.bg(run, done, self.load_failed("findings"))
 
     base = 0            # sel of the first finding (CheckScreen puts three tiles above them)
 
@@ -5848,10 +5901,14 @@ class AuditScreen(ListScreen):
             text(c, self.f.small, "%d:%02d elapsed%s" % (secs // 60, secs % 60,
                  " · full check: checksums every file" if self.deep else ""), (W // 2, 362), FAINT, "center")
             return
+        if self.draw_load_error(c):
+            return
         st = self.stats or {}
         dmg = sum(1 for f in self.findings if f["severity"] == "damaged")
         dif = len(self.findings) - dmg
         head = "%d checked, %d matched to RomM. " % (st.get("checked", 0), st.get("matched", 0))
+        if st.get("unverified"):
+            head += "%s not verified (chdman isn't installed). " % plural(st["unverified"], "CHD")
         if not self.findings:
             text(c, self.f.h3, head + "Everything looks right.", (56, 86), GREEN)
             text(c, self.f.body, "Games not in RomM under the same file name aren't checked (%d)."
@@ -6016,8 +6073,8 @@ class UnseenScreen(ListScreen):
 
     def load(self):
         es = self.app.downloader.es
-        self.app.bg(lambda: rommlib.find_unseen(es), self._loaded,
-                    lambda e: (setattr(self, "items", []), self.app.toast(str(e), RED)))
+        self.load_error = None
+        self.app.bg(lambda: rommlib.find_unseen(es), self._loaded, self.load_failed("items"))
 
     def _loaded(self, items):
         self.items = items
@@ -6231,6 +6288,8 @@ class UnseenScreen(ListScreen):
         if self.items is None:
             text(c, self.f.h2, "Looking through roms/…", (W // 2, H // 2), DIM, "center")
             return
+        if self.draw_load_error(c):
+            return
         if not self.items:
             text(c, self.f.h3, "ES sees every game file here.", (56, 86), GREEN)
             text(c, self.f.body, "No archives a system doesn't take and no games in the wrong system folder.",
@@ -6408,9 +6467,7 @@ class ManageMenu(ActionMenu):
                 app.modal = Confirm(app, "Delete all %d discs of %s?" % (n, title),
                                     "Removes the discs and their playlist from roms/%s (%s). Saves and "
                                     "states are kept." % (system, human_size(gsize)), "Delete",
-                                    lambda: app.bg(lambda: lib.uninstall_group(group, system),
-                                                   lambda res: app.toast("Deleted %s — %s freed" % (
-                                                       title, human_size(res[1])), GREEN)), danger=True)
+                                    lambda: app.uninstall_group(group, system, title), danger=True)
             super().__init__(app, title, [
                 ("Delete all %d discs" % n, "Frees %s" % human_size(gsize), delete_set if allp else None),
                 ("Download this disc again", "Replaces this disc only", lambda: app.start_download(rom)),
@@ -6615,16 +6672,32 @@ class DownloadConfirm(Confirm):
 
 # --------------------------------------------------------------------- main
 
+def read_marker(name):
+    """A one-line marker file in the data folder (None if there's none)."""
+    try:
+        with open(os.path.join(rommlib.DATA_DIR, name)) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def write_marker(name, value):
+    """Write it whole or not at all; a full disk only means it's written next time."""
+    try:
+        rommlib.atomic_write_text(os.path.join(rommlib.DATA_DIR, name), value)
+        return True
+    except OSError as e:
+        rommlib.log("marker %s: %s" % (name, e.__class__.__name__))
+        return False
+
+
 def register_self():
     """Queue our own ES gamelist entry (name, icon, developer, release date)
     for the post-exit merge, so the pygame system lists the app by name, not a
-    folder. Re-queued whenever the version changes, so ES stays current."""
-    marker = os.path.join(rommlib.DATA_DIR, ".registered")
-    try:
-        if open(marker).read().strip() == rommlib.VERSION_LABEL:
-            return
-    except OSError:
-        pass
+    folder. Re-queued whenever the version changes, so ES stays current.
+    Never stops the app from starting (a full disk: tried again next start)."""
+    if read_marker(".registered") == rommlib.VERSION_LABEL:
+        return
     import calendar
     rel = calendar.timegm(time.strptime(rommlib.RELEASE_DATE, "%Y-%m-%d")) * 1000
     entry = {"system": "pygame", "paths": [os.path.join(APP_DIR, "rommbrowser.pygame")],
@@ -6634,10 +6707,12 @@ def register_self():
              "genres": ["Utility"], "developer": rommlib.AUTHOR, "publisher": rommlib.AUTHOR,
              "players": "1", "releasedate": rel,
              "image_local": os.path.join(APP_DIR, "icon.png")}
-    import json
-    rommlib.append_gamelist(entry)
-    with open(marker, "w") as f:
-        f.write(rommlib.VERSION_LABEL)
+    try:
+        rommlib.append_gamelist(entry)
+    except OSError as e:
+        rommlib.log("register: %s" % e.__class__.__name__)
+        return
+    write_marker(".registered", rommlib.VERSION_LABEL)
 
 
 def main():
@@ -6653,7 +6728,10 @@ def main():
     except pygame.error:
         screen = pygame.display.set_mode((W, H))
     pygame.display.set_caption(APP_NAME)
-    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    try:
+        os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    except OSError:                  # a full disk: start anyway (Free up space is in here)
+        pass
     rommlib.log("start")
     register_self()
     app = App(screen)

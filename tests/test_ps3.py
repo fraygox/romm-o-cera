@@ -335,8 +335,11 @@ def test_disc_keys_are_copied_from_romms_ps3_firmware(isolated):
         z.writestr("readme.txt", "no keys here")
     bodies = {1: inner.getvalue(), 2: b"firmware", 3: nokeys.getvalue(), 4: OTHER.hex().encode()}
 
-    class Api:
+    class Api(rommlib.Api):                     # the real download_firmware over a fake session
         base = "http://romm"
+
+        def __init__(self):
+            pass
 
         def firmware(self, pid):
             assert pid == 16

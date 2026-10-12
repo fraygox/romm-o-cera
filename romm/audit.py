@@ -131,6 +131,17 @@ def _chd_frames(path, chdman):
     return ("cd", sum(int(x) for x in f)) if f else None
 
 
+def _chd_verify(chdman, path):
+    """chdman verify: True if the CHD checks out, False if it doesn't, None if
+    chdman can't run here (not installed: that says nothing about the disc)."""
+    try:
+        p = subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", path],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+    return None if p.returncode in (126, 127) else p.returncode == 0     # nice: couldn't run it
+
+
 def _chd_vs_romm(api, chd, rom, chdman, detail_of=None):
     """A CHD converted on the box against RomM's original (zip of cue/bin, or
     iso): None if it can't be compared; False if complete; else (have, need).
@@ -189,6 +200,14 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
     severity "damaged" (unplayable/corrupt) or "differs" (not RomM's copy:
     another dump, a trimmed image… — may well play)."""
     findings, stats = [], {"checked": 0, "matched": 0, "unmatched": 0}
+
+    def verified(system, path, rom):
+        """A converted CHD in a full check: flagged only when chdman says it's bad."""
+        ok = _chd_verify(chdman, path)
+        if ok is None:
+            stats["unverified"] = stats.get("unverified", 0) + 1
+        elif not ok:
+            add(system, path, "CHD failed chdman verify", rom)
 
     def add(system, path, problem, rom=None, severity="damaged"):
         findings.append({"system": system, "path": path, "problem": problem,
@@ -343,10 +362,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 if os.path.isfile(path) and low.endswith(".chd") and \
                         not (rom.get("fs_name") or "").lower().endswith(".chd"):
                     if deep:                                   # converted here: chdman checks itself
-                        p = subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", path],
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-                        if p.returncode != 0:
-                            add(system, path, "CHD failed chdman verify", rom)
+                        verified(system, path, rom)
                     continue
                 try:
                     detail = records.get(rom["id"])
@@ -399,9 +415,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                     if not os.path.exists(fp) and st in chds:
                         converted.add(chds[st])
                 for c in converted:
-                    if deep and subprocess.run(["nice", "-n", "19", chdman, "verify", "-i", c],
-                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
-                        add(system, c, "CHD failed chdman verify", rom)
+                    if deep:
+                        verified(system, c, rom)
                 for fp, f in want:
                     if cancel is not None and cancel.is_set():
                         return findings, stats

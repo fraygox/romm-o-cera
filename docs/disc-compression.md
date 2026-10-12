@@ -65,7 +65,9 @@ downloads keep just the game partition — in place where the drive allows
 (instant, no extra space), otherwise through a copy. Files named `.xiso` are
 renamed `.iso`, because EmulationStation's Xbox list doesn't include `.xiso`.
 Images that are already bootable are left alone, so a RomM library of XISOs
-costs nothing.
+costs nothing. Xbox games already on the box get the same treatment from
+[Compress games already here](on-this-box.md#compress-games-already-here),
+listed as "to bootable .iso" while Xbox to squashfs is off.
 
 Check games knows a game partition cut here is exactly one partition smaller
 than RomM's copy and doesn't flag it.

@@ -507,6 +507,40 @@ def start_conversions(python=None):
     return conversions_pending() and _core.spawn_detached("rb_chd.py", python)
 
 
+def _converting_now(name):
+    try:
+        with open(_core.chd_current_path()) as f:
+            return json.load(f).get("task") == name
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def queue_task_first(name):
+    """Move a waiting conversion to the front of the queue. False when the
+    worker started it meanwhile (renaming it then would run it twice) or it's
+    gone (finished, or removed)."""
+    if _converting_now(name):
+        return False
+    try:
+        os.replace(os.path.join(_core.CHD_QUEUE_DIR, name),
+                   os.path.join(_core.CHD_QUEUE_DIR, "0000000000000-" + name))
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def drop_queue_task(name):
+    """Take a waiting conversion out of the queue (the original stays). False
+    when the worker started it meanwhile or it's gone already."""
+    if _converting_now(name):
+        return False
+    try:
+        os.remove(os.path.join(_core.CHD_QUEUE_DIR, name))
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def publish_queue_task(task, name, exclusive=False):
     """Put a conversion task in the queue whole: the worker lists *.json while
     tasks are written, so it's written under a temp name (not .json) and then

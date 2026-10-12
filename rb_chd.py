@@ -868,10 +868,9 @@ def convert(task):
                 note("chd: m3u exists, not overwriting %s" % primary)
                 primary = None
             else:
-                with open(primary, "w") as f:
-                    f.write("\n".join(os.path.basename(m) for m in made) + "\n")
-                    f.flush()
-                    os.fsync(f.fileno())
+                # whole or not at all: a cut-short playlist would never be rewritten (it exists)
+                rommlib.atomic_write_text(primary, "\n".join(os.path.basename(m) for m in made) + "\n",
+                                          errors="surrogateescape")
                 _sync_dir(out_dir)
         hide = made if primary else []
         primary = primary or made[0]
@@ -1010,7 +1009,10 @@ def work(lockf):
         except Exception as e:
             note("chd: error on %s: %r" % (tasks[0], e))
             record(tasks[0], task if isinstance(task, dict) else {}, "failed")
-        os.remove(path)
+        try:
+            os.remove(path)
+        except FileNotFoundError:           # taken out of the queue (Conversions) while it ran
+            pass
         try:
             os.remove(cur)
         except OSError:
