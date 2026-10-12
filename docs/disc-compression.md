@@ -8,7 +8,8 @@ box can be compressed too (see
 [Converting a library you already have](#converting-a-library-you-already-have)).
 
 Progress: **On this box → Conversions** (or L2/R2 in Downloads), and
-`/userdata/system/romm-browser/romm-browser.log`.
+`/userdata/system/romm-browser/romm-browser.log` (older lines in
+`romm-browser.log.1` … `.9`; a new file starts every 10 MB).
 
 ## CHD (CD systems, PS2, PSP) — on by default
 

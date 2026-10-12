@@ -178,13 +178,47 @@ def append_gamelist(*entries):
             os.fsync(f.fileno())
 
 
+LOG_MAX = 10 * 1024 * 1024     # romm-browser.log moves to .1 at this size
+LOG_KEEP = 9                   # old logs kept: .1 (newest) ... .9
+
+
 def log(msg):
+    """Append a line to romm-browser.log. The app and every worker write it at
+    once: each line is one O_APPEND write, so lines never mix, and the writer
+    that takes the file past LOG_MAX rotates it (see _rotate_log)."""
+    data = (time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n").encode("utf-8", "backslashreplace")
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
-        with open(LOG_PATH, "a") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+        fd = os.open(LOG_PATH, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, data)
+            full = os.fstat(fd).st_size >= LOG_MAX
+        finally:
+            os.close(fd)
+        if full:
+            _rotate_log()
     except OSError:
         pass
+
+
+def _rotate_log():
+    """romm-browser.log -> .1 -> .2 ... -> .9 (dropped), under a lock. Whoever
+    gets the lock second finds a fresh log and leaves it. A writer still
+    holding the old file appends to .1: nothing is lost."""
+    import fcntl
+    with open(LOG_PATH + ".lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            if os.path.getsize(LOG_PATH) < LOG_MAX:
+                return
+        except OSError:
+            return
+        for i in range(LOG_KEEP - 1, 0, -1):
+            try:
+                os.replace("%s.%d" % (LOG_PATH, i), "%s.%d" % (LOG_PATH, i + 1))
+            except FileNotFoundError:
+                pass
+        os.replace(LOG_PATH, LOG_PATH + ".1")
 
 
 def sync_file(path):
