@@ -15,6 +15,7 @@ from rbui.screens.text_input import TextInputScreen
 from rbui.screens.about import CreditsScreen, docs_qr, DocsScreen, draw_qr
 from rbui.screens.box_data import UPDATE_WAITS
 from rbui.screens.bios import BiosScreen
+from rbui.screens.themes import ThemePickerScreen
 from rbui.modals import Confirm
 
 
@@ -258,6 +259,8 @@ class SettingsScreen(Screen):
         key = items[min(self.sel, len(items) - 1)][0]
         if key in self.STEPLESS:
             return [("A", "Open" if key in ("bios", "credits", "docs") else "Select"), ("B", "Back")]
+        if key == "theme":
+            return [("A", "All themes"), ("LEFT RIGHT", "Choose"), ("B", "Back")]
         return [("A", "Change"), ("LEFT RIGHT", "Choose"), ("B", "Back")]
 
     def selectable(self):
@@ -348,6 +351,8 @@ class SettingsScreen(Screen):
                 cfg["swap_ab"] = not cfg["swap_ab"]
                 app.apply_config()
                 app.toast("Confirm is now the %s button" % ("east" if cfg["swap_ab"] else "south"))
+            elif key == "theme" and a == "ok":
+                app.push(ThemePickerScreen(app))    # every theme as a card, previewed live
             elif key == "theme":
                 keys = self.THEME_CYCLE
                 cur = cfg["theme"] if cfg["theme"] in keys else "default"

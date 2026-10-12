@@ -173,6 +173,60 @@ PALETTE = ("BG", "BG2", "PANEL", "PANEL_HI", "LINE", "TEXT", "DIM", "FAINT", "AC
 _DEFAULT_PALETTE = {k: globals()[k] for k in PALETTE}
 
 
+# Settings → Theme's picker: the cards, in groups. A theme's "_oled" twin is its card's OLED switch,
+# not a card of its own (Red Visor exists only as OLED).
+THEME_GROUPS = (
+    ("Built in", ("default", "playstation", "xbox", "nintendo", "high_contrast", "high_contrast_light")),
+    ("Consoles", ("dmg", "virtualboy_oled", "famicom", "snes", "megadrive", "dreamcast", "gamecube", "n64",
+                  "turbografx", "neogeo", "atari", "c64")),
+    ("Screens and moods", ("phosphor", "amber", "synthwave", "sakura")),
+    ("Classic palettes", ("nord", "solarized", "dracula", "paper")),
+)
+THEME_DESC = {
+    "default": "RomM's violet on a deep indigo ink",
+    "playstation": "Deep blue, with cyan for work in progress",
+    "xbox": "Green on graphite, with mint for what's done",
+    "nintendo": "Bold red on warm charcoal; warnings in coral, never the red of the focus",
+    "high_contrast": "Pure black and white with a yellow focus",
+    "high_contrast_light": "Black on white with a blue focus, for bright rooms",
+    "dmg": "The original handheld's pea-green screen: four greens, darkest as the ground",
+    "virtualboy_oled": "Red on true black, like the 3D visor",
+    "famicom": "The red-and-white machine: maroon and cream with the gold of the cartridge labels",
+    "snes": "The 16-bit console's greys with the US pad's lavender and purple",
+    "megadrive": "Black plastic, chrome text and the 16-BIT red",
+    "dreamcast": "A light theme: console white with the orange swirl",
+    "gamecube": "The launch colour of the little cube, a touch lighter",
+    "n64": "Charcoal with the 64-bit logo's green",
+    "turbografx": "Black with the PC Engine's orange",
+    "neogeo": "Arcade black and gold, the 100-mega-shock look",
+    "atari": "Woodgrain brown and the rainbow-stripe orange",
+    "c64": "READY. Light blue on the boot screen's blue",
+    "phosphor": "A monochrome terminal, glowing green",
+    "amber": "The warm amber CRT",
+    "synthwave": "Night drive: magenta and cyan on deep purple",
+    "sakura": "Soft blossom pink on a warm dusk",
+    "nord": "Arctic blue-greys, calm and low-glare",
+    "solarized": "The classic low-contrast-noise palette, dark",
+    "dracula": "Purple-grey night with pink and green",
+    "paper": "A warm light theme for bright rooms",
+}
+
+
+def theme_base(key):
+    """The picker card a theme is on: its key without "_oled" when that's a theme of its own."""
+    return key[:-5] if key.endswith("_oled") and key[:-5] in THEMES else key
+
+
+def theme_oled(base):
+    """The OLED version of a card's theme (the theme itself when it's only OLED; None: there's none)."""
+    return base + "_oled" if base + "_oled" in THEMES else base if base.endswith("_oled") else None
+
+
+def palette_of(key):
+    """A theme's whole palette: Default's colours wherever it keeps them."""
+    return dict(_DEFAULT_PALETTE, **THEMES.get(key, THEMES["default"])[1])
+
+
 def mix(a, b, t):
     """Colour t of the way from a to b."""
     return tuple(round(x + (y - x) * t) for x, y in zip(a, b))

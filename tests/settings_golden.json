@@ -1733,25 +1733,18 @@
   },
   "bare/defaults/theme/ok": {
    "bg": 0,
-   "cfg": {
-    "theme": "default_oled"
-   },
+   "cfg": {},
    "gone": [],
    "modal": null,
    "prune": [],
-   "pushed": [],
+   "pushed": [
+    "ThemePickerScreen"
+   ],
    "reconnect": false,
    "saved": null,
-   "sfx": [
-    "toggle"
-   ],
+   "sfx": [],
    "sfx_level": [],
-   "toasts": [
-    [
-     "config.json can't be read: this change is not saved (Settings, Reset settings)",
-     "AMBER"
-    ]
-   ],
+   "toasts": [],
    "wake": 0
   },
   "bare/defaults/theme/right": {
@@ -3610,18 +3603,16 @@
   },
   "full/changed/theme/ok": {
    "bg": 0,
-   "cfg": {
-    "theme": "nintendo"
-   },
+   "cfg": {},
    "gone": [],
    "modal": null,
    "prune": [],
-   "pushed": [],
-   "reconnect": false,
-   "saved": "cfg",
-   "sfx": [
-    "toggle"
+   "pushed": [
+    "ThemePickerScreen"
    ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -5438,18 +5429,16 @@
   },
   "full/defaults/theme/ok": {
    "bg": 0,
-   "cfg": {
-    "theme": "default_oled"
-   },
+   "cfg": {},
    "gone": [],
    "modal": null,
    "prune": [],
-   "pushed": [],
-   "reconnect": false,
-   "saved": "cfg",
-   "sfx": [
-    "toggle"
+   "pushed": [
+    "ThemePickerScreen"
    ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -7191,17 +7180,15 @@
   },
   "full/odd/theme/ok": {
    "bg": 0,
-   "cfg": {
-    "theme": "default_oled"
-   },
+   "cfg": {},
    "gone": [],
    "modal": null,
    "prune": [],
-   "pushed": [],
-   "reconnect": false,
-   "sfx": [
-    "toggle"
+   "pushed": [
+    "ThemePickerScreen"
    ],
+   "reconnect": false,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -8993,18 +8980,16 @@
   },
   "tools/changed/theme/ok": {
    "bg": 0,
-   "cfg": {
-    "theme": "nintendo"
-   },
+   "cfg": {},
    "gone": [],
    "modal": null,
    "prune": [],
-   "pushed": [],
-   "reconnect": false,
-   "saved": "cfg",
-   "sfx": [
-    "toggle"
+   "pushed": [
+    "ThemePickerScreen"
    ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -10845,18 +10830,16 @@
   },
   "tools/defaults/theme/ok": {
    "bg": 0,
-   "cfg": {
-    "theme": "default_oled"
-   },
+   "cfg": {},
    "gone": [],
    "modal": null,
    "prune": [],
-   "pushed": [],
-   "reconnect": false,
-   "saved": "cfg",
-   "sfx": [
-    "toggle"
+   "pushed": [
+    "ThemePickerScreen"
    ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
    "sfx_level": [],
    "toasts": [],
    "wake": 0
@@ -11319,7 +11302,7 @@
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
-  "theme": "Colours for the whole app: Default (RomM violet), PlayStation, Xbox and Kyoto, each also as OLED (pure black, for OLED TVs), High contrast and High contrast light, and twenty more after old consoles, screens and classic palettes. Every one is as easy to read as Default.",
+  "theme": "Colours for the whole app. {A} shows every theme as a card, and the whole app takes it on as you move: {A} keeps it, {B} goes back. {Y} turns on a card's OLED version (pure black). Left and right step through them here. Every theme is as easy to read as Default.",
   "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it (PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast themes are always kept.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
@@ -11697,7 +11680,7 @@
   "theme": [
    [
     "A",
-    "Change"
+    "All themes"
    ],
    [
     "LEFT RIGHT",
@@ -11995,7 +11978,7 @@
     "theme",
     "Theme",
     "Xbox OLED",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -12261,7 +12244,7 @@
     "theme",
     "Theme",
     "Default",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -12527,7 +12510,7 @@
     "theme",
     "Theme",
     "Default",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -12793,7 +12776,7 @@
     "theme",
     "Theme",
     "Xbox OLED",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -13053,7 +13036,7 @@
     "theme",
     "Theme",
     "Default",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -13313,7 +13296,7 @@
     "theme",
     "Theme",
     "Default",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -13573,7 +13556,7 @@
     "theme",
     "Theme",
     "Xbox OLED",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",
@@ -13833,7 +13816,7 @@
     "theme",
     "Theme",
     "Default",
-    "Colours for the whole app; OLED: pure black"
+    "Colours for the whole app, previewed live"
    ],
    [
     "themeauto",

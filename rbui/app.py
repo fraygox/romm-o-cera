@@ -816,6 +816,7 @@ class App:
             return
         if a == "start" and len(self.stack) > 1 and not getattr(self.stack[-1], "own_start", False):
             del self.stack[1:]
+            apply_theme(self.theme_key())          # a theme being previewed (Settings, Theme) isn't kept
             self.stack[0].enter()
             return
         self.stack[-1].action(a)

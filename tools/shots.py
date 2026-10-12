@@ -276,6 +276,17 @@ def settings_at(key):
     return s
 
 
+def picker_at(key, oled=False):
+    """Settings, Theme's picker with the cursor on a theme (previewed, as moving there would)."""
+    app.push(settings_at("theme"))
+    p = rb.ThemePickerScreen(app)
+    app.push(p)
+    p.go(p.items.index(key))
+    if oled:
+        p.oled.add(key)
+    p.preview()
+
+
 # (name, setup) — setup pushes a screen / opens a modal; returns an optional
 # "ready" predicate (default: no background work pending)
 SCENES = [
@@ -313,6 +324,11 @@ SCENES = [
     ("settings-docs", lambda: app.push(settings_at("docs"))),
     ("docs", lambda: (app.push(rb.SettingsScreen(app)), app.push(rb.DocsScreen(app)))),
     ("settings-updates", lambda: app.push(settings_at("checkupdates"))),
+    ("theme-picker", lambda: picker_at(rb.theme_base(app.cfg["theme"]))),
+    ("theme-picker-consoles", lambda: picker_at("famicom")),
+    ("theme-picker-light", lambda: picker_at("dreamcast")),
+    ("theme-picker-moods", lambda: picker_at("synthwave")),
+    ("theme-picker-oled", lambda: picker_at("playstation", oled=True)),
     ("url-edit", lambda: app.push(rb.TextInputScreen(app, "RomM server URL", "https://romm.example.com",
                                                      lambda v: None))),
     ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),
@@ -364,6 +380,7 @@ def reset():
     if os.path.exists(ENC3DS):
         os.remove(ENC3DS)
     del app.stack[1:]
+    rb.apply_theme(app.theme_key())          # a theme a picker scene previewed
     app.modal = None
     app.toasts = []
     app._after = None

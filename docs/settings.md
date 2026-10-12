@@ -69,7 +69,15 @@ white). Twenty more:
 - **Classic palettes**: Nord, Solarized, Dracula and Paper (a warm light
   theme).
 
-Left and right change the theme, and the app repaints straight away. Every
+Confirm on **Theme** opens the theme picker: every theme as a card with a
+small picture of the app in its colours, grouped as above. Moving onto a card
+puts the whole app in that theme straight away, so you see it for real;
+confirm keeps it, back puts the one you had back. **Y** switches a card to its
+OLED version (cards that have one show an OLED pill; Red Visor is only OLED).
+The side panel names the theme, says what it's after, shows what its colours
+mean (focus, ready, working, problem, info) and a row at its real size. A
+tick marks the theme you use. Left and right on the Theme row still step
+through the themes without opening the picker. Every
 theme keeps text at least as readable as Default, and warnings never share a
 colour with the highlight (in Kyoto, warnings are coral, not red). A new
 install starts on Default.

@@ -94,3 +94,115 @@ def test_settings_theme_row_cycles_and_repaints_at_once(ui, rb):
     rb.apply_theme("default")
     assert rb.App(None, headless=True).cfg["theme"] == last
     assert rb.ACCENT == rb.THEMES[last][1]["ACCENT"]                 # applied again at start
+
+
+# ------------------------------------------------------------ the picker
+
+def test_every_theme_has_a_card_or_is_a_cards_oled_version(rb):
+    cards = [k for _, keys in rb.THEME_GROUPS for k in keys]
+    assert len(cards) == len(set(cards)) and cards[0] == "default"
+    reach = set(cards) | {rb.theme_oled(k) for k in cards if rb.theme_oled(k)}
+    assert reach == set(rb.THEMES)
+    assert all(rb.THEME_DESC.get(k) for k in cards)
+    assert rb.theme_oled("virtualboy_oled") == "virtualboy_oled" and rb.theme_oled("dmg") is None
+    assert rb.theme_base("xbox_oled") == "xbox" and rb.theme_base("virtualboy_oled") == "virtualboy_oled"
+
+
+def _picker(app, rb):
+    st = rb.SettingsScreen(app)
+    app.push(st)
+    st.sel = [r[0] for r in st.items()].index("theme")
+    st.action("ok")
+    pk = app.stack[-1]
+    assert isinstance(pk, rb.ThemePickerScreen) and pk.crumbs() == ["Settings", "Theme"]
+    return st, pk
+
+
+def test_moving_previews_b_puts_the_old_theme_back_a_keeps_it(ui, rb):
+    app = ui
+    st, pk = _picker(app, rb)
+    assert pk.key() == "default"
+    pk.action("right")
+    assert pk.key() == "playstation" and rb.ACCENT == rb.THEMES["playstation"][1]["ACCENT"]
+    assert app.cfg["theme"] == "default" and rommlib.load_config()["theme"] == "default"   # only a preview
+    pk.action("back")
+    assert app.stack[-1] is st and rb.ACCENT == rb._DEFAULT_PALETTE["ACCENT"]
+    st.action("ok")
+    pk = app.stack[-1]
+    pk.action("y")                                                    # Default's OLED version
+    assert pk.key() == "default_oled" and rb.BG == (0, 0, 0)
+    pk.action("ok")
+    assert app.stack[-1] is st and app.cfg["theme"] == "default_oled"
+    assert rommlib.load_config()["theme"] == "default_oled" and rb.BG == (0, 0, 0)
+    st.action("ok")                                                   # an OLED theme: every card starts OLED
+    pk = app.stack[-1]
+    assert pk.key() == "default_oled"
+    pk.action("right")
+    assert pk.key() == "playstation_oled"
+    app.dispatch("start")                                             # Home: the saved theme, not the preview
+    assert len(app.stack) == 1 and rb.THEMES["default_oled"][1]["PANEL"] == rb.PANEL
+
+
+def test_the_grid_moves_by_row_column_and_group(ui, rb):
+    app = ui
+    _, pk = _picker(app, rb)
+    pk.action("down")
+    assert pk.key() == "high_contrast"                                # Built in's second row
+    pk.action("right")
+    pk.action("up")
+    assert pk.key() == "playstation"
+    pk.action("down")
+    pk.action("down")
+    assert pk.key() == "virtualboy_oled"                              # into Consoles, same column
+    pk.action("y")                                                    # only OLED: stays
+    assert pk.key() == "virtualboy_oled"
+    pk.action("r1")
+    assert pk.key() == "phosphor"
+    pk.action("r1")
+    pk.action("l1")
+    assert pk.key() == "phosphor"                                     # back to the start of the group before
+    pk.action("l1")
+    assert pk.key() == "dmg"
+    for _ in range(40):
+        pk.action("down")
+    assert pk.sel == len(pk.items) - 4 or pk.cell(pk.sel)[0] == len(pk.groups) - 1
+
+
+@pytest.mark.parametrize("k", [1.0, 1.5, 3.0])
+def test_the_picker_draws_at_every_scale_and_taps_preview_then_keep(ui, rb, monkeypatch, k):
+    import pygame
+    app = ui
+    monkeypatch.setattr(rb.theme, "K", k)
+    app.canvas = pygame.Surface((rb.S(rb.W), rb.S(rb.H)))
+    _, pk = _picker(app, rb)
+    for _ in range(len(pk.items)):                                    # every card, scrolled into view
+        app.targets = []
+        pk.draw(app.canvas)
+        view = pygame.Rect(0, pk.TOP - 4, rb.W, pk.BOTTOM - pk.TOP + 8)
+        assert app.targets and all(view.contains(r) for r, _ in app.targets)
+        pk.action("right")
+    pk.drawn_at = None
+    app.targets = []
+    pk.draw(app.canvas)
+    taps = [fn for r, fn in app.targets if fn.__defaults__ and fn.__name__ == "<lambda>"]
+    taps[0]()                                                         # first tap: a preview
+    assert app.stack[-1] is pk and app.cfg["theme"] == "default"
+    want = pk.key()
+    taps[0]()                                                         # the same card again: keep it
+    assert app.cfg["theme"] == want and app.stack[-1] is not pk
+
+
+def test_match_theme_to_controller_still_wins_and_says_so(ui, rb):
+    app = ui
+    app.cfg["theme_auto"] = True
+    app.input.names = lambda: ["Xbox Wireless Controller"]
+    app.apply_config()
+    assert rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"]
+    _, pk = _picker(app, rb)
+    pk.go(pk.items.index("synthwave"))
+    pk.draw(app.canvas)
+    said = []
+    app.toast = lambda msg, color=None: said.append(msg)
+    pk.action("ok")
+    assert app.cfg["theme"] == "synthwave" and rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"]
+    assert said and "Match theme to controller" in said[0] and "Xbox" in said[0]

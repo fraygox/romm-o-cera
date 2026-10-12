@@ -182,10 +182,10 @@ SETTINGS = (
             valid=lambda v: v in ("normal", "quiet", "off"),
             help="Clicks and chimes while you browse."),
     Setting("theme", "default",         # colours: a THEMES key (rbui/theme.py), e.g. default, xbox_oled, synthwave
-            row="theme", label="Theme", sub="Colours for the whole app; OLED: pure black",
-            help="Colours for the whole app: Default (RomM violet), PlayStation, Xbox and Kyoto, each also as OLED "
-                 "(pure black, for OLED TVs), High contrast and High contrast light, and twenty more after old "
-                 "consoles, screens and classic palettes. Every one is as easy to read as Default."),
+            row="theme", label="Theme", sub="Colours for the whole app, previewed live",
+            help="Colours for the whole app. {A} shows every theme as a card, and the whole app takes it on as "
+                 "you move: {A} keeps it, {B} goes back. {Y} turns on a card's OLED version (pure black). Left "
+                 "and right step through them here. Every theme is as easy to read as Default."),
     Setting("update_channel", "stable",  # stable: releases only; nightly: also the nightly build
             row="channel", label="Update channel", sub="Stable releases, or nightly builds",
             kind="choice", choices=("stable", "nightly"), effects=("update_channel",),
