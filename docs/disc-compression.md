@@ -3,7 +3,9 @@
 Disc games can be compressed in the background after they download. All of
 it is lossless, runs only while no game is playing (a conversion pauses when
 you start one), and checks the result against the original before the
-original is deleted. Settings → **Disc compression**.
+original is deleted. Settings → **Disc compression**. Games already on the
+box can be compressed too (see
+[Converting a library you already have](#converting-a-library-you-already-have)).
 
 Progress: **On this box → Conversions** (or L2/R2 in Downloads), and
 `/userdata/system/romm-browser/romm-browser.log`.
@@ -12,8 +14,9 @@ Progress: **On this box → Conversions** (or L2/R2 in Downloads), and
 
 **Compress disc games to CHD**: PlayStation, Saturn, Dreamcast, Mega CD, PC
 Engine CD, Neo Geo CD, 3DO and the other CD systems, plus PS2 and PSP (PSP
-with 2048-byte hunks, which PPSSPP reads fastest). chdman verifies each CHD
-before the original goes.
+with 2048-byte hunks, which PPSSPP reads fastest). PS2 and PSP games that
+come as CD images (cue/bin) become CHD too, not only DVD `.iso` files. chdman
+verifies each CHD before the original goes.
 
 - A folder holding two releases of a game (say the original and a "Dual Shock
   Ver.") becomes one playlist per release.
@@ -108,7 +111,26 @@ by in <in@fishtank.com>. Before the image is deleted:
 The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 `.zar`'s footer (quick) or its whole SHA-256 (full).
 
+## Safety
+
+- The new file is flushed to disk before any original is deleted, so a power
+  cut can't leave you with neither.
+- If a game's files change or disappear while it's being converted (a fresh
+  download, a delete), the conversion is dropped and the files are left as
+  they are.
+- A conversion cut off by a shutdown just after its new file was written is
+  finished on the next try, instead of leaving both copies listed.
+- A `.cue` or `.gdi` naming a file outside the game's folder is refused.
+
 ## Converting a library you already have
+
+**On this box → Compress games already here** lists, system by system, the
+disc games on the box that could still be compressed. Compress one game or a
+whole system (a whole system can take hours). CHD works even with its switch
+off; RVZ, squashfs, .zcci and .zar need theirs on. Details in
+[On this box](on-this-box.md#compress-games-already-here).
+
+Over SSH, `rb_chd_plan.py` does the same:
 
 ```sh
 ssh root@<box>
@@ -119,9 +141,10 @@ python3 rb_chd_plan.py                                   # queue the rest
 setsid nohup python3 rb_chd.py >/dev/null 2>&1 &
 ```
 
-It queues CD/DVD games for CHD, GameCube/Wii images for RVZ and 3DS games for
-`.zcci` and Xbox 360 images for `.zar` when those are on (encrypted 3DS dumps
-are listed and skipped).
+It queues CD/DVD games for CHD (even with CHD turned off), and GameCube/Wii
+images for RVZ, 3DS games for `.zcci` and Xbox 360 images for `.zar` when
+those are on (encrypted 3DS dumps are listed and skipped). Games already
+queued are left out.
 Xbox: with Make Xbox images bootable on, full disc images are cut to their
 game partition and `.xiso` files renamed right away; with Xbox to squashfs on,
 the images are then queued for packing.

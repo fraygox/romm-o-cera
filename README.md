@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.6.8).** It works on the author's box every day, but it
+**Early software (v0.7.0).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested
 against **RomM 5.4** (5.3 works too). Draws natively at any resolution, 720p
@@ -21,7 +21,7 @@ to 4K.
 | ![Conversions: CHD and RVZ in the background](screenshots/conversions.png) | ![Settings in sections, with help](screenshots/settings.png) |
 | ![On this box](screenshots/on-this-box.png) | ![Manage a game on the box](screenshots/manage.png) |
 | ![Space: the whole drive, then each system](screenshots/storage.png) | ![Free up space](screenshots/free-up.png) |
-| ![Credits and licenses](screenshots/credits.png) | |
+| ![Compress games already on the box, one system at a time](screenshots/compress.png) | ![Credits and licenses](screenshots/credits.png) |
 
 <sub>Screenshots come from `tools/mock_romm.py`: freely distributed homebrew /
 open-source games plus invented "lorem ipsum" titles, with generated covers.</sub>
@@ -39,12 +39,13 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   to overnight hours.
 - **Manage the box** from one menu that shows its state at a glance: delete
   games (saves are kept), see where the space went, free up space, clean up
-  leftovers, fetch missing BIOS files from RomM, check for damaged or cut-short
-  games and replace them.
+  leftovers, compress games already on the box, fetch missing BIOS files from
+  RomM, check for damaged or cut-short games and replace them.
   → [On this box](docs/on-this-box.md)
 - **Compress discs in the background**, lossless and verified: CHD for CD
   systems, PS2 and PSP; RVZ for GameCube and Wii; squashfs for Xbox; .zcci for 3DS; .zar for Xbox 360. Xbox
-  downloads are made bootable for xemu. → [Disc compression](docs/disc-compression.md)
+  downloads are made bootable for xemu. Games already on the box can be
+  compressed too, one or a whole system at a time. → [Disc compression](docs/disc-compression.md)
 - **Feels native**: button labels match your controller (Xbox, PlayStation,
   Nintendo) or keyboard, settings explain themselves, updates install from the
   box with one-step rollback. → [Controls](docs/controls.md),
@@ -92,18 +93,20 @@ Plain HTTP, self-signed certificates and auth proxies:
 
 On the box: **Settings → Updates**. It downloads the latest release from
 GitHub, checks it against the release's SHA256SUMS, confirms every file stays
-inside the app folder and compiles, then swaps it in and keeps the previous
-version ("Go back to the previous version" appears below Updates). Re-running
-the install one-liner works too. Your config, queue and logs are never touched.
+inside the app folder and compiles, then swaps it in (in one step where the
+drive allows it, so a power cut can't leave you without the app) and keeps the
+previous version ("Go back to the previous version" appears below Updates).
+Re-running the install one-liner works too, and puts back an app folder that
+went missing. Your config, queue and logs are never touched.
 
 ## Documentation
 
 | | |
 |---|---|
 | [Browsing and downloading](docs/browsing-and-downloading.md) | finding games, the queue, space, download hours, game info |
-| [On this box](docs/on-this-box.md) | installed games, space, BIOS, Check games, conversions, game info |
+| [On this box](docs/on-this-box.md) | installed games, space, compressing what's here, BIOS, Check games, conversions, game info |
 | [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, 3DS, Xbox 360, converting a library you already have |
-| [Settings](docs/settings.md) | every setting and `config.json` key |
+| [Settings](docs/settings.md) | every setting and `config.json` key, resetting settings |
 | [Connecting to RomM](docs/connecting.md) | HTTPS, certificates, network share, auth proxies |
 | [Controls](docs/controls.md) | controller, keyboard, touch |
 | [Development](docs/development.md) | no-box development, screenshots, tests, files |

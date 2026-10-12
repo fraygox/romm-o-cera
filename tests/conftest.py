@@ -29,6 +29,18 @@ PATH_ATTRS = ("DATA_DIR", "ROMS_ROOT", "CONFIG_PATH", "STATE_PATH", "GAMELIST_QU
 
 
 @pytest.fixture(autouse=True)
+def _fast_polls(monkeypatch):
+    """Poll intervals that only set how soon a wait notices it is over: the
+    download/unpack workers re-check their queue (a retry or space re-check
+    falling due) every WORKER_POLL s, and rb_chd checks a running converter
+    every TOOL_POLL s. Production keeps 1 s / 3 s; tests run the same loops,
+    just without idling up to a second or three per wait."""
+    import rb_chd
+    monkeypatch.setattr(rommlib, "WORKER_POLL", 0.05)
+    monkeypatch.setattr(rb_chd, "TOOL_POLL", 0.05)
+
+
+@pytest.fixture(autouse=True)
 def _stop_workers():
     """Each test's download workers stop before the next test starts (they'd
     otherwise keep writing into whatever paths the next test patches in)."""
@@ -75,13 +87,12 @@ def _free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="session")
-def mock_url():
-    """tools/mock_romm.py on a free port for the whole session."""
+def _run_mock(rate_mb):
+    """tools/mock_romm.py on a free port; yields its URL, stops it after."""
     pytest.importorskip("PIL")
     port = _free_port()
     p = subprocess.Popen([sys.executable, os.path.join(APP, "tools", "mock_romm.py"),
-                          "--port", str(port), "--rate-mb", "400"],
+                          "--port", str(port), "--rate-mb", str(rate_mb)],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     url = "http://127.0.0.1:%d" % port
     import requests
@@ -97,6 +108,21 @@ def mock_url():
     yield url
     p.terminate()
     p.wait(5)
+
+
+@pytest.fixture(scope="session")
+def mock_url():
+    """tools/mock_romm.py on a free port for the whole session, throttled to
+    400 MB/s: pause/cancel/handover tests rely on a big transfer still being
+    under way when they act."""
+    yield from _run_mock(400)
+
+
+@pytest.fixture(scope="session")
+def fast_mock_url():
+    """The same mock library, unthrottled: for tests that only check what a
+    finished multi-GB download left behind."""
+    yield from _run_mock(100000)
 
 
 @pytest.fixture

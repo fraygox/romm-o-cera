@@ -67,7 +67,7 @@ def _serve(payload):
             self.end_headers()
             self.wfile.write(payload)
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    threading.Thread(target=srv.serve_forever, args=(0.05,), daemon=True).start()   # quick shutdown()
     return srv, "http://127.0.0.1:%d/dt.tar.gz" % srv.server_address[1]
 
 
@@ -238,18 +238,18 @@ def test_overlap_off_is_sequential(isolated, mock_url, monkeypatch):
 
 # ------------------------------------------------------------ control glyphs
 
-def test_glyph_helper_tokens_and_wrapping(rb):
+def test_glyph_helper_tokens_and_wrapping(rb, monkeypatch):
     import pygame
     pygame.init()
     fonts = rb.Fonts()
     assert set(rb.TOKEN_ACTION) <= set(rb.TOKENS)
-    for st in ("xbox", "playstation", "nintendo"):
-        rb.PAD_STYLE["style"] = st
+    for st in ("xbox", "playstation", "nintendo"):     # setitem: the style is put back afterwards
+        monkeypatch.setitem(rb.PAD_STYLE, "style", st)
         for kb in (False, True):
-            rb.INPUT_MODE["kb"] = kb
+            monkeypatch.setitem(rb.INPUT_MODE, "kb", kb)
             for t in rb.TOKENS:
                 assert rb.glyph_width(fonts, t) > 0 and rb.pad_text(t)
-    rb.INPUT_MODE["kb"] = False
+    monkeypatch.setitem(rb.INPUT_MODE, "kb", False)
     lines = rb.rich_lines(fonts, fonts.body, "Press {A} to delete or {B} to keep them, then {LEFT RIGHT} to choose.", 200)
     assert len(lines) > 1 and all("{" not in l or rb.GLYPH_RE.search(l) for l in lines)
     assert all(rb.rich_width(fonts, fonts.body, l) <= 200 for l in lines)

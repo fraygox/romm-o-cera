@@ -28,31 +28,27 @@ import rb_chd  # noqa: E402
 
 ORDER = ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
          "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds", "xbox360"]
-SKIP_DIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"}
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 
 def games_for(system):
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
-    if system in rommlib.RVZ_SYSTEMS | rommlib.SQUASH_SYSTEMS | rommlib.Z3DS_SYSTEMS | rommlib.ZAR_SYSTEMS:
-        exts = rommlib.RVZ_SOURCES if system in rommlib.RVZ_SYSTEMS else \
-            tuple(rommlib.Z3DS_SOURCES) if system in rommlib.Z3DS_SYSTEMS else \
-            (".iso",) if system in rommlib.ZAR_SYSTEMS else (".iso", ".xiso")     # every image on its own
+    convs = rommlib.converters_for(system)
+    if convs and not any(c.chd for c in convs):
+        exts = tuple(e for c in convs for e in c.sources + c.renamed_sources)    # every image on its own
         out = []
         for dp, dns, fns in os.walk(sysdir):
-            dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
+            dns[:] = [d for d in dns if d not in rommlib.MEDIA_DIRS and not d.startswith(".")]
             out += [(os.path.join(dp, f), [os.path.join(dp, f)], None) for f in fns
                     if f.lower().endswith(exts)]
         return sorted(out, key=lambda x: x[0])
-    dvd = system in rommlib.CHD_DVD_SYSTEMS
+    # CHD: PS2/PSP ship both DVD isos and CD cue/bin games; CD systems (and a
+    # system the table doesn't know, given with --systems): cue/gdi only
+    exts = tuple(e for c in convs for e in c.sources) or rommlib.CONVERTER["createcd"].sources
     found = []
     for dp, dns, fns in os.walk(sysdir):
-        dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
-        for fn in fns:
-            low = fn.lower()
-            # PS2 ships both DVD isos and CD cue/bin games; CD systems: cue/gdi only
-            if low.endswith((".cue", ".gdi")) or (dvd and low.endswith(".iso")):
-                found.append(os.path.join(dp, fn))
+        dns[:] = [d for d in dns if d not in rommlib.MEDIA_DIRS and not d.startswith(".")]
+        found += [os.path.join(dp, fn) for fn in fns if fn.lower().endswith(exts)]
     # a .cue next to a .gdi of the same folder (some DC dumps ship both): keep the gdi
     by_dir = {}
     for p in found:
@@ -103,6 +99,108 @@ def games_for(system):
     return sorted(out, key=lambda x: (x[0], x[1]))
 
 
+def queued_sources():
+    """Every source file a queued conversion task already covers."""
+    out = set()
+    try:
+        names = os.listdir(rommlib.CHD_QUEUE_DIR)
+    except OSError:
+        return out
+    for t in names:
+        if not t.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(rommlib.CHD_QUEUE_DIR, t)) as f:
+                out.update(json.load(f)["sources"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    return out
+
+
+def candidates(systems=None, cfg=None, skipped=None):
+    """Games on the box that could still be compressed, without changing
+    anything: [{"system", "root", "files", "name", "mode", "label", "size",
+    "enabled", "setting", "xiso", "cut"}]. enabled is False when the format
+    needs its Settings switch (RVZ, .zar: they download tools); CHD isn't held
+    back by its switch here (asking for it is the point). Xbox: "xiso" when the
+    file is still named .xiso, "cut" the bytes a full redump image will lose
+    to become bootable (both done by queue(), only with Make Xbox images
+    bootable on). skipped: a list that gets (system, file, reason) for images
+    that can't be converted (e.g. encrypted 3DS dumps)."""
+    cfg = cfg if cfg is not None else rommlib.load_config()
+    queued = queued_sources()
+    out = []
+    for system in (systems or ORDER):
+        if not os.path.isdir(os.path.join(rommlib.ROMS_ROOT, system)):
+            continue
+        for root, files, name in games_for(system):
+            xiso = cut = 0
+            if system in rommlib.SQUASH_SYSTEMS:
+                bootable = cfg.get("xbox_bootable", True)
+                xiso = files[0].lower().endswith(".xiso")
+                if xiso and not bootable:
+                    continue                     # ES doesn't list .xiso; renaming is part of the setting
+                cut = (rommlib.xbox_partition(files[0]) or 0) if bootable else 0
+            # a system the table doesn't know (--systems): its cue/gdi as CD images
+            conv = rommlib.conversion_for(system, files[0], enabled=False, renamed=True) \
+                or rommlib.CONVERTER["createcd"]
+            if conv.planner_skips_done and os.path.exists(conv.output_path(files[0])):
+                continue                         # already packed (the original stays until verified)
+            if conv.check:
+                try:
+                    conv.check(files[0])
+                except (rommlib.Z3dsError, OSError) as e:
+                    if skipped is not None:
+                        skipped.append((system, files[0], str(e)))
+                    continue
+            if any(f in queued for f in files):
+                continue
+            size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f) if os.path.isfile(p))
+            out.append({"system": system, "root": root, "files": files, "name": name, "mode": conv.mode,
+                        "label": conv.label, "size": size, "setting": conv.setting_name,
+                        "enabled": conv.chd or conv.enabled(cfg, system), "xiso": xiso, "cut": cut})
+    return out
+
+
+def queue(cands, seq=None, say=None):
+    """Queue candidates (enabled ones only) for the worker, doing Xbox's
+    bootable prep first (.xiso -> .iso, cut to the game partition). Returns
+    how many were queued. say(text): progress lines (the command line)."""
+    import time
+    seq = seq or int(time.time() * 1000)
+    order = {s: i for i, s in enumerate(ORDER)}
+    queued = queued_sources()                 # the list may be older than the queue: never twice
+    n = 0
+    for c in cands:
+        if not c["enabled"] or any(f in queued for f in c["files"]):
+            continue
+        files, root = list(c["files"]), c["root"]
+        if c["xiso"]:
+            files = [rommlib.xiso_to_iso(files[0])]
+            root = files[0]
+            if say:
+                say("%-9s renamed to .iso: %s" % (c["system"], os.path.basename(files[0])))
+        if c["cut"]:
+            try:
+                rommlib.make_xiso(files[0])
+            except (rommlib.NoSpace, OSError) as e:
+                if say:
+                    say("%-9s couldn't cut %s: %s" % (c["system"], os.path.basename(files[0]), e))
+                continue
+            if say:
+                say("%-9s cut to the game partition (-%s): %s" % (
+                    c["system"], rommlib.human_size(c["cut"]), os.path.basename(files[0])))
+        task = {"system": c["system"], "mode": c["mode"], "sources": files, "roots": [root], "queued": seq}
+        if c["name"]:
+            task["name"] = c["name"]          # playlist name: the folder holds other titles too
+        k = n
+        while not rommlib.publish_queue_task(task, "%d-%02d-%05d.json" % (seq, order.get(c["system"], 99), k),
+                                             exclusive=True):
+            k += 1                            # never clobber a task from an earlier run
+        n += 1
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--systems", default=",".join(ORDER))
@@ -112,103 +210,24 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
-    queued = set()
-    for t in os.listdir(rommlib.CHD_QUEUE_DIR):
-        try:
-            queued.update(json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, t)))["sources"])
-        except (OSError, ValueError, KeyError):
-            pass
-    n = 0
+    skipped = []
+    cands = [c for c in candidates(a.systems.split(","), skipped=skipped) if c["enabled"]
+             and (not a.only or a.only.lower() in c["root"].lower())
+             and not any(x.lower() in c["root"].lower() for x in a.exclude)]
+    if a.limit:
+        cands = cands[:a.limit]
+    for system, f, why in skipped:
+        print("%-9s skipped (%s): %s" % (system, why, os.path.basename(f)))
     tot = 0
-    seq = int(__import__("time").time())
-    for si, system in enumerate(a.systems.split(",")):
-        if not os.path.isdir(os.path.join(rommlib.ROMS_ROOT, system)):
-            continue
-        for root, files, name in games_for(system):
-            if system in rommlib.RVZ_SYSTEMS:
-                if not rommlib.rvz_enabled(rommlib.load_config()):
-                    continue                     # needs Settings, GameCube and Wii to RVZ
-                mode = "rvz"
-            elif system in rommlib.ZAR_SYSTEMS:
-                if not rommlib.zar_enabled(rommlib.load_config(), system):
-                    continue                     # needs Settings, Xbox 360 to .zar (downloads its tools)
-                if os.path.exists(os.path.splitext(files[0])[0] + ".zar"):
-                    continue
-                mode = "zar"
-            elif system in rommlib.Z3DS_SYSTEMS:
-                if not rommlib.z3ds_enabled(rommlib.load_config(), system):
-                    continue                     # needs Settings, 3DS to .zcci
-                if os.path.exists(rommlib.z3ds_target(files[0])):
-                    continue                     # already packed (the original stays until verified)
-                try:
-                    rommlib.z3ds_info(files[0])
-                except (rommlib.Z3dsError, OSError) as e:
-                    print("%-9s skipped (%s): %s" % (system, e, os.path.basename(files[0])))
-                    continue
-                mode = "z3ds"
-            elif system in rommlib.SQUASH_SYSTEMS:
-                if a.only and a.only.lower() not in root.lower():
-                    continue
-                bootable = rommlib.load_config().get("xbox_bootable", True)
-                if files[0].lower().endswith(".xiso"):
-                    if not bootable:
-                        continue                 # ES doesn't list .xiso; renaming is part of the setting
-                    print("%-9s renamed to .iso: %s%s" % (system, os.path.basename(files[0]),
-                                                         " (dry run)" if a.dry_run else ""))
-                    if not a.dry_run:
-                        files = [rommlib.xiso_to_iso(files[0])]
-                        root = files[0]
-                off = rommlib.xbox_partition(files[0]) if bootable else None
-                if off:                          # a full redump image xemu can't boot
-                    print("%-9s cut to the game partition (-%s): %s%s" % (
-                        system, rommlib.human_size(off), os.path.basename(files[0]),
-                        " (dry run)" if a.dry_run else ""))
-                    if not a.dry_run:
-                        try:
-                            rommlib.make_xiso(files[0])
-                        except (rommlib.NoSpace, OSError) as e:
-                            print("          couldn't: %s" % e)
-                            continue
-                if not rommlib.squashfs_enabled(rommlib.load_config(), system):
-                    continue                     # packing needs Settings, Xbox to squashfs
-                mode = "squashfs"
-            else:
-                mode = "createdvd" if files[0].lower().endswith(".iso") else "createcd"
-            if a.only and a.only.lower() not in root.lower():
-                continue
-            if any(x.lower() in root.lower() for x in a.exclude):
-                continue
-            if any(f in queued for f in files):
-                continue
-            size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f)
-                       if os.path.isfile(p))
-            rel = os.path.relpath(root, rommlib.ROMS_ROOT)
-            print("%-9s %6.2f GB  %d disc%s  %s%s" % (system, size / 1e9, len(files),
-                                                     "" if len(files) == 1 else "s", rel,
-                                                     " [%s]" % name if name else ""))
-            tot += size
-            if not a.dry_run:
-                task = {"system": system, "mode": mode, "sources": files,
-                        "roots": [root], "queued": seq}
-                if name:
-                    task["name"] = name      # playlist name: the folder holds other titles too
-                k = n
-                while True:   # never clobber a task from an earlier run
-                    name = "%d-%02d-%05d.json" % (seq, si, k)
-                    path = os.path.join(rommlib.CHD_QUEUE_DIR, name)
-                    try:
-                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-                        break
-                    except FileExistsError:
-                        k += 1
-                with os.fdopen(fd, "w") as f:
-                    json.dump(task, f)
-            n += 1
-            if a.limit and n >= a.limit:
-                break
-        if a.limit and n >= a.limit:
-            break
-    print("%s %d games, %.1f GB" % ("would queue" if a.dry_run else "queued", n, tot / 1e9))
+    for c in cands:
+        rel = os.path.relpath(c["root"], rommlib.ROMS_ROOT)
+        print("%-9s %6.2f GB  %d disc%s  %s%s" % (c["system"], c["size"] / 1e9, len(c["files"]),
+                                                 "" if len(c["files"]) == 1 else "s", rel,
+                                                 " [%s]" % c["name"] if c["name"] else ""))
+        tot += c["size"]
+    if not a.dry_run:
+        queue(cands, say=print)
+    print("%s %d games, %.1f GB" % ("would queue" if a.dry_run else "queued", len(cands), tot / 1e9))
 
 
 if __name__ == "__main__":

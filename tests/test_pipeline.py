@@ -33,10 +33,10 @@ def _first(api, pid, pred, limit=500):
     return next(r for r in api.roms(platform_ids=[pid], limit=limit)["items"] if pred(r))
 
 
-def test_downloads_on_a_fresh_box(isolated, mock_url):
+def test_downloads_on_a_fresh_box(isolated, fast_mock_url):
     """Fresh data dir (regression: first download used to fail), cart zip kept,
     folder rom fetched file by file, nested single-file rom keeps its extension."""
-    api, d, plats = _setup(isolated, mock_url)
+    api, d, plats = _setup(isolated, fast_mock_url)
     assert not os.path.exists(rommlib.DATA_DIR)
     cart = api.roms(platform_ids=[plats["gba"]], search="anguna")["items"][0]
     folder = _first(api, plats["dreamcast"], lambda r: r["has_multiple_files"])
@@ -120,7 +120,8 @@ def test_ui_smoke(isolated, mock_url, tmp_path):
     pytest.importorskip("pygame")
     env = dict(os.environ, ROMM_URL=mock_url, ROMM_TOKEN="demo",
                ROMM_BROWSER_DATA=str(isolated / "uidata"), ROMM_BROWSER_ROMS=str(isolated / "uiroms"),
-               SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+               SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy",
+               SHOOT_SETTLE="1")       # waits end once the app has settled (their length stays the cap)
     out = tmp_path / "shots"
     out.mkdir()
     p = subprocess.run([sys.executable, os.path.join(APP, "tools", "shoot.py"), str(out), STEPS],
@@ -207,9 +208,10 @@ MULTIDISC_STEPS = (
     "act:back,act:back,act:down,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
     "act:down,act:ok,wait:0.3,act:back,"
     # Home (Settings selected; one more Back would quit) -> up to On this box: every section in
-    # turn (games, space + a system, BIOS, check + quick check, conversions, game info), then out
+    # turn (games, space + a system, compress, BIOS, check + quick check, conversions, game info), then out
     "act:up,act:ok,wait:1,shot:hub,act:ok,wait:1,shot:games,act:back,act:down,act:ok,wait:2,act:right,act:down,act:down,"
-    "act:up,act:up,shot:space,act:back,act:down,act:ok,wait:2,act:back,act:down,act:ok,act:right,act:left,"
+    "act:up,act:up,shot:space,act:back,act:down,act:ok,wait:2,shot:compress,act:back,"
+    "act:down,act:ok,wait:2,act:back,act:down,act:ok,act:right,act:left,"
     "act:ok,wait:4,act:back,shot:check,act:back,act:down,act:ok,wait:0.5,act:back,act:down,act:ok,wait:2,"
     "act:back,act:back,shot:end")
 
@@ -221,7 +223,8 @@ def test_ui_multidisc_queue_and_audit(isolated, mock_url, tmp_path):
     roms = isolated / "uiroms"
     env = dict(os.environ, ROMM_URL=mock_url, ROMM_TOKEN="demo",
                ROMM_BROWSER_DATA=str(isolated / "uidata"), ROMM_BROWSER_ROMS=str(roms),
-               SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+               SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy",
+               SHOOT_SETTLE="1")       # waits end once the app has settled (their length stays the cap)
     out = tmp_path / "shots"
     out.mkdir()
     p = subprocess.run([sys.executable, os.path.join(APP, "tools", "shoot.py"), str(out), MULTIDISC_STEPS],

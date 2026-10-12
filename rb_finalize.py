@@ -35,7 +35,7 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 
-ES = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")
+ES = rommlib.ES_API
 LOCK = os.path.join(rommlib.DATA_DIR, "finalize.lock")
 # entries ES couldn't take this time (game/system not listed yet): retried next run
 DEFERRED = os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl")
@@ -55,22 +55,13 @@ CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gi
 # ------------------------------------------------------------------ ES API
 
 def es_get(path, timeout=5):
-    with urllib.request.urlopen(ES + path, timeout=timeout) as r:
-        return r.status, r.read()
+    return rommlib.es_get(path, timeout, base=ES)
 
 
 def game_running():
-    """True when ES reports a running game (or ES is unreachable)."""
-    try:
-        status, body = es_get("/runningGame")
-    except Exception:
-        return True
-    if status != 200 or not body.strip():
-        return False
-    try:
-        return bool(json.loads(body).get("path"))
-    except ValueError:
-        return False
+    """True when ES reports a running game, this app included (or ES is unreachable)."""
+    path = rommlib.es_running_game(app_busy=True, get=es_get)
+    return path is None or bool(path)
 
 
 def wait_idle(max_wait=6 * 3600):
@@ -316,9 +307,6 @@ def merge_usage(game, usage):
     return out
 
 
-MEDIA_DIRS = ("images", "videos", "manuals")
-
-
 def removed_media(sysdir, removed):
     """Media files of uninstalled games, from gamelist.xml (read only, before
     ES reloads): those inside the system's media folders that no other entry
@@ -337,7 +325,7 @@ def removed_media(sysdir, removed):
             if v:
                 (gone if dead else keep).add(os.path.normpath(os.path.join(sysdir, v)))
     return sorted(f for f in gone - keep
-                  if any(f.startswith(os.path.join(sysdir, d) + os.sep) for d in MEDIA_DIRS))
+                  if any(f.startswith(os.path.join(sysdir, d) + os.sep) for d in rommlib.GAMELIST_MEDIA_DIRS))
 
 
 def upload_file(esapi, system, gid, tag, path):
@@ -367,7 +355,6 @@ def apply(entries, api, es, esapi, carry):
 
     for e in entries:
         system = e["system"]
-        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
         try:
             if "remove" in e:
                 for f in carry.get(("media-of-removed", id(e)), []):   # ES itself drops the games
@@ -502,10 +489,7 @@ def _write_jsonl(path, entries):
         if os.path.exists(path):
             os.remove(path)
         return
-    with open(path + ".tmp", "w") as f:
-        for e in entries:
-            f.write(json.dumps(e) + "\n")
-    os.replace(path + ".tmp", path)
+    rommlib.atomic_write_text(path, "".join(json.dumps(e) + "\n" for e in entries))
 
 
 def route_renames(entries):
@@ -559,8 +543,8 @@ def main():
     # entries ES couldn't take last time: try them again, once per run
     deferred = _read_jsonl(DEFERRED)
     if deferred:
+        rommlib.append_gamelist(*deferred)      # queue again first, then forget (entries are idempotent)
         _write_jsonl(DEFERRED, [])
-        rommlib.append_gamelist(*deferred)
     work = rommlib.GAMELIST_QUEUE + ".work"
     failures = 0
     while True:
@@ -581,12 +565,13 @@ def main():
             if os.path.exists(rommlib.GAMELIST_QUEUE):
                 with open(rommlib.GAMELIST_QUEUE, errors="replace") as f:
                     new = f.read()
-                os.remove(rommlib.GAMELIST_QUEUE)
             if old and not old.endswith("\n"):
                 old += "\n"
-            with open(work + ".tmp", "w") as f:
-                f.write(old + new)
-            os.replace(work + ".tmp", work)
+            # .work must be durable before the queue goes: a failed write or a
+            # kill in between then leaves duplicates at worst (idempotent), never nothing
+            rommlib.atomic_write_text(work, old + new)
+            if new:
+                os.remove(rommlib.GAMELIST_QUEUE)
         entries = _read_jsonl(work)
         cfg = rommlib.load_config()
         api = rommlib.Api.from_config(cfg)

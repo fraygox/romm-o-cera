@@ -6,19 +6,22 @@ Python 3.9+ (dev venvs) and 3.12 (Batocera 43).
 """
 import json
 import os
-import queue
 import re
 import shutil
+import stat
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 import requests
 
-VERSION = "0.6.9"            # changes only for a real GitHub release
+VERSION = "0.7.0"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
@@ -35,6 +38,23 @@ QUEUE_PATH = os.path.join(DATA_DIR, "download-queue.json")   # survives exit / r
 DL_LOCK = os.path.join(DATA_DIR, "downloads.lock")          # held by rb_dl.py
 DL_STOP = os.path.join(DATA_DIR, "downloads.stop")          # app asks rb_dl.py to hand over
 DL_STATUS = os.path.join(DATA_DIR, "downloads-status.json")
+
+
+# data-dir files the worker and the app share, resolved at call time (DATA_DIR can be re-pointed)
+def tmp_dir():
+    return os.path.join(DATA_DIR, "tmp")              # scratch: find_leftovers offers what's left
+
+
+def chd_lock_path():
+    return os.path.join(DATA_DIR, "chd.lock")         # held by rb_chd.py while it works
+
+
+def chd_current_path():
+    return os.path.join(DATA_DIR, "chd-current.json")  # what the worker is converting now
+
+
+def chd_results_path():
+    return os.path.join(DATA_DIR, "chd-results.jsonl")  # finished tasks, for the Conversions screen
 USERDATA = os.environ.get("ROMM_BROWSER_USERDATA") or os.path.dirname(ROMS_ROOT.rstrip("/"))
 BIOS_DB = os.environ.get("ROMM_BROWSER_BIOS_DB", "/usr/bin/batocera-systems")
 RELEASE_DATE = "2026-10-11"   # bump with VERSION (tools/build-release.sh refuses a stale one)
@@ -79,6 +99,13 @@ DISC_EXTS = {".cue", ".gdi", ".iso", ".chd", ".ccd", ".cdi", ".rvz", ".wbfs",
              ".gcm", ".gcz", ".ciso", ".cso", ".pbp", ".m3u", ".toc", ".img",
              ".mdf", ".nrg", ".wua", ".wud", ".wux", ".3ds", ".cia", ".squashfs"}
 ARCHIVE_EXTS = {".zip", ".7z", ".rar"}
+# Folders in a system folder that hold ES media, never games: scans (audit,
+# leftovers, the planner, Space) skip them, and an archive may not unpack onto them.
+MEDIA_DIRS = frozenset({"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"})
+# The subset gamelist media goes into (RomM-o-Cera's own and ES's): the only
+# folders rb_finalize deletes an uninstalled game's media from, and all a
+# system folder may hold besides gamelist.xml/_info.txt to count as "no games here".
+GAMELIST_MEDIA_DIRS = ("images", "videos", "manuals")
 # Systems where the zip IS the rom (romset name = zip name) — never extract.
 ZIP_NATIVE = {"fbneo", "mame", "neogeo", "gameandwatch"}
 # Systems whose extracted cue/gdi (createcd) or iso (createdvd) the background
@@ -135,16 +162,22 @@ DEFAULT_CONFIG = {
 ENV_OVERRIDES = {"ROMM_URL": "url", "ROMM_TOKEN": "token", "ROMM_VERIFY_TLS": "verify_tls"}
 
 
-ES_API = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")
+ES_API = os.environ.get("ROMM_BROWSER_ES", "http://127.0.0.1:1234")     # Batocera ES's HTTP API
 
 
-def es_running_game():
-    """Path of the game ES is running ('' when idle or only this app runs);
-    None when ES can't be asked."""
+def es_get(path, timeout=5, base=None):
+    """GET from ES's API: (status, body bytes). Raises when ES can't be asked."""
     import urllib.request
+    with urllib.request.urlopen((base or ES_API) + path, timeout=timeout) as r:
+        return r.status, r.read()
+
+
+def es_running_game(app_busy=False, get=None):
+    """Path of the game ES is running ('' when idle); None when ES can't be
+    asked. This app itself counts as idle unless app_busy (rb_finalize must
+    not reload ES under it). get: the (status, body) fetcher, es_get by default."""
     try:
-        with urllib.request.urlopen(ES_API + "/runningGame", timeout=5) as r:
-            status, body = r.status, r.read()
+        status, body = (get or es_get)("/runningGame")
     except Exception:
         return None
     if status != 200 or not body.strip():
@@ -152,14 +185,14 @@ def es_running_game():
     try:
         path = json.loads(body).get("path") or ""
     except (ValueError, AttributeError):
+        return ""                     # not a JSON object: as if nothing runs
+    if not isinstance(path, str):
         return ""
-    return "" if path.endswith("rommbrowser.pygame") else path
+    return "" if path.endswith("rommbrowser.pygame") and not app_busy else path
 
 
 def _es_json(path, timeout=10):
-    import urllib.request
-    with urllib.request.urlopen(ES_API + path, timeout=timeout) as r:
-        return json.loads(r.read() or b"null")
+    return json.loads(es_get(path, timeout)[1] or b"null")
 
 
 def es_game_list(systems=None):
@@ -192,6 +225,25 @@ def es_game_list(systems=None):
         raise RommError("EmulationStation didn't answer (%s)" % e.__class__.__name__)
 
 
+def m3u_entry(line):
+    """A playlist line's disc path as written; '' for a blank or # comment line."""
+    s = line.strip()
+    return "" if s.startswith("#") else s
+
+
+def m3u_lines(path):
+    """The disc paths an .m3u lists, as written (blank and # lines skipped;
+    odd bytes in names survive as-is). Raises OSError."""
+    with open(path, errors="surrogateescape") as f:
+        return [e for e in map(m3u_entry, f) if e]
+
+
+def m3u_paths(path):
+    """m3u_lines() as normalised paths, relative to the playlist's folder."""
+    d = os.path.dirname(path)
+    return [os.path.normpath(os.path.join(d, e)) for e in m3u_lines(path)]
+
+
 def game_files(path):
     """Everything that makes up the game ES lists at `path`: a playlist's
     discs, a cue/gdi's tracks — never anything outside its system folder."""
@@ -205,10 +257,8 @@ def game_files(path):
         out.append(p)
         low = p.lower()
         if low.endswith(".m3u") and os.path.isfile(p):
-            with open(p, errors="replace") as f:
-                for ln in f:
-                    if ln.strip() and not ln.startswith("#"):
-                        add(os.path.join(os.path.dirname(p), ln.strip()))
+            for q in m3u_paths(p):
+                add(q)
         elif low.endswith((".cue", ".gdi")) and os.path.isfile(p):
             for q in sheet_sources(p):
                 add(q)
@@ -361,7 +411,7 @@ def _chd_head(path, nbytes, chdman):
     """First nbytes of a CHD's track data (chdman extract*, stopped early),
     plus chdman info's text and whether it's a DVD CHD."""
     import tempfile
-    tmpdir = os.path.join(DATA_DIR, "tmp")
+    tmpdir = tmp_dir()
     os.makedirs(tmpdir, exist_ok=True)
     t = tempfile.mkdtemp(prefix="head-", dir=tmpdir)
     try:
@@ -538,16 +588,23 @@ def xbox_partition(path):
 
 def _collapse_front(path, nbytes):
     """Drop the first nbytes of a file in place (Linux fallocate collapse-range:
-    no copy, no extra space). False where the filesystem can't (exFAT, btrfs)."""
+    no copy, no extra space). False where the filesystem can't (exFAT, btrfs);
+    any other failure raises OSError (never a reason to fall back to a copy)."""
     import ctypes
     import ctypes.util
+    import errno
     try:
         libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
-        fd = os.open(path, os.O_RDWR)
     except OSError:
         return False
+    fd = os.open(path, os.O_RDWR)
     try:
-        return libc.fallocate(fd, 0x08, ctypes.c_long(0), ctypes.c_long(nbytes)) == 0   # FALLOC_FL_COLLAPSE_RANGE
+        if libc.fallocate(fd, 0x08, ctypes.c_long(0), ctypes.c_long(nbytes)) == 0:   # FALLOC_FL_COLLAPSE_RANGE
+            return True
+        err = ctypes.get_errno()
+        if err in (errno.EOPNOTSUPP, errno.ENOTSUP, errno.ENOSYS):
+            return False
+        raise OSError(err, os.strerror(err), path)
     finally:
         os.close(fd)
 
@@ -556,22 +613,34 @@ def make_xiso(path, free=None):
     """Make a full redump Xbox image bootable: keep only its game partition.
     In place when the filesystem allows, else through a copy (needs the
     room). Returns the bytes dropped (0 if it was already an XISO, or isn't
-    an Xbox image); raises NoSpace when a copy doesn't fit."""
-    off = xbox_partition(path)
-    if not off:
-        return 0
-    if _collapse_front(path, off):
+    an Xbox image); raises NoSpace when a copy doesn't fit. Locked per image
+    and re-checked under the lock: two callers (rb_chd_plan and the worker)
+    must never both cut the same image."""
+    import fcntl
+    with open(path, "rb") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        off = xbox_partition(path)
+        if not off:
+            return 0
+        size = os.path.getsize(path)
+        if size <= off:
+            raise OSError("%s is smaller than its game partition's offset; left as it is" % path)
+        if _collapse_front(path, off):
+            return off
+        free = free_bytes(os.path.dirname(path)) if free is None else free
+        if free < size - off + SPACE_MARGIN:
+            raise NoSpace(size - off + SPACE_MARGIN - free)
+        tmp = path + ".xiso.part"
+        with open(path, "rb") as src, open(tmp, "wb") as out:
+            src.seek(off)
+            shutil.copyfileobj(src, out, 4 << 20)
+            out.flush()
+            os.fsync(out.fileno())
+        if os.path.getsize(tmp) != size - off:
+            os.remove(tmp)
+            raise OSError("copying %s's game partition came up short; left as it is" % path)
+        os.replace(tmp, path)
         return off
-    size = os.path.getsize(path)
-    free = free_bytes(os.path.dirname(path)) if free is None else free
-    if free < size - off + SPACE_MARGIN:
-        raise NoSpace(size - off + SPACE_MARGIN - free)
-    tmp = path + ".xiso.part"
-    with open(path, "rb") as src, open(tmp, "wb") as out:
-        src.seek(off)
-        shutil.copyfileobj(src, out, 4 << 20)
-    os.replace(tmp, path)
-    return off
 
 
 def xbox_cut(system, path, romm_file):
@@ -878,7 +947,7 @@ def _fetch_tool_archive(label, url, want, dest, progress=None):
     import tarfile
     if not want:
         raise RommError("This version doesn't know %s's checksum yet." % label)
-    tmpdir = os.path.join(DATA_DIR, "tmp")
+    tmpdir = tmp_dir()
     os.makedirs(tmpdir, exist_ok=True)
     tgz = os.path.join(tmpdir, os.path.basename(dest) + ".tar.gz")
     h = hashlib.sha256()
@@ -1082,13 +1151,132 @@ def install_x360_tools(progress=None, url=None, sha256=None):
     return x360_tools()
 
 
+# ---------------------------------------------------------- which conversion applies
+# One table answers "this file on this system becomes that, if turned on" for
+# every place that asks: the download post-processing (Downloader._maybe_chd),
+# the download prompt (disc_layout), the library planner (rb_chd_plan) and the
+# worker (rb_chd.convert). The converters themselves live in rb_chd.py.
+
+@dataclass(frozen=True, eq=False)
+class Converter:
+    mode: str                  # the chd-queue task's "mode" (stored on disk: never rename)
+    label: str                 # its name on screen
+    tag: str                   # prefix of its log lines ("chd: ...")
+    systems: frozenset         # the systems it applies to
+    targets: dict              # source extension (lower case) -> output extension
+    setting: str               # config key that turns it on
+    setting_name: str          # that switch's name in Settings, for messages
+    off_reason: str            # why the worker skips a task while it's off
+    enabled: Callable          # (cfg, system) -> turned on and usable on this box
+    chd: bool = False          # made by chdman (createcd / createdvd)
+    keep_image_ext: bool = False   # the image's own extension stays in the name: "X.iso.squashfs"
+    space_factor: int = 1      # room needed per source byte while the output is verified
+    check: Optional[Callable] = None   # check(src) raises Z3dsError/OSError when it can't be converted
+    renamed_sources: tuple = ()    # found by the planner too: renamed to a source first ("X.xiso" -> "X.iso")
+    planner_skips_done: bool = False   # the planner leaves a source alone when its output is already there
+
+    @property
+    def sources(self):
+        return tuple(self.targets)
+
+    @property
+    def outputs(self):
+        return tuple(dict.fromkeys(self.targets.values()))
+
+    def output_ext(self, src):
+        """The extension a source (path or ".ext") becomes."""
+        return self.targets.get(_ext(src), self.outputs[0])
+
+    def output_name(self, stem, src):
+        keep = os.path.splitext(src)[1].lower() if self.keep_image_ext else ""
+        return stem + keep + self.output_ext(src)
+
+    def output_path(self, src):
+        """Where the output of a loose source lands: next to it."""
+        stem = os.path.splitext(os.path.basename(src))[0]
+        return os.path.join(os.path.dirname(src), self.output_name(stem, src))
+
+
+def _ext(path):
+    """Lower-case extension of a path or of a bare ".ext"."""
+    return os.path.splitext("_" + os.path.basename(path))[1].lower()
+
+
+CONVERTERS = (
+    # CD images become createcd on every CHD system (PS2's CD-based games come as cue/bin too)
+    Converter("createcd", "CHD", "chd", frozenset(CHD_CD_SYSTEMS | CHD_DVD_SYSTEMS),
+              dict.fromkeys((".cue", ".gdi"), ".chd"), "chd", "Compress disc games to CHD", "turned off",
+              lambda cfg, system: bool((cfg or {}).get("chd", True)), chd=True),
+    # DVD images (.iso) on PS2/PSP only
+    Converter("createdvd", "CHD", "chd", frozenset(CHD_DVD_SYSTEMS), {".iso": ".chd"},
+              "chd", "Compress disc games to CHD", "turned off",
+              lambda cfg, system: bool((cfg or {}).get("chd", True)), chd=True),
+    Converter("rvz", "RVZ", "rvz", frozenset(RVZ_SYSTEMS), dict.fromkeys(RVZ_SOURCES, ".rvz"),
+              "rvz", "GameCube and Wii to RVZ", "turned off, or dolphin-tool isn't installed",
+              lambda cfg, system: rvz_enabled(cfg)),
+    # Xbox: images are made bootable (make_xiso, .xiso -> .iso) first, when xbox_bootable is on
+    Converter("squashfs", "squashfs", "squashfs", frozenset(SQUASH_SYSTEMS), {".iso": ".squashfs"},
+              "squashfs", "Xbox to squashfs", "turned off, or mksquashfs is missing",
+              lambda cfg, system: squashfs_enabled(cfg, system), keep_image_ext=True,
+              renamed_sources=(".xiso",)),
+    # encrypted dumps are skipped (Azahar can't run them either)
+    Converter("z3ds", "ZCCI", "z3ds", frozenset(Z3DS_SYSTEMS), dict(Z3DS_SOURCES),
+              "z3ds", "3DS to .zcci", "turned off, or libzstd is missing",
+              lambda cfg, system: z3ds_enabled(cfg, system), check=lambda src: z3ds_info(src),
+              planner_skips_done=True),
+    # the extracted files and the .zar sit next to the image until it's verified
+    Converter("zar", "ZAR", "zar", frozenset(ZAR_SYSTEMS), {".iso": ".zar"},
+              "zar", "Xbox 360 to .zar", "turned off, or the Xbox 360 tools aren't installed",
+              lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True),
+)
+CONVERTER = {c.mode: c for c in CONVERTERS}
+
+
+def converters_for(system):
+    return [c for c in CONVERTERS if system in c.systems]
+
+
+def conversion_for(system, path, cfg=None, accepts=None, enabled=True, renamed=False):
+    """The Converter that turns this file (a path or a bare ".ext") on this
+    system into something smaller, or None: nothing applies, it's turned off
+    (not checked with enabled=False), or ES wouldn't list the result
+    (accepts(system, ext), when given). renamed: also a file the planner
+    renames to a source first (Xbox .xiso)."""
+    ext = _ext(path)
+    for c in CONVERTERS:
+        if system in c.systems and (ext in c.targets or (renamed and ext in c.renamed_sources)):
+            if enabled and not c.enabled(cfg, system):
+                return None
+            if accepts is not None and not accepts(system, c.output_ext(ext)):
+                return None
+            return c
+    return None
+
+
+def conversion_tasks(system, paths, cfg, accepts=None):
+    """[(Converter, [paths])]: the files among paths that would be converted,
+    grouped by conversion, in table order (CD images before DVD images)."""
+    groups = {}
+    for p in paths:
+        c = conversion_for(system, p, cfg, accepts)
+        if c is not None:
+            groups.setdefault(c.mode, (c, []))[1].append(p)
+    return [groups[c.mode] for c in CONVERTERS if c.mode in groups]
+
+
+def conversion_output(mode, stem, src):
+    """File name a task of this mode makes from src (an unknown mode: chdman's .chd)."""
+    c = CONVERTER.get(mode)
+    return c.output_name(stem, src) if c else stem + ".chd"
+
+
 # ---------------------------------------------------------- leftovers
 
 def chd_worker_busy():
     """True while rb_chd.py holds its lock (a conversion may be writing)."""
     import fcntl
     try:
-        fd = os.open(os.path.join(DATA_DIR, "chd.lock"), os.O_RDONLY | os.O_CREAT, 0o644)
+        fd = os.open(chd_lock_path(), os.O_RDONLY | os.O_CREAT, 0o644)
     except OSError:
         return False
     try:
@@ -1119,7 +1307,11 @@ def _leftover_folder(sysdir, d):
     return len(rel) == 1 or bool(DISC_RE.search(os.path.basename(d)))
 
 
-CONVERT_PARTS = (".rvz.part", ".squashfs.part", ".zar.part") + tuple(e + ".part" for e in Z3DS_EXTS)
+# an archive's single top entry that may never land directly in roms/<system>/
+ARCHIVE_RESERVED_TOPS = {"", ".", "gamelist.xml", "_info.txt"} | MEDIA_DIRS
+# unfinished outputs of the converters other than chdman (whose .chd.part is listed on its own)
+CONVERT_PARTS = tuple(dict.fromkeys([e + ".part" for c in CONVERTERS if not c.chd for e in c.outputs] +
+                                    [e + ".part" for e in Z3DS_EXTS]))
 
 
 def find_leftovers(pending_roms=(), chd_busy=None):
@@ -1146,7 +1338,7 @@ def find_leftovers(pending_roms=(), chd_busy=None):
         if not os.path.isdir(sysdir) or os.path.islink(sysdir):
             continue
         for dp, dns, fns in os.walk(sysdir, topdown=False):
-            if any(part in AUDIT_SKIP for part in os.path.relpath(dp, sysdir).split(os.sep)):
+            if any(part in MEDIA_DIRS for part in os.path.relpath(dp, sysdir).split(os.sep)):
                 continue
             for fn in fns:
                 p = os.path.join(dp, fn)
@@ -1178,7 +1370,7 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                         out.append({"path": dp, "kind": "Empty folder", "size": 0})
                 except OSError:
                     pass
-    tmp = os.path.join(DATA_DIR, "tmp")
+    tmp = tmp_dir()
     if os.path.isdir(tmp) and not busy:
         for n in sorted(os.listdir(tmp)):
             p = os.path.join(tmp, n)
@@ -1225,16 +1417,19 @@ def es_notify(msg):
         return False
 
 
-CHD_CURRENT = os.path.join(DATA_DIR, "chd-current.json")
+# conversion modes (the queue task's "mode"): their label on screen and what they make
+CONVERT_LABELS = {c.mode: c.label for c in CONVERTERS}
+CONVERT_OUTPUTS = {c.mode: c.outputs for c in CONVERTERS}
 
 
-def chd_status(task_name, library=None, rom_id=None):
-    """Where a download's CHD conversion stands: "queued", "compressing",
-    "done", or None (no task / gave up — the original files stay)."""
+def chd_status(task_name, library=None, rom_id=None, mode=None):
+    """Where a download's conversion stands: "queued", "compressing", "done",
+    or None (no task / gave up — the original files stay). mode: the task's
+    conversion (any when unknown), for recognising its output."""
     if not task_name:
         return None
     try:
-        with open(os.path.join(os.path.dirname(CHD_QUEUE_DIR), os.path.basename(CHD_CURRENT))) as f:
+        with open(chd_current_path()) as f:
             if json.load(f).get("task") == task_name:
                 return "compressing"
     except (OSError, ValueError):
@@ -1245,7 +1440,8 @@ def chd_status(task_name, library=None, rom_id=None):
         with library.lock:
             library._reload()
             rec = library.installed.get(str(rom_id)) or {}
-        if any(p.lower().endswith(".chd") and os.path.exists(p) for p in rec.get("paths", [])):
+        outs = CONVERT_OUTPUTS.get(mode) or tuple(e for v in CONVERT_OUTPUTS.values() for e in v)
+        if any(p.lower().endswith(outs) and os.path.exists(p) for p in rec.get("paths", [])):
             return "done"
     return None
 
@@ -1411,13 +1607,132 @@ def display_url(url):
     return url
 
 
+def _atomic_write(path, write, errors="strict", mode=None, sync=True):
+    tmp = "%s.tmp-%d-%d" % (path, os.getpid(), threading.get_ident())
+    opener = None if mode is None else (lambda p, flags: os.open(p, flags, mode))
+    try:
+        with open(tmp, "w", errors=errors, opener=opener) as f:
+            write(f)
+            if sync:
+                f.flush()
+                os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_text(path, text, errors="strict", mode=None, sync=True):
+    """Replace a text file whole or not at all: write a temp file beside it
+    (a unique name), fsync, rename over. A full disk or a kill leaves the old
+    file intact. mode: permissions of the new file (e.g. 0o600); sync=False
+    for a status file rewritten every few seconds (no fsync)."""
+    _atomic_write(path, lambda f: f.write(text), errors, mode, sync)
+
+
+def atomic_write_json(path, obj, mode=None, sync=True, **dump_kw):
+    """atomic_write_text for json.dump(obj, **dump_kw)."""
+    _atomic_write(path, lambda f: json.dump(obj, f, **dump_kw), mode=mode, sync=sync)
+
+
+def conversions_pending():
+    """True when the conversion queue holds a task (any mode: the worker
+    re-checks per task whether that conversion is still turned on)."""
+    try:
+        return any(t.endswith(".json") for t in os.listdir(CHD_QUEUE_DIR))
+    except OSError:
+        return False
+
+
+def spawn_detached(script, python=None):
+    """Start one of the app's scripts (rb_chd.py, rb_dl.py, rb_finalize.py)
+    in its own session with no stdio, so it outlives its parent. They're
+    flock'd: a second one exits at once. Returns False (logged) if it can't."""
+    try:
+        subprocess.Popen([python or sys.executable, os.path.join(APP_DIR, script)], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         close_fds=True)
+        return True
+    except OSError as e:
+        log("spawn %s failed: %r" % (script, e))
+        return False
+
+
+def start_conversions(python=None):
+    """Start the conversion worker when the queue holds a task."""
+    return conversions_pending() and spawn_detached("rb_chd.py", python)
+
+
+def publish_queue_task(task, name, exclusive=False):
+    """Put a conversion task in the queue whole: the worker lists *.json while
+    tasks are written, so it's written under a temp name (not .json) and then
+    renamed in. exclusive: never replace an existing task of that name (returns
+    None then). Returns the task's path."""
+    os.makedirs(CHD_QUEUE_DIR, exist_ok=True)
+    path = os.path.join(CHD_QUEUE_DIR, name)
+    tmp = os.path.join(CHD_QUEUE_DIR, ".%s.%d-%d.tmp" % (name, os.getpid(), threading.get_ident()))
+    try:
+        with open(tmp, "w") as f:
+            json.dump(task, f)
+            f.flush()
+            os.fsync(f.fileno())
+        if exclusive:
+            try:
+                os.link(tmp, path)               # fails if the name is taken: no clobber
+            except FileExistsError:
+                return None
+        else:
+            os.replace(tmp, path)
+        return path
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def _keep_unreadable(path):
+    """A state file that won't parse is about to be replaced with defaults:
+    keep a copy beside it first (once per content), so nothing is lost."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return
+    d, base = os.path.split(path)
+    for n in os.listdir(d or "."):
+        if n.startswith(base + ".bad-"):
+            try:
+                with open(os.path.join(d, n), "rb") as f:
+                    if f.read() == data:
+                        return
+            except OSError:
+                pass
+    dest = "%s.bad-%s" % (path, time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        with open(dest, "xb") as f:
+            f.write(data)
+        os.chmod(dest, 0o600)                      # it may hold the token
+        log("%s couldn't be read; kept as %s" % (base, os.path.basename(dest)))
+    except OSError:
+        pass
+
+
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     try:
         with open(CONFIG_PATH) as f:
-            cfg.update(json.load(f))
-    except (OSError, ValueError):
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+        cfg.update(data)
+    except OSError:
         pass
+    except ValueError:
+        _keep_unreadable(CONFIG_PATH)
     for env, key in ENV_OVERRIDES.items():
         v = os.environ.get(env)
         if v:
@@ -1427,15 +1742,36 @@ def load_config():
     return cfg
 
 
-def save_config(cfg):
-    """Persist the user-editable keys (atomic, 0600: it holds the token)."""
+def config_unreadable():
+    """True when config.json exists but isn't a readable JSON object."""
+    try:
+        with open(CONFIG_PATH) as f:
+            return not isinstance(json.load(f), dict)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+    except ValueError:
+        return True
+
+
+def reset_config():
+    """Start over from the defaults (the unreadable file is kept beside it)."""
+    _keep_unreadable(CONFIG_PATH)
+    save_config(dict(DEFAULT_CONFIG), force=True)
+    log("config.json reset to defaults")
+
+
+def save_config(cfg, force=False):
+    """Persist the user-editable keys (atomic, 0600: it holds the token).
+    Refuses (ConfigUnreadable) to write over a config.json that can't be read,
+    unless force (reset_config)."""
+    if not force and config_unreadable():
+        _keep_unreadable(CONFIG_PATH)
+        raise ConfigUnreadable("config.json can't be read; not saving over it")
     os.makedirs(DATA_DIR, exist_ok=True)
     keep = {k: cfg[k] for k in DEFAULT_CONFIG if k in cfg}
-    tmp = CONFIG_PATH + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(keep, f, indent=1)
-    os.replace(tmp, CONFIG_PATH)
+    atomic_write_json(CONFIG_PATH, keep, mode=0o600, indent=1)
 
 
 def human_size(n):
@@ -1498,6 +1834,11 @@ def load_es_systems():
 class RommError(Exception):
     pass
 
+
+
+class ConfigUnreadable(RommError):
+    """config.json exists but can't be read: it's never saved over (that would
+    lose what's in it) until the user fixes it or resets to a clean config."""
 
 class Api:
     def __init__(self, url, token, verify_tls=True):
@@ -1617,19 +1958,39 @@ class Api:
             touch_cached(dest)
             return dest
         try:
-            r = self.s.get(self.base + path, timeout=15)
-            if r.status_code == 200 and r.content:
+            r = self.s.get(self.base + path, timeout=15, stream=True)
+            data = _read_capped(r, COVER_MAX) if r.status_code == 200 else b""
+            if data:
                 tmp = dest + ".tmp"
-                write_png(r.content, tmp)
+                write_png(data, tmp)
                 os.replace(tmp, dest)
                 self._cache_written = getattr(self, "_cache_written", 0) + os.path.getsize(dest)
                 if self._cache_written > PRUNE_EVERY and getattr(self, "cache_limit", 0):
                     self._cache_written = 0
                     prune_cache(self.cache_limit)
                 return dest
-        except (requests.RequestException, OSError):
+        except (requests.RequestException, OSError, RommError):
             pass
         return None
+
+
+COVER_MAX = 32 << 20       # a cover bigger than this isn't a cover
+BIOS_MAX = 1 << 30         # the largest Batocera firmware files are a few hundred MB
+
+
+def _read_capped(r, cap):
+    """A streamed response's body, refusing (RommError) more than cap bytes:
+    never let a server make the app read an endless body into memory."""
+    out, n = [], 0
+    try:
+        for chunk in r.iter_content(1 << 16):
+            n += len(chunk)
+            if n > cap:
+                raise RommError("Response larger than %s; refused." % human_size(cap))
+            out.append(chunk)
+    finally:
+        r.close()
+    return b"".join(out)
 
 
 # ----------------------------------------------------------- cover cache (LRU)
@@ -1822,7 +2183,7 @@ def newer_release(cfg, force=False):
     checked = cache.get("checked", 0)
     if force or now - checked > 86400 or checked > now + 3600:
         try:
-            r = requests.get("https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO,
+            r = requests.get("%s/repos/%s/releases/latest" % (GITHUB_API, UPDATE_REPO),
                              timeout=6, headers={"User-Agent": UA,
                                                  "Accept": "application/vnd.github+json"})
             if r.status_code == 200:
@@ -1833,8 +2194,7 @@ def newer_release(cfg, force=False):
             cache = {"checked": now, "latest": cache.get("latest", "")}    # offline: try again tomorrow
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
-            with open(UPDATE_CACHE, "w") as f:
-                json.dump(cache, f)
+            atomic_write_json(UPDATE_CACHE, cache)
         except OSError:
             pass
     latest = cache.get("latest") or ""
@@ -1948,15 +2308,36 @@ def _move(src, dst):
         shutil.move(src, dst)
 
 
+def _exchange(a, b):
+    """Swap two existing paths in one atomic step (Linux renameat2
+    RENAME_EXCHANGE). OSError where the filesystem can't (exFAT, or a and b
+    on different filesystems)."""
+    import ctypes
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    if libc.renameat2(-100, os.fsencode(a), -100, os.fsencode(b), 2) != 0:     # AT_FDCWD, RENAME_EXCHANGE
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), a)
+
+
 def install_staged(staged_app, app_dir=APP_DIR, backup=APP_BACKUP):
-    """Swap the staged app in; the current one becomes the backup."""
+    """Swap the staged app in; the current one becomes the backup. One atomic
+    exchange where the filesystem allows it, so a power cut can never leave no
+    app at all (the old two-step swap had that moment); else the two steps."""
     shutil.rmtree(backup, ignore_errors=True)
-    _move(app_dir, backup)
     try:
-        _move(staged_app, app_dir)
-    except Exception:
-        _move(backup, app_dir)              # put the old version back
-        raise
+        _exchange(staged_app, app_dir)              # app_dir: new version; staged_app: the old one
+        exchanged = True
+    except (OSError, AttributeError):
+        exchanged = False
+    if exchanged:
+        _move(staged_app, backup)
+    else:
+        _move(app_dir, backup)
+        try:
+            _move(staged_app, app_dir)
+        except Exception:
+            _move(backup, app_dir)              # put the old version back
+            raise
     shutil.rmtree(os.path.dirname(staged_app), ignore_errors=True)
     log("UPDATE installed %s (previous %s kept for rollback)" % (_version_in(app_dir), _version_in(backup)))
     return _version_in(app_dir)
@@ -1970,15 +2351,18 @@ def rollback(app_dir=APP_DIR, backup=APP_BACKUP):
     """Swap app and backup (so a rollback can itself be undone)."""
     if not os.path.isdir(backup):
         raise UpdateError("No previous version to go back to")
-    tmp = backup + ".swap"
-    shutil.rmtree(tmp, ignore_errors=True)
-    _move(app_dir, tmp)
     try:
-        _move(backup, app_dir)
-    except Exception:
-        _move(tmp, app_dir)                  # put the current version back
-        raise UpdateError("Couldn't swap versions; nothing changed")
-    _move(tmp, backup)
+        _exchange(app_dir, backup)              # one atomic step: never a moment without an app
+    except (OSError, AttributeError):
+        tmp = backup + ".swap"
+        shutil.rmtree(tmp, ignore_errors=True)
+        _move(app_dir, tmp)
+        try:
+            _move(backup, app_dir)
+        except Exception:
+            _move(tmp, app_dir)                  # put the current version back
+            raise UpdateError("Couldn't swap versions; nothing changed")
+        _move(tmp, backup)
     log("ROLLBACK now %s (backup %s)" % (_version_in(app_dir), _version_in(backup)))
     return _version_in(app_dir)
 
@@ -2014,10 +2398,13 @@ class Library:
         try:
             with open(STATE_PATH) as f:
                 data = json.load(f)
-            if isinstance(data, dict):
-                self.installed, self._mtime = data, mt
-        except (OSError, ValueError):
+            if not isinstance(data, dict):
+                raise ValueError("not an object")
+            self.installed, self._mtime = data, mt
+        except OSError:
             pass
+        except ValueError:
+            _keep_unreadable(STATE_PATH)         # the next write replaces it: keep what's there
 
     def update(self, fn):
         """Apply fn(installed) to the freshest installed.json and write it back."""
@@ -2029,10 +2416,7 @@ class Library:
                 self._mtime = None
                 self._reload()
                 out = fn(self.installed)
-                tmp = STATE_PATH + ".tmp.%d" % os.getpid()
-                with open(tmp, "w") as f:
-                    json.dump(self.installed, f, indent=1)
-                os.replace(tmp, STATE_PATH)
+                atomic_write_json(STATE_PATH, self.installed, indent=1)
                 self._mtime = os.stat(STATE_PATH).st_mtime_ns
             return out
 
@@ -2161,11 +2545,9 @@ class Library:
                 pass
         for p in list(out):
             if p.lower().endswith(".m3u") and os.path.isfile(p):
-                with open(p, errors="replace") as f:
-                    for ln in f:
-                        q = os.path.normpath(os.path.join(os.path.dirname(p), ln.strip()))
-                        if ln.strip() and os.path.exists(q) and q not in out:
-                            out.append(q)
+                for q in m3u_paths(p):
+                    if os.path.exists(q) and q not in out:
+                        out.append(q)
         return [p for p in out if _inside(p, sysdir)]
 
     def uninstall_group(self, group, system):
@@ -2341,20 +2723,24 @@ def primary_path(system, paths, es):
 
 # ----------------------------------------------------------- audit
 
-AUDIT_SKIP = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"}
+# a cue's FILE line: quoted, or a bare name without spaces (both are valid)
+CUE_FILE_RE = re.compile(r'FILE\s+(?:"([^"]+)"|(\S+))', re.I)
 
 
-def sheet_sources(sheet):
-    """Track files a .cue/.gdi references (paths)."""
+def sheet_sources(sheet, strict=False):
+    """Track files a .cue/.gdi references (paths). An unreadable sheet: []
+    (strict: the OSError is raised)."""
     d = os.path.dirname(sheet)
     out = []
     try:
-        with open(sheet, errors="replace") as f:
+        with open(sheet, errors="surrogateescape") as f:      # odd bytes map to the real names
             text = f.read()
     except OSError:
+        if strict:
+            raise
         return out
     if sheet.lower().endswith(".cue"):
-        out = [os.path.join(d, m.group(1)) for m in re.finditer(r'FILE\s+"([^"]+)"', text, re.I)]
+        out = [os.path.join(d, m.group(1) or m.group(2)) for m in CUE_FILE_RE.finditer(text)]
     else:
         for line in text.splitlines()[1:]:
             m = re.match(r'\s*\d+\s+\d+\s+\d+\s+\d+\s+("([^"]+)"|(\S+))', line)
@@ -2368,7 +2754,7 @@ def _sheets_in(path):
         return [path] if path.lower().endswith((".cue", ".gdi")) else []
     out = []
     for dp, dns, fns in os.walk(path):
-        dns[:] = [x for x in dns if x not in AUDIT_SKIP]
+        dns[:] = [x for x in dns if x not in MEDIA_DIRS]
         out += [os.path.join(dp, f) for f in fns if f.lower().endswith((".cue", ".gdi"))]
     return out
 
@@ -2436,25 +2822,8 @@ def disc_layout(detail, system, cfg, accepts=None):
         unpacked = sum(s for _, s in members)        # loose files are in members too
     elif archived:
         unpacked, estimated = space_needed(detail, system), True     # RomM didn't list sizes
-    ok = accepts or (lambda s, e: True)
-    convert = None
-    if system in RVZ_SYSTEMS:
-        if rvz_enabled(cfg) and ok(system, ".rvz") and any(e in RVZ_SOURCES for e in exts):
-            convert = "RVZ"
-    elif system in SQUASH_SYSTEMS:
-        if squashfs_enabled(cfg, system) and ok(system, ".squashfs") and ".iso" in exts:
-            convert = "squashfs"
-    elif system in ZAR_SYSTEMS:
-        if zar_enabled(cfg, system) and ok(system, ".zar") and ".iso" in exts:
-            convert = "ZAR"
-    elif system in Z3DS_SYSTEMS:
-        if z3ds_enabled(cfg, system) and any(e in Z3DS_SOURCES and ok(system, Z3DS_SOURCES[e]) for e in exts):
-            convert = "ZCCI"
-    elif (cfg or {}).get("chd", True) and ok(system, ".chd"):
-        if system in CHD_CD_SYSTEMS and any(e in (".cue", ".gdi") for e in exts):
-            convert = "CHD"
-        elif system in CHD_DVD_SYSTEMS and ".iso" in exts:
-            convert = "CHD"
+    convs = (conversion_for(system, e, cfg, accepts) for e in exts)
+    convert = next((c.label for c in convs if c is not None), None)
     return {"label": ", ".join(kinds), "discs": discs, "unpacked": unpacked, "estimated": estimated,
             "convert": convert}
 
@@ -2564,7 +2933,7 @@ def _images_in(path):
         return [path] if path.lower().endswith((".cue", ".iso", ".chd")) else []
     out = []
     for dp, dns, fns in os.walk(path):
-        dns[:] = [x for x in dns if x not in AUDIT_SKIP]
+        dns[:] = [x for x in dns if x not in MEDIA_DIRS]
         out += [os.path.join(dp, f) for f in fns if f.lower().endswith((".cue", ".iso", ".chd"))]
     return out
 
@@ -2677,7 +3046,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 return findings, stats
             path = os.path.join(sysdir, n)
             low = n.lower()
-            if n.startswith(".") or n in AUDIT_SKIP or low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd", ".chd.part")):
+            if n.startswith(".") or n in MEDIA_DIRS or low.endswith((".xml", ".txt", ".m3u", ".part", ".tmp.chd", ".chd.part")):
                 continue
             if progress:
                 progress(system, n)
@@ -2835,11 +3204,7 @@ def save_audit(findings, stats, deep):
             sig = None
         out.append(dict(f, sig=sig))
     os.makedirs(DATA_DIR, exist_ok=True)
-    path = audit_path()
-    tmp = path + ".tmp"
-    with open(tmp, "w") as fh:
-        json.dump({"time": time.time(), "deep": bool(deep), "stats": stats, "findings": out}, fh)
-    os.replace(tmp, path)
+    atomic_write_json(audit_path(), {"time": time.time(), "deep": bool(deep), "stats": stats, "findings": out})
 
 
 def load_audit():
@@ -2921,8 +3286,7 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
     for n in names:
         if n.lower().endswith(".m3u"):
             try:
-                with open(os.path.join(sysdir, n), errors="replace") as f:
-                    in_m3u |= {os.path.normpath(os.path.join(sysdir, ln.strip())) for ln in f if ln.strip()}
+                in_m3u.update(m3u_paths(os.path.join(sysdir, n)))
             except OSError:
                 pass
     exts = es.get(system)
@@ -2930,7 +3294,7 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
     for n in names:
         path = os.path.join(sysdir, n)
         low = n.lower()
-        if n.startswith(".") or n in AUDIT_SKIP or low.endswith((".xml", ".txt", ".part", ".tmp.chd")) \
+        if n.startswith(".") or n in MEDIA_DIRS or low.endswith((".xml", ".txt", ".part", ".tmp.chd")) \
                 or ".bak" in low or path in in_m3u \
                 or any(q.startswith(path + os.sep) for q in in_m3u):       # a disc folder of a playlist
             continue
@@ -3056,10 +3420,7 @@ def _record_bios(entries):
     data = bios_fetched()
     data.update(entries)
     os.makedirs(DATA_DIR, exist_ok=True)
-    p = os.path.join(DATA_DIR, "bios-fetched.json")
-    with open(p + ".tmp", "w") as f:
-        json.dump(data, f, indent=1)
-    os.replace(p + ".tmp", p)
+    atomic_write_json(os.path.join(DATA_DIR, "bios-fetched.json"), data, indent=1)
 
 
 def bios_required(system):
@@ -3133,13 +3494,30 @@ def _fetch_bios_into(api, offers, system, written, record):
         part = m["path"] + ".part"
         try:
             r = api.s.get("%s/api/firmware/%d/content/%s" % (
-                api.base, fw["id"], urllib.parse.quote(fw["file_name"])), timeout=60)
+                api.base, fw["id"], urllib.parse.quote(fw["file_name"])), timeout=60, stream=True)
         except Exception as e:
             raise RommError("BIOS download failed (%s)" % e.__class__.__name__) from None
         if r.status_code != 200:
+            r.close()
             raise RommError("BIOS download failed: HTTP %d" % r.status_code)
-        with open(part, "wb") as f:
-            f.write(r.content)
+        try:                                     # streamed to disk, capped: never whole in memory
+            n = 0
+            with open(part, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    n += len(chunk)
+                    if n > BIOS_MAX:
+                        raise RommError("BIOS download larger than %s; refused." % human_size(BIOS_MAX))
+                    f.write(chunk)
+        except (RommError, requests.RequestException, OSError) as e:
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+            if isinstance(e, RommError):
+                raise
+            raise RommError("BIOS download failed (%s)" % e.__class__.__name__) from None
+        finally:
+            r.close()
         if file_md5(part) != m["md5"]:
             os.remove(part)
             raise RommError("BIOS checksum mismatch for %s" % m["file"])
@@ -3222,6 +3600,7 @@ class ChecksumError(RommError):
 
 RETRY_DELAYS = (15, 60, 180)        # seconds before attempts 2, 3, 4
 SPACE_RECHECK = 30                  # seconds between free-space checks for a waiting download
+WORKER_POLL = 1.0                   # seconds a download/unpack worker sleeps before re-checking its queue
 
 
 # RomM hashes an archive by what's inside it (a zip's crc/md5/sha1 are its
@@ -3356,9 +3735,10 @@ class Downloader:
         self.t.join(30)
 
     # -- queue ------------------------------------------------------------
-    def enqueue(self, rom, system, group=None, replace=None):
+    def enqueue(self, rom, system, group=None, replace=None, save=True):
         """replace: paths of a broken copy under another name (Check games): once
-        RomM's copy is in, saves move over, playlists follow, and they're deleted."""
+        RomM's copy is in, saves move over, playlists follow, and they're deleted.
+        save=False: the caller saves the queue once when it's done adding."""
         with self.cv:
             for j in self.jobs:
                 if j.rom["id"] == rom["id"] and j.active:
@@ -3377,7 +3757,8 @@ class Downloader:
                 self.cv.notify_all()
             if replace:
                 j.replace = sorted(set(j.replace or []) | set(replace))
-        self.save_queue()
+        if save:
+            self.save_queue()
         return j
 
     def move(self, job, where):
@@ -3506,17 +3887,17 @@ class Downloader:
                      "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(DATA_DIR, exist_ok=True)
-            tmp = QUEUE_PATH + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump({"held": self.hold, "jobs": pend}, f)
-            os.replace(tmp, QUEUE_PATH)
+            atomic_write_json(QUEUE_PATH, {"held": self.hold, "jobs": pend})
 
     @staticmethod
     def saved_queue():
         try:
             with open(QUEUE_PATH) as f:
                 data = json.load(f)
-        except (OSError, ValueError):
+        except OSError:
+            return []
+        except ValueError:
+            _keep_unreadable(QUEUE_PATH)         # the next save replaces it: keep what's there
             return []
         return data.get("jobs", []) if isinstance(data, dict) else data   # old format: a list
 
@@ -3538,13 +3919,15 @@ class Downloader:
         n = 0
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
-                j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"))
+                j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"), save=False)
                 if it.get("paused"):
                     with self.cv:
                         j.user_paused = True
                         if j.state == Job.QUEUED:
                             j.state, j.message = Job.PAUSED, "Paused"
                 n += 1
+        if n:
+            self.save_queue()            # once, whole: never a partly re-added queue on disk
         return n
 
     def pause_all(self):
@@ -3590,7 +3973,7 @@ class Downloader:
                         continue                 # waits for the download hours
                     j.state = Job.DOWNLOADING
                     return j
-                self.cv.wait(1.0)
+                self.cv.wait(WORKER_POLL)
 
     def _run(self):
         while True:
@@ -3664,7 +4047,7 @@ class Downloader:
                 self._post_q, self._post_busy = [], 0
                 threading.Thread(target=self._post_run, daemon=True).start()
             while len(self._post_q) + self._post_busy >= self.POST_BACKLOG and not self._closed:
-                self.cv.wait(1.0)                  # disk is busy enough: wait before downloading more
+                self.cv.wait(WORKER_POLL)              # disk is busy enough: wait before downloading more
             j.state, j.message, j.speed = Job.EXTRACTING, "Waiting to unpack", 0.0
             self._post_q.append((j, post))
             self.unpacking_bytes += post.get("extra", 0)
@@ -3676,7 +4059,7 @@ class Downloader:
                 while not self._post_q:
                     if self._closed:
                         return
-                    self.cv.wait(1.0)
+                    self.cv.wait(WORKER_POLL)
                 j, post = self._post_q.pop(0)
                 self._post_busy += 1
             try:
@@ -3730,6 +4113,13 @@ class Downloader:
                             r.close()
                             raise Cancelled()
                         f.write(chunk)
+                        if record is not None and size_hint and f.tell() > size_hint:
+                            # more than the exact file RomM described (a multi-file rom's zip,
+                            # made on the fly, has no exact size): never let a server fill the disk
+                            r.close()
+                            f.close()
+                            os.remove(part)
+                            raise RommError("The server sent more than the file's size; download stopped.")
                         if not j.force and not in_download_hours(self.cfg):
                             r.close()
                             raise OutsideHours()
@@ -3899,8 +4289,7 @@ class Downloader:
         m3u = os.path.join(sysdir, safe_name(group["base"]) + ".m3u")
         lines = [os.path.relpath(p, sysdir) for p in prims]
         if os.path.exists(m3u):
-            with open(m3u, errors="replace") as f:
-                old = [ln.strip() for ln in f if ln.strip()]
+            old = m3u_lines(m3u)
             if old == lines:
                 return m3u
             ours = any(m3u in r["paths"] for r in recs)     # we wrote it earlier
@@ -3910,8 +4299,7 @@ class Downloader:
                            for r in recs for p in r["paths"]) for ln in old):
                 log("group %s: %s exists and isn't ours; not overwriting" % (group["base"], m3u))
                 return None
-        with open(m3u, "w") as f:
-            f.write("\n".join(lines) + "\n")
+        atomic_write_text(m3u, "\n".join(lines) + "\n")
         ids = [str(rid) for rid in group["rom_ids"]]
 
         def add_m3u(inst):
@@ -3953,8 +4341,13 @@ class Downloader:
         sysdir = os.path.join(ROMS_ROOT, j.system)
         new = primary_path(j.system, results, self.es) or results[0]
         new_set = {os.path.normpath(p) for r in results for p in ([r] + game_files(r))}
+        # a game folder the download (re)filled: whatever "old" file sits in it is
+        # part of the new copy now (game_files doesn't look inside folders)
+        new_dirs = [os.path.realpath(r) for r in results if os.path.isdir(r)]
         for old in j.replace or []:
             if not os.path.exists(old) or os.path.normpath(old) in new_set or not _inside(old, sysdir):
+                continue
+            if any(os.path.realpath(old).startswith(d + os.sep) for d in new_dirs):
                 continue
             try:
                 rb_chd.migrate_saves(j.system, old, new)
@@ -4016,6 +4409,10 @@ class Downloader:
         j.state = Job.EXTRACTING
         stem = os.path.splitext(os.path.basename(path))[0]
         top = {m.split("/")[0] for m in members}
+        # one top entry unpacks straight into the system folder: never ES's own
+        # files or folders, nor "." (that would make the system folder the game)
+        if len(top) == 1 and next(iter(top)).lower() in ARCHIVE_RESERVED_TOPS:
+            raise RommError("Unsafe archive layout: %s at the top" % next(iter(top)))
         # several loose files (cue + bins) -> own folder named after the game;
         # a single file or an archive that already has one top folder -> sysdir
         sysdir = os.path.dirname(path)
@@ -4023,6 +4420,13 @@ class Downloader:
             target = os.path.join(sysdir, stem)
         else:
             target = sysdir
+        # where this game's files land must not already be another game's (or a
+        # copy put there another way): unpacking would mix into it, and deleting
+        # this game later would take that one with it
+        lands = target if len(top) > 1 else os.path.join(sysdir, next(iter(top)))
+        if os.path.lexists(lands) and not self._may_unpack_into(j, lands):
+            raise RommError("%s is already on the box under that name; not unpacking over it"
+                            % os.path.basename(lands))
         os.makedirs(target, exist_ok=True)
         self._extract(path, target, j)
         os.remove(path)
@@ -4034,6 +4438,27 @@ class Downloader:
         playable = self._playable_paths(system, out)
         self._maybe_chd(j, system, playable, out)
         return out
+
+    def _may_unpack_into(self, j, dest):
+        """An existing folder/file may receive this download only when it's this
+        same RomM game's (re-download, repair), the copy Check games replaces,
+        or an empty folder left by an interrupted attempt."""
+        d = os.path.normpath(dest)
+        if os.path.isdir(d) and not os.path.islink(d) and not os.listdir(d):
+            return True
+        for old in j.replace or []:
+            o = os.path.normpath(old)
+            if o == d or o.startswith(d + os.sep) or d.startswith(o + os.sep):
+                return True
+        with self.library.lock:
+            self.library._reload()
+            recs = list(self.library.installed.items())
+        for rid, rec in recs:
+            for p in rec.get("paths", []):
+                q = os.path.normpath(p)
+                if q == d or q.startswith(d + os.sep) or d.startswith(q + os.sep):
+                    return str(rid) == str(j.rom.get("id"))
+        return False                             # there, but not ours: put there another way
 
     def _postprocess_folder(self, j, folder):
         j.chd_task = None
@@ -4097,10 +4522,41 @@ class Downloader:
             for m in self._list_archive(path):        # same zip-slip rule for 7z/rar
                 if m.startswith(("/", "\\")) or ".." in m.replace("\\", "/").split("/"):
                     raise RommError("Unsafe path in archive: %s" % m)
-            rc = subprocess.run([self._7z(), "x", "-y", "-o" + target, path],
-                                capture_output=True).returncode
-            if rc != 0:
-                raise RommError("7z extract failed (rc %d)" % rc)
+            # 7z restores symlink entries, and would also write a member through a
+            # link already on disk. So: unpack into a private folder beside the
+            # target, refuse anything that isn't a plain file or folder, and move
+            # each file into place only where its real destination stays inside
+            # the target (no link along the way, planted earlier or now).
+            stage = os.path.join(target, ".rb-extract-%d-%d" % (os.getpid(), threading.get_ident()))
+            shutil.rmtree(stage, ignore_errors=True)
+            os.makedirs(stage)
+            try:
+                rc = subprocess.run([self._7z(), "x", "-y", "-o" + stage, path],
+                                    capture_output=True).returncode
+                if rc != 0:
+                    raise RommError("7z extract failed (rc %d)" % rc)
+                files = []
+                for dp, dns, fns in os.walk(stage):
+                    for n in dns + fns:
+                        p = os.path.join(dp, n)
+                        st = os.lstat(p)
+                        if not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode)):
+                            raise RommError("Unsafe entry in archive (link or special file): %s"
+                                            % os.path.relpath(p, stage))
+                        if stat.S_ISREG(st.st_mode):
+                            files.append(os.path.relpath(p, stage))
+                real = os.path.realpath(target)
+                for rel in files:                # check every destination before writing any
+                    dest = os.path.join(target, rel)
+                    parent = os.path.realpath(os.path.dirname(dest))    # resolves links that exist
+                    if (parent != real and not parent.startswith(real + os.sep)) or os.path.islink(dest):
+                        raise RommError("Unsafe path in archive (through a link): %s" % rel)
+                for rel in files:
+                    dest = os.path.join(target, rel)
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    os.replace(os.path.join(stage, rel), dest)
+            finally:
+                shutil.rmtree(stage, ignore_errors=True)
 
     def _maybe_chd(self, j, system, playable, roots):
         if system == "xbox":
@@ -4115,50 +4571,21 @@ class Downloader:
                     if cut:
                         log("xbox: %s: kept the game partition (xemu can't boot a full disc image), "
                             "-%s" % (os.path.basename(p), human_size(cut)))
-            if squashfs_enabled(self.cfg, system) and self._accepts(system, ".squashfs"):
-                srcs = [p for p in playable if p.lower().endswith(".iso")]
-                if srcs:
-                    self._queue_conversion(j, system, "squashfs", srcs, roots)
-            return
-        if system in ZAR_SYSTEMS:
-            srcs = [p for p in playable if p.lower().endswith(".iso")]
-            if zar_enabled(self.cfg, system) and srcs and self._accepts(system, ".zar"):
-                self._queue_conversion(j, system, "zar", srcs, roots)
-            return
-        if system in Z3DS_SYSTEMS:
-            srcs = [p for p in playable if z3ds_target(p) and self._accepts(system, os.path.splitext(z3ds_target(p))[1])]
-            if z3ds_enabled(self.cfg, system) and srcs:
-                self._queue_conversion(j, system, "z3ds", srcs, roots)
-            return
-        if system in RVZ_SYSTEMS:
-            if not rvz_enabled(self.cfg) or not self._accepts(system, ".rvz"):
-                return
-            srcs = [p for p in playable if p.lower().endswith(RVZ_SOURCES)]
-            if srcs:
-                self._queue_conversion(j, system, "rvz", srcs, roots)
-            return
-        if not self.cfg.get("chd"):
-            return
-        if system in CHD_CD_SYSTEMS:
-            srcs = [p for p in playable if p.lower().endswith((".cue", ".gdi"))]
-            mode = "createcd"
-        elif system in CHD_DVD_SYSTEMS:
-            srcs = [p for p in playable if p.lower().endswith(".iso")]
-            mode = "createdvd"
-        else:
-            return
-        if not srcs or not self._accepts(system, ".chd"):
-            return
-        self._queue_conversion(j, system, mode, srcs, roots)
+        # one conversion per download: CD images before DVD images (PS2), else
+        # the system's own converter (rommlib.CONVERTERS decides what applies)
+        tasks = conversion_tasks(system, playable, self.cfg, self._accepts)
+        if tasks:
+            conv, srcs = tasks[0]
+            self._queue_conversion(j, system, conv.mode, srcs, roots)
 
     def _queue_conversion(self, j, system, mode, srcs, roots):
         os.makedirs(CHD_QUEUE_DIR, exist_ok=True)
         task = {"system": system, "mode": mode, "sources": srcs, "roots": roots,
                 "queued": time.time()}
         name = "%d-%d-%s.json" % (int(time.time() * 1000), j.rom.get("id") or 0, re.sub(r"\W+", "_", system))
+        publish_queue_task(task, name)
         j.chd_task = name
-        with open(os.path.join(CHD_QUEUE_DIR, name), "w") as f:
-            json.dump(task, f)
+        j.chd_mode = mode                    # in memory only: names the format on the Downloads screen
 
     def _queue_gamelist(self, rom, system, paths):
         """Hand gamelist metadata to the launcher's post-exit merge step

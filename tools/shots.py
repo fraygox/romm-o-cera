@@ -30,6 +30,9 @@ ap.add_argument("--styles", default="xbox,playstation,nintendo,kb")
 ap.add_argument("--scenes", default="")
 ap.add_argument("--readme", action="store_true",
                 help="also copy the README set (Xbox style) into screenshots/ next to the app")
+ap.add_argument("--fixed-wait", action="store_true",
+                help="old pacing: always wait the full 50 frames per scene instead of drawing as soon as "
+                     "the app's background work has settled (50 frames stays the upper bound either way)")
 args = ap.parse_args()
 
 work = tempfile.mkdtemp(prefix="rb-shots-")
@@ -82,6 +85,10 @@ mk("psx/Dolor Dash (USA).chd", 380 * MB)
 mk("psx/images/crash.png", 40 * MB)
 mk("ps2/Amet Racing Pro (USA).iso", 4000 * MB)
 mk("gba/Anguna (USA).gba", 8 * MB)
+for _t in ("Veniam Quest (USA)", "Fugiat Racer (Europe)"):        # uncompressed cue/bin: Compress screens
+    mk("psx/%s/%s.bin" % (_t, _t), 460 * MB if "Quest" in _t else 610 * MB)
+    with open(os.path.join(R, "psx", _t, _t + ".cue"), "w") as _f:
+        _f.write('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % _t)
 mk("psx/Gone (USA).zip.part", 120 * MB)
 os.makedirs(os.path.join(R, "psx", "Empty Game"), exist_ok=True)
 es = FakeES(R, {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba": {".gba", ".zip"}})
@@ -94,6 +101,9 @@ pygame.init()
 app = rb.App(None, headless=True)
 app.downloader.hold = True               # scenes fake their own jobs; nothing really downloads
 _rom = app.api.rom
+
+import settle  # noqa: E402  (tools/settle.py)
+settled = settle.install(app)            # scenes are drawn once background loads have landed
 
 
 def _rom_with_members(rid):
@@ -234,10 +244,14 @@ SCENES = [
                                                      lambda v: None))),
     ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),
     ("on-this-box-space", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 1))),
-    ("on-this-box-bios", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 2))),
-    ("on-this-box-check", lambda: (fake_audit(), app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 3))),
+    ("on-this-box-compress", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 2))),
+    ("compress", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.CompressScreen(app)))),
+    ("compress-system", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.CompressScreen(app)),
+                                 app.push(rb.CompressSystemScreen(app, "psx")))),
+    ("on-this-box-bios", lambda: (app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 3))),
+    ("on-this-box-check", lambda: (fake_audit(), app.push(rb.OnThisBoxScreen(app)), setattr(app.stack[-1], "sel", 4))),
     ("on-this-box-conversions", lambda: (fake_conversions(), app.push(rb.OnThisBoxScreen(app)),
-                                         setattr(app.stack[-1], "sel", 4))),
+                                         setattr(app.stack[-1], "sel", 5))),
     ("games-from-romm", lambda: (install_some(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.InstalledScreen(app)))),
     ("check-games", lambda: (fake_audit(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)))),
     ("manage", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
@@ -270,6 +284,7 @@ failures = []
 results = {}
 plan = [(st, name, setup) for st in args.styles.split(",") for name, setup in SCENES]
 state = {"i": -1, "phase": "boot", "frames": 0}
+SETTLE_FRAMES = 3                                  # consecutive settled frames before a scene is drawn
 
 
 def set_style(st):
@@ -305,13 +320,20 @@ def step(app_):
         return []
     st, name, _ = plan[state["i"]]
     state["frames"] += 1
-    if state["frames"] == 25 and getattr(app, "_after", None):
+    # let background loads land: fixed 25 (+25 after _after) frames with --fixed-wait; otherwise as
+    # soon as the app has settled for SETTLE_FRAMES frames in a row, those same frame counts the upper bound
+    calm = state["calm"] = state.get("calm", 0) + 1 if not args.fixed_wait and settled() else 0
+    if getattr(app, "_after", None) and (state["frames"] == 25 or calm >= SETTLE_FRAMES):
+        after, app._after = app._after, None
+        state["calm"] = 0
         try:
-            app._after()
+            after()
         except Exception as e:
             failures.append((st, name, "after: %r" % e))
-    if state["frames"] < 50:                       # let background loads land
         return []
+    if state["frames"] < 50 and (args.fixed_wait or calm < SETTLE_FRAMES or app._after):
+        return []
+    state["calm"] = 0
     try:
         top = app.modal if app.modal is not None and hasattr(app.modal, "hints") else app.stack[-1]
         for tok, _ in app.stack[-1].hints():
@@ -354,7 +376,8 @@ with open(os.path.join(args.out, "index.html"), "w") as f:
 README_SET = {"home": "home", "platforms": "platforms", "game-list": "game-list", "list-menu": "menu",
               "search": "search", "manage": "manage", "on-this-box": "on-this-box", "downloads": "downloads",
               "settings-compression": "settings", "collection-menu": "collections",
-              "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits"}
+              "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits",
+              "compress-system": "compress"}
 if args.readme:
     import shutil
     dst = os.path.join(APP, "screenshots")

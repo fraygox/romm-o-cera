@@ -119,7 +119,7 @@ class FakeES:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self.url = "http://127.0.0.1:%d" % self.server.server_address[1]
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, args=(0.05,), daemon=True).start()   # quick shutdown()
 
     # -- ES-ish behaviour
     @staticmethod

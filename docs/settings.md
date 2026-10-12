@@ -5,6 +5,10 @@ On the box: **Pygame → RomM-o-Cera → Settings**. Settings are grouped
 the panel beside the list explains the selected one. Everything is saved to
 `/userdata/system/romm-browser/config.json` straight away.
 
+**Reset settings** (in This app) puts every setting back to its default,
+including the server address and token. The old file is kept beside it as
+`config.json.bad-<date>`, so nothing is lost.
+
 ## `config.json`
 
 | Key | Default | |
@@ -28,9 +32,20 @@ the panel beside the list explains the selected one. Everything is saved to
 | `rvz` | `false` | convert GameCube/Wii images to RVZ (turning it on in Settings downloads dolphin-tool) |
 | `xbox_bootable` | `true` | Xbox: keep only the game partition xemu boots; rename `.xiso` to `.iso` |
 | `squashfs` | `false` | pack Xbox images into zstd squashfs (Batocera mounts them at launch) |
+| `z3ds` | `true` | compress decrypted 3DS images to Azahar's `.zcci` |
+| `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
+
+### If `config.json` can't be read
+
+A typo from editing it by hand doesn't cost you your settings. The app starts
+on defaults, keeps a copy of the file as `config.json.bad-<date>`, and says so
+at start. Until you fix it, nothing is saved over it: Settings changes still
+apply, but only until you exit. Either fix the file over SSH and restart, or
+pick **Reset settings** (in that message, or in Settings) and enter the
+server and token again.
 
 ## `deploy.sh` (installing from a clone)
 

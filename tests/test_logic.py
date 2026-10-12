@@ -507,7 +507,6 @@ def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypat
     import fcntl
     import rb_chd
     os.makedirs(rommlib.CHD_QUEUE_DIR)
-    monkeypatch.setattr(rb_chd, "LOCK", os.path.join(rommlib.DATA_DIR, "chd.lock"))
     monkeypatch.setattr(rb_chd, "running_game", lambda: "")
     done, spawned = [], []
 
@@ -522,7 +521,7 @@ def test_chd_worker_never_waits_on_finalize_holding_the_lock(isolated, monkeypat
     json.dump({"n": 1}, open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-psx.json"), "w"))
     rb_chd.main()
     assert done == [1, 2] and spawned and not os.listdir(rommlib.CHD_QUEUE_DIR)
-    with open(rb_chd.LOCK, "w") as f:                       # and the lock is free again
+    with open(rommlib.chd_lock_path(), "w") as f:           # and the lock is free again
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
@@ -1022,7 +1021,7 @@ def test_on_this_box_sections(isolated, rb, monkeypatch):
     assert hub.verdict("conv") == ("Converting, 1 waiting", rb.BLUE)
     hub.convs = [{"kind": "failed"}]
     assert hub.verdict("conv")[1] == rb.RED
-    for i, cls in enumerate([rb.InstalledScreen, rb.SpaceScreen, rb.BiosScreen, rb.CheckScreen,
+    for i, cls in enumerate([rb.InstalledScreen, rb.SpaceScreen, rb.CompressScreen, rb.BiosScreen, rb.CheckScreen,
                              rb.ConversionsScreen]):
         hub.sel = i
         hub.action("ok")
@@ -1088,3 +1087,41 @@ def test_check_needs_romm_and_empty_lists_stay_put(isolated, rb, monkeypatch):
     sp.rows = []
     sp.action("down")
     assert sp.sel == 0
+
+
+def test_one_converter_per_file_and_the_planner_knows_every_system():
+    """rommlib.CONVERTERS is the one answer to "what does this file become":
+    never two conversions for the same file on the same system, and the
+    planner's default order covers every system a converter applies to."""
+    import rb_chd_plan
+    seen = {}
+    for c in rommlib.CONVERTERS:
+        for system in c.systems:
+            for ext in c.sources:
+                assert (system, ext) not in seen, (system, ext, seen.get((system, ext)), c.mode)
+                seen[(system, ext)] = c.mode
+    assert set(rb_chd_plan.ORDER) == set().union(*(c.systems for c in rommlib.CONVERTERS))
+    assert rommlib.conversion_for("ps2", "/r/G.cue", {"chd": True}).mode == "createcd"
+    assert rommlib.conversion_for("ps2", ".iso", {"chd": True}).mode == "createdvd"
+    assert rommlib.conversion_for("psx", ".iso", {"chd": True}) is None
+    assert rommlib.conversion_for("psx", ".cue", {"chd": False}) is None
+    assert rommlib.conversion_for("psx", ".cue", {}, accepts=lambda s, e: e != ".chd") is None
+    assert rommlib.conversion_output("squashfs", "X", "/r/X.ISO") == "X.iso.squashfs"
+    assert rommlib.conversion_output("z3ds", "X", "/r/X.cxi") == "X.zcxi"
+
+
+def test_one_m3u_reading_and_one_sheet_parser(tmp_path):
+    """Every playlist reader skips blank and # lines and keeps odd bytes in
+    names (surrogateescape); a sheet parses the same for both contracts."""
+    m3u = tmp_path / "Saga.m3u"
+    m3u.write_bytes(b"#EXTM3U\n\nSaga (Disc 1).chd\n  Saga \xe9 (Disc 2).chd  \n")
+    odd = os.fsdecode(b"Saga \xe9 (Disc 2).chd")
+    assert rommlib.m3u_lines(str(m3u)) == ["Saga (Disc 1).chd", odd]
+    assert rommlib.m3u_paths(str(m3u)) == [str(tmp_path / "Saga (Disc 1).chd"), str(tmp_path / odd)]
+    cue = tmp_path / "G.cue"
+    cue.write_text('FILE "G (Track 1).bin" BINARY\nFILE g2.bin BINARY\n')
+    assert rb_chd.sources_of(str(cue)) == [str(cue)] + rommlib.sheet_sources(str(cue)) == \
+        [str(cue), str(tmp_path / "G (Track 1).bin"), str(tmp_path / "g2.bin")]
+    assert rommlib.sheet_sources(str(tmp_path / "gone.cue")) == []
+    with pytest.raises(OSError):
+        rb_chd.sources_of(str(tmp_path / "gone.cue"))

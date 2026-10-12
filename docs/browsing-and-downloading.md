@@ -5,7 +5,9 @@
 - **Platforms**: only those with a Batocera system. Each card shows how many
   of that system's games are already on the box.
 - **Collections**: your own, smart collections, and RomM's virtual ones
-  (genre, franchise, series, company, game mode).
+  (genre, franchise, series, company, game mode). Like the platform cards,
+  each shows how many of its games are already on the box (a green ✓ and a
+  count, next to RomM's total), including games you copied over yourself.
 - **Recently added**, on the home screen and as a full list.
 - **Search** with an on-screen keyboard and live top matches (or just type on
   a keyboard).
@@ -45,7 +47,9 @@ download only what fits.
   `.m3u` playlist, the single discs hidden), and discs you already have are
   reused. "Only this disc" is there too.
 - Downloads are **resumable**, **checked against RomM's checksums** (zips
-  member by member) and retried on network errors.
+  member by member) and retried on network errors. One that grows past the
+  file's size RomM gave stops at once ("The server sent more than the file's
+  size"), so a broken server can't fill the drive.
 - They **keep going after you exit** and while you play (optionally
   speed-capped while a game runs), with a popup in EmulationStation when
   they're done.
@@ -55,13 +59,19 @@ download only what fits.
 - Cartridge zips stay zipped when the system reads them; disc archives are
   extracted, and disc games can be compressed in the background (see
   [Disc compression](disc-compression.md)).
+- An archive never unpacks into another game's folder. If its folder name is
+  already taken by a different game, the download stops with "… is already on
+  the box under that name" instead of mixing the two. Archives that would
+  unpack over EmulationStation's files, and 7z/rar archives that contain
+  links, are refused.
 - Manuals (PDF) come along from RomM and open from the game's menu in
   EmulationStation.
 
 ### The Downloads screen
 
-Reorder, pause, cancel, pause/resume everything, clear finished. L2/R2 opens
-**Conversions** (background compression). "Download now" starts one game
+Reorder, pause, cancel, pause/resume everything, clear finished. Each game
+shows what it's being compressed to (CHD, RVZ, squashfs, .zcci, .zar) and
+when that's done. L2/R2 opens **Conversions** (background compression). "Download now" starts one game
 outside the download hours.
 
 ### Space
@@ -87,6 +97,8 @@ editing `gamelist.xml` behind its back, which EmulationStation could overwrite.
 ## Updates
 
 **Settings → Updates** checks GitHub, then downloads, verifies and installs a
-new release in place, keeping the previous version for one-step rollback. A
+new release in place, keeping the previous version for one-step rollback.
+The swap is a single step where the drive allows it, so a power cut mid-update
+never leaves the box without the app. A
 daily check flags new releases (turn it off with `"check_updates": false`).
 Details in the [main README](../README.md#updating).

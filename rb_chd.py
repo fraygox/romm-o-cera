@@ -33,28 +33,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 import rb_finalize  # noqa: E402
 
-LOCK = os.path.join(rommlib.DATA_DIR, "chd.lock")
 SAVES_ROOT = os.environ.get("ROMM_BROWSER_SAVES", "/userdata/saves")
-DISC_EXTS = (".cue", ".gdi", ".iso", ".bin", ".raw", ".img", ".chd", ".cdi", ".ccd", ".sub")
 JUNK_EXTS = {".txt", ".nfo", ".md5", ".sfv", ".sha1", ".jpg", ".jpeg", ".png", ".m3u",
              ".dat", ".url", ".log", ".xml", ".pdf", ".cfg", ".ini", ".lic"}
 FINALIZE_EVERY = 15   # merge gamelist renames + reload ES after this many games
+TOOL_POLL = 3         # seconds between progress / running-game / memory checks while a converter runs
 
 
 def running_game():
     """Path of the running game ('' when idle or only the browser runs);
     None when ES can't be asked (treated as busy)."""
-    try:
-        status, body = rb_finalize.es_get("/runningGame")
-    except Exception:
-        return None
-    if status != 200 or not body.strip():
-        return ""
-    try:
-        path = json.loads(body).get("path") or ""
-    except ValueError:
-        return ""
-    return "" if path.endswith("rommbrowser.pygame") else path
+    return rommlib.es_running_game(get=rb_finalize.es_get)
 
 
 class ChdmanMissing(Exception):
@@ -133,8 +122,6 @@ def memory_check(pid, busy):
     return None
 
 
-CURRENT = os.path.join(rommlib.DATA_DIR, "chd-current.json")
-RESULTS = os.path.join(rommlib.DATA_DIR, "chd-results.jsonl")
 RESULTS_KEEP = 200
 _state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "last": ""}
 
@@ -143,18 +130,18 @@ def status(**kw):
     """What the worker is doing, for the app's Conversions screen."""
     _state.update(kw)
     try:
-        tmp = CURRENT + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump({k: _state[k] for k in ("task", "since", "file", "step", "pct")}, f)
-        os.replace(tmp, CURRENT)
+        rommlib.atomic_write_json(rommlib.chd_current_path(), {k: _state[k] for k in ("task", "since", "file", "step", "pct")},
+                                  sync=False)        # rewritten every few seconds
     except OSError:
         pass
 
 
+NOTE_TAGS = tuple(sorted({c.tag + ": " for c in rommlib.CONVERTERS}))     # "chd: ", "rvz: ", ...
+
+
 def note(msg):
     """Log a line and remember it as the reason this task ended the way it did."""
-    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(("chd: ", "rvz: ", "squashfs: ", "z3ds: ", "zar: ")) \
-        else msg
+    _state["last"] = msg.split(": ", 1)[-1] if msg.startswith(NOTE_TAGS) else msg
     rommlib.log(msg)
 
 
@@ -162,17 +149,15 @@ def record(task_name, task, result):
     """Append one finished task to chd-results.jsonl (kept short)."""
     entry = {"time": time.time(), "task": task_name, "result": result, "message": _state["last"][:300],
              "system": task.get("system"), "mode": task.get("mode"), "sources": task.get("sources"),
-             "retry": task if result == "failed" else None}
+             "retry": task if result == "failed" and task else None}
     try:
         lines = []
-        if os.path.exists(RESULTS):
-            with open(RESULTS) as f:
+        results = rommlib.chd_results_path()
+        if os.path.exists(results):
+            with open(results) as f:
                 lines = f.readlines()[-(RESULTS_KEEP - 1):]
         lines.append(json.dumps(entry) + "\n")
-        tmp = RESULTS + ".tmp"
-        with open(tmp, "w") as f:
-            f.writelines(lines)
-        os.replace(tmp, RESULTS)
+        rommlib.atomic_write_text(results, "".join(lines))
     except OSError:
         pass
 
@@ -191,12 +176,22 @@ def dolphin_tool(*args):
     exe = rommlib.dolphin_tool_path()
     if not exe:
         raise ToolMissing("dolphin-tool")
-    user = os.path.join(rommlib.DATA_DIR, "tmp", "dolphin-user")
+    user = os.path.join(rommlib.tmp_dir(), "dolphin-user")
     os.makedirs(user, exist_ok=True)
     args = list(args)
     if args and args[0] in ("convert", "verify"):
         args[1:1] = ["-u", user]
     return run_tool([exe] + args, keep_stdout=True)
+
+
+def _die_with_parent():
+    """In the child, before exec: the kernel kills it if this worker dies (even
+    SIGKILL), so no converter runs on unpaused and unguarded, or twice."""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, 9)     # PR_SET_PDEATHSIG, SIGKILL
+    except Exception:
+        pass
 
 
 def run_tool(argv, keep_stdout=False):
@@ -219,12 +214,13 @@ def run_tool(argv, keep_stdout=False):
     finally:
         os.unlink(path)                           # both handles keep it until closed
     with outf:
-        p = subprocess.Popen(cmd, stdout=outf if keep_stdout else subprocess.DEVNULL, stderr=outf, text=True)
+        p = subprocess.Popen(cmd, stdout=outf if keep_stdout else subprocess.DEVNULL, stderr=outf, text=True,
+                             preexec_fn=_die_with_parent)
     paused = False
     guard = None
     try:
         while p.poll() is None:
-            time.sleep(3)
+            time.sleep(TOOL_POLL)
             try:                                  # progress for the Conversions screen
                 errf.seek(0, 2)
                 errf.seek(max(0, errf.tell() - 400))
@@ -267,21 +263,9 @@ def run_tool(argv, keep_stdout=False):
 
 def sources_of(cue_or_gdi):
     """The cue/gdi itself plus every track file it references."""
-    d = os.path.dirname(cue_or_gdi)
-    out = [cue_or_gdi]
     if not cue_or_gdi.lower().endswith((".cue", ".gdi")):
-        return out
-    with open(cue_or_gdi, errors="replace") as f:
-        text = f.read()
-    if cue_or_gdi.lower().endswith(".cue"):
-        for m in re.finditer(r'FILE\s+"([^"]+)"', text, re.I):
-            out.append(os.path.join(d, m.group(1)))
-    else:
-        for line in text.splitlines()[1:]:
-            m = re.match(r'\s*\d+\s+\d+\s+\d+\s+\d+\s+("([^"]+)"|(\S+))', line)
-            if m:
-                out.append(os.path.join(d, m.group(2) or m.group(3)))
-    return out
+        return [cue_or_gdi]
+    return [cue_or_gdi] + rommlib.sheet_sources(cue_or_gdi, strict=True)     # unreadable: OSError
 
 
 def migrate_saves(system, old_path, new_path):
@@ -301,7 +285,19 @@ def migrate_saves(system, old_path, new_path):
                 if fn.startswith(o + "."):
                     dst = os.path.join(dp, n + fn[len(o):])
                     if not os.path.exists(dst):
-                        shutil.copy2(os.path.join(dp, fn), dst)
+                        # whole or not at all: a cut-short copy under the new name
+                        # would never be redone and the emulator would load it
+                        tmp = "%s.tmp-%d" % (dst, os.getpid())
+                        try:
+                            shutil.copy2(os.path.join(dp, fn), tmp)
+                            _sync_file(tmp)
+                            os.replace(tmp, dst)
+                        except BaseException:
+                            try:
+                                os.remove(tmp)
+                            except OSError:
+                                pass
+                            raise
                         copied += 1
                     break
     if copied:
@@ -325,15 +321,15 @@ def fix_m3us(sysdir, old_to_new):
             changed = False
             out = []
             for ln in lines:
-                target = os.path.normpath(os.path.join(dp, ln.strip())) if ln.strip() else ""
+                entry = rommlib.m3u_entry(ln)
+                target = os.path.normpath(os.path.join(dp, entry)) if entry else ""
                 if target in old_to_new:
                     out.append(os.path.relpath(old_to_new[target], dp))
                     changed = True
                 else:
                     out.append(ln)
             if changed:
-                with open(p, "w", errors="surrogateescape") as f:
-                    f.write("\n".join(out) + "\n")
+                rommlib.atomic_write_text(p, "\n".join(out) + "\n", errors="surrogateescape")
                 touched.append(p)
     return touched
 
@@ -403,7 +399,7 @@ def convert_squashfs(src, tmp, threads):
         return 2, "a full disc image xemu can't boot (Settings: Make Xbox images bootable)"
     try:
         cut = rommlib.make_xiso(src)
-    except rommlib.NoSpace as e:
+    except (rommlib.NoSpace, OSError) as e:
         return 3, str(e)
     if cut:
         note("squashfs: %s cut to its game partition (-%s)" % (os.path.basename(src), rommlib.human_size(cut)))
@@ -415,7 +411,7 @@ def convert_squashfs(src, tmp, threads):
     if rc != 0 or not os.path.exists(tmp):
         return rc or 4, out
     status(step="Verifying", pct=None)
-    mnt = os.path.join(rommlib.DATA_DIR, "tmp", "squashfs-check-%d" % os.getpid())
+    mnt = os.path.join(rommlib.tmp_dir(), "squashfs-check-%d" % os.getpid())
     os.makedirs(mnt, exist_ok=True)
     if subprocess.run(["mount", "-o", "loop,ro", tmp, mnt], capture_output=True).returncode != 0:
         os.rmdir(mnt)
@@ -475,6 +471,29 @@ def convert_z3ds(src, tmp, threads):
     return 0, "CRC32 %s" % want
 
 
+def _sync_file(path):
+    """Make a file's data durable (a rename to a new name doesn't flush it on ext4)."""
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _sync_dir(path):
+    """Make a directory's entries (renames, new files) durable."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass                  # some filesystems refuse fsync on a directory
+    finally:
+        os.close(fd)
+
+
 def _tree(root):
     """{relative path: absolute path} of every file under root."""
     out = {}
@@ -504,7 +523,7 @@ def convert_zar(src, tmp):
         return 2, "not an Xbox 360 disc image (extract-xiso can't read it)"
     if not any(p.lower() == "default.xex" for p in want):
         return 2, "no default.xex at the top of the disc: not a game disc xenia can start"
-    work = os.path.join(rommlib.DATA_DIR, "tmp", "zar-%d" % os.getpid())
+    work = os.path.join(rommlib.tmp_dir(), "zar-%d" % os.getpid())
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(os.path.dirname(work), exist_ok=True)
     try:
@@ -537,31 +556,34 @@ def convert_zar(src, tmp):
         shutil.rmtree(work, ignore_errors=True)
 
 
+# the converters other than chdman, by task mode (which mode applies: rommlib.CONVERTERS)
+RUNNERS = {
+    "rvz": lambda src, tmp, threads: convert_rvz(src, tmp),
+    "squashfs": lambda src, tmp, threads: convert_squashfs(src, tmp, threads),
+    "z3ds": lambda src, tmp, threads: convert_z3ds(src, tmp, threads),
+    "zar": lambda src, tmp, threads: convert_zar(src, tmp),
+}
+
+
 def convert(task):
     system, mode = task["system"], task["mode"]
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
     srcs = sorted(s for s in task["sources"] if os.path.exists(s))
     if not srcs:
+        note("chd: SKIP %s: its files are gone" % os.path.basename((task["sources"] or ["?"])[0]))
         return False
-    if mode == "rvz" and not rommlib.rvz_enabled(rommlib.load_config()):
-        note("chd: SKIP rvz %s (turned off, or dolphin-tool isn't installed)" % os.path.basename(srcs[0]))
+    conv = rommlib.CONVERTER.get(mode)        # None: an unknown mode goes to chdman as it is
+    # CHD tasks run even with CHD turned off since they were queued; the others need their switch
+    if conv and not conv.chd and not conv.enabled(rommlib.load_config(), system):
+        note("chd: SKIP %s %s (%s)" % (mode, os.path.basename(srcs[0]), conv.off_reason))
         return False
-    if mode == "squashfs" and not rommlib.squashfs_enabled(rommlib.load_config(), system):
-        note("chd: SKIP squashfs %s (turned off, or mksquashfs is missing)" % os.path.basename(srcs[0]))
-        return False
-    if mode == "zar" and not rommlib.zar_enabled(rommlib.load_config(), system):
-        note("chd: SKIP zar %s (turned off, or the Xbox 360 tools aren't installed)" % os.path.basename(srcs[0]))
-        return False
-    if mode == "z3ds" and not rommlib.z3ds_enabled(rommlib.load_config(), system):
-        note("chd: SKIP z3ds %s (turned off, or libzstd is missing)" % os.path.basename(srcs[0]))
-        return False
-    if mode == "z3ds":
+    if conv and conv.check:
         for src in srcs:
             try:
-                rommlib.z3ds_info(src)
+                conv.check(src)
             except (rommlib.Z3dsError, OSError) as e:
                 # nothing to retry: an encrypted dump stays encrypted (and Azahar can't run it either)
-                note("chd: SKIP z3ds %s: %s" % (os.path.basename(src), e))
+                note("chd: SKIP %s %s: %s" % (mode, os.path.basename(src), e))
                 return False
     playing = running_game()
     if playing and playing in srcs:
@@ -572,18 +594,28 @@ def convert(task):
     if folder_root and os.path.normpath(folder_root) == os.path.normpath(sysdir):
         folder_root = None        # never treat the system dir itself as a game folder
     out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
+    # every file a cue/gdi names must belong to this game: its folder, or the
+    # sheet's own folder for a loose one. A sheet pointing elsewhere (another
+    # game, or any file on the box) would get that file packed and then deleted.
+    for src in srcs:
+        home = os.path.realpath(folder_root or os.path.dirname(src))
+        try:
+            parts = sources_of(src)
+        except OSError as e:
+            note("chd: SKIP unreadable %s (%s)" % (os.path.basename(src), e.strerror))
+            return False
+        for p in parts:
+            if not os.path.realpath(p).startswith(home + os.sep):
+                note("chd: SKIP %s: a track is outside the game's folder (%s)" % (os.path.basename(src), p))
+                return False
     multi = len(srcs) > 1
     plan = []
-    out_ext = {"rvz": ".rvz", "squashfs": ".squashfs", "zar": ".zar"}.get(mode, ".chd")
     for src in srcs:
         if multi or not folder_root:
             stem = os.path.splitext(os.path.basename(src))[0]
         else:
             stem = os.path.basename(folder_root)      # game name, not track name
-        if mode == "squashfs":
-            stem += os.path.splitext(src)[1].lower()  # "X.iso.squashfs": the image's own extension stays
-        ext = os.path.splitext(rommlib.z3ds_target(src) or ".zcci")[1] if mode == "z3ds" else out_ext
-        plan.append((src, os.path.join(out_dir, stem + ext)))
+        plan.append((src, os.path.join(out_dir, rommlib.conversion_output(mode, stem, src))))
     if len({out for _, out in plan}) != len(plan):
         # two sources would become the same .chd: converting would overwrite
         # one with the other and then delete both originals
@@ -599,6 +631,16 @@ def convert(task):
             return False
         if cut:          # only a file entry past the end (could be a dummy): convert, but say so
             note("chd: note %s may be cut short (a file reaches sector %d of %d)" % (src, cut[1], cut[0]))
+    # an output already there that an interrupted run made (killed after it landed,
+    # before the rename was recorded): finish the job instead of skipping forever
+    resume = set()
+
+    def newer_than_sources(out, src):
+        try:
+            return os.path.getmtime(out) >= max(os.path.getmtime(p) for p in sources_of(src)
+                                                 if os.path.exists(p))
+        except (OSError, ValueError):
+            return False
     for _, out in plan:
         if os.path.exists(out) and mode == "z3ds":
             # a fresh copy next to an existing .zcci (Check games' download again): keep the
@@ -611,16 +653,22 @@ def convert(task):
             if not same:
                 note("chd: replacing damaged or different %s" % out)
                 continue
+            resume.add(out)                          # exactly this copy: just finish the job
+            continue
         if os.path.exists(out):
             if rommlib.disc_incomplete(out):
                 note("chd: replacing incomplete %s" % out)   # a fresh copy came down
+                continue
+            src = next(s for s, o in plan if o == out)
+            if conv and conv.chd and newer_than_sources(out, src) \
+                    and chdman("verify", "-i", out)[0] == 0:
+                resume.add(out)
                 continue
             note("chd: SKIP exists %s" % out)
             return False
     cfg = rommlib.load_config()
     need = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
-    if mode == "zar":
-        need *= 2        # the extracted files and the .zar sit next to the image until it's verified
+    need *= conv.space_factor if conv else 1     # e.g. .zar: extracted files + archive beside the image
     free, keep = rommlib.free_bytes(out_dir), rommlib.keep_free_bytes(cfg)
     if free - need < keep:
         # the CHD sits next to the original until it's verified: wait for room
@@ -628,22 +676,28 @@ def convert(task):
             os.path.basename(srcs[0]), rommlib.human_size(need), rommlib.human_size(free),
             rommlib.human_size(keep)))
         return None
+    # what the sources are now: if one is replaced (a fresh download landing) or
+    # deleted (Free up space) while this runs, nothing may be committed on top
+    def sig(p):
+        st = os.stat(p)
+        return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+    before = {p: sig(p) for s in srcs for p in sources_of(s) if os.path.exists(p)}
     made = []
     for src, out in plan:
+        if out in resume:
+            note("chd: using %s, made before an interruption" % os.path.basename(out))
+            _sync_file(out)
+            made.append(out)
+            continue
         tmp = out + ".part"                    # not a name ES lists as a game while it's written
         t0 = time.time()
         threads = str(rommlib.chd_threads(rommlib.load_config()))    # read per disc: Settings apply next disc
         codecs = codecs_for(mode, rommlib.load_config(), system)
         try:
             status(file=os.path.basename(src), step="Converting", pct=None)
-            if mode == "rvz":
-                rc, err = convert_rvz(src, tmp)
-            elif mode == "squashfs":
-                rc, err = convert_squashfs(src, tmp, threads)
-            elif mode == "z3ds":
-                rc, err = convert_z3ds(src, tmp, threads)
-            elif mode == "zar":
-                rc, err = convert_zar(src, tmp)
+            run = RUNNERS.get(mode)
+            if run:
+                rc, err = run(src, tmp, threads)
             else:
                 rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
                 if rc == 0:
@@ -664,10 +718,33 @@ def convert(task):
                 if os.path.exists(m):
                     os.remove(m)
             return False
+        # the output must be on disk before any original is deleted: after a power
+        # cut a renamed-but-unflushed file comes back empty (seen on ext4)
         os.replace(tmp, out)
+        _sync_file(out)
+        _sync_dir(out_dir)
         made.append(out)
         note("chd: disc done %s (%.0fs)" % (os.path.basename(out), time.time() - t0))
 
+    changed = []
+    for p, was in before.items():
+        try:
+            now = sig(p)
+        except OSError:
+            changed.append(p)
+            continue
+        # squashfs cuts its own source to the game partition first: only its presence counts
+        if mode != "squashfs" and now != was:
+            changed.append(p)
+    if changed:
+        note("chd: SKIP %s changed or was deleted while converting; keeping what's there now"
+             % os.path.basename(changed[0]))
+        for m in made:
+            try:
+                os.remove(m)
+            except OSError:
+                pass
+        return False
     old_to_new = {os.path.normpath(s): o for s, o in plan}
     in_size = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
     out_size = sum(os.path.getsize(m) for m in made)
@@ -690,6 +767,9 @@ def convert(task):
             else:
                 with open(primary, "w") as f:
                     f.write("\n".join(os.path.basename(m) for m in made) + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                _sync_dir(out_dir)
         hide = made if primary else []
         primary = primary or made[0]
         migrate_saves(system, srcs[0], primary)
@@ -744,9 +824,7 @@ def finalize_later():
     to be idle — with RomM-o-Cera open that means until it closes — and this
     worker must not sit on chd.lock meanwhile (new conversions queued by
     downloads would wait behind it). rb_finalize is flock'd: extra spawns no-op."""
-    subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rb_finalize.py")],
-                     start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, close_fds=True)
+    rommlib.spawn_detached("rb_finalize.py")
 
 
 def pending():
@@ -765,7 +843,7 @@ def main():
     os.umask(0o022)       # CHDs readable like any other rom, however this worker was started
     os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
     while True:
-        lockf = open(LOCK, "w")
+        lockf = open(rommlib.chd_lock_path(), "w")
         try:
             fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
@@ -781,7 +859,7 @@ def main():
 def work(lockf):
     since_finalize = 0
     try:
-        os.remove(os.path.join(rommlib.DATA_DIR, "chd-current.json"))   # left by a killed run
+        os.remove(rommlib.chd_current_path())   # left by a killed run
     except OSError:
         pass
     while True:
@@ -795,7 +873,8 @@ def work(lockf):
             time.sleep(20)
             continue
         path = os.path.join(rommlib.CHD_QUEUE_DIR, tasks[0])
-        cur = os.path.join(rommlib.DATA_DIR, "chd-current.json")
+        cur = rommlib.chd_current_path()
+        task = None              # never the previous task's: a broken file must not inherit it
         try:
             with open(path) as f:
                 task = json.load(f)
@@ -815,9 +894,9 @@ def work(lockf):
             if res:
                 since_finalize += 1
         except ToolMissing as e:
+            conv = rommlib.CONVERTER.get(task.get("mode")) if isinstance(task, dict) else None
             note("chd: %s isn't installed; dropping %s (Settings, %s)" % (
-                e, tasks[0], "Xbox to squashfs" if "squashfs" in str(e) else
-                "Xbox 360 to .zar" if "xbox360" in str(e) else "GameCube and Wii to RVZ"))
+                e, tasks[0], conv.setting_name if conv else "GameCube and Wii to RVZ"))
         except ChdmanMissing:
             note("chd: chdman not found; leaving %d task(s) queued" % len(tasks))
             try:
@@ -827,7 +906,7 @@ def work(lockf):
             break
         except Exception as e:
             note("chd: error on %s: %r" % (tasks[0], e))
-            record(tasks[0], locals().get("task") or {}, "failed")
+            record(tasks[0], task if isinstance(task, dict) else {}, "failed")
         os.remove(path)
         try:
             os.remove(cur)

@@ -17,9 +17,16 @@ import rb_finalize
 PSX_ES = {"psx": {".cue", ".chd", ".m3u", ".pbp"}, "gba": {".gba", ".zip"}}
 
 
+def _unsettled(j):
+    """Done, but the worker hasn't run its after-job step yet (_settled: a disc
+    set's .m3u is written there, just after the last disc turns Done)."""
+    return j.state == rommlib.Job.DONE and getattr(j, "_test_dl", False) \
+        and getattr(j, "_test_settled_as", None) != rommlib.Job.DONE
+
+
 def _wait(jobs, timeout=120):
     t0 = time.time()
-    while any(j.active for j in jobs):
+    while any(j.active or _unsettled(j) for j in jobs):
         if time.time() - t0 > timeout:
             pytest.fail("downloads did not finish: %s" % [(j.label, j.state, j.message) for j in jobs])
         time.sleep(0.05)
@@ -30,6 +37,21 @@ def _setup(mock_url, es=PSX_ES):
     api = rommlib.Api.from_config(cfg)
     d = rommlib.Downloader(api, rommlib.Library(), cfg)
     d.es = es
+    # let _wait see when a Done job's _settled step has finished too (a paused
+    # job settles as Paused; resumed and Done, it must settle again)
+    real_settled, real_enqueue = d._settled, d.enqueue
+
+    def settled(j):
+        try:
+            real_settled(j)
+        finally:
+            j._test_settled_as = j.state
+
+    def enqueue(*a, **k):
+        j = real_enqueue(*a, **k)
+        j._test_dl = True
+        return j
+    d._settled, d.enqueue = settled, enqueue
     return api, d
 
 

@@ -11,9 +11,7 @@ When the queue is empty it starts the CHD worker if needed and merges gamelist
 entries once ES is idle.
 """
 import fcntl
-import json
 import os
-import subprocess
 import sys
 import time
 
@@ -26,10 +24,7 @@ def write_status(d):
     st = {"pending": d.pending_count(), "current": j.name if j else None,
           "done_bytes": j.done_bytes if j else 0, "total_bytes": j.total_bytes if j else 0,
           "updated": time.time()}
-    tmp = rommlib.DL_STATUS + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(st, f)
-    os.replace(tmp, rommlib.DL_STATUS)
+    rommlib.atomic_write_json(rommlib.DL_STATUS, st, sync=False)     # rewritten every second
 
 
 class Notes:
@@ -132,11 +127,7 @@ def main():
 def after_downloads(cfg, notes):
     """CHD-compress and hand game info to ES for whatever is queued — this
     run's downloads or earlier ones (the app leaves them to us on exit)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    if cfg.get("chd", True) and os.path.isdir(rommlib.CHD_QUEUE_DIR) and \
-            any(t.endswith(".json") for t in os.listdir(rommlib.CHD_QUEUE_DIR)):
-        subprocess.Popen([sys.executable, os.path.join(here, "rb_chd.py")], start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rommlib.start_conversions()
     import rb_finalize
     rb_finalize.main()                           # waits until ES is idle; no-op with nothing queued
     if notes is not None:

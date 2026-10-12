@@ -1,6 +1,6 @@
 # On this box
 
-**On this box** (home menu) opens a menu of six sections. The line under each
+**On this box** (home menu) opens a menu of seven sections. The line under each
 one shows its state right now, so you can see how the box is doing without
 opening anything. It's only coloured when something needs a look. The panel
 on the right previews the selected section; press A to open it.
@@ -28,6 +28,26 @@ for downloads.
   kept so they can resume.
 - **By system**: where the space went in each system, in the same colours as
   the bar. Pick a system to free up space in just that one.
+
+## Compress games already here
+
+Disc games already on the box that could still be compressed: ones copied
+over by hand, or downloaded while a format was off. The scan goes through
+every system and lists each one with its game count, size and the format it
+would become (CHD, RVZ, squashfs, .zcci, .zar), biggest first.
+
+- **A** on a system lists its games: **A** compresses one, **X** all of them.
+- **X** on a system compresses the whole system. You're asked first: a big
+  system can take hours.
+
+It all runs in the background like any other conversion (see
+[Conversions](#conversions)), pauses while you play, and each original is
+deleted only after its copy checks out. CHD works even with **Compress disc
+games to CHD** off (asking for it here is the point); the other formats show
+dimmed with "needs a setting" until their switch in Settings → Disc
+compression is on. Games already queued don't show up again. Over SSH,
+`rb_chd_plan.py` does the same
+([Disc compression](disc-compression.md#converting-a-library-you-already-have)).
 
 ## BIOS files
 

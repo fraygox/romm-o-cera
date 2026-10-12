@@ -8,8 +8,19 @@
 set -eu
 REPO=${REPO:-fraygox/romm-o-cera}
 VERSION=${VERSION:-latest}
-DEST=/userdata/roms/pygame/rommbrowser
+DEST=${ROMM_O_CERA_DEST:-/userdata/roms/pygame/rommbrowser}      # (overrides: for tests)
+DATA=${ROMM_O_CERA_DATA:-/userdata/system/romm-browser}
 TMP=$(mktemp -d)
+# an interrupted update or install (power cut mid-swap) can leave no app folder:
+# put the last good copy back first, so the box has an app even if the download fails
+if [ ! -d "$DEST" ]; then
+    for old in "$DEST.old" "$DATA/app-backup.swap" "$DATA/app-backup"; do
+        if [ -f "$old/rommbrowser.pygame" ]; then
+            mkdir -p "$(dirname "$DEST")" && mv "$old" "$DEST" && echo "Restored the previous copy from $old"
+            break
+        fi
+    done
+fi
 trap 'rm -rf "$TMP"' EXIT
 if [ -n "${ROMM_O_CERA_BASE:-}" ]; then          # testing: install from another place
     BASE="$ROMM_O_CERA_BASE"
@@ -33,13 +44,22 @@ for n in z.namelist():                      # refuse anything escaping the folde
 z.extractall(sys.argv[2])
 PY
 [ -f "$TMP/x/rommbrowser/rommbrowser.pygame" ] || { echo "unexpected release layout"; exit 1; }
-mkdir -p "$(dirname "$DEST")" /userdata/system/romm-browser
-# a clean folder (files dropped from a release don't linger), swapped in at the end
+mkdir -p "$(dirname "$DEST")" "$DATA"
+# a clean folder (files dropped from a release don't linger), swapped in at the end:
+# one atomic exchange where the filesystem allows it (never a moment without an app)
 rm -rf "$DEST.new" "$DEST.old"
 cp -r "$TMP/x/rommbrowser" "$DEST.new"
-[ -d "$DEST" ] && mv "$DEST" "$DEST.old"
-mv "$DEST.new" "$DEST" || { [ -d "$DEST.old" ] && mv "$DEST.old" "$DEST"; echo "install failed"; exit 1; }
-rm -rf "$DEST.old"
+if [ -d "$DEST" ] && python3 -c '
+import ctypes, os, sys
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+sys.exit(0 if libc.renameat2(-100, os.fsencode(sys.argv[1]), -100, os.fsencode(sys.argv[2]), 2) == 0 else 1)
+' "$DEST.new" "$DEST"; then
+    rm -rf "$DEST.new"                        # holds the previous version now
+else
+    [ -d "$DEST" ] && mv "$DEST" "$DEST.old"
+    mv "$DEST.new" "$DEST" || { [ -d "$DEST.old" ] && mv "$DEST.old" "$DEST"; echo "install failed"; exit 1; }
+    rm -rf "$DEST.old"
+fi
 echo "Installed $(python3 -c "import sys;sys.path.insert(0,'$DEST');import rommlib;print('romm-o-cera v'+rommlib.VERSION)") to $DEST"
 echo "Next: Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera → Settings"
 echo "      to enter your RomM URL and client API token."

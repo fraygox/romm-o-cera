@@ -10,7 +10,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -1017,7 +1016,10 @@ class App:
 
     def apply_config(self, reconnect=False):
         """Called by Settings after a change: persist, re-wire live objects."""
-        rommlib.save_config(self.cfg)
+        try:
+            rommlib.save_config(self.cfg)
+        except rommlib.ConfigUnreadable:
+            self.toast("config.json can't be read: this change is not saved (Settings, Reset settings)", AMBER)
         self.input.set_swap(self.cfg.get("swap_ab"))
         self.resolve_style()
         if reconnect:
@@ -1203,22 +1205,11 @@ class App:
         the next download to be noticed. The worker is flock'd (no-op if running)."""
         if self.headless:
             return
-        try:
-            waiting = any(f.endswith(".json") for f in os.listdir(rommlib.CHD_QUEUE_DIR))
-        except OSError:
-            waiting = False
-        if waiting:
+        if rommlib.conversions_pending():
             self.spawn_helper("rb_chd.py")
 
     def spawn_helper(self, script):
-        try:
-            subprocess.Popen(["/usr/bin/python3" if os.path.exists("/usr/bin/python3")
-                              else sys.executable, os.path.join(APP_DIR, script)],
-                             start_new_session=True, stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             close_fds=True)
-        except OSError as e:
-            rommlib.log("spawn %s failed: %r" % (script, e))
+        rommlib.spawn_detached(script, "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else None)
 
     # ---- navigation
     def push(self, screen):
@@ -1280,8 +1271,7 @@ class App:
             rommlib.log("handover: %r" % e)
             was_running = False
         n = self.downloader.resume()
-        if not self.headless and self.cfg.get("chd", True) and os.path.isdir(rommlib.CHD_QUEUE_DIR) \
-                and any(t.endswith(".json") for t in os.listdir(rommlib.CHD_QUEUE_DIR)):
+        if not self.headless and rommlib.conversions_pending():
             self.spawn_helper("rb_chd.py")        # discs left waiting last time (flock'd: no-op if running)
         if n and self.downloader.hold:
             self.toast("%d download%s waiting — paused (Downloads, X resumes)" % (n, "" if n == 1 else "s"), AMBER)
@@ -1289,8 +1279,30 @@ class App:
             self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
                                                     " from the background" if was_running else ""), BLUE)
 
+    def startup_checks(self):
+        """Things the player must know before anything else."""
+        if rommlib.config_unreadable():
+            kept = sorted(n for n in os.listdir(rommlib.DATA_DIR) if n.startswith("config.json.bad-"))
+            rommlib.load_config()                    # keeps a copy beside it if there isn't one
+            kept = sorted(n for n in os.listdir(rommlib.DATA_DIR) if n.startswith("config.json.bad-")) or kept
+            self.modal = Confirm(
+                self, "Settings file can't be read",
+                "config.json has an error, so defaults are in use and nothing is saved over it "
+                "(copy kept: %s). Fix it over SSH and restart, or reset: you then enter the "
+                "server and token again." % (kept[-1] if kept else "config.json.bad-…"),
+                "Reset settings", self.reset_config, danger=True)
+
+    def reset_config(self):
+        rommlib.reset_config()
+        self.cfg.clear()
+        self.cfg.update(rommlib.load_config())
+        self.downloader.cfg = self.cfg
+        self.apply_config(reconnect=True)
+        self.toast("Settings reset to defaults; the old file is kept", GREEN)
+
     def run(self, scripted=None):
         clock = pygame.time.Clock()
+        self.startup_checks()
         self.resolve_style()
         self.take_over_downloads()
         lim = rommlib.cache_limit_bytes(self.cfg)
@@ -1461,7 +1473,7 @@ class App:
             return                            # it runs CHD + gamelist merge when done
         if os.path.exists(rommlib.GAMELIST_QUEUE):
             self.spawn_helper("rb_finalize.py")
-        if os.path.isdir(rommlib.CHD_QUEUE_DIR) and os.listdir(rommlib.CHD_QUEUE_DIR):
+        if rommlib.conversions_pending():
             self.spawn_helper("rb_chd.py")
 
     # ---- drawing
@@ -1895,6 +1907,7 @@ class CollectionScreen(Screen):
         self.items = None
         self.sel = 0
         self.scroll = 0
+        self.here = {}                      # (param, id) -> games of that collection on this box
         if vtype:
             app.bg(lambda: app.api.virtual_collections(vtype), self._loaded_virtual,
                    lambda e: self._failed(e))
@@ -1904,6 +1917,41 @@ class CollectionScreen(Screen):
     def _failed(self, e):
         self.items = []
         self.app.toast(str(e), RED)
+
+    def enter(self):
+        self.here = {}                      # back from a list: downloads/deletes may have changed it
+
+    def count_here(self, it):
+        """How many of a collection's games are on this box: the same test as
+        the green tick in its list (our installs, and games copied over by
+        hand, matched by file name). Fetches the collection's games."""
+        app, n, off = self.app, 0, 0
+        while True:
+            page = app.api.roms(collection=(it["param"], it["id"]), offset=off, limit=500).get("items") or []
+            for r in page:
+                pl = app.platform_by_id.get(r.get("platform_id"))
+                if pl and app.library.is_installed(r, pl["_system"]):
+                    n += 1
+            off += len(page)
+            if not page or len(page) < 500 or off >= (it.get("count") or 0):
+                return n
+
+    def _want_here(self, it):
+        """Count a visible collection's games on the box, one at a time, in the background."""
+        key = (it.get("param"), it.get("id"))
+        if not it.get("id") or key in self.here or getattr(self, "_here_busy", False) \
+                or not self.app.platform_by_id:
+            return
+        self._here_busy = True
+
+        def done(n):
+            self.here[key] = n
+            self._here_busy = False
+
+        def failed(e):
+            self.here[key] = None
+            self._here_busy = False
+        self.app.bg(lambda: self.count_here(it), done, failed)
 
     def _load_top(self):
         api = self.app.api
@@ -2059,7 +2107,8 @@ class CollectionScreen(Screen):
             self.app.hit(r, lambda i=i: self.tap_now(i))
             if on:
                 focus_box(c, r)
-            right = 150
+            here = self.here.get((it.get("param"), it.get("id")))
+            right = 150 + (24 + int(measure(self.f.small, "{:,}".format(here))) if here else 0)
             tag = it["tag"]
             if tag:
                 tw = int(measure(self.f.tiny, tag)) + 14
@@ -2083,7 +2132,11 @@ class CollectionScreen(Screen):
                     text(c, fnt, ln, (r.left + 22, y0 + k * lh), col_txt)
             cnt = ("{:,} game{}".format(it["count"], "" if it["count"] == 1 else "s")
                    if it["count"] is not None else "›")
-            text(c, self.f.small, cnt, (r.right - 20, r.centery), FAINT, "midright")
+            cr = text(c, self.f.small, cnt, (r.right - 20, r.centery), FAINT, "midright")
+            self._want_here(it)
+            if here:                                   # like the platform cards: green tick + count
+                hr = text(c, self.f.small, "{:,}".format(here), (cr.left - 14, r.centery), GREEN, "midright")
+                installed_mark(c, (hr.left - 11, r.centery), 7)
             y += self.ROW_H
         n = len(self.items)
         if n > rows:
@@ -3029,10 +3082,12 @@ class DownloadsScreen(Screen):
             cache = self.__dict__.setdefault("_chd_st", {})
             if id(j) not in cache:
                 cache[id(j)] = rommlib.chd_status(getattr(j, "chd_task", None), self.app.library,
-                                                  j.rom.get("id")) if getattr(j, "chd_task", None) else None
+                                                  j.rom.get("id"), getattr(j, "chd_mode", None)) \
+                    if getattr(j, "chd_task", None) else None
             st = cache[id(j)]
-            msg += {"queued": " · CHD queued", "compressing": " · compressing to CHD…",
-                    "done": " · compressed to CHD"}.get(st, "")
+            fmt = rommlib.CONVERT_LABELS.get(getattr(j, "chd_mode", None), "CHD")
+            msg += {"queued": " · %s queued" % fmt, "compressing": " · compressing to %s…" % fmt,
+                    "done": " · compressed to %s" % fmt}.get(st, "")
             return msg, GREEN
         if j.state == J.FAILED:
             return "Failed — " + j.message, RED
@@ -3344,6 +3399,8 @@ class SettingsScreen(Screen):
              "Covers re-download as you browse"),
             ("bios", "BIOS files", "Open", "What each system needs, and what RomM can fill"),
             ("credits", "Credits and licenses", "Open", "The software RomM-o-Cera uses or downloads"),
+            ("resetcfg", "Reset settings", "Can't be read" if rommlib.config_unreadable() else "Reset",
+             "Start over from the defaults; the old file is kept"),
             sec("Updates"),
             ("update", "Updates", ("%s available" % self.app.update_tag) if self.app.update_tag
              else "v" + rommlib.VERSION,
@@ -3515,6 +3572,11 @@ class SettingsScreen(Screen):
                     app.downloader.cfg = cfg
             elif key == "credits" and a == "ok":
                 app.push(CreditsScreen(app))
+            elif key == "resetcfg" and a == "ok":
+                app.modal = Confirm(app, "Reset all settings?",
+                                    "Every setting goes back to its default, including the server address and "
+                                    "token. The current settings file is kept beside it.",
+                                    "Reset settings", app.reset_config, danger=True)
             elif key == "chd":
                 cfg["chd"] = not cfg.get("chd", True)
                 app.apply_config()
@@ -3802,6 +3864,9 @@ SETTING_HELP = {
            "(video partition, padding), so it isn't a copy of the original image. Every file is checked "
            "against the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), "
            "downloaded once when you turn this on. xenia (not canary) can't open .zar.",
+    "resetcfg": "Puts every setting back to its default, including the RomM server address and token. "
+                "The current settings file is kept beside it (config.json.bad-…) so nothing is lost. "
+                "Use it when config.json was edited by hand and can't be read any more.",
     "xboxboot": "xemu boots only an Xbox disc's game partition: a full disc image (as Redump keeps "
                 "them) shows \"Please insert an Xbox disc\". This keeps just the game partition, in place "
                 "where the drive allows, and renames .xiso files to .iso so EmulationStation lists them. "
@@ -3944,7 +4009,7 @@ def storage_by_system(lib):
         row = {"system": system, "ours": 0, "other": 0, "media": 0}
         for dp, dns, fns in os.walk(sysdir):
             rel = os.path.relpath(dp, sysdir)
-            media = rel != "." and rel.split(os.sep)[0] in rommlib.AUDIT_SKIP
+            media = rel != "." and rel.split(os.sep)[0] in rommlib.MEDIA_DIRS
             top = None if rel == "." else os.path.normpath(os.path.join(sysdir, rel.split(os.sep)[0]))
             for fn in fns:
                 p = os.path.join(dp, fn)
@@ -3990,7 +4055,7 @@ def conversion_rows():
     qdir = rommlib.CHD_QUEUE_DIR
     cur = {}
     try:
-        with open(os.path.join(rommlib.DATA_DIR, "chd-current.json")) as f:
+        with open(rommlib.chd_current_path()) as f:
             cur = json.load(f)
     except (OSError, ValueError):
         pass
@@ -4017,7 +4082,7 @@ def conversion_rows():
                      "discs": len(srcs), "size": size, "cur": cur if n == cur.get("task") else None})
     rows.sort(key=lambda r: r["kind"] != "running")
     try:
-        with open(os.path.join(rommlib.DATA_DIR, "chd-results.jsonl")) as f:
+        with open(rommlib.chd_results_path()) as f:
             done = [json.loads(l) for l in f.readlines()[-60:] if l.strip()]
     except (OSError, ValueError):
         done = []
@@ -4122,7 +4187,7 @@ def bios_rows(app):
         for d in os.listdir(rommlib.ROMS_ROOT):
             full = os.path.join(rommlib.ROMS_ROOT, d)
             if os.path.isdir(full) and any(not n.startswith(".") and n not in
-                                           ("gamelist.xml", "images", "videos", "manuals", "_info.txt")
+                                           ("gamelist.xml", "_info.txt") + rommlib.GAMELIST_MEDIA_DIRS
                                            for n in os.listdir(full)):
                 with_games.add(d)
     except OSError:
@@ -4159,18 +4224,21 @@ class OnThisBoxScreen(Screen):
     checks, conversions, game info. Each line under a section is its live
     state, coloured only when something wants attention; the panel on the
     right previews the selected section, A opens it."""
-    ITEMS = [("games", "Games from RomM"), ("space", "Space"), ("bios", "BIOS files"),
-             ("check", "Check games"), ("conv", "Conversions"), ("info", "Fill in game info")]
-    TILE_H, STEP = 82, 94
+    ITEMS = [("games", "Games from RomM"), ("space", "Space"), ("compress", "Compress games already here"),
+             ("bios", "BIOS files"), ("check", "Check games"), ("conv", "Conversions"),
+             ("info", "Fill in game info")]
+    TILE_H, STEP = 70, 80
 
     def __init__(self, app):
         super().__init__(app)
         self.sel = 0
         self.games = self.storage = self.leftovers = self.bios = self.counts = None
         self.audit, self.convs, self.conv_at = None, [], 0
+        self.compress = None
 
     def enter(self):
         app = self.app
+        app.bg(compress_scan, lambda v: setattr(self, "compress", v), lambda e: setattr(self, "compress", []))
         app.bg(lambda: installed_games(app.library), lambda v: setattr(self, "games", v),
                lambda e: setattr(self, "games", []))
         app.bg(lambda: storage_by_system(app.library), lambda v: setattr(self, "storage", v),
@@ -4200,6 +4268,8 @@ class OnThisBoxScreen(Screen):
                 app.push(InstalledScreen(app))
             elif key == "space":
                 app.push(SpaceScreen(app))
+            elif key == "compress":
+                app.push(CompressScreen(app))
             elif key == "bios":
                 app.push(BiosScreen(app))
             elif key == "check":
@@ -4258,6 +4328,13 @@ class OnThisBoxScreen(Screen):
                 return "All good on %s" % when, None
             bits = (["%d damaged" % dmg] if dmg else []) + (["%d differ from RomM" % dif] if dif else [])
             return "%s, checked %s" % (", ".join(bits), when), RED if dmg else AMBER
+        if key == "compress":
+            if self.compress is None:
+                return "Looking…", None
+            ok = [c for c in self.compress if c["enabled"]]
+            if not ok:
+                return "Nothing left to compress", None
+            return "%s could be smaller (%s)" % (plural(len(ok), "game"), human_size(sum(c["size"] for c in ok))), None
         if key == "conv":
             run = next((r for r in self.convs if r["kind"] == "running"), None)
             nq = sum(1 for r in self.convs if r["kind"] == "queued")
@@ -4283,11 +4360,11 @@ class OnThisBoxScreen(Screen):
                 focus_box(c, r, 14)
             else:
                 rrect(c, PANEL, r, 14)
-            text(c, self.f.h2, label, (r.left + 28, r.top + 13), TEXT if on else DIM)
+            text(c, self.f.h2, label, (r.left + 28, r.top + 9), TEXT if on else DIM)
             line, col = self.verdict(key)
             if col:
-                circle(c, col, (r.left + 33, r.top + 58), 5)
-            text(c, self.f.small, line, (r.left + (44 if col else 28), r.top + 48),
+                circle(c, col, (r.left + 33, r.top + 50), 5)
+            text(c, self.f.small, line, (r.left + (44 if col else 28), r.top + 40),
                  col or (DIM if on else FAINT), maxw=r.width - 60)
             y += self.STEP
         p = pygame.Rect(616, 84, 616, self.STEP * (len(self.ITEMS) - 1) + self.TILE_H)
@@ -4422,6 +4499,30 @@ class OnThisBoxScreen(Screen):
              (x, yy + 88), FAINT, maxw=p.width - 56)
         self.foot(c, p, "Damaged games can be downloaded again; saves follow.")
 
+    def panel_compress(self, c, p):
+        x = p.left + 28
+        self.head(c, p, "Not compressed yet", "by system")
+        if self.compress is None:
+            return self.waiting(c, p, "Looking through every system…")
+        rows = compress_by_system(self.compress)
+        if not rows:
+            for i, ln in enumerate(wrap(self.f.body, "Every disc game here that a converter supports is "
+                                        "compressed already (or queued).", p.width - 56)):
+                text(c, self.f.body, ln, (x, p.top + 72 + i * 26), DIM)
+            return
+        yy = p.top + 70
+        for r in rows[:7]:
+            col = DIM if r["enabled"] else FAINT
+            text(c, self.f.row, r["system"], (x, yy), col, maxw=170)
+            text(c, self.f.small, "%s, %s" % (plural(r["n"], "game"), human_size(r["size"])), (x + 180, yy + 3),
+                 FAINT, maxw=220)
+            text(c, self.f.small, ("to " + r["label"]) if r["enabled"] else "needs a setting",
+                 (p.right - 28, yy + 3), ACCENT_HI if r["enabled"] else FAINT, "topright")
+            yy += 40
+        if len(rows) > 7:
+            text(c, self.f.small, "and %s more" % plural(len(rows) - 7, "system"), (x, yy), FAINT)
+        self.foot(c, p, "One game, or a whole system (that can take hours).")
+
     def panel_conv(self, c, p):
         x = p.left + 28
         run = next((r for r in self.convs if r["kind"] == "running"), None)
@@ -4483,6 +4584,224 @@ class OnThisBoxScreen(Screen):
                                     "are never replaced.", p.width - 56)):
             text(c, self.f.body, ln, (x, yy + 18 + i * 26), DIM)
         self.foot(c, p, "To do one system: its game list, then {X}")
+
+
+def compress_scan():
+    """Games here that could still be compressed (see rb_chd_plan.candidates)."""
+    import rb_chd_plan
+    return rb_chd_plan.candidates()
+
+
+def compress_by_system(cands):
+    """[{"system", "n", "size", "label", "enabled", "setting"}], biggest first."""
+    by = {}
+    for c in cands:
+        r = by.setdefault(c["system"], {"system": c["system"], "n": 0, "size": 0, "labels": [],
+                                        "enabled": c["enabled"], "setting": c["setting"]})
+        r["n"] += 1
+        r["size"] += c["size"]
+        if c["label"] not in r["labels"]:
+            r["labels"].append(c["label"])
+        r["enabled"] = r["enabled"] and c["enabled"]
+    for r in by.values():
+        r["label"] = "/".join(r["labels"])
+    return sorted(by.values(), key=lambda r: -r["size"])
+
+
+def compress_confirm(app, title, cands, done):
+    """Ask before queueing a whole system: it can run for hours."""
+    size = sum(c["size"] for c in cands)
+    app.modal = Confirm(app, title,
+                        "%s, %s to work through: this can take hours. It runs in the background, pauses "
+                        "while you play, and each original goes only after its copy checks out."
+                        % (plural(len(cands), "game"), human_size(size)),
+                        "Compress %d" % len(cands), lambda: compress_queue(app, cands, done))
+
+
+def compress_queue(app, cands, done=None):
+    import rb_chd_plan
+
+    def run():
+        return rb_chd_plan.queue(cands)
+
+    def ok(n):
+        app.spawn_helper("rb_chd.py")
+        app.toast("Queued %s: they compress in the background (On this box, Conversions)" % plural(n, "game"), GREEN)
+        if done:
+            done()
+    app.bg(run, ok)
+
+
+class CompressScreen(Screen):
+    """Compress games already here: every system with disc images a converter
+    still applies to, biggest first. A: that system's games; X: all of them."""
+    ROWS, ROW_H = 9, 58
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.cands = None
+        self.sel = self.scroll = 0
+
+    def enter(self):
+        self.app.bg(compress_scan, self._loaded, lambda e: (setattr(self, "cands", []), self.app.toast(str(e), RED)))
+
+    def _loaded(self, cands):
+        self.cands = cands
+        self.rows = compress_by_system(cands)
+        self.sel = max(0, min(self.sel, len(self.rows) - 1))
+
+    def crumbs(self):
+        return self.trail("Compress")
+
+    def hints(self):
+        if not self.cands:
+            return [("B", "Back")]
+        r = self.rows[self.sel]
+        return [("A", "Games")] + ([("X", "Compress all %s" % r["system"])] if r["enabled"] else []) + \
+            [("B", "Back")]
+
+    def action(self, a):
+        if not self.cands:
+            return super().action(a)
+        n = len(self.rows)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
+        r = self.rows[self.sel]
+        if a in mv:
+            self.sel = max(0, min(n - 1, self.sel + mv[a]))
+        elif a == "ok":
+            self.app.push(CompressSystemScreen(self.app, r["system"]))
+        elif a == "x":
+            if not r["enabled"]:
+                self.app.toast("Turn on %s in Settings first" % r["setting"], AMBER)
+            else:
+                compress_confirm(self.app, "Compress every %s game here?" % r["system"],
+                                 [c for c in self.cands if c["system"] == r["system"]], self.enter)
+        else:
+            super().action(a)
+
+    def draw(self, c):
+        if self.cands is None:
+            text(c, self.f.h2, "Looking through every system…", (W // 2, H // 2), DIM, "center")
+            return
+        if not self.cands:
+            text(c, self.f.h3, "Nothing left to compress.", (56, 86), GREEN)
+            text(c, self.f.body, "Every disc game here that a converter supports is compressed already, "
+                 "or queued. Formats with a Settings switch (RVZ, squashfs, .zcci, .zar) show up once it's on.",
+                 (56, 124), DIM, maxw=W - 112)
+            return
+        ok = [r for r in self.rows if r["enabled"]]
+        text(c, self.f.h3, "%s could be smaller, %s to work through" % (
+            plural(sum(r["n"] for r in ok), "game"), human_size(sum(r["size"] for r in ok))), (56, 86), TEXT)
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + self.ROWS:
+            self.scroll = self.sel - self.ROWS + 1
+        y = 124
+        for i in range(self.scroll, min(len(self.rows), self.scroll + self.ROWS)):
+            r_ = self.rows[i]
+            on = i == self.sel
+            r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
+            if on:
+                focus_box(c, r)
+            col = (TEXT if on else DIM) if r_["enabled"] else FAINT
+            text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), col)
+            sub = "%s, %s" % (plural(r_["n"], "game"), human_size(r_["size"]))
+            text(c, self.f.small, sub if r_["enabled"] else sub + " · turn on %s in Settings" % r_["setting"],
+                 (r.left + 22, r.top + 30), FAINT, maxw=r.width - 200)
+            text(c, self.f.small, ("to " + r_["label"]) if r_["enabled"] else "needs a setting",
+                 (r.right - 20, r.centery), ACCENT_HI if r_["enabled"] else FAINT, "midright")
+            y += self.ROW_H
+
+
+class CompressSystemScreen(Screen):
+    """One system's games that could still be compressed: A queues one,
+    X queues them all (asks first: it can take hours)."""
+    ROWS, ROW_H = 9, 58
+
+    def __init__(self, app, system):
+        super().__init__(app)
+        self.system = system
+        self.cands = None
+        self.sel = self.scroll = 0
+
+    def enter(self):
+        import rb_chd_plan
+        self.app.bg(lambda: rb_chd_plan.candidates([self.system]), self._loaded,
+                    lambda e: (setattr(self, "cands", []), self.app.toast(str(e), RED)))
+
+    def _loaded(self, cands):
+        self.cands = cands
+        self.sel = max(0, min(self.sel, len(cands) - 1))
+
+    def crumbs(self):
+        return self.trail(self.system)
+
+    def title_of(self, c):
+        return c["name"] or os.path.splitext(os.path.basename(c["root"]))[0]
+
+    def hints(self):
+        if not self.cands:
+            return [("B", "Back")]
+        if not self.cands[0]["enabled"]:
+            return [("B", "Back")]
+        return [("A", "Compress this one"), ("X", "Compress all"), ("L", "Page up"), ("R", "Page down"),
+                ("B", "Back")]
+
+    def action(self, a):
+        if not self.cands:
+            return super().action(a)
+        n = len(self.cands)
+        mv = {"up": -1, "down": 1, "l1": -self.ROWS, "r1": self.ROWS}
+        cand = self.cands[self.sel]
+        if a in mv:
+            self.sel = max(0, min(n - 1, self.sel + mv[a]))
+        elif a in ("ok", "x") and not cand["enabled"]:
+            self.app.toast("Turn on %s in Settings first" % cand["setting"], AMBER)
+        elif a == "ok":
+            compress_queue(self.app, [cand], self.enter)
+        elif a == "x":
+            compress_confirm(self.app, "Compress all %s here?" % plural(n, "%s game" % self.system),
+                             list(self.cands), self.enter)
+        else:
+            super().action(a)
+
+    def draw(self, c):
+        if self.cands is None:
+            text(c, self.f.h2, "Looking…", (W // 2, H // 2), DIM, "center")
+            return
+        if not self.cands:
+            text(c, self.f.h3, "Nothing left to compress here.", (56, 86), GREEN)
+            return
+        text(c, self.f.h3, "%s, %s · to %s" % (plural(len(self.cands), "game"),
+             human_size(sum(x["size"] for x in self.cands)), self.cands[0]["label"]), (56, 86), TEXT)
+        if self.sel < self.scroll:
+            self.scroll = self.sel
+        elif self.sel >= self.scroll + self.ROWS:
+            self.scroll = self.sel - self.ROWS + 1
+        y = 124
+        for i in range(self.scroll, min(len(self.cands), self.scroll + self.ROWS)):
+            cand = self.cands[i]
+            on = i == self.sel
+            r = pygame.Rect(48, y, W - 96, self.ROW_H - 4)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
+            if on:
+                focus_box(c, r)
+            text(c, self.f.row, self.title_of(cand), (r.left + 22, r.top + 5), TEXT if on else DIM,
+                 maxw=r.width - 200)
+            discs = len(cand["files"])
+            ext = os.path.splitext(cand["files"][0])[1].lower().lstrip(".")
+            sub = {"cue": "CUE/BIN", "gdi": "GDI"}.get(ext, ext.upper())
+            if discs > 1:
+                sub = "%d discs, %s" % (discs, sub)
+            where = os.path.relpath(cand["root"], os.path.join(rommlib.ROMS_ROOT, self.system))
+            if os.path.splitext(where)[0] != self.title_of(cand):          # only when it says something new
+                sub += " · " + where
+            if cand["cut"]:
+                sub += " · made bootable first"
+            text(c, self.f.small, sub, (r.left + 22, r.top + 30), FAINT, maxw=r.width - 200)
+            text(c, self.f.small, human_size(cand["size"]), (r.right - 20, r.centery), DIM, "midright")
+            y += self.ROW_H
 
 
 class InstalledScreen(Screen):
@@ -4592,8 +4911,7 @@ class ConversionsScreen(Screen):
     left), the queue, and recent results (retry a failed one). The worker
     (rb_chd.py) publishes chd-current.json and chd-results.jsonl."""
     ROW_H = 60
-    MODES = {"createcd": "CHD", "createdvd": "CHD", "rvz": "RVZ", "squashfs": "squashfs", "z3ds": "ZCCI",
-             "zar": "ZAR"}
+    MODES = rommlib.CONVERT_LABELS
 
     def __init__(self, app):
         super().__init__(app)
@@ -4630,7 +4948,7 @@ class ConversionsScreen(Screen):
             app.toast("Conversions start now if nothing is playing and there's room")
         elif a == "y":
             try:
-                os.remove(os.path.join(rommlib.DATA_DIR, "chd-results.jsonl"))
+                os.remove(rommlib.chd_results_path())
             except OSError:
                 pass
             self.refresh()
@@ -4655,9 +4973,7 @@ class ConversionsScreen(Screen):
             e.append(("Converting now", "It pauses by itself while a game runs", None))
         elif r["kind"] in ("failed", "waiting") and r.get("task"):
             def retry():
-                os.makedirs(q, exist_ok=True)
-                with open(os.path.join(q, "%d-retry.json" % int(time.time() * 1000)), "w") as f:
-                    json.dump(r["task"], f)
+                rommlib.publish_queue_task(r["task"], "%d-retry.json" % int(time.time() * 1000))
                 app.spawn_helper("rb_chd.py")
                 app.toast("Queued again: %s" % r["title"], GREEN)
                 self.refresh()
