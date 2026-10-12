@@ -142,7 +142,7 @@ def require_clean_main():
         sys.exit("uncommitted changes: commit or stash them first")
     if git("config", "core.hooksPath") != "tools/hooks":
         sys.exit("hooks not enabled: run tools/release.py setup")
-    git("fetch", "-q", "origin", "main", "--tags")
+    git("fetch", "-q", "--force", "origin", "main", "--tags")       # the nightly tag moves on GitHub
     if git("rev-list", "--count", "HEAD..origin/main") != "0":
         sys.exit("origin/main has commits this clone doesn't: pull first")
 
