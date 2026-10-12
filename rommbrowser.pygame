@@ -1148,7 +1148,16 @@ class App:
 
     def toast(self, msg, color=None):
         color = TEXT if color is None else color
-        self.toasts.append([msg, color, time.time() + 3.5])
+        now = time.time()
+        last = self.toasts[-1] if self.toasts else None
+        if last and last[0] == msg and last[1] == color and last[2] > now:
+            burst = last[2] - 3.5 > now - 0.5    # e.g. every load of a screen failing at once: one sound
+            last[2] = now + 3.5                  # the same message again: one toast, its time renewed, ×N
+            last[3] += 1
+            if burst:
+                return
+        else:
+            self.toasts.append([msg, color, now + 3.5, 1])
         if color == RED:
             self.sfx.play("deny")
         elif msg.startswith("Ready"):
@@ -1883,7 +1892,10 @@ class App:
         now = time.time()
         self.toasts = [t for t in self.toasts if t[2] > now][-3:]
         y = H - 64
-        for msg, color, _ in reversed(self.toasts):
+        for t in reversed(self.toasts):
+            msg, color = t[0], t[1]
+            if t[3] > 1:
+                msg = "%s  ×%d" % (msg, t[3])
             w = min(900, rich_width(self.fonts, self.fonts.body, msg) + 52)
             r = pygame.Rect(0, 0, w, 40)
             r.midbottom = (W // 2, y)

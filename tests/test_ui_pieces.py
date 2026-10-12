@@ -99,3 +99,50 @@ def test_part_bytes_counts_a_folder_downloads_parts(app):
     _put("psx/Sed Sprite (Europe)/c.bin", b"c" * 999)          # finished files aren't partial
     assert app.downloader.part_bytes(j) == 150
 
+
+# ------------------------------------------------------------ toasts that repeat
+
+def test_the_same_toast_again_is_one_toast_with_a_count(app, rb, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(rb.time, "time", lambda: now[0])
+    played = []
+    monkeypatch.setattr(app.sfx, "play", lambda name, *a, **k: played.append(name))
+    app.toast("Turn on RVZ in Settings first", rb.AMBER)
+    now[0] += 2
+    app.toast("Turn on RVZ in Settings first", rb.AMBER)
+    assert len(app.toasts) == 1 and app.toasts[0][3] == 2 and app.toasts[0][2] == 1005.5   # timer renewed
+    app.toast("Something else")
+    app.toast("Turn on RVZ in Settings first", rb.AMBER)    # not the newest one: stacks as before
+    assert [t[0] for t in app.toasts] == ["Turn on RVZ in Settings first", "Something else",
+                                          "Turn on RVZ in Settings first"]
+    app.toast("Something else", rb.RED)                     # same words, other colour: its own toast
+    assert len(app.toasts) == 4
+    now[0] += 10                                            # the last one has gone: a fresh one
+    app.toast("Something else", rb.RED)
+    assert app.toasts[-1][3] == 1
+
+
+def test_a_burst_of_the_same_error_sounds_once(app, rb, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(rb.time, "time", lambda: now[0])
+    played = []
+    monkeypatch.setattr(app.sfx, "play", lambda name, *a, **k: played.append(name))
+    for _ in range(5):                                      # every load of a screen failing at once
+        app.toast("Can't reach RomM", rb.RED)
+    assert played == ["deny"] and app.toasts[-1][3] == 5
+    now[0] += 1
+    app.toast("Can't reach RomM", rb.RED)                   # pressed again a moment later: heard again
+    assert played == ["deny", "deny"]
+
+
+def test_a_repeated_toast_draws_its_count(app, rb, monkeypatch):
+    seen = []
+    real = rb.rich_text
+    monkeypatch.setattr(rb, "rich_text", lambda c, fonts, font, s, *a, **k: (seen.append(s),
+                                                                            real(c, fonts, font, s, *a, **k))[1])
+    app.toast("Queued: Lorem")
+    app.toast("Queued: Lorem")
+    app.toast("Queued: Lorem")
+    app.draw_toasts(app.canvas)
+    assert seen == ["Queued: Lorem  ×3"]
+
