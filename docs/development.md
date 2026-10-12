@@ -121,6 +121,9 @@ qemu-user uses itself).
 ```sh
 pip install -r tests/requirements.txt
 python -m pytest tests                       # logic + downloads/UI vs the mock RomM
+docker build -t rb-test:local tests/         # or in a container (tests/Dockerfile):
+docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v $PWD:$PWD -w $PWD rb-test:local \
+  python -m pytest -q -p no:cacheprovider tests
 ROMM_CONTRACT_URL=https://romm.example.com ROMM_CONTRACT_TOKEN=rmm_… \
   python -m pytest tests/test_contract.py    # your RomM still has the API the app uses
 python tests/contract/disposable.py --tag 5.4.0   # same, against a throwaway RomM (needs docker)

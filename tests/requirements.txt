@@ -3,6 +3,7 @@ pytest
 requests
 pillow
 pygame==2.6.1
+cryptography
 python-socketio[client]
 websocket-client
 # optional: parallel runs (python -m pytest tests -n 8); the suite needs none of these
