@@ -57,7 +57,8 @@ def _entries(menu):
 def test_search_keyboard_types_deletes_clears_and_wraps(app, rb):
     sc = rb.SearchScreen(app)
     app.push(sc)
-    assert (sc.r, sc.c) == (1, 0)                  # starts on Q
+    kb = sc.kb
+    assert (kb.r, kb.c) == (1, 0) and kb.focus.label == "q"     # starts on Q
     sc.action("ok")
     assert sc.query == "q" and sc.pending_at       # letters type lower case; the live search waits a moment
     sc.action("up")
@@ -68,11 +69,10 @@ def test_search_keyboard_types_deletes_clears_and_wraps(app, rb):
     sc.action("x")
     assert sc.query == "q1"
     sc.action("left")
-    assert sc.c == len(sc.ROWS[0]) - 1             # left from the first key wraps
+    assert kb.focus.label == "'"                   # left from the first key wraps, to the context column
     sc.action("up")
-    assert sc.r == len(sc.ROWS)                    # up from the top wraps to Space/Delete/Clear/Search
-    assert sc.c == len(sc.SPECIAL) - 1             # clamped to that shorter row
-    sc.c = [k for k, _ in sc.SPECIAL].index("Clear")
+    assert kb.r == 4 and kb.focus.label == "!"     # up from the top wraps to the action row, the key below
+    kb.c = [k.kind for k in kb.keys()[4]].index("clear")
     sc.preview, sc.preview_total = [_rom()], 1
     sc.action("ok")
     assert sc.query == "" and sc.preview == [] and sc.preview_total is None
@@ -88,7 +88,7 @@ def test_search_needs_two_characters_then_opens_the_results(app, rb):
     sc.action("start")
     assert app.stack[-1] is sc and any("at least 2" in t[0] for t in app.toasts)
     sc.type_text("b")
-    sc.r, sc.c = len(sc.ROWS), [k for k, _ in sc.SPECIAL].index("Search")
+    sc.kb.r, sc.kb.c = 4, [k.kind for k in sc.kb.keys()[4]].index("primary")
     sc.action("ok")
     gl = app.stack[-1]
     assert isinstance(gl, rb.GameListScreen) and gl.search == "a b" and gl.platform is sc.platform
@@ -463,5 +463,5 @@ def test_a_key_tapped_after_a_tapped_match_types_instead_of_reopening_it(isolate
     sc.tap_pick(1)                                  # a Top match tapped: its prompt opens
     assert opened == [1] and app.modal == "dl"
     app.modal = None                                # and is closed
-    sc.tap_key(1, 0)                                # then the Q key
+    sc.kb.tap(1, 0)                                 # then the Q key
     assert opened == [1] and sc.query == "loremq"

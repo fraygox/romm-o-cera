@@ -15,11 +15,12 @@ import pkgutil
 
 import rbui
 import rbui.screens
+import rbui.widgets
 
 
 def _modules():
     out = []
-    for pkg in (rbui, rbui.screens):
+    for pkg in (rbui, rbui.screens, rbui.widgets):
         for info in pkgutil.iter_modules(pkg.__path__):
             if not info.ispkg:
                 out.append(importlib.import_module(pkg.__name__ + "." + info.name))

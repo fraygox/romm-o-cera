@@ -268,7 +268,7 @@ def _search(rb, app, monkeypatch, installed=()):
 def test_search_matches_take_controller_focus(make_app, rb, monkeypatch):
     app = make_app()
     sc, opened = _search(rb, app, monkeypatch, installed={2})
-    sc.r, sc.c = 1, len(sc.ROWS[1]) - 1                   # P, the end of its row
+    sc.kb.r, sc.kb.c = 1, sc.kb.row_len(1) - 1            # the end of the Q row
     sc.action("right")
     assert sc.pick is not None and not sc.text_entry
     first = sc.pick
@@ -287,8 +287,8 @@ def test_search_matches_take_controller_focus(make_app, rb, monkeypatch):
     assert opened[-1] == ("download", 3)
     app.modal = None
     sc.action("left")                                     # back to the keyboard, beside it
-    assert sc.pick is None and sc.text_entry and sc.c == sc.row_len(sc.r) - 1
-    sc.c = 0
+    assert sc.pick is None and sc.text_entry and sc.kb.at_edge("right")
+    sc.kb.c = 0
     sc.action("left")                                     # left from the first key: the matches too
     assert sc.pick is not None
     sc.action("back")                                     # B: the keyboard again, not out of Search
@@ -300,11 +300,11 @@ def test_search_without_matches_keeps_the_keyboard_wrapping(make_app, rb, monkey
     app = make_app()
     sc, opened = _search(rb, app, monkeypatch)
     sc.preview = []
-    sc.r, sc.c = 1, len(sc.ROWS[1]) - 1
+    sc.kb.r, sc.kb.c = 1, sc.kb.row_len(1) - 1
     sc.action("right")
-    assert sc.pick is None and sc.c == 0
+    assert sc.pick is None and sc.kb.c == 0
     sc.action("left")
-    assert sc.c == len(sc.ROWS[1]) - 1
+    assert sc.kb.at_edge("right")
 
 
 def test_search_enter_on_a_match_opens_it_from_the_keyboard(make_app, rb, monkeypatch):
@@ -329,7 +329,7 @@ def test_tapping_an_installed_match_opens_its_manage_menu(make_app, rb, monkeypa
     app = make_app()
     sc, opened = _search(rb, app, monkeypatch, installed={0})
     app.draw()
-    hits = [(r, fn) for r, fn in app.targets if r.left == 732]
+    hits = [(r, fn) for r, fn in app.targets if r.left == sc.PANEL.left + 12]
     assert len(hits) == 5
     app.tap(hits[0][0].center)
     assert opened == [("manage", 0)]
