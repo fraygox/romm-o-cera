@@ -573,8 +573,10 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/roms/(\d+)$", path)
         if m and int(m.group(1)) in self.by_id:
             r = self.by_id[int(m.group(1))]
-            return self._json(dict({k: v for k, v in r.items() if k != "_data"},
-                                   sibling_roms=r.get("sibling_roms", [])))
+            out = dict({k: v for k, v in r.items() if k != "_data"}, sibling_roms=r.get("sibling_roms", []))
+            if "files" in r:
+                out["files"] = [{k: v for k, v in f.items() if k != "_data"} for f in r["files"]]
+            return self._json(out)
         m = re.match(r"^/api/roms/(\d+)/content/", path)
         if m and int(m.group(1)) in self.by_id:
             r = self.by_id[int(m.group(1))]
@@ -589,7 +591,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream(r["fs_size_bytes"])
         m = re.match(r"^/api/roms/(\d+)/files/content/", path)
         if m and int(m.group(1)) in self.files:
-            return self._stream(self.files[int(m.group(1))]["file_size_bytes"])
+            f = self.files[int(m.group(1))]
+            return self._stream(f["file_size_bytes"], f.get("_data"))
         m = re.match(r"^/assets/romm/resources/roms/\d+/(\d+)/manual/\d+\.pdf$", path)
         if m and self.by_id.get(int(m.group(1)), {}).get("has_manual"):
             data = b"%PDF-1.4\n% mock manual for rom " + m.group(1).encode() + b"\n%%EOF\n"
@@ -631,25 +634,31 @@ class Handler(BaseHTTPRequestHandler):
         return self.zips[r["id"]]
 
     def _stream(self, size, data=None):
-        """Range-aware, throttled so progress is visible. Zeros unless data."""
-        start = 0
+        """Range-aware (bytes=a-, a-b and -n, like RomM's nginx), throttled so
+        progress is visible. Zeros unless data (bytes, or anything sliceable)."""
+        start, end = 0, size - 1
         rng = self.headers.get("Range")
         if rng and rng.startswith("bytes="):
-            start = int(rng[6:].split("-")[0] or 0)
-            if start >= size:
+            a, _, b = rng[6:].split(",")[0].partition("-")
+            if a:
+                start, end = int(a), min(int(b), size - 1) if b else size - 1
+            else:
+                start = max(0, size - int(b or 0))
+            if start >= size or start > end:
                 self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % size)
                 self.end_headers()
                 return
             self.send_response(206)
-            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, size - 1, size))
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
         else:
             self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(size - start))
+        self.send_header("Content-Length", str(end + 1 - start))
         self.send_header("Accept-Ranges", "bytes")
         self.end_headers()
         chunk = b"\0" * (256 * 1024)
-        left = size - start
+        left = end + 1 - start
         pos = start
         t0, sent = time.time(), 0
         try:

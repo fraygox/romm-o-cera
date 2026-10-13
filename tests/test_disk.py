@@ -316,7 +316,8 @@ def test_disc_layout(isolated):
     cuebin = _detail([_zip([("Lorem.cue", 200), ("Lorem (Track 1).bin", 600_000), ("Lorem (Track 2).bin", 90_000),
                             ("Lorem (Track 3).bin", 80_000)])])
     assert rommlib.disc_layout(cuebin, "psx", cfg) == {
-        "label": "CUE/BIN, 3 tracks", "discs": 1, "unpacked": 770_200, "estimated": False, "convert": "CHD"}
+        "label": "CUE/BIN, 3 tracks", "discs": 1, "unpacked": 770_200, "estimated": False, "upto": False,
+        "convert": "CHD"}
     two = rommlib.disc_layout(_detail([{"file_name": "Ipsum (Disc 1).cue", "file_size_bytes": 100},
                                        {"file_name": "Ipsum (Disc 1).bin", "file_size_bytes": 9},
                                        {"file_name": "Ipsum (Disc 2).cue", "file_size_bytes": 100},
@@ -338,7 +339,7 @@ def test_disc_layout(isolated):
     assert rommlib.disc_layout(iso, "ps2", cfg, accepts=lambda s, e: e != ".chd")["convert"] is None
     assert rommlib.disc_layout(iso, "gamecube", cfg)["convert"] is None          # RVZ off
     assert rommlib.disc_layout(iso, "xbox", cfg) == {"label": "ISO", "discs": 1, "unpacked": 4 * GiB,
-                                                     "estimated": False, "convert": None}
+                                                     "estimated": False, "upto": False, "convert": None}
 
 
 def test_es_counts(isolated, fake_es, monkeypatch):

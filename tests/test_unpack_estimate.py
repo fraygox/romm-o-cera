@@ -1,6 +1,7 @@
 """How much room a download takes once unpacked: the zip's real unpacked
-size when RomM lists its members, a Wii U disc image's fixed size when it
-doesn't, and the rough 2.2x factor only when nothing says."""
+size when RomM lists its members, at most a Wii U disc image's fixed size
+when it doesn't (until the zip's own listing is read: test_zip_listing.py),
+and the rough 2.2x factor only when nothing says."""
 import pytest
 
 import rommlib
@@ -70,7 +71,7 @@ def test_carts_and_zip_native_systems_are_not_unpacked():
 def test_the_wii_u_disc_layout_and_prompt_say_a_whole_disc():
     detail = _rom(3 * GB, [_zip("Lorem Odyssey (USA).zip", 3 * GB)])
     lay = rommlib.disc_layout(detail, "wiiu", {"chd": True})
-    assert lay["unpacked"] == WUD and lay["estimated"]
+    assert lay["unpacked"] == WUD and lay["estimated"] and lay["upto"]
 
 
 def test_the_download_prompt_uses_the_whole_disc(isolated, rb, monkeypatch):
@@ -83,7 +84,7 @@ def test_the_download_prompt_uses_the_whole_disc(isolated, rb, monkeypatch):
     app.platform_by_id = {7: app.platforms[0]}
     rom = dict(_rom(3 * GB, [_zip("Lorem Odyssey (USA).zip", 3 * GB)]), platform_id=7, name="Lorem Odyssey")
     app.details[1] = {"files": rom["files"], "fs_size_bytes": 3 * GB}
-    assert "about 23.3 GB once unpacked" in app.plan_text(rom, "wiiu")
+    assert "up to 23.3 GB once unpacked" in app.plan_text(rom, "wiiu")
     app.details.clear()
     app.detail_busy = True                         # record not here yet: the name alone
-    assert "about 23.3 GB once unpacked" in app.plan_text(dict(rom, fs_extension="zip"), "wiiu")
+    assert "up to 23.3 GB once unpacked" in app.plan_text(dict(rom, fs_extension="zip"), "wiiu")

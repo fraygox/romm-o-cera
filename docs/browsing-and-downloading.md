@@ -77,7 +77,8 @@ download only what fits.
 ## Downloading
 
 - The download prompt says what you're getting: the download size, the size
-  once unpacked, whether it'll be compressed in the background, and the free
+  once unpacked ("about" when it's an estimate, "up to" for a Wii U zip whose
+  contents aren't known yet), whether it'll be compressed in the background, and the free
   space left afterwards.
 - **Multi-disc games** download as a set: one entry in EmulationStation (an
   `.m3u` playlist, the single discs hidden), and discs you already have are
@@ -148,9 +149,12 @@ never leave less than this free. A download that doesn't fit waits ("Waiting
 for space") and starts once there's room; smaller ones behind it keep going.
 Downloads shows what the whole queue still needs against what's free, and
 adding a game the queue can't fit warns you. An archive counts what it
-really unpacks to when RomM lists its contents; a zipped Wii U disc, whose
-contents RomM doesn't list, counts a whole disc image (25 GB, the size of
-every `.wud`); anything else counts about 2.2 times the download. Conversions waiting for room
+really unpacks to: RomM's list of its contents, or, when RomM has none (Wii U,
+for one), the zip's own list, read from RomM in the background before the
+download starts (a few small requests, not the download). Until it's read, or
+when it can't be (a 7z, or a server that won't send part of a file), a zipped
+Wii U game counts as a whole disc image ("up to 23.3 GB", the size of every
+`.wud`) and anything else about 2.2 times the download. Conversions waiting for room
 start as soon as you free some.
 
 ### Download hours

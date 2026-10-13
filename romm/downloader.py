@@ -41,23 +41,74 @@ def _archived(rom):
     return [f for f in files if os.path.splitext(f.get("file_name") or "")[1].lower() in _core.ARCHIVE_EXTS]
 
 
+def _romm_members(f):
+    """An archive file's members as RomM listed them, when it gave every size."""
+    ms = f.get("archive_members") or []
+    return ms if ms and all(isinstance(m.get("size"), int) for m in ms) else None
+
+
+# Archive listings read from the server (zip_listing), by (rom id, size): a
+# record fetched again (the download prompt's) finds what the downloader read.
+_LISTINGS = {}
+LISTINGS_KEPT = 2000
+
+
+def _listing(rom):
+    """{archive name: [{"name", "size"}]} read from the server for this rom,
+    False when it couldn't be read, None when nobody tried."""
+    got = rom.get("_members")
+    if got is None:
+        got = _LISTINGS.get((rom.get("id"), rom.get("fs_size_bytes")))
+    return got
+
+
+def _listed_members(listed, name, arcs):
+    """One archive's members from a listing; a rom of a single archive takes
+    the listing's single entry even when it was read under the rom's name."""
+    ms = listed.get(name)
+    if ms is None and len(arcs) == 1 and len(listed) == 1:
+        ms = next(iter(listed.values()))
+    return ms
+
+
+def _unpacked(rom, system):
+    """(bytes, exact) for unpacked_size."""
+    if system in _core.ZIP_NATIVE:
+        return None, False
+    arcs = _archived(rom)
+    if arcs == []:
+        return None, False
+    listed = _listing(rom) or {}
+    if arcs:
+        total = 0
+        for f in arcs:
+            ms = _romm_members(f)
+            if ms is None:
+                ms = _listed_members(listed, f.get("file_name"), arcs)
+            if ms is None:
+                break
+            total += sum(m["size"] for m in ms)
+        else:
+            return total, True
+    elif rom.get("fs_name") in listed:
+        return sum(m["size"] for m in listed[rom["fs_name"]]), True
+    return (WUD_SIZE, False) if system == "wiiu" else (None, False)
+
+
 def unpacked_size(rom, system):
     """What a downloaded archive unpacks to, in bytes, when that's known:
     the sum of its members' sizes when RomM listed them (it does for the
-    platforms it hashes), else for Wii U a full disc image (.wud, the usual
-    zipped dump; RomM lists no members for Wii U). None otherwise: not an
-    archive, or nothing says."""
-    if system in _core.ZIP_NATIVE:
-        return None
-    arcs = _archived(rom)
-    if arcs == []:
-        return None
-    if arcs:
-        members = [m for f in arcs for m in f.get("archive_members") or []]
-        if members and all(isinstance(m.get("size"), int) for m in members) and \
-                all(f.get("archive_members") for f in arcs):
-            return sum(m["size"] for m in members)
-    return WUD_SIZE if system == "wiiu" else None
+    platforms it hashes) or the zip's own listing was read from the server
+    (zip_listing), else for Wii U at most a full disc image (.wud; RomM lists
+    no members for Wii U). None otherwise: not an archive, or nothing says."""
+    return _unpacked(rom, system)[0]
+
+
+def unpacked_upper_bound(rom, system):
+    """unpacked_size is only the most it can be: a Wii U zip whose listing
+    hasn't been (or couldn't be) read counts as a whole disc image."""
+    size, exact = _unpacked(rom, system)
+    return size is not None and not exact
 
 
 def space_needed(rom, system):
@@ -73,6 +124,133 @@ def space_needed(rom, system):
         if _archived(rom) == []:
             return size                  # loose files: nothing to unpack
     return int(size * (2.2 if system in EXPANDS else 1.0))
+
+
+# -- reading an archive's member list from the server ----------------------
+# A zip lists its members at its end (the central directory, found from the
+# end-of-central-directory record), so two or three small ranged GETs tell
+# what a multi-GB download unpacks to.
+ZIP_TAIL = 22 + 0xFFFF + 20 + 56     # EOCD + the longest comment + Zip64 locator and record
+ZIP_DIR_MAX = 16 << 20               # a central directory bigger than this isn't read
+
+
+class Unlistable(Exception):
+    """The server's copy of an archive can't be listed (not a zip, no Range)."""
+
+
+def needs_listing(rom, system):
+    """The archives of this rom whose members only a ranged read would tell
+    (RomM didn't list them, and nobody has read them yet): file names, [] when
+    there is nothing to read."""
+    if system not in EXPANDS or system in _core.ZIP_NATIVE or _listing(rom) is not None:
+        return []
+    arcs = _archived(rom)
+    if arcs is None:
+        name = rom.get("fs_name") or ""
+        return [name] if name else []
+    return [f.get("file_name") for f in arcs if _romm_members(f) is None]
+
+
+class _RangedFile:
+    """The read-only, seekable file zipfile needs, each read a ranged GET;
+    the tail (where a zip's directory ends) is fetched once."""
+
+    def __init__(self, get, size):
+        self.get, self.size, self.pos = get, size, 0
+        self.tail_at, self.tail = max(0, size - ZIP_TAIL), None
+
+    def seekable(self):
+        return True
+
+    def seek(self, off, whence=0):
+        self.pos = max(0, off if whence == 0 else self.pos + off if whence == 1 else self.size + off)
+        return self.pos
+
+    def tell(self):
+        return self.pos
+
+    def read(self, n=-1):
+        n = self.size - self.pos if n is None or n < 0 else min(n, self.size - self.pos)
+        if n <= 0:
+            return b""
+        if self.pos >= self.tail_at:
+            if self.tail is None:
+                self.tail = self.get(self.tail_at, self.size - 1)
+            data = self.tail[self.pos - self.tail_at:self.pos - self.tail_at + n]
+        else:
+            if n > ZIP_DIR_MAX:
+                raise Unlistable("central directory too big")
+            data = self.get(self.pos, self.pos + n - 1)
+        self.pos += len(data)
+        return data
+
+
+def _ranged_get(api, path, size):
+    """get(start, end) -> those bytes of path on the RomM server, or Unlistable
+    when the server doesn't answer with exactly that range of a file that size."""
+    def get(start, end):
+        try:
+            r = api.s.get(api.base + path, headers={"Range": "bytes=%d-%d" % (start, end)},
+                          stream=True, timeout=(10, 30))
+        except requests.RequestException as e:      # an OSError: zipfile would call it "not a zip"
+            raise NetError("Archive listing interrupted (%s)." % e.__class__.__name__) from None
+        try:
+            want = "bytes %d-%d/%d" % (start, end, size)
+            if r.status_code != 206 or (r.headers.get("Content-Range") or "").strip() != want:
+                raise Unlistable("no Range (HTTP %d)" % r.status_code)
+            data, n = [], end - start + 1
+            try:
+                for chunk in r.iter_content(1 << 16):
+                    data.append(chunk)
+                    n -= len(chunk)
+                    if n < 0:
+                        raise Unlistable("more than the range asked for")
+            except requests.RequestException as e:
+                raise NetError("Archive listing interrupted (%s)." % e.__class__.__name__) from None
+            if n:
+                raise Unlistable("short range")
+            return b"".join(data)
+        finally:
+            r.close()
+    return get
+
+
+def zip_listing(api, rom, system):
+    """Read the member lists of this rom's unlisted archives (needs_listing)
+    from the server with ranged GETs: {archive name: [{"name", "size"}]}, or
+    False when one can't be read (not a zip, Zip or Range trouble). Kept on
+    the rom (rom["_members"]) and in _LISTINGS. A network error raises
+    NetError and keeps nothing, so a later try reads it again."""
+    names = needs_listing(rom, system)
+    if not names:
+        return _listing(rom)
+    files = [f for f in rom.get("files") or [] if f.get("category") in (None, "game")]
+    by_name = {f.get("file_name"): f for f in files}
+    out = {}
+    try:
+        for name in names:
+            if not name.lower().endswith(".zip"):
+                raise Unlistable("not a zip")
+            f = by_name.get(name)
+            if len(files) > 1:            # one archive of a folder rom: its own file
+                if not (f and f.get("id")):
+                    raise Unlistable("no file id")
+                path, size = "/api/roms/%d/files/content/%s" % (f["id"], urllib.parse.quote(name)), \
+                    f.get("file_size_bytes") or 0
+            else:                         # the whole rom is this zip
+                path = "/api/roms/%d/content/%s" % (rom["id"], urllib.parse.quote(rom.get("fs_name") or name))
+                size = (f or {}).get("file_size_bytes") or rom.get("fs_size_bytes") or 0
+            if size < 22:
+                raise Unlistable("size unknown")
+            with zipfile.ZipFile(_RangedFile(_ranged_get(api, path, size), size)) as z:
+                out[name] = [{"name": i.filename, "size": i.file_size} for i in z.infolist() if not i.is_dir()]
+    except (Unlistable, zipfile.BadZipFile, zipfile.LargeZipFile, ValueError, KeyError, EOFError) as e:
+        _core.log("LIST %s: can't read the archive's member list (%s)" % (rom.get("fs_name"), e))
+        out = False
+    if len(_LISTINGS) >= LISTINGS_KEPT:
+        _LISTINGS.clear()
+    _LISTINGS[(rom.get("id"), rom.get("fs_size_bytes"))] = rom["_members"] = out
+    return out
 
 
 def queue_forecast(jobs, free, keep, chd=True, cfg=None):
@@ -137,6 +315,7 @@ class Job:
         self.user_paused = False      # paused by the user (not by "Pause all" / exit)
         self.short_space = 0          # waiting for space: bytes still to free
         self.replace = None           # broken copy under another name, removed once this one is in
+        self.listing_tried = False    # the forecast's archive listing (zip_listing) was tried
         self.cancel = threading.Event()
 
     @property
@@ -287,7 +466,7 @@ class Downloader:
 
     SLIM_KEYS = ("id", "name", "fs_name", "fs_name_no_ext", "fs_size_bytes", "platform_id",
                  "platform_slug", "regions", "summary", "metadatum", "path_cover_small",
-                 "path_cover_large", "has_multiple_files", "has_nested_single_file")
+                 "path_cover_large", "has_multiple_files", "has_nested_single_file", "_members")
 
     def __init__(self, api, library, cfg, persist=True):
         self.api = api
@@ -305,6 +484,7 @@ class Downloader:
         Downloader.instances.append(self)
         self.t = threading.Thread(target=self._run, daemon=True)
         self.t.start()
+        threading.Thread(target=self._list_run, daemon=True).start()
 
     instances = []
 
@@ -640,6 +820,32 @@ class Downloader:
                 _core.log("group %s: %r" % (j.group.get("base"), e))
         self.save_queue()
 
+    # -- archive listings for the space forecast -----------------------------
+    def _list_run(self):
+        """Read the member list of each waiting job's archive RomM didn't list
+        (zip_listing), once per job, so queue_forecast counts what it really
+        unpacks to. Its own thread: a few small ranged GETs, never the UI's."""
+        while True:
+            with self.cv:
+                while True:
+                    if self._closed:
+                        return
+                    j = next((j for j in self.jobs if j.state in (Job.QUEUED, Job.PAUSED) and not j.listing_tried
+                              and needs_listing(j.rom, j.system)), None)
+                    if j is not None:
+                        break
+                    self.cv.wait(WORKER_POLL)
+                j.listing_tried = True
+                rom = j.rom
+            try:
+                got = zip_listing(self.api, rom, j.system)
+            except Exception as e:         # NetError, or anything else: the estimate stands
+                _core.log("LIST %s: %s" % (j.name, e.__class__.__name__))
+                continue
+            if j.rom is not rom and j.rom.get("id") == rom.get("id") and "_members" not in j.rom:
+                j.rom["_members"] = got    # the job's record was replaced meanwhile
+            self.save_queue()
+
     # -- unpacking while the next download runs ------------------------------
     allow_overlap = True          # rb_dl.py (background, mostly while a game runs) turns it off
     POST_BACKLOG = 2              # one unpacking + one waiting; the next download waits beyond that
@@ -806,9 +1012,14 @@ class Downloader:
         j.total_bytes = sum(f.get("file_size_bytes") or 0 for f in files) or \
             detail.get("fs_size_bytes") or 0
         j.done_bytes, j.verified = 0, None
+        if needs_listing(rom, system):       # what the archive really unpacks to, when RomM didn't say
+            try:
+                zip_listing(self.api, rom, system)
+            except NetError as e:
+                _core.log("LIST %s: %s" % (j.name, e))      # the estimate stands; read again next time
         # extracted disc games are bigger than the zip; what's already
         # downloaded (.part) is on disk; and the keep-free reserve stays free
-        need = max(0, space_needed(detail, system) - self._part_bytes(system, detail)) + \
+        need = max(0, space_needed(rom, system) - self._part_bytes(system, detail)) + \
             (_config.keep_free_bytes(self.cfg) or _core.SPACE_MARGIN)       # keep-free 0: still a small margin
         free = self._free_bytes(sysdir) - self.unpacking_bytes
         if free < need:
@@ -853,7 +1064,7 @@ class Downloader:
                     rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes, rec)
             heavy = self._will_extract(j, dest)
             return {"kind": "file", "path": dest, "heavy": heavy,
-                    "extra": max(0, space_needed(detail, system) - j.total_bytes) if heavy else 0}
+                    "extra": max(0, space_needed(rom, system) - j.total_bytes) if heavy else 0}
 
     def _post(self, j, post):
         """After the download: extract / queue conversion, hand the game to ES, done."""

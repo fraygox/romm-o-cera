@@ -42,10 +42,12 @@ def _fast_polls(monkeypatch):
 @pytest.fixture(autouse=True)
 def _stop_workers():
     """Each test's download workers stop before the next test starts (they'd
-    otherwise keep writing into whatever paths the next test patches in)."""
+    otherwise keep writing into whatever paths the next test patches in), and
+    the archive listings they read are forgotten (test rom ids repeat)."""
     yield
     while rommlib.Downloader.instances:
         rommlib.Downloader.instances.pop().close()
+    rommlib._LISTINGS.clear()
 
 
 @pytest.fixture
