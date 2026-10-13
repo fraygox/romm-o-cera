@@ -437,11 +437,32 @@ def rich_text(surf, fonts, font, s, pos, color=None, anchor="topleft", maxw=None
 
 
 def progress_bar(surf, rect, frac, color=None):
-    color = theme.ACCENT if color is None else color
-    rrect(surf, theme.LINE, rect, rect[3] // 2)
-    if frac > 0:
-        w = max(rect[3], int(rect[2] * min(1.0, frac)))
-        rrect(surf, color, (rect[0], rect[1], w, rect[3]), rect[3] // 2)
+    """A rounded bar on a LINE track, frac (0..1) of it filled in color (default ACCENT)."""
+    meter(surf, rect, [(frac, theme.ACCENT if color is None else color)])
+
+
+def meter(surf, rect, parts, track=None):
+    """A bar of segments, left to right: parts = [(fraction of the whole, colour)], on a track
+    (default LINE). Each segment shows at least as wide as the bar is tall; the bar keeps its
+    rounded ends (Backlog: what fits now in ACCENT, then what waits in AMBER)."""
+    x, y, w, h = rect
+    rrect(surf, theme.LINE if track is None else track, rect, h // 2)
+    cx, end = x, x + w
+    for frac, col in parts:
+        if frac <= 0 or cx >= end:
+            continue
+        sw = min(end - cx, max(h, int(round(w * min(1.0, frac)))))
+        rrect(surf, col, (cx, y, sw, h), h // 2)
+        if cx > x:                      # joined to the one before: square its left end
+            rrect(surf, col, (cx, y, min(sw, h // 2 + 1), h), 0)
+        cx += sw
+
+
+def state_stripe(surf, rect, color):
+    """A row's state as a 4 px colour bar down its left edge, inset from its rounded corners."""
+    x, y, w, h = rect
+    inset = min(12, h // 4)
+    rrect(surf, color, (x, y + inset, 4, h - 2 * inset), 2)
 
 
 # ------------------------------------------------------------------ text that scrolls in its box
@@ -535,43 +556,25 @@ def _clip_to(surf, prect):
     return old
 
 
-def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None, slot=None, t=None):
-    """Prose wrapped into rect (logical), never drawn outside it. When it's taller than rect it
-    scrolls up by itself (scroll_offset) with its edges fading into bg (the colour behind it,
-    default PANEL) and a thin position bar on the right; when it fits it stays still.
-    s: a string (\\n splits paragraphs; {TOKEN} glyphs work) or a list of paragraphs.
-    key: anything else that should start the scroll over when it changes (the selection).
-    slot: which scroller this is (default: the rect). Returns the rect the text took up (its
-    height is the text's, at most rect's); scroll_fits() tells beforehand whether it will move."""
-    color = theme.TEXT if color is None else color
+SCROLL_BAR = 10             # logical px a scrolling box keeps free on its right for its position bar
+
+
+def scroll_box(surf, rect, total, paint, sig, slot=None, bg=None, t=None, edge=16):
+    """The scroller for any content: paint(top) draws `total` logical px of it from y=top, clipped
+    to rect (logical). Taller than rect, it scrolls up by itself (scroll_offset) with its edges
+    fading into bg (default PANEL) and a thin position bar in the rightmost SCROLL_BAR px (leave
+    them free); otherwise it stays still. sig: what, when it changes, starts the scroll over.
+    slot: which scroller this is (default: the rect); edge: how deep the fades are (logical px).
+    Returns the rect the content took up."""
     bg = theme.PANEL if bg is None else bg
     rect = pygame.Rect(rect)
-    s = "\n".join(s) if isinstance(s, (list, tuple)) else (s or "")
-    lh = line_h or (font.get_height() / theme.K + 4)
-    lines = wrapped(font, s, rect.width)
-    total = len(lines) * lh
-    over = total - rect.height
-    if over > 0.5:                      # room for the position bar
-        lines = wrapped(font, s, rect.width - 10)
-        total = len(lines) * lh
-        over = total - rect.height
-    over = max(0.0, over)
-    off = scroll_offset(scroll_elapsed(slot or ("v",) + tuple(rect), (s, key, rect.width), t), over) \
-        if over > 0.5 else 0.0
+    over = max(0.0, total - rect.height)
+    off = scroll_offset(scroll_elapsed(slot or ("v",) + tuple(rect), sig, t), over) if over > 0.5 else 0.0
     prect = SR(rect)
     old = _clip_to(surf, prect)
-    py0 = S(rect.top - off)
-    for i, ln in enumerate(lines):
-        py = py0 + S(i * lh)
-        if py + S(lh) < prect.top or py > prect.bottom:
-            continue
-        y = py / theme.K
-        if FONTS.get("f") and "{" in ln and GLYPH_RE.search(ln):
-            rich_text(surf, FONTS["f"], font, ln, (rect.left, y), color)
-        else:
-            text(surf, font, ln, (rect.left, y), color)
+    paint(rect.top - off)
     if over > 0.5:
-        fh = max(2, S(min(lh * 0.7, rect.height / 4)))
+        fh = max(2, S(min(edge, rect.height / 4)))
         if off > 0.5:
             _fade(surf, bg, pygame.Rect(prect.left, prect.top, prect.width, fh), "top")
         if off < over - 0.5:
@@ -582,6 +585,37 @@ def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None,
         rrect(surf, theme.FAINT, (track.left, track.top + (track.height - th) * off / over, 3, th), 1)
     surf.set_clip(old)
     return pygame.Rect(rect.left, rect.top, rect.width, int(min(total, rect.height) + 0.999))
+
+
+def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None, slot=None, t=None):
+    """Prose wrapped into rect (logical), never drawn outside it: scroll_box's scroller, so when
+    it's taller than rect it scrolls up by itself; when it fits it stays still.
+    s: a string (\\n splits paragraphs; {TOKEN} glyphs work) or a list of paragraphs.
+    key: anything else that should start the scroll over when it changes (the selection).
+    bg: the colour behind it (default PANEL). slot: which scroller this is (default: the rect).
+    Returns the rect the text took up (its height is the text's, at most rect's); scroll_fits()
+    tells beforehand whether it will move."""
+    color = theme.TEXT if color is None else color
+    rect = pygame.Rect(rect)
+    s = "\n".join(s) if isinstance(s, (list, tuple)) else (s or "")
+    lh = line_h or (font.get_height() / theme.K + 4)
+    lines = wrapped(font, s, rect.width)
+    if len(lines) * lh - rect.height > 0.5:            # room for the position bar
+        lines = wrapped(font, s, rect.width - SCROLL_BAR)
+    top_clip = SR(rect)
+
+    def paint(top):
+        py0 = S(top)
+        for i, ln in enumerate(lines):
+            py = py0 + S(i * lh)
+            if py + S(lh) < top_clip.top or py > top_clip.bottom:
+                continue
+            y = py / theme.K
+            if FONTS.get("f") and "{" in ln and GLYPH_RE.search(ln):
+                rich_text(surf, FONTS["f"], font, ln, (rect.left, y), color)
+            else:
+                text(surf, font, ln, (rect.left, y), color)
+    return scroll_box(surf, rect, len(lines) * lh, paint, (s, key, rect.width), slot, bg, t, lh * 0.7)
 
 
 def scroll_fits(font, s, width, height, line_h=None):

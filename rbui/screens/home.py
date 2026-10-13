@@ -5,8 +5,8 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import theme
-from rbui.theme import SR, W
-from rbui.draw import focus_box, hline, installed_mark, measure, rrect, scroll_text, smooth_scale, text, wrap
+from rbui.theme import W
+from rbui.draw import focus_box, hline, installed_mark, measure, rrect, scroll_text, text, wrap
 from rbui.screens.base import Screen
 from rbui.screens.collection import CollectionScreen
 from rbui.screens.games import GameListScreen, SearchScreen, surprise
@@ -14,6 +14,8 @@ from rbui.modals import ActionMenu
 from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
+from rbui.widgets.chips import tag
+from rbui.widgets.tiles import Shelf
 
 
 class HomeScreen(Screen):
@@ -32,6 +34,7 @@ class HomeScreen(Screen):
         super().__init__(app)
         self.sel = 0
         self.free = None
+        self.shelves = (Shelf((128, 172), 16), Shelf((128, 172), 16))
 
     def items(self):
         """ITEMS, with Recommended for you after Recently added while RomM has some."""
@@ -201,8 +204,6 @@ class HomeScreen(Screen):
                     if seeds else "Highly rated games in your library, until you've played a few"
                 text(c, self.f.body, note, (p.left + 28, p.top + 446), theme.DIM, maxw=p.width - 56)
                 shelf = [rec[0] for rec in app.recs]
-                if self.shelf is None:
-                    self.shelf = {}
             else:
                 total = sum(pl["rom_count"] for pl in app.platforms)
                 text(c, self.f.h2, "Recently added", (p.left + 28, p.top + 22), theme.TEXT)
@@ -210,30 +211,9 @@ class HomeScreen(Screen):
                      (p.right - 28, p.top + 28), theme.FAINT, "topright")
                 self.load_recent()
                 shelf = self.recent or []
-            cw, ch, gap = 128, 172, 16
-            x0 = p.left + (p.width - (4 * cw + 3 * gap)) // 2
-            for k, rom in enumerate(shelf[:8]):
-                cr = pygame.Rect(x0 + (k % 4) * (cw + gap), p.top + 70 + (k // 4) * (ch + gap), cw, ch)
-                img = app.cover(rom)
-                if img:
-                    sc = self.shelf.get(rom["id"])
-                    if sc is None or sc[0] != id(img):
-                        pc = SR(cr)
-                        iw, ih = img.get_size()
-                        f = max(pc.width / iw, pc.height / ih)      # fill the slot, crop overflow
-                        scaled = smooth_scale(img, (max(1, int(iw * f)), max(1, int(ih * f))))
-                        crop = pygame.Rect(0, 0, pc.width, pc.height)
-                        crop.center = scaled.get_rect().center
-                        # the crop and the cover's id, not the cover: an evicted cover is freed
-                        sc = (id(img), scaled.subsurface(crop.clip(scaled.get_rect())).copy())
-                        if len(self.shelf) > 24:
-                            self.shelf.clear()
-                        self.shelf[rom["id"]] = sc
-                    c.blit(sc[1], SR(cr).topleft)
-                else:
-                    rrect(c, theme.BG2, cr, 8)
-                    for j, ln in enumerate(wrap(self.f.small, rom.get("name") or "", cw - 16, 4)):
-                        text(c, self.f.small, ln, (cr.left + 8, cr.top + 10 + j * 20), theme.FAINT)
+            for k in range(2):                              # two rows of the newest box art
+                self.shelves[k].draw(c, app, shelf[4 * k:4 * k + 4], p.left + 28, p.right - 28,
+                                     p.top + 70 + k * 188)
             if self.recent == [] and not recs:
                 text(c, self.f.body, "Nothing new yet.", (p.left + 28, p.top + 80), theme.DIM)
         elif app.error:
@@ -257,14 +237,12 @@ class HomeScreen(Screen):
              theme.AMBER if insecure else theme.DIM, "midright", maxw=270)
 
     recent = None
-    shelf = None
 
     def load_recent(self):
         if self.recent is not None or getattr(self, "_recent_loading", False):
             return
         self._recent_loading = True
         app = self.app
-        self.shelf = {}
         p = {"limit": 8, "offset": 0, "order_by": "id", "order_dir": "desc",
              "with_char_index": "false", "with_filter_values": "false", "with_rom_id_index": "false",
              "platform_ids": [pl["id"] for pl in app.platforms]}
@@ -334,11 +312,7 @@ class PlatformScreen(Screen):
             lines = wrap(self.f.h3, name, r.width - 36, 2)
             for k, ln in enumerate(lines):
                 text(c, self.f.h3, ln, (r.left + 18, r.top + 14 + k * 24), theme.TEXT if on else theme.DIM)
-            tag = "roms/" + p["_system"]
-            tw = int(measure(self.f.tiny, tag)) + 14
-            tr = pygame.Rect(r.right - tw - 14, r.bottom - 30, tw, 20)
-            rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
+            tr = tag(c, self.f.tiny, "roms/" + p["_system"], (r.right - 14, r.bottom - 30), "topright")
             room = tr.left - 10                   # the left side never runs into the tag
             games = "{:,} games".format(p["rom_count"])
             if r.left + 18 + measure(self.f.small, games) > room:

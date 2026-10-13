@@ -6,6 +6,8 @@
   sfx       the UI's sounds
   input     keyboard, controllers and joysticks -> actions
   app       the App: screen stack, modal, toasts, main loop, covers
+  widgets/  the building blocks screens compose: cover tiles and shelves, the verb button,
+            pills and chips, facts, the art backdrop
   screens/  the screens, a module per family
   modals    menus and dialogs
   startup   start-up chores

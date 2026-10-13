@@ -305,10 +305,11 @@ on `sys.path`, imports it and runs `main()`. The modules, in import order
 | `rbui/__init__.py` | `APP_DIR` (the app folder) and `APP_NAME` |
 | `rbui/theme.py` | scaling (`W`, `H`, `K`, `S()`, `SR()`, `LR()`), the palette, `THEMES` and `apply_theme()`, the theme picker's groups and descriptions, the Custom theme (`custom_palette()`), the space bar's derived colours |
 | `rbui/pads.py` | controller styles: the glyph and label each hint token shows, `PAD_STYLE`, `INPUT_MODE` |
-| `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, text that scrolls in its box (`scroll_text`, `marquee`), covers' scaling |
+| `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, text that scrolls in its box (`scroll_text`, `marquee`, and `scroll_box` for any content), bars (`progress_bar`, `meter`, `state_stripe`), covers' scaling |
 | `rbui/sfx.py` | the UI's sounds |
 | `rbui/input.py` | keyboard, game controllers and raw joysticks to actions |
 | `rbui/modals.py` | menus and dialogs: `ActionMenu`, `ManageMenu`, `Confirm`, `InfoDialog`, `DownloadConfirm` |
+| `rbui/widgets/` | what screens compose instead of drawing it themselves: `tiles.py` (the scaled-cover cache `cover_variant`, `cover`, `cover_tile`, `Shelf`, `mosaic`, `collection_card`), `hero.py` (`verb_button`, `game_verb`, `verb_note`, `backdrop`), `chips.py` (`pill_row`, `fill_widths`, `status_chip`, `tag`, `stars`), `factsheet.py` (`facts`, `facts_layout`) |
 | `rbui/screens/` | the screens, a module per family (`base.py`: `Screen`, `ListScreen`; `box_data.py`: what the On this box screens share) |
 | `rbui/startup.py` | start-up chores: markers, registering with ES, memory budgets, malloc tuning |
 | `rbui/app.py` | the `App` (screen stack, modal, toasts, main loop, background work) and the cover loader |

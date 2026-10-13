@@ -7,11 +7,15 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
-from rbui.theme import H, mix, SR
-from rbui.draw import (_wide, arc, button_glyph, circle, COVER_BOX, focus_box, hline, installed_mark, measure,
-                       progress_bar, rich_text, rom_title, rrect, scroll_text, smooth_scale, text, wrap)
+from rbui.theme import H
+from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, hline, installed_mark, measure, rich_text,
+                       rom_title, rrect, scroll_text, text, wrap)
 from rbui.screens.base import letter_of, ListScreen, Screen
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
+from rbui.widgets.chips import tag
+from rbui.widgets.factsheet import facts
+from rbui.widgets.hero import game_verb, verb_button, VERB_H
+from rbui.widgets.tiles import cover
 
 
 REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Australia": "AU",
@@ -643,12 +647,9 @@ class GameListScreen(ListScreen):
             right_w = sr.width + 14
             if multi_plat:
                 p = app.platform_by_id.get(rom.get("platform_id"))
-                tag = p["_system"] if p else rom.get("platform_slug") or "?"
-                tw = int(measure(self.f.tiny, tag)) + 12
-                tr = pygame.Rect(r.right - right_w - tw - 12, r.centery - 10, tw, 20)
-                rrect(c, theme.BG2 if p else mix(theme.BG, theme.RED, 0.22), tr, 6)
-                text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
-                right_w += tw + 12
+                tr = tag(c, self.f.tiny, p["_system"] if p else rom.get("platform_slug") or "?",
+                         (r.right - right_w - 12, r.centery), "midright", warn=not p)
+                right_w += tr.width + 12
             name = rom_title(rom)
             nr = text(c, self.f.row, name, (r.left + 44, r.centery), theme.TEXT if on else theme.DIM,
                       "midleft", maxw=r.width - 44 - right_w - 70)
@@ -678,19 +679,8 @@ class GameListScreen(ListScreen):
         p = pygame.Rect(728, 80, 520, 576)
         rrect(c, theme.PANEL, p, 16)
         cov = pygame.Rect((p.left + 24, p.top + 24), COVER_BOX)
-        img = app.cover(rom)
-        if img:
-            pc = SR(cov)
-            sc = app.scaled_covers.get(rom["id"])
-            if sc is None or sc[0] is not img:
-                iw, ih = img.get_size()
-                f = min(pc.width / iw, pc.height / ih)
-                size = (max(1, int(iw * f)), max(1, int(ih * f)))
-                sc = (img, img if abs(size[0] - iw) <= 1 and abs(size[1] - ih) <= 1 else smooth_scale(img, size))
-                if len(app.scaled_covers) > 24:
-                    app.scaled_covers.clear()
-                app.scaled_covers[rom["id"]] = sc
-            c.blit(sc[1], sc[1].get_rect(midtop=(pc.centerx, pc.top)))
+        if app.cover(rom):
+            cover(c, app, rom, cov, fit=True)
         else:
             rrect(c, theme.BG2, cov, 10)
             text(c, self.f.small, "no cover" if rom["id"] in app.covers and
@@ -721,7 +711,15 @@ class GameListScreen(ListScreen):
             fmt = ("%d discs, " % lay["discs"] if lay["discs"] > 1 else "") + lay["label"]
             if fmt and lay["convert"]:
                 fmt += " (becomes %s)" % lay["convert"]        # Rubik has no arrow glyph
-        facts = [
+        # action area
+        ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, VERB_H)
+        self.app.hit(ar, lambda: self.action("ok"))
+        st, j = self.rom_status(rom)
+        system = app.system_for(rom)
+        notes = (st == "failed") + bool(system and not self.picking and st not in ("installed", "active")
+                                        and self.variants(rom, system))
+        bottom = ar.top - 12 - 22 * max(1, notes)       # above the button and its notes; a long one scrolls
+        y = facts(c, self.f, [
             ("Platform", (plat.get("display_name") or plat["name"]) if plat else
              (rom.get("platform_display_name") or "?")),
             ("Released", year),
@@ -731,58 +729,21 @@ class GameListScreen(ListScreen):
             ("Format", fmt),
             ("Achievements", ("%d · %d points" % ra) if (ra := rommlib.ra_summary(rom)) and ra[0] else ""),
             ("Manual", "Included" if rommlib.manual_path(rom) else ""),
-        ]
-        for k, v in facts:
-            if not v:
-                continue
-            text(c, self.f.small, k, (tx, y), theme.FAINT)
-            text(c, self.f.cond, str(v), (tx, y + 17), theme.DIM, maxw=tw)
-            y += 42
+        ], (tx, y, tw, max(42, bottom - y)), cols=1, key=rom["id"], slot="detail-facts").bottom
         # summary
         sy = max(y, cov.bottom) + 18
         summ = rom.get("summary") or ""
-        # action area
-        ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, 52)
-        self.app.hit(ar, lambda: self.action("ok"))
-        st, j = self.rom_status(rom)
-        system = app.system_for(rom)
-        notes = (st == "failed") + bool(system and not self.picking and st not in ("installed", "active")
-                                        and self.variants(rom, system))
-        bottom = ar.top - 12 - 22 * max(1, notes)       # above the button and its notes; a long one scrolls
         if summ and bottom - sy >= 20:                  # a long fact list leaves none: no summary over the button
             scroll_text(c, self.f.small, summ, (p.left + 24, sy, p.width - 48, bottom - sy), theme.DIM,
                         key=rom["id"], line_h=20, slot="detail-summary")
-        if not system:
-            rrect(c, theme.BG2, ar, 12)
-            text(c, self.f.body, "No Batocera system for this platform", ar.center, theme.FAINT, "center")
-        elif self.picking and st != "installed":           # A picks here
+        if system and self.picking and st != "installed":           # A picks here
             on = self.pick_key(rom) in self.picks
-            rrect(c, theme.BG2 if on else theme.ACCENT, ar, 12)
-            gx = ar.left + 18
-            gx += button_glyph(c, self.f, "A", gx, ar.centery - 11) + 12
-            text(c, self.f.h3, "Unpick" if on else "Pick", (gx, ar.centery), theme.TEXT, "midleft")
-            text(c, self.f.small, "%d picked" % self.pick_count(), (ar.right - 20, ar.centery), theme.DIM, "midright")
-        elif st == "installed":
-            rrect(c, mix(theme.BG, theme.GREEN, 0.18), ar, 12)
-            gx = ar.left + 18
-            gx += button_glyph(c, self.f, "A", gx, ar.centery - 11) + 12
-            text(c, self.f.h3, "On this box", (gx, ar.centery), theme.GREEN, "midleft")
-            text(c, self.f.small, "roms/" + system, (ar.right - 20, ar.centery), theme.DIM, "midright")
-        elif st == "active":
-            rrect(c, theme.BG2, ar, 12)
-            frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
-            label = j.state
-            if j.state == rommlib.Job.DOWNLOADING:
-                label = "Downloading %d%%, %s/s" % (frac * 100, human_size(j.speed))
-            text(c, self.f.body, label, (ar.left + 18, ar.top + 10), theme.TEXT)
-            progress_bar(c, (ar.left + 18, ar.bottom - 16, ar.width - 36, 6), frac, theme.BLUE)
-        else:
-            rrect(c, theme.ACCENT, ar, 12)
-            gx = ar.left + 18
-            gx += button_glyph(c, self.f, "A", gx, ar.centery - 11) + 12
-            msg = "Retry download" if st == "failed" else "Download"
-            text(c, self.f.h3, msg, (gx, ar.centery), theme.TEXT, "midleft")
-            text(c, self.f.small, "to roms/" + system, (ar.right - 20, ar.centery), theme.TEXT, "midright")
+            verb_button(c, self.f, ar, "Unpick" if on else "Pick", "quiet" if on else "go",
+                        "%d picked" % self.pick_count())
+            return
+        verb_button(c, self.f, ar, **game_verb(app, rom, (st, j), play="On this box", play_detail="roms/%s" % system,
+                                               go_detail="to roms/%s" % system))
+        if system and st not in ("installed", "active"):
             yy = ar.top - 22
             if st == "failed":
                 text(c, self.f.small, j.message, (ar.left, yy), theme.RED, maxw=ar.width)
