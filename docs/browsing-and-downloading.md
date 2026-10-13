@@ -154,7 +154,9 @@ for one), the zip's own list, read from RomM in the background before the
 download starts (a few small requests, not the download). Until it's read, or
 when it can't be (a 7z, or a server that won't send part of a file), a zipped
 Wii U game counts as a whole disc image ("up to 23.3 GB", the size of every
-`.wud`) and anything else about 2.2 times the download. Conversions waiting for room
+`.wud`) and anything else about 2.2 times the download. A zip is deleted
+once it's unpacked, so the queue counts only the biggest zip beside its
+contents, plus what every game unpacks to. Conversions waiting for room
 start as soon as you free some.
 
 ### Download hours

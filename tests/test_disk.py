@@ -82,11 +82,13 @@ def test_keep_free_setting_and_forecast(monkeypatch):
     done = J({"id": 3, "fs_size_bytes": 50 * GiB}, "gba")
     done.state = J.DONE
     fc = rommlib.queue_forecast([a, b, done], free=40 * GiB, keep=20 * GiB)
-    need = 4 * GiB + int(2.2 * GiB) - int(0.2 * GiB) + int(2.2 * GiB)
+    unzipped = int(2.2 * GiB) - GiB                                   # b once unpacked (its zip deleted)
+    # what lands, less b's part already here; b's zip beside it while it unpacks; b's CHD working space
+    need = 4 * GiB + unzipped - int(0.2 * GiB) + GiB + unzipped
     assert fc["jobs"] == 2 and fc["need"] == need and fc["fits"]
     fc = rommlib.queue_forecast([a, b], free=25 * GiB, keep=20 * GiB)
     assert not fc["fits"] and fc["short"] == need + 20 * GiB - 25 * GiB
-    assert rommlib.queue_forecast([a, b], 40 * GiB, 0, chd=False)["need"] == need - int(2.2 * GiB)
+    assert rommlib.queue_forecast([a, b], 40 * GiB, 0, chd=False)["need"] == need - unzipped
     fit, used = rommlib.fit_in_space([({"fs_size_bytes": GiB}, "gba")] * 5, 23 * GiB, 20 * GiB)
     assert len(fit) == 3 and used == 3 * GiB
 
@@ -470,18 +472,19 @@ def test_forecast_reserves_every_converters_working_space():
     cfg = dict(rommlib.DEFAULT_CONFIG, zar=True)
     x360 = J({"id": 1, "fs_size_bytes": 8 * GiB}, "xbox360")            # .zar: files + archive, 2x
     gba = J({"id": 2, "fs_size_bytes": 1 * GiB}, "gba")
-    size = rommlib.space_needed(x360.rom, "xbox360")
+    size = rommlib.space_needed(x360.rom, "xbox360")                    # zip + what it unpacks to
     base = size + GiB
     with_tools = dict(cfg)
     import unittest.mock as m
     with m.patch.object(rommlib, "zar_enabled", lambda c, s=None: bool(c.get("zar"))):
-        assert rommlib.queue_forecast([x360, gba], 0, 0, cfg=with_tools)["need"] == base + 2 * size
+        # converting starts from the unpacked files: the zip is gone by then
+        assert rommlib.queue_forecast([x360, gba], 0, 0, cfg=with_tools)["need"] == base + 2 * (size - 8 * GiB)
         assert rommlib.queue_forecast([x360, gba], 0, 0, cfg=dict(cfg, zar=False))["need"] == base
     ps3 = J({"id": 3, "fs_size_bytes": 10 * GiB}, "ps3")                 # the folder beside the zip
-    assert rommlib.queue_forecast([ps3], 0, 0, cfg=cfg)["need"] == 2 * rommlib.space_needed(ps3.rom, "ps3")
-    assert rommlib.queue_forecast([ps3], 0, 0, cfg=dict(cfg, ps3_folders=False))["need"] == \
-        rommlib.space_needed(ps3.rom, "ps3")
-    assert rommlib.queue_forecast([ps3], 0, 0)["need"] == rommlib.space_needed(ps3.rom, "ps3")   # no cfg: CHD only
+    size = rommlib.space_needed(ps3.rom, "ps3")
+    assert rommlib.queue_forecast([ps3], 0, 0, cfg=cfg)["need"] == size + (size - 10 * GiB)
+    assert rommlib.queue_forecast([ps3], 0, 0, cfg=dict(cfg, ps3_folders=False))["need"] == size
+    assert rommlib.queue_forecast([ps3], 0, 0)["need"] == size   # no cfg: CHD only
 
 
 def test_forecast_asks_every_converter_for_its_working_space(monkeypatch):
@@ -496,8 +499,9 @@ def test_forecast_asks_every_converter_for_its_working_space(monkeypatch):
     for system in sorted(set().union(*(c.systems for c in rommlib.CONVERTERS))):
         j = rommlib.Job({"id": 1, "fs_size_bytes": 4 * GiB}, system)
         size = rommlib.space_needed(j.rom, system)
+        unpacked = size - 4 * GiB if system in rommlib.EXPANDS else size     # what's converted: the zip is gone
         factor = max(c.space_factor for c in rommlib.converters_for(system))
-        assert rommlib.queue_forecast([j], 0, 0, on["chd"], on)["need"] == size + factor * size, system
+        assert rommlib.queue_forecast([j], 0, 0, on["chd"], on)["need"] == size + factor * unpacked, system
         assert rommlib.queue_forecast([j], 0, 0, off["chd"], off)["need"] == size, system
 
 

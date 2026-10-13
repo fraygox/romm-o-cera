@@ -221,7 +221,7 @@ def test_a_download_starts_with_room_for_the_wux_not_a_whole_disc(isolated, serv
 
 
 def test_the_forecast_reads_waiting_jobs_listings_in_the_background(isolated, server):
-    rom = server(11, "Ipsum Wux (USA).zip", sparse_zip([("Ipsum Wux (USA).wux", 6 * GB, 6 * GB)], 6 * GB + 4096))
+    rom = server(11, "Ipsum Wux (USA).zip", sparse_zip([("Ipsum Wux (USA).wux", 6 * GB, 6 * GB + 8192)], 6 * GB + 4096))
     d = rommlib.Downloader(server.api, rommlib.Library(), dict(rommlib.DEFAULT_CONFIG), persist=False)
     d.hold_all()                                   # nothing downloads; the listing still comes
     j = d.enqueue(rom, "wiiu")
@@ -231,7 +231,7 @@ def test_the_forecast_reads_waiting_jobs_listings_in_the_background(isolated, se
             break
         time.sleep(0.02)
     assert j.listing_tried and j.rom["_members"]
-    assert rommlib.queue_forecast([j], 100 * GB, 0)["need"] == rom["fs_size_bytes"] + 6 * GB
+    assert rommlib.queue_forecast([j], 100 * GB, 0)["need"] == rom["fs_size_bytes"] + 6 * GB + 8192
     assert len(server.ranges["seen"]) <= 3                            # once per job
 
 

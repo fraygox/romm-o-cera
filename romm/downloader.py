@@ -253,40 +253,64 @@ def zip_listing(api, rom, system):
     return out
 
 
+def _lands(rom, system):
+    """(bytes the game takes once unpacked, bytes more while its archive is
+    still beside them): what space_needed adds up, split. The archive goes as
+    soon as it's unpacked; never count less than the download itself."""
+    size = rom.get("fs_size_bytes") or 0
+    need = space_needed(rom, system)
+    if system in EXPANDS and system not in _core.ZIP_NATIVE and _archived(rom) != []:
+        return max(need - size, size), size
+    return need, 0
+
+
+def space_for(items):
+    """Bytes a batch of downloads [(rom, system)] needs at its peak: one
+    archive at a time is beside what it unpacks to (the next downloads while
+    it unpacks, but a download is never bigger than what it lands as), so the
+    biggest archive plus every game's unpacked size."""
+    lands = [_lands(rom, system) for rom, system in items]
+    return sum(land for land, _ in lands) + max([extra for _, extra in lands] or [0])
+
+
 def queue_forecast(jobs, free, keep, chd=True, cfg=None):
     """Space the unfinished downloads still need, and whether it fits.
-    Each job: what's left of its download (done bytes are already on disk);
-    plus the biggest conversion's working space (original and output side by
-    side until the output is verified): every converter that's on for the
-    job's system (cfg; without it, CHD only, as chd says), times its
-    space_factor (.zar: the extracted files and the archive)."""
-    need, peak, n = 0, 0, 0
+    Each job: what's left of it once unpacked (done bytes are already on
+    disk); plus the biggest archive (beside what it unpacks to until it's
+    deleted, one at a time: space_for); plus the biggest conversion's working
+    space (original and output side by side until the output is verified,
+    the archive long gone): every converter that's on for the job's system
+    (cfg; without it, CHD only, as chd says), times its space_factor (.zar:
+    the extracted files and the archive)."""
+    need, extra, conv, n = 0, 0, 0, 0
     for j in jobs:
         if not (j.active or j.state == Job.PAUSED):
             continue
         n += 1
-        size = space_needed(j.rom, j.system)
-        need += max(0, size - (j.done_bytes or 0))
+        land, beside = _lands(j.rom, j.system)
+        need += max(0, land - (j.done_bytes or 0))
+        extra = max(extra, beside)
         if cfg is None:
             factor = 1 if chd and j.system in _core.CHD_CD_SYSTEMS | _core.CHD_DVD_SYSTEMS else 0
         else:
             factor = max([c.space_factor for c in _convert.converters_for(j.system)
                           if (c.chd and chd) or (not c.chd and c.enabled(cfg, j.system))] or [0])
-        peak = max(peak, size * factor)
-    total = need + peak
+        conv = max(conv, land * factor)
+    total = need + extra + conv
     return {"jobs": n, "need": total, "free": free, "keep": keep,
             "fits": free - total >= keep, "short": max(0, total + keep - free)}
 
 
 def fit_in_space(items, free, reserve=_core.SPACE_MARGIN):
-    """Greedy, keeping the given order: (that_fit, total_needed_for_them)."""
-    fit, used = [], 0
+    """Greedy, keeping the given order: (that_fit, total_needed_for_them),
+    the total counted like space_for."""
+    fit, landed, extra = [], 0, 0
     for rom, system in items:
-        need = space_needed(rom, system)
-        if used + need + reserve <= free:
+        land, beside = _lands(rom, system)
+        if landed + land + max(extra, beside) + reserve <= free:
             fit.append((rom, system))
-            used += need
-    return fit, used
+            landed, extra = landed + land, max(extra, beside)
+    return fit, landed + extra
 
 
 # ----------------------------------------------------------- downloads

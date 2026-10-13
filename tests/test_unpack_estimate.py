@@ -88,3 +88,47 @@ def test_the_download_prompt_uses_the_whole_disc(isolated, rb, monkeypatch):
     app.details.clear()
     app.detail_busy = True                         # record not here yet: the name alone
     assert "up to 23.3 GB once unpacked" in app.plan_text(dict(rom, fs_extension="zip"), "wiiu")
+
+
+def _known(rid, zipped, unpacked):
+    """A zip whose contents RomM listed: zipped bytes, unpacking to unpacked."""
+    return _rom(zipped, [_zip("G%d.zip" % rid, zipped, [("G%d.wux" % rid, unpacked)])]) | {"id": rid}
+
+
+def test_the_forecast_counts_one_zip_beside_its_contents_not_every_zip():
+    """Each zip is deleted once unpacked: the peak is the biggest zip plus what
+    every game unpacks to, not every zip and its contents added up."""
+    games = [(_known(1, 6 * GB, 6 * GB), "wiiu"), (_known(2, 3 * GB, WUD), "wiiu"), (_known(3, 2 * GB, 4 * GB), "psx")]
+    peak = 6 * GB + (6 * GB + WUD + 4 * GB)
+    assert rommlib.space_for(games) == peak
+    assert rommlib.queue_forecast([rommlib.Job(r, s) for r, s in games], 0, 0, chd=False)["need"] == peak
+    assert peak < sum(rommlib.space_needed(r, s) for r, s in games)          # the old sum
+    j = rommlib.Job(*games[2])
+    j.done_bytes = GB                                                        # half of its zip is here
+    assert rommlib.queue_forecast([j], 0, 0, chd=False)["need"] == 4 * GB - GB + 2 * GB
+    # a CHD conversion starts from the unpacked files; the zip went before it
+    assert rommlib.queue_forecast([rommlib.Job(*games[2])], 0, 0)["need"] == 2 * GB + 4 * GB + 4 * GB
+    fit, used = rommlib.fit_in_space(games, free=peak + 2 * GB, reserve=2 * GB)
+    assert fit == games and used == peak
+
+
+def test_the_forecast_never_under_estimates_the_real_peak():
+    """Disk use over the queue's run, the next download overlapping each unpack
+    (one unpacking, one waiting, one downloading), never exceeds the forecast,
+    including zips bigger than their contents."""
+    import random
+    rng = random.Random(5)
+    for _ in range(300):
+        games = []
+        for rid in range(rng.randint(1, 6)):
+            z = rng.randint(1, 30) * GB // 4
+            u = max(1, int(z * rng.choice([0.9, 1.0, 1.01, 2.5, 8.0])))
+            games.append((_known(rid, z, u), "wiiu"))
+        zs = [r["fs_size_bytes"] for r, _ in games]
+        us = [rommlib.unpacked_size(r, "wiiu") for r, _ in games]
+        worst = 0
+        for k in range(len(games)):          # game k unpacks; k+1 waits; k+2 downloads
+            use = sum(us[:k]) + zs[k] + us[k] + sum(zs[k + 1:k + 3])
+            worst = max(worst, use)
+        fc = rommlib.queue_forecast([rommlib.Job(r, s) for r, s in games], 0, 0, chd=False)["need"]
+        assert worst <= fc == rommlib.space_for(games)
