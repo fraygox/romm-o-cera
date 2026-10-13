@@ -661,10 +661,11 @@ class SettingsScreen(Screen):
         text(c, self.f.small, sec.upper(), (p.left + 28, p.top + 24), theme.ACCENT_HI)
         text(c, self.f.h2, label, (p.left + 28, p.top + 46), theme.TEXT, maxw=p.width - 56)
         yy = p.top + 92
-        for ln in rich_lines(self.f, self.f.body, SETTING_HELP.get(key, sub), p.width - 56, 7):
+        a = p.bottom - 150
+        most = 7 if key == "docs" else (a - 40 - yy) // 26        # the QR code needs the room; else up to "Now:"
+        for ln in rich_lines(self.f, self.f.body, SETTING_HELP.get(key, sub), p.width - 56, most):
             rich_text(c, self.f, self.f.body, ln, (p.left + 28, yy), theme.DIM)
             yy += 26
-        a = p.bottom - 150
         if key == "docs":
             draw_qr(c, docs_qr(), pygame.Rect(p.left + 28, yy + 10, p.width - 56, a - yy - 22))
         elif value:
