@@ -278,7 +278,7 @@ def test_conversion_pauses_while_es_is_busy(es, monkeypatch):
         es.busy = False                              # the scrape ends
     monkeypatch.setattr(rb_chd.time, "sleep", sleep)
     rb_chd._idle()
-    assert steps == ["Paused while EmulationStation is busy"]
+    assert [s for s in steps if s] == ["Paused while EmulationStation is busy"]
 
 
 # ------------------------------------------------------------ /messagebox (idea 37)

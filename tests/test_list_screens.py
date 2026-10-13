@@ -444,40 +444,34 @@ def _jobs(rb, app, n, paused=0):
     return out
 
 
-# (sel, scroll) after each step of _script(7) on 23 jobs, no banners (7 rows) / Pause all on (fewer rows)
-TRACE_DOWNLOADS = {
-    False: [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 1), (8, 2), (15, 9), (22, 16), (22, 16),
-            (15, 15), (14, 14), (13, 13), (12, 12), (19, 13), (22, 16), (22, 16), (22, 16), (22, 16), (15, 15),
-            (8, 8), (1, 1), (0, 0), (0, 0), (0, 0)],
-    True: [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 1), (7, 2), (8, 3), (15, 10), (22, 17), (22, 17),
-           (15, 15), (14, 14), (13, 13), (12, 12), (19, 14), (22, 17), (22, 17), (22, 17), (22, 17), (15, 15),
-           (8, 8), (1, 1), (0, 0), (0, 0), (0, 0)],
-}
+# (sel, scroll) after each step of _script(6) on 23 jobs: the same with Pause all on (the line on top says so)
+TRACE_DOWNLOADS = [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 1), (7, 2), (13, 8), (19, 14), (22, 17), (16, 16),
+                   (15, 15), (14, 14), (13, 13), (19, 14), (22, 17), (22, 17), (22, 17), (22, 17), (16, 16),
+                   (10, 10), (4, 4), (0, 0), (0, 0), (0, 0)]
 
 
 @pytest.mark.parametrize("hold", [False, True])
 def test_downloads_move_page_and_scroll(app, rb, hold, monkeypatch):
-    """Downloads page by 7 whatever the banners leave room for; the rows start
-    below the banners."""
+    """Activity's downloads page by 6 in the list left of the compressing panel, under the
+    line on top; Pause all doesn't move them."""
     n = 23
     jobs = _jobs(rb, app, n, paused=4 if hold else 0)
     app.downloader.hold = hold
     scr = rb.DownloadsScreen(app)
     app.push(scr)
-    rects = _frame(app, scr)
-    y0 = rects[0][1]
-    rows = len(rects)
-    assert (y0, rows) == ((140, 6) if hold else (84, 7))
-    assert rects == [(48, y0 + k * 76, rb.W - 96, 70) for k in range(rows)]
+    lst, _ = rb.split(None, rb.ACT_BODY)
+    y0, w = rb.ACT_BODY.top + 44, lst.width - 12
+    rows = _frame(app, scr, rows=True)
+    assert rows == [(lst.left, y0 + k * 64, w, 58) for k in range(6)]
     seen = []
-    for a in _script(7):
+    for a in _script(6):
         scr.action(a)
-        rects = _frame(app, scr)
+        rects = _frame(app, scr, rows=True)
         seen.append((scr.sel, scr.scroll))
         assert scr.sel_job is scr.view()[scr.sel]
-        assert scr.scroll <= scr.sel < scr.scroll + rows
-        assert rects == [(48, y0 + k * 76, rb.W - 96, 70) for k in range(min(rows, n - scr.scroll))]
-    assert seen == TRACE_DOWNLOADS[hold] and len(jobs) == n
+        assert scr.scroll <= scr.sel < scr.scroll + 6
+        assert rects == [(lst.left, y0 + k * 64, w, 58) for k in range(min(6, n - scr.scroll))]
+    assert seen == TRACE_DOWNLOADS and len(jobs) == n
 
 
 def test_downloads_tap_selects_the_job_and_the_highlight_follows_it(app, rb, monkeypatch):
@@ -487,7 +481,8 @@ def test_downloads_tap_selects_the_job_and_the_highlight_follows_it(app, rb, mon
     scr = rb.DownloadsScreen(app)
     app.push(scr)
     _frame(app, scr)
-    pt = (rb.W // 2, 84 + 3 * 76 + 30)
+    y0 = rb.ACT_BODY.top + 44
+    pt = (rb.W // 3, y0 + 3 * 64 + 30)
     opened = []
     monkeypatch.setattr(scr, "action", opened.append)
     app.tap(pt)
@@ -496,7 +491,7 @@ def test_downloads_tap_selects_the_job_and_the_highlight_follows_it(app, rb, mon
     v[3].state = rb.rommlib.Job.PAUSED                     # now first in the queue
     _frame(app, scr)
     assert scr.sel == 0 and scr.view()[0] is v[3]
-    app.tap((rb.W // 2, 84 + 30))
+    app.tap((rb.W // 3, y0 + 30))
     assert opened == ["ok"] and len(jobs) == 10
 
 

@@ -12,8 +12,8 @@ across the whole screen.
 import pygame
 from rbui import theme
 from rbui.theme import H, mix, W
-from rbui.draw import (chevron as draw_chevron, circle, doc_layout, focus_box, hline, installed_mark, marquee,
-                       measure, meter, rich_text, rrect, scroll_doc, scroll_text, text)
+from rbui.draw import (card, chevron as draw_chevron, circle, doc_layout, focus_box, hline, installed_mark,
+                       marquee, measure, meter, progress_bar, rich_text, rrect, scroll_doc, scroll_text, text)
 from rbui.widgets.chips import button_chip, button_chip_width, status_chip, tag as draw_tag
 from rbui.widgets.factsheet import facts
 from rbui.widgets.hero import verb_button, VERB_H
@@ -62,27 +62,46 @@ def list_head(c, f, lst, title, note="", note_color=None, color=None):
 
 
 def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_color=None, sub_color=None,
-             mark=None, slot="row", tag=None, tag_color=None, chevron=False, thumb=None, status_tick=False):
+             mark=None, slot="row", tag=None, tag_color=None, chevron=False, thumb=None, status_tick=False,
+             box=None, mark_w=48, aside=None):
     """One row: the focus box, a mark at the left (mark(center) draws a tick box or dot and
-    returns True when it did) or a thumbnail (thumb(rect) draws a cover in a 3:4 box down the
-    row's left), the label with a grey line under it (the focused row's slide when too long), a
-    short status right-aligned in the row (status_tick: the on-the-box tick before it) and,
-    left of it, a tag (chips.tag: a system, "queued"); chevron: a › at the right end (the row
-    opens something). Returns the text's x."""
-    if on:
-        focus_box(c, r)
+    returns True when it did; mark_w is the room it takes) or a thumbnail (thumb(rect) draws a
+    cover in a 3:4 box down the row's left), the label with a grey line under it (the focused
+    row's slide when too long), a short status right-aligned in the row (status_tick: the
+    on-the-box tick before it) and, left of it, a tag (chips.tag: a system, "queued"); chevron:
+    a › at the right end (the row opens something). box: None, the focus box when on; a colour,
+    draw.card filled with it (the focus box when on); False, none (the caller drew it). aside: a
+    right column of two lines: the status moves up to the label's line and under it (frac,
+    colour) draws a progress bar, a callable(rect) anything else, "" nothing. Returns the text's x."""
+    if box is None:
+        if on:
+            focus_box(c, r)
+    elif box is not False:
+        card(c, r, on, bg=box)
     if thumb:
         th = r.height - 8
         tr = pygame.Rect(r.left + 8, r.top + 4, th * 3 // 4, th)
         thumb(tr)
         tx = tr.right + 14
     else:
-        tx = r.left + (48 if mark and mark((r.left + 22, r.centery)) else ROW_PAD)
+        tx = r.left + (mark_w if mark and mark((r.left + (mark_w - 4) // 2, r.centery)) else ROW_PAD)
     right = r.right - 20
     if chevron:
         draw_chevron(c, theme.DIM if on else theme.FAINT, (right - 4, r.centery), "right")
         right -= 28
-    if status:
+    lh, sh = f.row.get_height() / theme.K, f.small.get_height() / theme.K
+    top = r.centery - ((lh + sh) / 2 if sub else lh / 2)
+    if aside is not None:
+        aw = min(300, r.width * 2 // 5)
+        if status:
+            text(c, f.small, status, (right, top + (lh - sh) / 2), status_color or theme.DIM, "topright", maxw=aw)
+        low = pygame.Rect(right - aw, int(top + lh), aw, int(sh))
+        if callable(aside):
+            aside(low)
+        elif aside:
+            progress_bar(c, (low.left, low.centery - 3, aw, 6), aside[0], aside[1])
+        right = low.left - 24
+    elif status:
         sr = text(c, f.small, status, (right, r.centery), status_color or theme.DIM, "midright",
                   maxw=r.width * 2 // 5)
         right = sr.left - 24
@@ -91,8 +110,6 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
             right -= 22
     if tag:
         right = draw_tag(c, f.tiny, tag, (right, r.centery), "midright", color=tag_color).left - 16
-    lh, sh = f.row.get_height() / theme.K, f.small.get_height() / theme.K
-    top = r.centery - ((lh + sh) / 2 if sub else lh / 2)
     marquee(c, f.row, label, (tx, top), label_color or (theme.TEXT if on else theme.DIM), maxw=right - tx,
             focused=on, slot=slot + "-label")
     if sub:
@@ -191,6 +208,36 @@ class Panel:
             self.app.hit(r, fn)
         verb_button(self.c, self.f, r, label, kind, detail, glyph, frac)
         return r
+
+    def head(self, title, note="", note_color=None, color=None):
+        """A list_head line at the top: what the panel holds left, a short state right."""
+        list_head(self.c, self.f, pygame.Rect(self.x - 8, self.y - 6, self.w + 16, 0), title, note, note_color, color)
+        self.y += 40
+
+    def label(self, s, color=None):
+        """A small grey caption over what follows ("Lately")."""
+        text(self.c, self.f.small, s, (self.x, self.y), color or theme.FAINT, maxw=self.w)
+        self.y += 24
+
+    def card(self, label, sub="", status="", on=False, h=58, more=0, bottom=False, tap=None, chevron=False,
+             **row):
+        """A focusable box in the panel (a recessed draw.card, a list_row in its top h): the next
+        one down, or with bottom the lowest one (draw those first, as footers). more: room under
+        the row for a bar or chips; chevron: a › at the right (it opens something). tap is
+        registered for the whole box. Returns (box, the room under the row)."""
+        w, hh = self.w + 24, h + more
+        if bottom:
+            r = pygame.Rect(self.x - 12, self.bottom - hh, w, hh)
+            self.bottom = r.top - 12
+        else:
+            r = pygame.Rect(self.x - 12, self.y, w, hh)
+            self.y = r.bottom + 8
+        if tap and self.app:
+            self.app.hit(r, tap)
+        card(self.c, r, on, bg=theme.BG2)
+        list_row(self.c, self.f, pygame.Rect(r.left, r.top, r.width, h), on, label, sub, status, box=False,
+                 slot=self._slot(), chevron=chevron, **row)
+        return r, pygame.Rect(r.left + ROW_PAD, r.top + h, r.width - 2 * ROW_PAD, more)
 
     def fact(self, label, value, color=None):
         """A grey label with its value under it (skipped when there's no value)."""

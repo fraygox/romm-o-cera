@@ -429,7 +429,7 @@ def test_queued_conversions_start_even_with_chd_turned_off(isolated, monkeypatch
 
 
 def test_downloads_screen_names_every_conversion_format(isolated, rb, monkeypatch):
-    """The Downloads screen said "CHD queued" / "compressed to CHD" for RVZ,
+    """Activity (then Downloads) said "CHD queued" / "compressed to CHD" for RVZ,
     .zcci, squashfs and .zar jobs, and never showed them as done."""
     import pygame
     monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
@@ -443,10 +443,10 @@ def test_downloads_screen_names_every_conversion_format(isolated, rb, monkeypatc
     rommlib.Downloader._queue_conversion(None, j, "3ds", "z3ds", ["/x.3ds"], ["/x.3ds"])
     assert j.chd_mode == "z3ds"
     j.state = rommlib.Job.DONE
-    msg, _ = rb.DownloadsScreen(app).status(j)
+    msg, _ = rb.DownloadsScreen(app).detail(j)
     assert "ZCCI queued" in msg and "CHD" not in msg
     os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, j.chd_task))          # the worker finished it
-    msg, _ = rb.DownloadsScreen(app).status(j)
+    msg, _ = rb.DownloadsScreen(app).detail(j)
     assert "compressed to ZCCI" in msg
 
 
