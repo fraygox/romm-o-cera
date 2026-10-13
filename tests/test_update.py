@@ -215,3 +215,30 @@ def test_the_update_check_asks_the_same_github_as_the_download(isolated, fake_gi
     different servers, and the update offer couldn't be tested end to end."""
     fake_github("v99.0.0")
     assert rommlib.newer_release(dict(rommlib.DEFAULT_CONFIG), force=True) == "v99.0.0"
+
+
+def test_the_ui_package_is_required_only_by_a_release_whose_entry_file_uses_it(isolated, fake_github, release_zip,
+                                                                               tmp_path):
+    """A nightly from before the rbui split was refused for lacking rbui/: going
+    to an older build (another channel, or a dev build seeing a nightly as newer)
+    failed. A release that imports rbui still needs it."""
+    _fake_app(tmp_path, "0.0.1")
+    stage = str(tmp_path / "stage")
+    with zipfile.ZipFile(io.BytesIO(release_zip)) as z:
+        names = [n for n in z.namelist() if n.startswith("rommbrowser/rbui/")]
+    assert names
+    no_ui = _rezip(release_zip, {})
+    with zipfile.ZipFile(io.BytesIO(no_ui)) as src:
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as z:
+            for n in src.namelist():
+                if not n.startswith("rommbrowser/rbui/"):
+                    z.writestr(n, src.read(n))
+        missing_ui = out.getvalue()
+    fake_github("v" + rommlib.VERSION, zip_bytes=missing_ui)
+    with pytest.raises(rommlib.UpdateError, match="Release is missing rbui/__init__.py"):
+        rommlib.stage_release(rommlib.release_info(), staging=stage)
+    pre_split = _rezip(missing_ui, {"rommbrowser/rommbrowser.pygame": "import os\nprint('one file')\n"})
+    fake_github("v" + rommlib.VERSION, zip_bytes=pre_split)
+    staged = rommlib.stage_release(rommlib.release_info(), staging=stage)
+    assert os.path.isfile(os.path.join(staged, "rommbrowser.pygame"))
