@@ -77,14 +77,16 @@ def test_it_gives_up_with_a_popup_when_es_never_lists_it(es):
     assert es.notes == ["Lorem Quest isn't in EmulationStation's list yet: start it from gba once it shows."]
 
 
-def test_a_launch_es_ignored_says_where_to_start_it(es):
+def test_once_listed_it_is_launched_once_and_left_to_es(es):
+    """ES may ask first (its missing-BIOS warning waits for the player), so a
+    game that isn't running right after /launch isn't an error."""
     game = _game()
     es.reload()
     es.launch_works = False
     assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=2)
-    assert _until(lambda: es.notes, 10)
-    assert es.launched == [game]
-    assert es.notes == ["Lorem Quest didn't start: open it from gba in EmulationStation."]
+    assert _until(lambda: es.launched)
+    time.sleep(3)
+    assert es.launched == [game] and es.notes == []
 
 
 def test_reopening_after_an_update_uses_the_same_waiter(es, tmp_path, monkeypatch):
@@ -171,3 +173,121 @@ def test_other_games_conversions_dont_block(isolated):
     assert rommlib.play_target(lib, _rom(7, "Consectetur (USA).gba"), "gba", ES_EXTS) == (gba, None)
     path, why = rommlib.play_target(lib, _rom(8, "Gone (USA).gba"), "gba", ES_EXTS)
     assert path is None and why == "It isn't on this box"
+
+
+# ------------------------------------------------------------ in the app
+
+@pytest.fixture
+def app(isolated, rb, monkeypatch):
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    app.platforms = [{"id": 7, "name": "Game Boy Advance", "_system": "gba"}]
+    app.platform_by_id = {7: app.platforms[0]}
+    app.downloader.es = ES_EXTS
+    app.launches, app.notes = [], []
+    monkeypatch.setattr(rommlib, "launch_when_closed",
+                        lambda path, **kw: app.launches.append((path, kw["system"], kw["name"])) or True)
+    monkeypatch.setattr(rommlib, "es_notify", app.notes.append)
+    return app
+
+
+def _here(app, rid=1, name="Lorem Quest (USA)"):
+    rom = dict(_rom(rid, name + ".gba"), name=name, platform_id=7)
+    p = _file("gba", name + ".gba")
+    app.library.mark(rom, "gba", [p])
+    return rom, p
+
+
+def _job(app, rom, state):
+    j = rommlib.Job(rom, "gba")
+    j.state = state
+    app.downloader.jobs.append(j)
+    return j
+
+
+def test_the_game_menu_plays_it_at_once_when_nothing_else_runs(app, rb):
+    rom, p = _here(app)
+    m = rb.ManageMenu(app, rom)
+    assert m.entries[0] == ("Play now", "RomM-o-Cera closes and the game starts", m.entries[0][2])
+    assert m.sel == 0
+    app.modal = m
+    m.action("ok")
+    assert app.launches == [(p, "gba", "Lorem Quest (USA)")]
+    assert app.notes == ["Starting Lorem Quest (USA)…"] and app.running is False and app.play_after == p
+
+
+def test_downloads_still_running_ask_first(app, rb):
+    rom, p = _here(app)
+    _job(app, _rom(2, "Ipsum.gba"), rommlib.Job.DOWNLOADING)
+    app.cfg["background_downloads"] = True
+    app.play_entry(rom)[2]()
+    c = app.modal
+    assert isinstance(c, rb.Confirm) and c.title == "Play Lorem Quest (USA) now?" and c.ok_label == "Play now"
+    assert c.body == ("RomM-o-Cera closes and Lorem Quest (USA) starts. 1 download still running keeps going "
+                      "in the background while you play.")
+    c.action("back")
+    assert app.launches == [] and app.running
+    app.cfg["background_downloads"] = False
+    _job(app, _rom(3, "Dolor.gba"), rommlib.Job.QUEUED)
+    app.play_entry(rom)[2]()
+    assert app.modal.body == ("RomM-o-Cera closes and Lorem Quest (USA) starts. 2 downloads still running are "
+                              "paused and resume next time you open RomM-o-Cera.")
+    app.modal.action("ok")
+    assert app.launches == [(p, "gba", "Lorem Quest (USA)")] and app.running is False
+
+
+def test_play_now_waits_while_it_downloads_converts_or_updates(app, rb):
+    rom, p = _here(app)
+    j = _job(app, rom, rommlib.Job.EXTRACTING)
+    assert app.play_entry(rom) == ("Play now", "It's still downloading", None)
+    j.state = rommlib.Job.DONE
+    rommlib.publish_queue_task({"system": "gba", "mode": "chd", "sources": [p]}, "1-1-gba.json")
+    assert app.play_entry(rom)[2] is None and "it plays once that's done" in app.play_entry(rom)[1]
+    os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, "1-1-gba.json"))
+    app.updating = True
+    assert app.play_entry(rom) == ("Play now", "Wait for the update to finish", None)
+
+
+def test_a_finished_download_offers_play_now_in_downloads_and_its_toast(app, rb):
+    rom, p = _here(app)
+    j = _job(app, rom, rommlib.Job.DONE)
+    scr = rb.DownloadsScreen(app)
+    app.push(scr)
+    scr.menu(j)
+    assert app.modal.entries[0][0] == "Play now" and app.modal.entries[0][2]
+    app.modal = None
+    app.tick_downloads()
+    msg, _, _, _, tap = app.toasts[-1]
+    assert msg == "Ready: Lorem Quest (USA) · Play now from {SELECT} Downloads" and tap
+    tap()
+    assert app.launches == [(p, "gba", "Lorem Quest (USA)")]
+
+
+def test_a_finished_download_that_cant_play_yet_just_says_ready(app, rb):
+    rom, p = _here(app)
+    j = _job(app, rom, rommlib.Job.DONE)
+    rommlib.publish_queue_task({"system": "gba", "mode": "chd", "sources": [p]}, "1-1-gba.json")
+    app.tick_downloads()
+    assert app.toasts[-1][0] == "Ready: Lorem Quest (USA)" and not app.toasts[-1][4]
+    app.downloader.jobs.remove(j)
+
+
+def test_after_play_now_es_gets_the_game_even_while_downloads_carry_on(app, monkeypatch):
+    rom, p = _here(app)
+    _job(app, _rom(2, "Ipsum.gba"), rommlib.Job.QUEUED)
+    spawned = []
+    monkeypatch.setattr(app, "spawn_helper", spawned.append)
+    monkeypatch.setattr(app.downloader, "pause_all", lambda: None)
+    app.cfg["background_downloads"] = True
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    open(rommlib.GAMELIST_QUEUE, "w").write("{}\n")
+    app.headless = False                              # on_exit as on the box
+    app.on_exit()
+    assert spawned == ["rb_dl.py"]                    # a plain quit: the game list waits for the downloads
+    spawned.clear()
+    app.play_after = p
+    app.on_exit()
+    assert spawned == ["rb_dl.py", "rb_finalize.py"]  # Play now: ES lists the game now

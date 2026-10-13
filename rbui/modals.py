@@ -172,6 +172,7 @@ class ManageMenu(ActionMenu):
                                     "states are kept." % (system, human_size(gsize)), "Delete",
                                     lambda: app.uninstall_group(group, system, title, then), danger=True)
             super().__init__(app, title, [
+                app.play_entry(rom, system, title),
                 ("Delete all %d discs" % n, "Frees %s" % human_size(gsize), delete_set if allp else None),
                 ("Download this disc again", "Replaces this disc only", lambda: app.start_download(rom)),
             ])
@@ -184,6 +185,7 @@ class ManageMenu(ActionMenu):
                                 % (files, system, human_size(size)),
                                 "Delete", lambda: app.uninstall(rom, system, then), danger=True)
         super().__init__(app, name, [
+            app.play_entry(rom, system, name),
             ("Delete from this box", "Frees %s (%d file%s)" % (human_size(size), len(paths),
                                                          "" if len(paths) == 1 else "s"),
              delete if paths else None),

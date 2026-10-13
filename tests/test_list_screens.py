@@ -817,7 +817,8 @@ def test_games_from_romm_sorts_and_offers_the_game_list_menu(app, rb, monkeypatc
     recs[0] = {"id": 0, "name": "Game B", "fs_name": "Game B.gba", "platform_id": 1, "fs_size_bytes": 5}
     scr.action("ok")
     assert isinstance(app.modal, rb.ManageMenu)
-    assert [e[0] for e in app.modal.entries] == ["Delete from this box", "Download again", "More like this"]
+    assert [e[0] for e in app.modal.entries] == ["Play now", "Delete from this box", "Download again",
+                                                 "More like this"]
     app.modal = None
     rects = _frame(app, scr)
     assert (752, 580, 472, 52) in rects                   # the game panel's action area (as in a game list)

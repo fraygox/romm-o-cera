@@ -156,6 +156,8 @@ class DownloadsScreen(ListScreen):
             e.append(("Retry" if j.state == J.FAILED else "Download again", j.message, lambda: d.resume_job(j)))
             e.append(("Remove from the list", "", lambda: d.remove(j)))
         else:                                      # done
+            title = (j.group.get("title") or j.label) if j.group else j.label
+            e.append(app.play_entry(j.rom, j.system, title))
             e.append(("Remove from the list", "The game stays on the box", lambda: d.remove(j)))
         app.modal = ActionMenu(app, j.label, e)
 

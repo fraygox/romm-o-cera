@@ -36,7 +36,7 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   resumable, checked against RomM's checksums, extracted, with cover art,
   descriptions and manuals handed to EmulationStation. Downloads keep going
   after you exit, wait for space instead of filling the drive, and can be kept
-  to overnight hours.
+  to overnight hours. **Play now** starts a game you just downloaded.
 - **Manage the box** from one menu that shows its state at a glance: delete
   games (saves are kept), see where the space went, free up space, clean up
   leftovers, compress games already on the box, fetch missing BIOS files from

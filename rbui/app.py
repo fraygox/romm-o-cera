@@ -166,7 +166,8 @@ class App:
         with self.lock:
             self.events_from_threads.append(fn)
 
-    def toast(self, msg, color=None):
+    def toast(self, msg, color=None, tap=None):
+        """A message at the bottom for a few seconds; tap: what tapping it does."""
         color = theme.TEXT if color is None else color
         now = time.time()
         last = self.toasts[-1] if self.toasts else None
@@ -177,7 +178,7 @@ class App:
             if burst:
                 return
         else:
-            self.toasts.append([msg, color, now + 3.5, 1])
+            self.toasts.append([msg, color, now + (6 if tap else 3.5), 1, tap])
         if color == theme.RED:
             self.sfx.play("deny")
         elif msg.startswith("Ready"):
@@ -418,6 +419,51 @@ class App:
         self.downloader.enqueue(rom, system)
         self.toast("Queued: %s" % rom_title(rom) + self.hours_note(), theme.GREEN)
         self.space_check()
+
+    # ---- Play now: quit, and a waiter has EmulationStation start the game
+    def play_entry(self, rom, system=None, title=None):
+        """The "Play now" row for a game's menu: (label, grey line, action),
+        the action None (and the grey line saying why) when it can't start now."""
+        system = system or self.system_for(rom)
+        title = title or rom_title(rom)
+        why, path = None, None
+        j = self.downloader.job_for(rom["id"])
+        if getattr(self, "updating", False):
+            why = "Wait for the update to finish"
+        elif not system:
+            why = "No Batocera system for this platform"
+        elif j and j.active:
+            why = "It's still downloading"
+        else:
+            path, why = rommlib.play_target(self.library, rom, system, getattr(self.downloader, "es", None))
+        if why:
+            return ("Play now", why, None)
+        return ("Play now", "%s closes and the game starts" % APP_NAME, lambda: self.play_now(path, system, title))
+
+    def play_now(self, path, system, title):
+        """Say what happens, ask first when downloads are still running, then quit."""
+        d = self.downloader
+        n = 0 if d.hold else d.active_count()
+        if not n:
+            return self._play(path, system, title)
+        what = "%d download%s" % (n, "s" if n > 1 else "")
+        if self.cfg["background_downloads"]:
+            body = "%s closes and %s starts. %s still running keep%s going in the background while you play." % (
+                APP_NAME, title, what, "s" if n == 1 else "")
+        else:
+            body = "%s closes and %s starts. %s still running %s paused and resume next time you open %s." % (
+                APP_NAME, title, what, "is" if n == 1 else "are", APP_NAME)
+        self.modal = Confirm(self, "Play %s now?" % title, body, "Play now", lambda: self._play(path, system, title))
+
+    def _play(self, path, system, title):
+        python = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else None
+        if not rommlib.launch_when_closed(path, system=system, name=title, python=python):
+            self.toast("Couldn't start %s: open it from EmulationStation" % title, theme.RED)
+            return
+        self.play_after = path
+        rommlib.es_notify("Starting %s…" % title)
+        rommlib.log("PLAY NOW %s" % path)
+        self._quit()
 
     def space_check(self):
         """After queueing: warn when the whole queue won't fit (it waits for room)."""
@@ -856,7 +902,7 @@ class App:
         for j in self.downloader.jobs:
             if j.state == rommlib.Job.DONE and not getattr(j, "_announced", False):
                 j._announced = True
-                self.toast("Ready: %s" % j.label, theme.GREEN)
+                self.toast_ready(j)
                 for scr in self.stack:
                     scr.__dict__.pop("_variants", None)
                 if j.chd_queued and not self.headless:
@@ -865,6 +911,16 @@ class App:
                 j._announced = True
                 self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)
 
+    def toast_ready(self, j):
+        """A finished download: "Ready", and when it can start now, where Play
+        now is (tapping the toast plays it)."""
+        title = (j.group.get("title") or j.label) if j.group else j.label
+        play = self.play_entry(j.rom, j.system, title)[2]
+        if play:
+            self.toast("Ready: %s · Play now from {SELECT} Downloads" % j.label, theme.GREEN, tap=play)
+        else:
+            self.toast("Ready: %s" % j.label, theme.GREEN)
+
     def on_exit(self):
         pending = 0 if self.downloader.hold else self.downloader.pending_count()
         self.downloader.pause_all()          # keeps them in download-queue.json
@@ -872,6 +928,8 @@ class App:
             return                            # updated: it all carries on when the new version starts
         if pending and self.cfg["background_downloads"]:
             self.spawn_helper("rb_dl.py")     # finishes the queue while you play
+            if getattr(self, "play_after", None) and os.path.exists(rommlib.GAMELIST_QUEUE):
+                self.spawn_helper("rb_finalize.py")   # Play now: ES must list the game before the queue is done
             return                            # it runs CHD + gamelist merge when done
         if os.path.exists(rommlib.GAMELIST_QUEUE):
             self.spawn_helper("rb_finalize.py")
@@ -979,4 +1037,6 @@ class App:
             rrect(c, theme.PANEL_HI, r, 20)
             circle(c, color, (r.left + 18, r.centery), 5)
             rich_text(c, self.fonts, self.fonts.body, msg, (r.left + 30, r.centery), theme.TEXT, "midleft", maxw=w - 44)
+            if len(t) > 4 and t[4]:
+                self.hit(r, t[4])
             y -= 48

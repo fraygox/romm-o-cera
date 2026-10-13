@@ -10,7 +10,7 @@ on the right previews the selected section; press A to open it.
 Everything RomM-o-Cera downloaded, biggest first (**Y** sorts by name or
 newest first), with the cover and details from RomM beside the list, as in a
 game list. **A** opens the same menu as a game on the box in a game list:
-**Delete**, **Download again** and **More like this** (while RomM's record
+**Play now** ([Browsing and downloading](browsing-and-downloading.md#play-now)), **Delete**, **Download again** and **More like this** (while RomM's record
 can't be fetched, only Delete). To delete several at once, pick them (X ›
 Pick several, see [Controls](controls.md#picking-several)). Any game marked ✓
 in a list (including ones you copied over before) can also be deleted from

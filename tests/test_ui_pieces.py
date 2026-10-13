@@ -132,17 +132,19 @@ def test_manage_menu_deletes_after_a_confirm_or_downloads_again(app, rb, monkeyp
     app.library.mark(rom, "psx", [p])
     m = rb.ManageMenu(app, rom)
     labels = [e[0] for e in _entries(m)]
-    assert m.title == "Lorem Quest (USA)" and labels == ["Delete from this box", "Download again"]
-    assert "1 file" in _entries(m)[0][1]
+    assert m.title == "Lorem Quest (USA)" and labels == ["Play now", "Delete from this box", "Download again"]
+    assert "1 file" in _entries(m)[1][1]
     gone = []
     monkeypatch.setattr(app, "uninstall", lambda r, s, then=None: gone.append((r["id"], s)))
     app.modal = m
-    m.action("ok")                                 # the first row: delete, but ask first
+    m.action("down")
+    m.action("ok")                                 # delete, but ask first
     assert isinstance(app.modal, rb.Confirm) and app.modal.danger and "Lorem Quest (USA).chd" in app.modal.body
     assert gone == []
     app.modal.action("ok")
     assert gone == [(1, "psx")] and app.modal is None
     app.modal = m = rb.ManageMenu(app, rom)
+    m.action("down")
     m.action("down")
     m.action("ok")
     assert isinstance(app.modal, rb.DownloadConfirm) and "Already on this box" in app.modal.body
@@ -150,9 +152,10 @@ def test_manage_menu_deletes_after_a_confirm_or_downloads_again(app, rb, monkeyp
 
 def test_manage_menu_with_no_files_cant_delete(app, rb):
     m = rb.ManageMenu(app, _rom(name="Nowhere (USA)"))
-    first = _entries(m)[0]
+    play, first = _entries(m)[:2]
+    assert play[0] == "Play now" and play[2] is None and play[1] == "It isn't on this box"
     assert first[0] == "Delete from this box" and first[2] is None
-    assert m.sel == 1                              # the first row it can run
+    assert m.sel == 2                              # the first row it can run
 
 
 def test_manage_menu_of_a_disc_set_deletes_every_disc(app, rb, monkeypatch):
@@ -162,11 +165,12 @@ def test_manage_menu_of_a_disc_set_deletes_every_disc(app, rb, monkeypatch):
         app.library.mark(r, "psx", [_put("psx/%s.chd" % r["name"])], group=group)
     m = rb.ManageMenu(app, discs[0])
     assert m.title == "Ipsum Saga"
-    assert [e[0] for e in _entries(m)] == ["Delete all 2 discs", "Download this disc again"]
-    assert _entries(m)[0][1] == "Frees %s" % rb.human_size(2000)
+    assert [e[0] for e in _entries(m)] == ["Play now", "Delete all 2 discs", "Download this disc again"]
+    assert _entries(m)[1][1] == "Frees %s" % rb.human_size(2000)
     calls = []
     monkeypatch.setattr(app, "uninstall_group", lambda g, s, t, then=None: calls.append((g["id"], s, t)))
     app.modal = m
+    m.action("down")
     m.action("ok")
     assert app.modal.title == "Delete all 2 discs of Ipsum Saga?"
     app.modal.action("ok")

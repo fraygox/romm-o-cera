@@ -78,13 +78,35 @@ download only what fits.
 - Manuals (PDF) come along from RomM and open from the game's menu in
   EmulationStation.
 
+### Play now
+
+A game you've just downloaded can start straight away: **Play now** is in
+the game's menu (A on a game on the box), in its row's menu on the Downloads
+screen, and the "Ready" toast says so (tapping the toast plays it).
+RomM-o-Cera closes and EmulationStation starts the game a few seconds later.
+If other downloads are still running it asks first: they keep going in the
+background while you play, or, with **Keep downloading after exit** off,
+pause and resume next time you open RomM-o-Cera.
+
+It starts what EmulationStation lists for the game: the `.m3u` playlist of a
+multi-disc game (once every disc is here), a PS3 `.ps3` folder, or the
+converted file (CHD, RVZ, .zar, .wua…). A game that's waiting to be
+compressed, or being compressed, can't start until that's done, and the menu
+says so. A new download isn't in EmulationStation's lists until RomM-o-Cera
+hands it over after closing, so the game starts once EmulationStation lists
+it (up to 10 minutes on Batocera 43.1, which reloads every list for it);
+starting another game meanwhile cancels it, and a popup says where to find
+the game if EmulationStation never lists it. Where EmulationStation asks
+before starting a game (a system with missing BIOS files), it asks then too.
+
 ### The Downloads screen
 
 Reorder, pause, cancel, pause/resume everything (X menu), clear finished
 (Y). Pick several (X › Pick several) to pause, resume, cancel, retry or remove
 them at once; cancelling (one or several, active or paused) asks first, since it
 deletes the partial files. Each game shows what it's being compressed to (CHD,
-RVZ, squashfs, .zcci, .zar, .wua, a `.ps3` folder) and when that's done. L2/R2 opens
+RVZ, squashfs, .zcci, .zar, .wua, a `.ps3` folder) and when that's done. A
+finished game's menu has [Play now](#play-now). L2/R2 opens
 **Conversions** (background compression). "Download now" starts one game
 outside the download hours.
 

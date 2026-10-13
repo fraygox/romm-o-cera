@@ -25,7 +25,8 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
                                     starts (`running`) only if ES lists that exact path
                                     (`launch_any = True`, the default here: any path, e.g.
                                     the app itself), and `launch_works = False` starts
-                                    nothing at all
+                                    nothing (as when ES first asks the player, e.g. its
+                                    missing-BIOS warning) at all
 
 All of it as in batocera-emulationstation's es-app/src/services/HttpServerThread.cpp.
 

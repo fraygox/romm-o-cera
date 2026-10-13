@@ -29,8 +29,8 @@ on; the hint bar's left/right and L2/R2 glyphs work both ways too.
 
 **Search's top matches:** move right past the end of a keyboard row (or left
 past its start) to reach them; up/down picks one, A opens it, B or left/right
-returns to the keyboard. A game already on the box opens its menu (delete or
-download again), as in a game list; tapping a match does the same.
+returns to the keyboard. A game already on the box opens its menu (play now,
+delete or download again), as in a game list; tapping a match does the same.
 
 ## Lists
 
@@ -73,9 +73,9 @@ picking, so there A picks from the start and B goes back.
 | Game lists | Download (a game on the box: its menu) | Menu: more like this, download all, filters, sort, pick several | Search | Letter |
 | Platforms | Open | | Search this platform | |
 | Collections | Open | Download every game | | Letter (one list) |
-| Downloads | That download's options | Menu: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Downloads | That download's options (a finished game: Play now) | Menu: pause or resume all, clear finished, pick several | Clear finished | Conversions |
 | Conversions | Options | Start now | Clear finished | |
-| Games from RomM | The game's menu: delete, download again, more like this | Menu: sort, pick several | Sort | Letter (by name) |
+| Games from RomM | The game's menu: play now, delete, download again, more like this | Menu: sort, pick several | Sort | Letter (by name) |
 | Free up space | Pick | Menu: delete picked, pick enough to free 10–100 GB, sort | Sort | Letter (by name) |
 | Leftovers | Delete it | Menu: delete all, pick several | Delete all | System |
 | Compress | That system's games | Compress the whole system | | |

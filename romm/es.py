@@ -300,8 +300,9 @@ def es_messagebox(msg):
 # list: its reply is 200 either way. A game downloaded this session isn't
 # listed until rb_finalize hands it to ES, which it does once the app has quit
 # and ES is idle, so with `system` the waiter first waits (up to `wait` s)
-# for /systems/<system>/games to list the path, and afterwards checks that
-# the game is running (else a popup says where to start it).
+# for /systems/<system>/games to list the path. A listed game then starts,
+# or ES asks the player first (its "missing BIOS" warning waits for an
+# answer), so nothing is checked after the launch.
 _LAUNCHER = r"""
 import json, sys, time, urllib.parse, urllib.request
 es, path, system, name, wait = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], float(sys.argv[5])
@@ -345,22 +346,14 @@ if system:
     if running():
         sys.exit()
 post("/launch", path)
-if name:
-    end = time.time() + min(20, wait)
-    while time.time() < end:
-        now = running()
-        if now:
-            sys.exit()
-        time.sleep(0.5)
-    say("%s didn't start: open it from %s in EmulationStation." % (name, system or "its system"))
 """
 
 
 def launch_when_closed(path, system=None, name=None, wait=600, python=None):
     """Start the waiter that has ES launch `path` once this app has quit.
     system: the game's system, when ES may not list it yet (Play now: the
-    waiter waits for the list); name: the game's name for the popups if it
-    can't start. True when the waiter is running."""
+    waiter waits for the list); name: the game's name for the popup if ES
+    never lists it. True when the waiter is running."""
     import subprocess
     import sys
     try:
