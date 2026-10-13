@@ -344,8 +344,8 @@ def test_tapping_a_match_opens_its_game_page(make_app, rb, monkeypatch):
 # ---- raw joysticks (no SDL mapping)
 
 class FakeJoy:
-    def __init__(self, buttons, axes):
-        self.buttons, self.axes = buttons, axes
+    def __init__(self, buttons, axes, name="Generic USB Joystick"):
+        self.buttons, self.axes, self.name = buttons, axes, name
 
     def init(self):
         pass
@@ -363,7 +363,7 @@ class FakeJoy:
         return self.axes[a]
 
     def get_name(self):
-        return "Generic USB Joystick"
+        return self.name
 
 
 def _raw(rb, monkeypatch, joy):
@@ -379,17 +379,35 @@ def _raw(rb, monkeypatch, joy):
 
 
 def test_a_raw_joystick_has_l2_r2(rb, monkeypatch):
+    """A generic pad (no trigger axes, 10+ buttons): L2 R2 at 6 7, Select Start at 8 9."""
     import pygame
-    inp = _raw(rb, monkeypatch, FakeJoy(12, [0.0, 0.0, -1.0, 0.0, 0.0, -1.0]))
+    inp = _raw(rb, monkeypatch, FakeJoy(12, [0.0, 0.0, 0.0, 0.0]))
     out = []
     for b in (6, 7, 8, 9, 4, 5):
         inp.handle(pygame.event.Event(pygame.JOYBUTTONDOWN, button=b, instance_id=7, joy=0), out)
         inp.handle(pygame.event.Event(pygame.JOYBUTTONUP, button=b, instance_id=7, joy=0), out)
     assert out == ["l2", "r2", "select", "start", "l1", "r1"]
+
+
+def test_a_raw_xbox_style_pad_keeps_select_start(rb, monkeypatch):
+    """An Xbox-style pad (xpad: 11 buttons, triggers on axes 2 and 5): Back/Start at 6 7,
+    Guide at 8 does nothing, the trigger axes are L2 R2; one that says X-Box but whose
+    axes haven't reported yet too."""
+    import pygame
+    inp = _raw(rb, monkeypatch, FakeJoy(11, [0.0, 0.0, -1.0, 0.0, 0.0, -1.0]))
+    out = []
+    for b in (6, 7, 8):
+        inp.handle(pygame.event.Event(pygame.JOYBUTTONDOWN, button=b, instance_id=7, joy=0), out)
+    assert out == ["select", "start"]
     out = []
     for axis, v in ((2, 1.0), (2, -1.0), (5, 0.8), (5, -1.0), (3, 1.0), (3, 0.0), (4, -1.0), (2, 0.9)):
         inp.handle(pygame.event.Event(pygame.JOYAXISMOTION, axis=axis, value=v, instance_id=7, joy=0), out)
     assert out == ["l2", "r2", "l2"]                        # the right stick (3, 4) does nothing
+    inp = _raw(rb, monkeypatch, FakeJoy(11, [0.0] * 6, name="Generic X-Box pad"))
+    out = []
+    for b in (6, 7):
+        inp.handle(pygame.event.Event(pygame.JOYBUTTONDOWN, button=b, instance_id=7, joy=0), out)
+    assert out == ["select", "start"]
 
 
 def test_a_raw_joystick_with_few_buttons_keeps_select_start(rb, monkeypatch):

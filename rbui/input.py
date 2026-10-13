@@ -86,6 +86,23 @@ class Input:
         except Exception:
             pass
 
+    RAW_XPAD = {0: "south", 1: "east", 2: "west", 3: "north", 4: "l1", 5: "r1", 6: "select", 7: "start"}
+    RAW_DINPUT = {**RAW_XPAD, 6: "l2", 7: "r2", 8: "select", 9: "start"}
+
+    def raw_buttons(self, jid):
+        """Button number -> action for a pad SDL has no mapping for. An Xbox-style pad (its
+        triggers are axes, or it says X-Box) has Back/Start at 6/7 and Guide at 8; a generic pad
+        with 10+ buttons and no trigger axes has L2/R2 at 6/7, then Select/Start."""
+        j = self.joysticks.get(jid)
+        try:
+            name = (j.get_name() or "").lower().replace("-", "")
+            if j is not None and j.get_numbuttons() >= 10 and not self.raw_triggers.get(jid) \
+                    and "xbox" not in name:
+                return self.RAW_DINPUT
+        except Exception:
+            pass
+        return self.RAW_XPAD
+
     def _face(self, name):
         if name == self.ok_btn:
             return "ok"
@@ -220,15 +237,7 @@ class Input:
         elif t in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
             if ev.instance_id in self.controllers:
                 return
-            m = {0: "south", 1: "east", 2: "west", 3: "north", 4: "l1", 5: "r1",
-                 6: "select", 7: "start", 8: "select", 9: "start"}
-            j = self.joysticks.get(ev.instance_id)
-            try:
-                if j is not None and j.get_numbuttons() >= 10:
-                    m.update({6: "l2", 7: "r2"})      # 10+ buttons: L2 R2 then Select Start (generic pads)
-            except Exception:
-                pass
-            name = m.get(ev.button)
+            name = self.raw_buttons(ev.instance_id).get(ev.button)
             if name in ("south", "east", "west", "north"):
                 name = self._face(name)
             if name:

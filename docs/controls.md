@@ -19,9 +19,10 @@ the screen ([below](#on-each-screen)).
 
 `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard mapping for
 this app, so the buttons reach it directly. A pad SDL has no mapping for
-still works: with 10 or more buttons, buttons 6 and 7 are L2/R2 and 8 and 9
-Select/Start (with fewer, 6 and 7 are Select/Start), and axes that rest
-fully back are L2 then R2.
+still works. An Xbox-style pad (its triggers are axes that rest fully back, or
+it calls itself an X-Box pad) has Select/Start at buttons 6 and 7 and its
+trigger axes as L2/R2; any other pad with 10 or more buttons has L2/R2 at 6
+and 7 and Select/Start at 8 and 9 (with fewer, 6 and 7 are Select/Start).
 
 ## Keyboard
 
