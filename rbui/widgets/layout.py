@@ -12,8 +12,8 @@ across the whole screen.
 import pygame
 from rbui import theme
 from rbui.theme import H, mix, W
-from rbui.draw import chevron as draw_chevron, focus_box, hline, marquee, measure, meter, rich_text, rrect, \
-    scroll_text, text, wrap
+from rbui.draw import chevron as draw_chevron, circle, focus_box, hline, installed_mark, marquee, measure, meter, \
+    rich_text, rrect, scroll_text, text, wrap
 from rbui.widgets.chips import button_chip, button_chip_width, tag as draw_tag
 from rbui.widgets.factsheet import facts
 from rbui.widgets.hero import VERB_H, verb_button
@@ -61,15 +61,22 @@ def list_head(c, f, lst, title, note="", note_color=None, color=None):
 
 
 def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_color=None, sub_color=None,
-             mark=None, slot="row", tag=None, tag_color=None, chevron=False):
+             mark=None, slot="row", tag=None, tag_color=None, chevron=False, thumb=None, status_tick=False):
     """One row: the focus box, a mark at the left (mark(center) draws a tick box or dot and
-    returns True when it did), the label with a grey line under it (the focused row's slide
-    when too long), a short status right-aligned in the row and, left of it, a tag (chips.tag:
-    a system, "queued"); chevron: a › at the right end (the row opens something). Returns the
-    text's x."""
+    returns True when it did) or a thumbnail (thumb(rect) draws a cover in a 3:4 box down the
+    row's left), the label with a grey line under it (the focused row's slide when too long), a
+    short status right-aligned in the row (status_tick: the on-the-box tick before it) and,
+    left of it, a tag (chips.tag: a system, "queued"); chevron: a › at the right end (the row
+    opens something). Returns the text's x."""
     if on:
         focus_box(c, r)
-    tx = r.left + (48 if mark and mark((r.left + 22, r.centery)) else ROW_PAD)
+    if thumb:
+        th = r.height - 8
+        tr = pygame.Rect(r.left + 8, r.top + 4, th * 3 // 4, th)
+        thumb(tr)
+        tx = tr.right + 14
+    else:
+        tx = r.left + (48 if mark and mark((r.left + 22, r.centery)) else ROW_PAD)
     right = r.right - 20
     if chevron:
         draw_chevron(c, theme.DIM if on else theme.FAINT, (right - 4, r.centery), "right")
@@ -78,6 +85,9 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         sr = text(c, f.small, status, (right, r.centery), status_color or theme.DIM, "midright",
                   maxw=r.width * 2 // 5)
         right = sr.left - 24
+        if status_tick:
+            installed_mark(c, (sr.left - 14, r.centery), 7)
+            right -= 22
     if tag:
         right = draw_tag(c, f.tiny, tag, (right, r.centery), "midright", color=tag_color).left - 16
     lh, sh = f.row.get_height() / theme.K, f.small.get_height() / theme.K
@@ -198,6 +208,28 @@ class Panel:
                            key=self.key, line_h=line_h, slot=self._slot())
         self.y = used.bottom + 14
 
+    def figure(self, value, sub=None, color=None):
+        """A big number (a total, a size) and a line under it."""
+        text(self.c, self.f.h1, value, (self.x, self.y), color or theme.TEXT, maxw=self.w)
+        self.y += 46
+        if sub:
+            text(self.c, self.f.body, sub, (self.x, self.y), theme.DIM, maxw=self.w)
+            self.y += 30
+        self.y += 6
+
+    def legend(self, items):
+        """Lines with a coloured dot before each: [(colour, label)], a bar's key (colour None: no dot)."""
+        for color, label in items:
+            x = self.x
+            if color is not None:
+                circle(self.c, color, (x + 6, self.y + 10), 6)
+                x += 20
+            text(self.c, self.f.small, label, (x, self.y + 10), theme.DIM if color is not None else theme.FAINT,
+                 "midleft", maxw=self.x + self.w - x)
+            self.y += 24
+        self.y += 6
+
+
     def rule(self):
         hline(self.c, theme.LINE, (self.x, self.y), (self.x + self.w, self.y))
         self.y += 14
@@ -239,14 +271,17 @@ class Panel:
         rich_text(self.c, self.f, self.f.small, s, (self.x, y), color or theme.DIM, "midleft", maxw=left - self.x)
         self.bottom = y - 36
 
-    def verb(self, label, kind="go", detail="", glyph="A", frac=0.0, fn=None):
-        """hero.verb_button across the panel's foot (above any foot line), tapped like A when fn
-        is given. Returns its rect."""
-        r = pygame.Rect(self.x, self.bottom - VERB_H, self.w, VERB_H)
+    def verb(self, label, kind="go", detail="", glyph="A", frac=0.0, fn=None, foot=False):
+        """hero.verb_button across the panel (fn: tapping it); foot: at the bottom (above any
+        foot line, drawn before the body) instead of under the last piece. Returns its rect."""
+        r = pygame.Rect(self.x, self.bottom - VERB_H if foot else self.y, self.w, VERB_H)
         if fn and self.app:
             self.app.hit(r, fn)
         verb_button(self.c, self.f, r, label, kind, detail, glyph, frac)
-        self.bottom = r.top - 16
+        if foot:
+            self.bottom = r.top - 16
+        else:
+            self.y = r.bottom + 14
         return r
 
 

@@ -202,19 +202,21 @@ def test_surprise_without_romms_random_route(monkeypatch):
     assert why is None and rom["id"] % 2
 
 
-def test_surprise_from_a_game_list_menu(live, rb, opened):
+def test_game_night_from_a_game_list_menu(live, rb):
     app = live
     gba = next(p for p in app.platforms if p["_system"] == "gba")
     gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
     app.push(gl)
     _pump(app, lambda: gl.server_total)
     app.dispatch("x")
-    i = _menu_row(app, "Surprise me")
-    assert app.modal.entries[i][1] == "One of these {:,} games, picked at random".format(gl.server_total)
+    i = _menu_row(app, "Game night")
+    assert app.modal.entries[i][1] == "Roll one of these {:,} games for tonight".format(gl.server_total)
     app.modal.sel = i
     app.dispatch("ok")
-    _pump(app, lambda: app.modal is not None)
-    assert isinstance(app.modal, rb.DownloadConfirm) and app.modal.rom["platform_id"] == gba["id"]
+    gn = app.stack[-1]
+    assert isinstance(gn, rb.GameNightScreen) and gn.crumbs()[-1] == "Game night"
+    _pump(app, lambda: gn.picks)
+    assert gn.picks[0]["platform_id"] == gba["id"] and gn.pool == gl.server_total
     app.draw()
 
 
@@ -252,50 +254,40 @@ def test_surprise_opens_the_menu_of_a_game_already_here(live, rb):
     assert app.modal is None and app.toasts[-1][0] == "No game in this list to pick from"
 
 
-def test_surprise_from_home_platforms_and_collections(live, rb, opened):
+def test_game_night_from_home_platforms_and_collections(live, rb):
+    """Home Y, a platform's X and a collection's menu open Game night on their own scope."""
     app = live
     home = app.stack[0]
-    assert ("Y", "Surprise me") in home.hints()
+    assert ("Y", "Game night") in home.hints()
     app.dispatch("y")
-    m = app.modal
-    assert m.title == "Surprise me" and m.entries[0][0] == "Pick a game"
-    m.sel = _menu_row(app, "Players")
-    app.dispatch("right")
-    app.dispatch("right")
-    app.dispatch("right")                                      # 4+
-    m.sel = _menu_row(app, "Only games not on this box")
-    app.dispatch("ok")
-    assert app.surprise_opts == {"players": 4, "new": True}
-    assert m.entries[0][1].endswith("for 4+ players, not on this box yet")
-    m.sel = 0
-    app.dispatch("ok")
-    _pump(app, lambda: app.modal is not None)
-    rom = app.modal.rom
-    assert rom["metadatum"]["player_count"] == "1-4" and app.system_for(rom)
-    app.modal = None
-    app.dispatch("y")                                          # the options stay for the session
-    assert app.modal.entries[_menu_row(app, "Players")][3] == "4+"
-    app.modal = None
+    gn = app.stack[-1]
+    assert isinstance(gn, rb.GameNightScreen) and gn.scope.whole
+    _pump(app, lambda: gn.picks)
+    assert app.system_for(gn.picks[0])
+    app.pop()
 
     plats = rb.PlatformScreen(app)
     app.push(plats)
     plats.sel = next(i for i, p in enumerate(app.platforms) if p["_system"] == "snes")
-    assert ("X", "Surprise me") in plats.hints()
+    assert ("X", "Game night") in plats.hints()
     app.dispatch("x")
-    _pump(app, lambda: app.modal is not None)
-    assert app.platform_by_id[app.modal.rom["platform_id"]]["_system"] == "snes"
-    app.modal = None
+    gn = app.stack[-1]
+    _pump(app, lambda: gn.picks)
+    assert app.platform_by_id[gn.picks[0]["platform_id"]]["_system"] == "snes"
+    assert gn.scope.systems == {"snes"}
+    app.pop()
 
     cs = rb.CollectionScreen(app)
     app.push(cs)
     _pump(app, lambda: cs.items)
     it = next(x for x in cs.items if x.get("param") == "collection_id")
     cs.menu(it)
-    app.modal.sel = _menu_row(app, "Surprise me")
+    app.modal.sel = _menu_row(app, "Game night")
     app.dispatch("ok")
-    _pump(app, lambda: app.modal is not None)
+    gn = app.stack[-1]
+    _pump(app, lambda: gn.picks)
     ids = [r["id"] for r in app.api.roms_all(collection=("collection_id", it["id"]))]
-    assert app.modal.rom["id"] in ids
+    assert gn.picks[0]["id"] in ids
 
 
 # ------------------------------------------------------ Recommended for you
@@ -401,9 +393,7 @@ def test_a_surprise_pick_offers_another_on_y(live, rb, opened):
     gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
     app.push(gl)
     _pump(app, lambda: gl.server_total)
-    app.dispatch("x")
-    app.modal.sel = _menu_row(app, "Surprise me")
-    app.dispatch("ok")
+    gl.surprise_me()
     _pump(app, lambda: app.modal is not None)
     first = app.modal
     assert first.title.startswith("Surprise: ") and first.alt[0] == "Another"

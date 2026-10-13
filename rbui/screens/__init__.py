@@ -5,6 +5,8 @@
   collection   collections (RomM's own and the virtual ones)
   games        a game list, Search
   game         a game's own page
+  gamenight    Game night: a random game for tonight's players
+  backlog      your RomM backlog and Download my backlog
   downloads    the download queue
   text_input   a text setting, typed on the shared keyboard (rbui/widgets/keyboard.py)
   settings     Settings

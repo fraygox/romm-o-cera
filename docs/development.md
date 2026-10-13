@@ -24,7 +24,7 @@ commercial game names in screenshots, tests or fixtures.
 ## The screenshot harness
 
 The whole UI at once: every screen and dialog (the theme picker, Custom,
-Surprise me and Recommended for you included), in the Xbox, PlayStation,
+Game night, Backlog and Recommended for you included), in the Xbox, PlayStation,
 Nintendo and keyboard styles, with a contact sheet (`index.html`). It starts
 its own mock RomM and fake EmulationStation, and fails on a hint that
 bypasses the glyph helper:

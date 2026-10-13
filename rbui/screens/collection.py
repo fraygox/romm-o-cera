@@ -7,7 +7,9 @@ from rbui.theme import H, W
 from rbui.draw import focus_box, hline, installed_mark, measure, text, wrap
 from rbui.widgets.chips import tag as draw_tag
 from rbui.screens.base import letter_of, ListScreen
-from rbui.screens.games import GameListScreen, surprise
+from rbui.screens.games import GameListScreen
+from rbui.screens.backlog import BacklogScreen
+from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.modals import ActionMenu
 
 
@@ -111,6 +113,8 @@ class CollectionScreen(ListScreen):
             if c.get("rom_count"):
                 items.append({"name": c["name"], "tag": "smart", "group": "Smart", "count": c["rom_count"],
                               "full": c["name"], "param": "smart_collection_id", "id": c["id"]})
+        items.append({"name": "Backlog", "tag": "", "group": "Your RomM lists", "count": None, "full": "Backlog",
+                      "screen": "backlog"})
         for vt, label in VIRTUAL_TYPES:
             items.append({"name": label, "tag": "", "group": "Browse by", "count": None,
                           "full": label, "vtype": vt})
@@ -142,25 +146,29 @@ class CollectionScreen(ListScreen):
             return
         elif a == "ok":
             it = self.items[self.sel]
-            if it.get("vtype"):
+            if it.get("screen") == "backlog":
+                self.app.push(BacklogScreen(self.app))
+            elif it.get("vtype"):
                 self.app.push(CollectionScreen(self.app, it["vtype"], it["name"]))
             else:
                 self.app.push(GameListScreen(self.app, it["full"], collection=it))
-        elif a == "x" and not self.items[self.sel].get("vtype"):
+        elif a == "x" and not self.browse(self.items[self.sel]):
             self.menu(self.items[self.sel])
         else:
             super().action(a)
+
+    @staticmethod
+    def browse(it):
+        """A row that opens another list (Browse by, Backlog), not a collection of games."""
+        return bool(it.get("vtype") or it.get("screen"))
 
     def menu(self, it):
         app = self.app
         n = it.get("count") or 0
         e = [("Open", "", lambda: app.push(GameListScreen(app, it["full"], collection=it)))]
         if n:
-            pids = [p["id"] for p in app.platforms]
-            col = (it["param"], it["id"])
-            e.append(("Surprise me", "One of its {:,} games, picked at random".format(n), lambda: surprise(
-                app, page=lambda off, lim: app.api.roms(platform_ids=pids, collection=col, offset=off, limit=lim),
-                scope={"platform_ids": pids, "collection": col}, where=it["full"])))
+            e.append(("Game night", "Roll one of its {:,} games for tonight".format(n),
+                      lambda: app.push(GameNightScreen(app, Scope.collection(app, it)))))
         if n <= GameListScreen.BULK_MAX:
             e.append(("Download every game", "{:,} games, skipping any already on this box".format(n),
                       lambda: self.download_all(it)))
@@ -184,7 +192,7 @@ class CollectionScreen(ListScreen):
 
     def hints(self):
         h = [("A", "Open")]
-        if self.items and not self.items[self.sel].get("vtype"):
+        if self.items and not self.browse(self.items[self.sel]):
             h.append(("X", pads.ACTIONS))
         return self.list_hints(*h)
 

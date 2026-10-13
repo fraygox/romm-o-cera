@@ -97,18 +97,19 @@ In a menu, **A** runs the selected entry. An entry with a switch or a
 **B** (or X) closes the menu.
 
 A question shows its buttons: **A** for what it offers ("Download",
-"Delete 3", "Play now"), **B** to go back without doing it. A Surprise me
-pick adds **Y Another**, to roll again.
+"Delete 3", "Play now"), **B** to go back without doing it.
 
 ## On each screen
 
 | Screen | A | X | Y | L2/R2 |
 |---|---|---|---|---|
-| Home | Open | | Surprise me | |
-| Platforms | Open | Surprise me from this platform | Search this platform | |
-| Collections | Open | A collection's menu: open, surprise me, download every game | | A–Z (in a single list) |
-| Game lists | The game's page | Actions: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
+| Home | A game: Play now / Download; a pill or collection: Open | A game's Actions: more like this, the whole shelf | Game night | |
+| Platforms | Open | Game night from this platform | Search this platform | |
+| Collections | Open | A collection's menu: open, Game night, download every game | | A–Z (in a single list) |
+| Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search | A–Z |
 | A game's page | Download / Play now | Actions: more like this, surprise me, delete (on the box) | | |
+| Game night | Play now or Download the pick | Actions: players, only what's on this box | Another | |
+| Backlog | Play now or Download | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
 | Downloads | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |

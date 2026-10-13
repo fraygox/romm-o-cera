@@ -9,13 +9,15 @@ from rbui.theme import SR, W
 from rbui.draw import _fade, card, COVER_BOX, installed_mark, measure, rom_title, scrollbar, text, wrap
 from rbui.screens.base import Screen
 from rbui.screens.collection import CollectionScreen
-from rbui.screens.games import GameListScreen, SearchScreen, more_like, surprise
+from rbui.screens.games import GameListScreen, SearchScreen, more_like
+from rbui.screens.gamenight import GameNightScreen, Scope
+from rbui.screens.backlog import BacklogScreen
 from rbui.modals import ActionMenu, DownloadConfirm, ManageMenu
 from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
 from rbui.widgets.chips import pill_row, tag
-from rbui.widgets.hero import game_meta, game_verb, time_ago
+from rbui.widgets.hero import game_verb, meta_line, press_verb, time_ago
 from rbui.widgets.layout import list_head, Panel, split
 from rbui.widgets.tiles import collection_card, cover, cover_capacity, mosaic, Shelf, tile_size
 
@@ -235,12 +237,12 @@ class HomeScreen(Screen):
         key, shelf, it = self.focused()
         if shelf and key != "collections":
             a = "Play now" if self.app.rom_status(it)[0] == "installed" else "Download"
-            return [("A", a), ("X", pads.ACTIONS), ("Y", "Surprise me"), ("B", "Exit")]
-        return [("A", "Open"), ("Y", "Surprise me"), ("B", "Exit")]
+            return [("A", a), ("X", pads.ACTIONS), ("Y", "Game night"), ("B", "Exit")]
+        return [("A", "Open"), ("Y", "Game night"), ("B", "Exit")]
 
     def action(self, a):
         if a == "y":
-            return self.surprise_menu()
+            return self.game_night()
         if a == "back":
             return self.app.request_quit()
         key, shelf, it = self.focused()
@@ -277,10 +279,8 @@ class HomeScreen(Screen):
         self.action("ok")
 
     def open_game(self, rom):
-        """A on a game: the manage menu for one on the box (Play now first), else the
-        download prompt, as in a game list."""
-        app = self.app
-        app.modal = ManageMenu(app, rom) if app.rom_status(rom)[0] == "installed" else DownloadConfirm(app, rom)
+        """A on a game: its verb (Play now, or the download prompt)."""
+        press_verb(self.app, rom)
 
     def open_collection(self, coll):
         self.app.push(GameListScreen(self.app, coll["full"], collection=coll))
@@ -292,8 +292,9 @@ class HomeScreen(Screen):
             return self.open_recs()
         if key == "new":
             return app.push(GameListScreen(app, "Recently added", order_by="id_desc"))
-        title = {"playing": "Playing", "backlog": "Backlog"}[key]
-        app.push(GameListScreen(app, title, static=list(self.lists[key]["items"]), crumb=title))
+        if key == "backlog":
+            return app.push(BacklogScreen(app))
+        app.push(GameListScreen(app, "Playing", static=list(self.lists[key]["items"]), crumb="Playing"))
 
     def game_actions(self, rom, shelf):
         """X on a game: what the list's menus offer for it, and its shelf as a list."""
@@ -338,48 +339,13 @@ class HomeScreen(Screen):
                                 why={rom["id"]: why for rom, why, _ in app.recs if why},
                                 crumb="Recommended for you"))
 
-    PARTY = [(0, "Any"), (2, "2+"), (3, "3+"), (4, "4+")]
-
-    def surprise_menu(self):
-        """Y: a random game from the whole library, for this many players and
-        maybe only ones not on the box yet (kept for the session)."""
+    def game_night(self):
+        """Y: Game night, rolling from the whole library."""
         app = self.app
         if not app.platforms:
             app.toast(app.error or "Still loading platforms…", theme.AMBER)
             return
-        o = app.__dict__.setdefault("surprise_opts", {"players": 0, "new": False})
-
-        def players(step=1):
-            ns = [n for n, _ in self.PARTY]
-            o["players"] = ns[(ns.index(o["players"]) + step) % len(ns)]
-
-        def entries():
-            n = len(app.platforms)
-            return [("Pick a game", "From all %d platforms%s%s" % (
-                        n, ", for %d+ players" % o["players"] if o["players"] else "",
-                        ", not on this box yet" if o["new"] else ""), self.surprise_now),
-                    None,
-                    ("Players", "", players, dict(self.PARTY)[o["players"]], "choice"),
-                    ("Only games not on this box", "", lambda: o.update(new=not o["new"]), o["new"], "switch")]
-        app.modal = ActionMenu(app, "Surprise me", entries(), refresh=entries)
-
-    def surprise_now(self):
-        app, o = self.app, self.app.surprise_opts
-        pids = [p["id"] for p in app.platforms]
-        keep = (lambda r: app.rom_status(r)[0] != "installed") if o["new"] else None
-        if not o["players"]:
-            return surprise(app, page=lambda off, lim: app.api.roms(platform_ids=pids, offset=off, limit=lim),
-                            scope={"platform_ids": pids}, keep=keep, where="your library")
-
-        def page(off, lim):
-            if app.player_counts is None:                  # RomM's player count values, once a session
-                app.player_counts = [c for c in app.api.rom_filters().get("player_counts") or []
-                                     if isinstance(c, str)]
-            counts = rommlib.party_values(app.player_counts, o["players"])
-            if not counts:
-                return {"items": [], "total": 0}
-            return app.api.roms(platform_ids=pids, offset=off, limit=lim, player_counts=counts)
-        surprise(app, page=page, keep=keep, where="your library for %d+ players" % o["players"])
+        app.push(GameNightScreen(app, Scope.library(app)))
 
     # ---------------------------------------------------------------- drawing
 
@@ -497,7 +463,7 @@ class HomeScreen(Screen):
             p.rule()
 
     def panel_collection(self, p, coll):
-        p.verb("Open the collection", "go", fn=lambda: self.action("ok"))
+        p.verb("Open the collection", "go", fn=lambda: self.action("ok"), foot=True)
         mh = max(100, min(300, p.room() - 110))
         mw = mh * 232 // 300
         mosaic(p.c, self.app, self.coll_roms.get(coll["id"], []), (p.x + (p.w - mw) // 2, p.y, mw, mh))
@@ -521,12 +487,12 @@ class HomeScreen(Screen):
     def panel_game(self, p, key, rom):
         app = self.app
         self.want_played(rom)
-        p.verb(fn=lambda: self.action("ok"), **game_verb(app, rom))
+        p.verb(fn=lambda: self.action("ok"), foot=True, **game_verb(app, rom))
         ch = max(120, min(COVER_BOX[1], p.room() - 162))        # leaves a line of title, meta, status, 2 of summary
         cw = ch * 3 // 4
         cover(p.c, app, rom, (p.x + (p.w - cw) // 2, p.y, cw, ch), fit=True)
         p.space(ch + 14)
-        p.title(rom_title(rom), sub=game_meta(app, rom), center=True)
+        p.title(rom_title(rom), sub=meta_line(app, rom, players=False), center=True)
         p.y -= 8
         status = self.status_line(key, rom)
         if status:
@@ -564,14 +530,12 @@ class PlatformScreen(Screen):
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.app.platforms[self.sel]))
         elif a == "x":
-            p = self.app.platforms[self.sel]
-            surprise(self.app, page=lambda off, lim: self.app.api.roms(platform_ids=[p["id"]], offset=off, limit=lim),
-                     scope={"platform_ids": [p["id"]]}, where=p.get("display_name") or p["name"])
+            self.app.push(GameNightScreen(self.app, Scope.platform(self.app, self.app.platforms[self.sel])))
         else:
             super().action(a)
 
     def hints(self):
-        return [("A", "Open"), ("X", "Surprise me"), ("Y", "Search platform"), ("L", "Page up"),
+        return [("A", "Open"), ("X", "Game night"), ("Y", "Search platform"), ("L", "Page up"),
                 ("R", "Page down"), ("B", "Back")]
 
     def draw(self, c):

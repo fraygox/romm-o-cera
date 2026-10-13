@@ -166,9 +166,9 @@ def test_the_rail_pills_end_at_the_column_edge_and_open_on_tap(home, rb):
     assert isinstance(app.stack[-1], rb.SettingsScreen)
 
 
-def test_the_verb_and_the_actions_menu(home, rb):
+def test_the_verb_and_the_actions_menu(home, rb, monkeypatch):
     app = home.app
-    assert home.hints() == [("A", "Download"), ("X", rb.pads.ACTIONS), ("Y", "Surprise me"), ("B", "Exit")]
+    assert home.hints() == [("A", "Download"), ("X", rb.pads.ACTIONS), ("Y", "Game night"), ("B", "Exit")]
     app.dispatch("ok")
     assert isinstance(app.modal, rb.DownloadConfirm)
     app.modal = None
@@ -176,9 +176,10 @@ def test_the_verb_and_the_actions_menu(home, rb):
     app.draw()
     assert home.hints()[0] == ("A", "Play now")
     assert rb.game_verb(app, home.focused()[2])["label"] == "Play now"
-    app.dispatch("ok")
-    assert isinstance(app.modal, rb.ManageMenu) and app.modal.entries[0][0] == "Play now"
-    app.modal = None
+    played = []
+    monkeypatch.setattr(app, "play_entry", lambda rom, *a: ("Play now", "", lambda: played.append(rom["id"])))
+    app.dispatch("ok")                                            # A plays it
+    assert played == [0] and app.modal is None
     app.dispatch("x")
     labels = [e[0] for e in app.modal.entries if e]
     assert labels[0] == "Play now" and "More like this" in labels and "See the whole shelf" in labels
@@ -187,6 +188,16 @@ def test_the_verb_and_the_actions_menu(home, rb):
     home.open_game = opened.append                                # the one place A on a game goes
     app.dispatch("ok")
     assert opened == [home.focused()[2]]
+
+
+def test_the_backlog_shelf_opens_the_backlog(home, rb):
+    app = home.app
+    home.focus_shelf("backlog", 0)
+    app.dispatch("x")
+    m = app.modal
+    m.sel = next(i for i, e in enumerate(m.entries) if e and e[0] == "See the whole shelf")
+    app.dispatch("ok")
+    assert isinstance(app.stack[-1], rb.BacklogScreen)
 
 
 def test_new_in_romm_opens_as_recently_added_once(home, rb):
@@ -235,11 +246,11 @@ def test_status_line_says_how_recently_it_was_played_here(home, rb, monkeypatch)
     assert home.status_line("recommended", rec) == app.recs[0][1]
 
 
-def test_y_is_surprise_me_and_b_exits(home, rb, monkeypatch):
+def test_y_is_game_night_and_b_exits(home, rb, monkeypatch):
     app = home.app
     app.dispatch("y")
-    assert app.modal.title == "Surprise me"
-    app.modal = None
+    assert isinstance(app.stack[-1], rb.GameNightScreen)
+    app.pop()
     quit = []
     monkeypatch.setattr(app, "request_quit", lambda: quit.append(1))
     app.dispatch("back")
