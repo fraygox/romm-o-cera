@@ -100,7 +100,7 @@ STEPS = ("wait:3,act:down,act:ok,wait:2,act:right,act:down,act:ok,wait:2,act:r2,
          "act:r2,act:ok,wait:2,act:back,act:back,act:back,"
          "act:up,act:up,act:ok,type:magna,wait:2,act:start,wait:2,act:back,act:back,"
          "act:select,wait:0.5,act:back,"
-         "act:down,act:down,act:down,act:down,act:down,act:ok,wait:0.5,act:down,act:down,act:down,act:ok,wait:2,"
+         "act:down,act:down,act:down,act:down,act:down,act:down,act:ok,wait:0.5,act:down,act:down,act:down,act:ok,wait:2,"
          "act:back,act:start,act:down,act:down,act:down,act:ok,wait:2,act:x,act:down,act:ok,wait:2,"
          # list menu: picks + download picked, filters, then On this box
          "act:start,act:down,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:down,act:ok,wait:2,"
@@ -204,7 +204,7 @@ def test_similar_and_filters_against_mock(isolated, mock_url):
 MULTIDISC_STEPS = (
     "wait:3,act:ok,type:lorem odyssey,wait:2,act:start,wait:2,act:ok,wait:2,act:ok,wait:0.5,"
     "act:select,wait:0.5,act:ok,wait:0.3,act:back,act:x,wait:0.3,act:x,wait:4,act:y,act:back,"
-    "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
+    "act:start,act:down,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
     "act:back,act:back,act:down,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
     "act:down,act:ok,wait:0.3,act:back,"
     # Home (Settings selected; one more Back would quit) -> up to On this box: every section in

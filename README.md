@@ -29,9 +29,9 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
 ## What it does
 
 - **Browse and search** your RomM library from the couch: platforms,
-  collections, recently added, an on-screen keyboard, filters (2+, 3+ or 4+
-  players for a game night), "more like this", and Surprise me for a random
-  pick. → [Browsing and downloading](docs/browsing-and-downloading.md)
+  collections, recently added, recommended for you, an on-screen keyboard,
+  filters (2+, 3+ or 4+ players for a game night), "more like this", and
+  Surprise me for a random pick. → [Browsing and downloading](docs/browsing-and-downloading.md)
 - **Download** single games, multi-disc sets (one playlist entry), whole lists
   or whole collections into the right `/userdata/roms/<system>/` folder —
   resumable, checked against RomM's checksums, extracted, with cover art,

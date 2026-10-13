@@ -330,6 +330,9 @@ SCENES = [
                                app.stack[0].surprise_menu())),
     ("surprise-pick", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                                setattr(app, "_after", lambda: app.stack[-1].surprise_me()))),
+    ("home-recommended", lambda: setattr(app, "_after", lambda: setattr(
+        app.stack[0], "sel", [it[0] for it in app.stack[0].items()].index("recommended")))),
+    ("recommended", lambda: setattr(app, "_after", lambda: app.stack[0].open_recs())),
     ("search", search_ready),
     ("download-confirm", lambda: setattr(app, "modal", rb.DownloadConfirm(app, a_rom()))),
     ("downloads", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
@@ -417,6 +420,7 @@ def reset():
     if os.path.exists(ENC3DS):
         os.remove(ENC3DS)
     del app.stack[1:]
+    app.stack[0].sel = 0
     rb.apply_theme(app.theme_key())          # a theme a picker scene previewed
     app.modal = None
     app.toasts = []

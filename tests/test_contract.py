@@ -271,3 +271,36 @@ def test_firmware_list(api, platforms):
         assert isinstance(fw, list)
         for x in fw:
             assert {"id", "file_name"} <= set(x)
+
+
+def test_player_count_filter(api, busiest):
+    counts = api.rom_filters().get("player_counts")
+    assert isinstance(counts, list) and all(isinstance(c, str) for c in counts)
+    party = rommlib.party_values(counts, 2)
+    total = api.roms(platform_ids=[busiest["id"]], limit=1)["total"]
+    if party:
+        got = api.roms(platform_ids=[busiest["id"]], limit=20, player_counts=party)
+        assert got["total"] <= total
+        for r in got["items"]:
+            assert rommlib.max_players((r.get("metadatum") or {}).get("player_count")) >= 2
+
+
+def test_random_rom(api, busiest):
+    try:
+        r = api.random_rom(platform_ids=[busiest["id"]])
+    except rommlib.RommError as e:              # a RomM before 5.4: Surprise me picks from the pages
+        assert "HTTP 404" in str(e) or "HTTP 422" in str(e)
+        return
+    assert ROM_FIELDS <= set(r) and r["platform_id"] == busiest["id"]
+    assert api.random_rom(platform_ids=[10 ** 6]) is None
+
+
+def test_recommendations(api):
+    got = api.recommendations(5)
+    if got is None:                             # a RomM before 5.4: the Home row stays hidden
+        return
+    assert len(got) <= 5
+    for x in got:
+        assert ROM_FIELDS <= set(x["rom"]) and isinstance(x["reasons"], list)
+        assert all({"facet", "value"} <= set(r) for r in x["reasons"])
+        assert isinstance(rommlib.recommendation_why(x), str)

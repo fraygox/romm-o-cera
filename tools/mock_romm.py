@@ -6,7 +6,8 @@ without a real server — or a real library.
 
 Then point the app at it: ROMM_URL=http://127.0.0.1:8765 ROMM_TOKEN=demo.
 Implements only what the app uses (platforms, collections, roms list/detail,
-filters and random picks, content downloads with Range, covers, pairing).
+filters, random picks and recommendations, content downloads with Range,
+covers, pairing).
 Any bearer token is accepted; the pairing code ABCD2345 works once.
 
 The library is made of freely distributed homebrew / open-source games (with
@@ -398,6 +399,9 @@ class Handler(BaseHTTPRequestHandler):
             code = "".join(random.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
             Handler.pair_codes.add(code)
             return self._json({"code": code, "expires_in": 60})
+        if path == "/mock/recs":                  # tests: {"mode": "ok" | "cold" | "empty" | "404"}
+            Handler.recs_mode = json.loads(raw or b"{}").get("mode", "ok")
+            return self._json({"mode": Handler.recs_mode})
         if path == "/mock/pair-seen":
             return self._json(Handler.pair_seen)
         if path == "/api/client-tokens/exchange":
@@ -427,6 +431,32 @@ class Handler(BaseHTTPRequestHandler):
                 "regions": sorted({x for r in cls.roms for x in r["regions"]}),
                 "languages": [], "tags": sorted({t for r in cls.roms for t in r["tags"]}),
                 "platforms": sorted({r["platform_id"] for r in cls.roms})}
+
+    @classmethod
+    def recommendations(cls, cold=False):
+        """Like RomM 5.4's feed: SimpleRomSchema roms with a score and why. Seeded
+        by games "played" (two of the homebrew ones); cold: its best-rated games."""
+        rng = random.Random(23)
+        pool = [r for r in cls.roms if r["metadatum"]["developers"][0] == "Lorem Ipsum Soft"
+                and r["platform_id"] in (1, 3, 4, 5, 6, 9)]
+        out = []
+        for k, r in enumerate(rng.sample(pool, 18)):
+            md = r["metadatum"]
+            if cold:
+                why, seed = [{"facet": "top_rated", "value": ""}], None
+            else:
+                seed = ("Alter Ego", "Anguna", None)[k % 3]
+                year = time.gmtime(md["first_release_date"] / 1000).tm_year // 10 * 10
+                why = [{"facet": "genre", "value": md["genres"][0]}, {"facet": "decade", "value": str(year)}]
+                if seed is None:
+                    why = [{"facet": "igdb", "value": ""}] + why[:1]
+                elif k % 4 == 1:
+                    why.insert(0, {"facet": "franchise", "value": "Dolor Sit"})
+            rom = {x: v for x, v in r.items() if x not in ("files", "_data", "sibling_roms")}
+            out.append({"rom": rom, "score": round(0.95 - k * 0.03, 3), "reasons": why,
+                        "seed_rom_id": None if seed is None else next(
+                            x["id"] for x in cls.roms if x["name"] == seed), "seed_rom_name": seed})
+        return out
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
@@ -458,6 +488,12 @@ class Handler(BaseHTTPRequestHandler):
                                for c in build_virtual(self.roms, vt)])
         if path == "/api/roms/filters":            # every filter's values across the library
             return self._json(self.filter_values())
+        if path == "/api/recommendations":
+            mode = getattr(Handler, "recs_mode", "ok")
+            if mode == "404":                     # a RomM before 5.4
+                return self._json({"detail": "Not Found"}, 404)
+            lim = int((q.get("limit") or [20])[0])
+            return self._json([] if mode == "empty" else self.recommendations(mode == "cold")[:lim])
         if path == "/api/roms/random":             # RomM 5.4: one game from the scope, or null
             items = self.roms
             if "platform_ids" in q:

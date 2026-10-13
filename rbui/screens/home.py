@@ -26,10 +26,50 @@ class HomeScreen(Screen):
              ("settings", "Settings", "Server, controller, downloads, compression"),
              ("exit", "Exit", "Back to EmulationStation")]
 
+    REC = ("recommended", "Recommended for you", "")
+
     def __init__(self, app):
         super().__init__(app)
         self.sel = 0
         self.free = None
+
+    def items(self):
+        """ITEMS, with Recommended for you after Recently added while RomM has some."""
+        recs = self.app.recs
+        if not recs:
+            return self.ITEMS
+        k = next(i for i, it in enumerate(self.ITEMS) if it[0] == "recent") + 1
+        seeds = [seed for _, _, seed in recs if seed]
+        sub = "Picked by RomM from what you play" if seeds else "Highly rated games in your library"
+        return self.ITEMS[:k] + [(self.REC[0], self.REC[1], sub)] + self.ITEMS[k:]
+
+    def load_recs(self):
+        """Recommended for you, asked once a session. Nothing to show (RomM's
+        nightly job hasn't run, a RomM before 5.4, or an error) hides the row:
+        never a message at start."""
+        app = self.app
+        if app.recs is not None or not app.platforms:
+            return
+        app.recs = []
+
+        def done(items):
+            had = [it[0] for it in self.items()]
+            app.recs = [(x["rom"], rommlib.recommendation_why(x),
+                         x["seed_rom_name"].strip() if isinstance(x.get("seed_rom_name"), str) else "")
+                        for x in items or [] if app.system_for(x["rom"])]
+            if not app.recs:
+                rommlib.log("recommendations: %s" % ("none from RomM yet" if items is not None else
+                                                     "this RomM has none (no /api/recommendations)"))
+            keys = [it[0] for it in self.items()]
+            if had != keys and app.stack and app.stack[0] is self:     # the row appeared: focus stays put
+                self.sel = keys.index(had[self.sel])
+        app.bg(lambda: app.api.recommendations(50), done, lambda e: None)
+
+    def open_recs(self):
+        app = self.app
+        app.push(GameListScreen(app, "Recommended for you", static=[rec[0] for rec in app.recs],
+                                why={rom["id"]: why for rom, why, _ in app.recs if why},
+                                crumb="Recommended for you"))
 
     def enter(self):
         try:
@@ -87,14 +127,16 @@ class HomeScreen(Screen):
     def action(self, a):
         if a == "y":
             return self.surprise_menu()
+        items = self.items()
+        self.sel = min(self.sel, len(items) - 1)
         if a == "up":
-            self.sel = (self.sel - 1) % len(self.ITEMS)
+            self.sel = (self.sel - 1) % len(items)
         elif a == "down":
-            self.sel = (self.sel + 1) % len(self.ITEMS)
+            self.sel = (self.sel + 1) % len(items)
         elif a == "back":
             self.app.request_quit()
         elif a == "ok":
-            key = self.ITEMS[self.sel][0]
+            key = items[self.sel][0]
             app = self.app
             if key == "exit":
                 app.request_quit()
@@ -115,39 +157,62 @@ class HomeScreen(Screen):
                 app.push(CollectionScreen(app))
             elif key == "recent":
                 app.push(GameListScreen(app, "Recently added", order_by="id_desc"))
+            elif key == "recommended":
+                self.open_recs()
             elif key == "downloads":
                 app.push(DownloadsScreen(app))
 
     def draw(self, c):
+        self.load_recs()
+        items = self.items()
+        self.sel = min(self.sel, len(items) - 1)
+        pitch = min(71, 568 // len(items))       # one more row (Recommended for you) still ends with the panel
+        rh = pitch - 7
+        pad = max(3, (rh - 50) // 2)
         y = 84
-        for i, (key, label, sub) in enumerate(self.ITEMS):
-            r = pygame.Rect(48, y, 520, 64)
+        for i, (key, label, sub) in enumerate(items):
+            r = pygame.Rect(48, y, 520, rh)
             self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
             if on:
                 focus_box(c, r, 14)
             else:
                 rrect(c, theme.PANEL, r, 14)
-            text(c, self.f.h2, label, (r.left + 28, r.top + 8), theme.TEXT if on else theme.DIM)
+            text(c, self.f.h2, label, (r.left + 28, r.top + pad + 1), theme.TEXT if on else theme.DIM)
             extra = ""
             if key == "downloads":
                 n = self.app.downloader.active_count()
                 extra = (", %d running" % n) if n else ""
-            text(c, self.f.small, sub + extra, (r.left + 28, r.top + 38), theme.DIM if on else theme.FAINT)
-            y += 71
+            text(c, self.f.small, sub + extra, (r.left + 28, r.top + pad + 31), theme.DIM if on else theme.FAINT)
+            y += pitch
         # right panel: a shelf of the newest box art — the library's own face
         p = pygame.Rect(616, 84, 616, 558)
         rrect(c, theme.PANEL, p, 16)
         app = self.app
+        recs = app.recs and items[self.sel][0] == "recommended"     # the shelf follows the focus
         if app.platforms:
-            total = sum(pl["rom_count"] for pl in app.platforms)
-            text(c, self.f.h2, "Recently added", (p.left + 28, p.top + 22), theme.TEXT)
-            text(c, self.f.small, "{:,} games on {} platforms".format(total, len(app.platforms)),
-                 (p.right - 28, p.top + 28), theme.FAINT, "topright")
-            self.load_recent()
+            if recs:
+                text(c, self.f.h2, "Recommended for you", (p.left + 28, p.top + 22), theme.TEXT)
+                n = len(app.recs)
+                text(c, self.f.small, "%d game%s" % (n, "" if n == 1 else "s"), (p.right - 28, p.top + 28),
+                     theme.FAINT, "topright")
+                seeds = list(dict.fromkeys(seed for _, _, seed in app.recs if seed))
+                note = ("Because you played " + " and ".join(seeds[:2]) + (" and more" if len(seeds) > 2 else "")) \
+                    if seeds else "Highly rated games in your library, until you've played a few"
+                text(c, self.f.body, note, (p.left + 28, p.top + 446), theme.DIM, maxw=p.width - 56)
+                shelf = [rec[0] for rec in app.recs]
+                if self.shelf is None:
+                    self.shelf = {}
+            else:
+                total = sum(pl["rom_count"] for pl in app.platforms)
+                text(c, self.f.h2, "Recently added", (p.left + 28, p.top + 22), theme.TEXT)
+                text(c, self.f.small, "{:,} games on {} platforms".format(total, len(app.platforms)),
+                     (p.right - 28, p.top + 28), theme.FAINT, "topright")
+                self.load_recent()
+                shelf = self.recent or []
             cw, ch, gap = 128, 172, 16
             x0 = p.left + (p.width - (4 * cw + 3 * gap)) // 2
-            for k, rom in enumerate((self.recent or [])[:8]):
+            for k, rom in enumerate(shelf[:8]):
                 cr = pygame.Rect(x0 + (k % 4) * (cw + gap), p.top + 70 + (k // 4) * (ch + gap), cw, ch)
                 img = app.cover(rom)
                 if img:
@@ -169,7 +234,7 @@ class HomeScreen(Screen):
                     rrect(c, theme.BG2, cr, 8)
                     for j, ln in enumerate(wrap(self.f.small, rom.get("name") or "", cw - 16, 4)):
                         text(c, self.f.small, ln, (cr.left + 8, cr.top + 10 + j * 20), theme.FAINT)
-            if self.recent == []:
+            if self.recent == [] and not recs:
                 text(c, self.f.body, "Nothing new yet.", (p.left + 28, p.top + 80), theme.DIM)
         elif app.error:
             text(c, self.f.h2, "Can't reach RomM", (p.left + 28, p.top + 22), theme.RED)

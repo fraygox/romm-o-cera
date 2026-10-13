@@ -245,6 +245,22 @@ class Api:
         out = self.get("/api/roms/%d/similar" % rom_id, {"limit": limit})
         return [x["rom"] for x in out if isinstance(x, dict) and x.get("rom")]
 
+    def recommendations(self, limit=50):
+        """RomM's Recommended for you (5.4 and newer), best first:
+        [{"rom": {...}, "score": 0.8, "reasons": [{"facet": "genre", "value":
+        "Puzzle"}], "seed_rom_id": 12, "seed_rom_name": "..."}]. Empty until
+        RomM's nightly job has built its similarity graph (or a cold start:
+        its best-rated games, reason "top_rated"). None from a RomM without
+        recommendations (no such route)."""
+        try:
+            got = self.get("/api/recommendations", {"limit": limit})
+        except _core.RommError as e:
+            if "HTTP 404" in str(e):
+                return None
+            raise
+        return [x for x in got if isinstance(x, dict) and isinstance(x.get("rom"), dict)
+                and x["rom"].get("id")] if isinstance(got, list) else []
+
     def all_tags(self):
         """Every filename tag in the library (for the "hide prototypes…" filter)."""
         page = self.get("/api/roms", {"limit": 1, "with_filter_values": "true",
@@ -326,6 +342,31 @@ def max_players(count):
 def party_values(counts, n):
     """Of RomM's player count values (GET /api/roms/filters), those meaning n or more players."""
     return [c for c in counts or [] if isinstance(c, str) and max_players(c) >= n]
+
+
+# ----------------------------------------------------- recommendations
+
+REASON_WORDS = {"igdb": "Similar on IGDB", "top_rated": "Highly rated"}    # facets without a value of their own
+
+
+def recommendation_why(item):
+    """Why RomM recommends a game, in one line as its web UI words it:
+    "Because you played Lorem · Puzzle · 1990s"; "" when it gives no reason."""
+    out = []
+    seed = item.get("seed_rom_name")
+    if isinstance(seed, str) and seed.strip():
+        out.append("Because you played %s" % seed.strip())
+    for r in item.get("reasons") or []:
+        if not isinstance(r, dict):
+            continue
+        facet, value = r.get("facet"), str(r.get("value") or "").strip()
+        if facet == "decade" and value:
+            value += "s"                                   # RomM gives the decade's first year
+        elif facet in REASON_WORDS:
+            value = REASON_WORDS[facet]
+        if value and value not in out:
+            out.append(value)
+    return " · ".join(out[:4])
 
 
 # ----------------------------------------------------------------- pairing

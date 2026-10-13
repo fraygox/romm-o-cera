@@ -86,9 +86,11 @@ class GameListScreen(ListScreen):
     BUBBLE_AT = (32 + 676 // 2, H // 2)
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
-                 order_by="name", static=None):
+                 order_by="name", static=None, why=None, crumb="More like this"):
         super().__init__(app)
         self.static = static          # a fixed list (e.g. "More like this"): no paging/filters
+        self.why = why or {}          # rom id -> why it's listed (Recommended for you), on the detail panel
+        self.crumb = crumb            # a fixed list's breadcrumb
         self.only_verified = False
         self.hide_junk = False
         self.title = title
@@ -139,7 +141,7 @@ class GameListScreen(ListScreen):
 
     def crumbs(self):
         if self.static is not None:
-            return ["More like this"]
+            return [self.crumb]
         out = []
         if self.platform and not self.search:
             out.append("Platforms")
@@ -667,6 +669,13 @@ class GameListScreen(ListScreen):
             text(c, tf, ln, (tx, y), theme.TEXT)
             y += lh
         y += 8
+        why = getattr(self, "why", {}).get(rom["id"])    # (Games from RomM draws this panel too)
+        if why:                                    # Recommended for you: RomM's reason, first
+            text(c, self.f.small, "Why", (tx, y), theme.FAINT)
+            lines = wrap(self.f.cond, why, tw, 3)
+            for k, ln in enumerate(lines):
+                text(c, self.f.cond, ln, (tx, y + 17 + k * 20), theme.ACCENT_HI)
+            y += 25 + 20 * len(lines)
         md = rom.get("metadatum") or {}
         plat = app.platform_by_id.get(rom.get("platform_id"))
         year = ""
@@ -700,8 +709,9 @@ class GameListScreen(ListScreen):
         # summary
         sy = max(y, cov.bottom) + 18
         summ = rom.get("summary") or ""
-        lines = wrap(self.f.small, summ, p.width - 48, max(1, (p.bottom - 110 - sy) // 20))
-        for i, ln in enumerate(lines if summ else []):
+        room = (p.bottom - 110 - sy) // 20                 # a long fact list leaves none: no summary over the button
+        lines = wrap(self.f.small, summ, p.width - 48, room) if summ and room > 0 else []
+        for i, ln in enumerate(lines):
             text(c, self.f.small, ln, (p.left + 24, sy + i * 20), theme.DIM)
         # action area
         ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, 52)

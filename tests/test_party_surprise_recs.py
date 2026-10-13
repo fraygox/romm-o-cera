@@ -296,3 +296,96 @@ def test_surprise_from_home_platforms_and_collections(live, rb, opened):
     _pump(app, lambda: app.modal is not None)
     ids = [r["id"] for r in app.api.roms_all(collection=("collection_id", it["id"]))]
     assert app.modal.rom["id"] in ids
+
+
+# ------------------------------------------------------ Recommended for you
+
+def test_recommendation_why_words_it_like_romm():
+    why = rommlib.recommendation_why
+    assert why({"seed_rom_name": "Lorem", "reasons": [{"facet": "franchise", "value": "Dolor Sit"},
+                                                      {"facet": "decade", "value": "1990"}]}) == \
+        "Because you played Lorem · Dolor Sit · 1990s"
+    assert why({"reasons": [{"facet": "top_rated", "value": ""}]}) == "Highly rated"
+    assert why({"reasons": [{"facet": "igdb", "value": ""}, {"facet": "genre", "value": "Puzzle"},
+                            {"facet": "genre", "value": "Puzzle"}, "junk", {"facet": "theme"}]}) == \
+        "Similar on IGDB · Puzzle"
+    assert why({}) == why({"reasons": None, "seed_rom_name": " "}) == ""
+
+
+@pytest.fixture
+def recs_mode(mock_url):
+    import requests
+
+    def mode(m):
+        requests.post(mock_url + "/mock/recs", json={"mode": m}, timeout=5)
+    yield mode
+    mode("ok")
+
+
+def test_api_recommendations(mock_url, recs_mode):
+    api = rommlib.Api(mock_url, "demo")
+    got = api.recommendations(10)
+    assert len(got) == 10 and got[0]["score"] >= got[-1]["score"]
+    assert got[0]["rom"]["id"] and isinstance(got[0]["reasons"], list)
+    recs_mode("empty")
+    assert api.recommendations() == []
+    recs_mode("404")
+    assert api.recommendations() is None
+
+
+def test_recommended_for_you_on_home(live, rb, monkeypatch):
+    app = live
+    home = app.stack[0]
+    home.sel = 6                                 # Settings: focus stays on it when the row appears
+    app.draw()
+    _pump(app, lambda: app.recs)
+    keys = [it[0] for it in home.items()]
+    assert keys[keys.index("recent") + 1] == "recommended"
+    assert keys[home.sel] == "settings"
+    assert all(app.system_for(rom) for rom, _, _ in app.recs)
+    home.sel = keys.index("recommended")
+    app.draw()                                   # the shelf shows them
+    app.dispatch("ok")
+    gl = app.stack[-1]
+    assert gl.title == "Recommended for you" and gl.crumbs() == ["Recommended for you"]
+    assert len(gl.items) == len(app.recs)
+    rom = gl.items[0]
+    assert gl.why[rom["id"]].startswith("Because you played ")
+    drawn = []
+    real = rb.games.text
+
+    def spy(surf, font, s, *a, **k):
+        drawn.append(s)
+        return real(surf, font, s, *a, **k)
+    rb.patch(monkeypatch, "text", spy)
+    app.draw()
+    assert "Why" in drawn and any(s.startswith("Because you played") for s in drawn)
+
+
+@pytest.mark.parametrize("mode", ["empty", "404", "error"])
+def test_no_recommendations_hides_the_row_quietly(isolated, rb, mock_url, recs_mode, mode, monkeypatch):
+    import pygame
+    recs_mode("empty" if mode == "error" else mode)
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    with open(rommlib.CONFIG_PATH, "w") as f:
+        json.dump({"url": mock_url, "token": "demo"}, f)
+    pygame.init()
+    app = rb.App(None, headless=True)
+    if mode == "error":
+        def boom(limit=50):
+            raise rommlib.RommError("RomM rejected the token (HTTP 403)")
+        monkeypatch.setattr(app.api, "recommendations", boom)
+    app.push(rb.HomeScreen(app))
+    app.load_platforms()
+    _pump(app, lambda: app.loaded)
+    app.draw()
+    asking = app.recs                            # [] while RomM is asked; its answer is a new list
+    if mode == "error":
+        time.sleep(0.3)                          # an error leaves the asking list: nothing to wait for
+        _pump(app, lambda: True)
+    else:
+        _pump(app, lambda: app.recs is not asking)
+    app.draw()
+    assert app.recs == []
+    assert "recommended" not in [it[0] for it in app.stack[0].items()]
+    assert not [t for t in app.toasts if t[1] == rb.theme.RED]
