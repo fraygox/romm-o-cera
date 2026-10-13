@@ -192,6 +192,26 @@ def test_the_picker_draws_at_every_scale_and_taps_preview_then_keep(ui, rb, monk
     assert app.cfg["theme"] == want and app.stack[-1] is not pk
 
 
+def test_the_picker_scrolls_to_whole_rows(ui, rb):
+    """Scrolled down, the list stopped wherever the focused card's bottom
+    fitted: the top row was cut through its thumbnails under the header."""
+    app = ui
+    _, pk = _picker(app, rb)
+    lay, total = pk.layout()
+    view = pk.BOTTOM - pk.TOP
+    stops = {r.top for t, i, r in lay if t or pk.cell(i)[1]}            # titles, and rows below a first
+    seen = set()
+    for order in (range(len(pk.items)), reversed(range(len(pk.items)))):     # down the list, then back up
+        for i in order:
+            pk.go(i)
+            pk.draw(app.canvas)
+            assert pk.scroll in stops, (i, pk.scroll)
+            cur = next(r for _, n, r in lay if n == i)
+            assert pk.scroll <= cur.top and cur.bottom <= pk.scroll + view   # the focused card whole
+            seen.add(pk.scroll)
+    assert len(seen) > 2
+
+
 def test_match_theme_to_controller_still_wins_and_says_so(ui, rb):
     app = ui
     app.cfg["theme_auto"] = True

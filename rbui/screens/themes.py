@@ -232,6 +232,22 @@ class ThemePickerScreen(Screen):
             y += self.rows_in(g) * (self.CH + self.GAP) + 6
         return out, y
 
+    def scroll_to(self, lay, total, view):
+        """Where the list scrolls to keep the focused card in view: always a group's title or a row's top,
+        so the top card is never cut through (the title stays above its first row where it fits)."""
+        stops = sorted({r.top for title, i, r in lay if title or self.cell(i)[1]})     # titles, and rows 2..
+        cur = next(r for _, i, r in lay if i == self.sel)
+        head = self.HEAD if self.cell(self.sel)[1] == 0 else 0      # a group's first row shows its title too
+        last = max([0] + [s for s in stops if s <= max(0, total - view)])
+        if total > view and last < total - view:                    # the end: the last rows whole as well
+            last = min((s for s in stops if s >= total - view), default=last)
+        target = self.scroll
+        if cur.top - head < target:
+            target = cur.top - head
+        elif cur.bottom + 8 > target + view:
+            target = min((s for s in stops if s >= cur.bottom + 8 - view), default=cur.top - head)
+        return max(0, min(target, last))
+
     def glide(self, target):
         """Scroll smoothly toward target (logical px); the first frame jumps there."""
         now = time.monotonic()
@@ -248,14 +264,7 @@ class ThemePickerScreen(Screen):
     def draw(self, c):
         lay, total = self.layout()
         view = self.BOTTOM - self.TOP
-        cur = next(r for _, i, r in lay if i == self.sel)
-        head = self.HEAD if self.cell(self.sel)[1] == 0 else 0      # a group's first row shows its title too
-        target = self.scroll
-        if cur.top - head < target:
-            target = cur.top - head
-        elif cur.bottom + 8 > target + view:
-            target = cur.bottom + 8 - view
-        self.glide(max(0, min(target, max(0, total - view))))
+        self.glide(self.scroll_to(lay, total, view))
         off = self.TOP - round(self.scroll_f)
         clip = c.get_clip()
         area = pygame.Rect(self.X0 - 8, self.TOP - 4, self.COLS * (self.CW + self.GAP) + 8, view + 8)
@@ -273,7 +282,7 @@ class ThemePickerScreen(Screen):
             track = pygame.Rect(self.X0 + self.COLS * (self.CW + self.GAP) + 2, self.TOP, 4, view - 5)
             rrect(c, theme.LINE, track, 2)
             h = max(30, track.height * view // total)
-            yy = track.top + int((track.height - h) * self.scroll_f / max(1, total - view))
+            yy = track.top + int((track.height - h) * min(1, self.scroll_f / max(1, total - view)))
             rrect(c, theme.ACCENT, (track.left, yy, 4, h), 2)
         self.draw_panel(c)
 
