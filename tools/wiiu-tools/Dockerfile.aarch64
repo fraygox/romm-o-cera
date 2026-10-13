@@ -1,0 +1,12 @@
+# Cross-builds wuatool for Batocera aarch64 (Pi 4/5, ARM handhelds) on an
+# x86_64 host, for plain armv8-a (no newer -march extensions), so one binary
+# runs on a Cortex-A72 and on Snapdragon handhelds. OpenSSL is the arm64
+# package's static libcrypto; Boost, fmt and glm are headers only (the same on
+# every CPU). qemu-user-static runs the self-test under emulation.
+FROM debian:bookworm
+RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-install-recommends \
+        build-essential crossbuild-essential-arm64 cmake git ca-certificates file binutils xz-utils \
+        python3 python3-cryptography qemu-user-static binutils-aarch64-linux-gnu \
+        libssl-dev:arm64 libfmt-dev libboost-dev libglm-dev libx11-dev libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["/recipe/build.sh"]
