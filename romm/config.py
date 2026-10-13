@@ -217,7 +217,7 @@ SETTINGS = (
             kind="onoff", valid=lambda v: isinstance(v, bool),
             help="With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it "
                  "(PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED "
-                 "one. With a keyboard or another controller, your Theme. High contrast themes are always kept."),
+                 "one. With a keyboard or another controller, your Theme. High contrast and Custom are always kept."),
     # Settings → Theme → Custom: the player's own theme, every colour made from these four (rbui/theme.py's
     # custom_palette); "theme": "custom" uses it
     Setting("theme_custom_accent", 195,     # the accent's hue in degrees (0 red, 120 green, 240 blue)

@@ -11909,7 +11909,7 @@
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
   "theme": "Colours for the whole app. {A} shows every theme as a card, and the whole app takes it on as you move: {A} keeps it, {B} goes back. {Y} turns on a card's OLED version (pure black). Left and right step through them here. Custom, under Yours, makes your own. Every theme is as easy to read as Default.",
-  "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it (PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast themes are always kept.",
+  "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it (PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast and Custom are always kept.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and restarts the app to install it. Downloads pause and carry on when it's back. The current version is kept so you can go back.",
@@ -11931,6 +11931,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -11945,6 +11953,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -11955,6 +11971,14 @@
     "Open"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -11963,6 +11987,14 @@
    [
     "A",
     "Select"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -11979,6 +12011,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -11991,6 +12031,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12007,6 +12055,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12019,6 +12075,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12035,6 +12099,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12049,6 +12121,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12059,6 +12139,14 @@
     "Open"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12067,6 +12155,14 @@
    [
     "A",
     "Open"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12083,6 +12179,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12095,6 +12199,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12111,6 +12223,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12123,6 +12243,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12139,6 +12267,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12147,6 +12283,14 @@
    [
     "A",
     "Select"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12163,6 +12307,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12177,6 +12329,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12185,6 +12345,14 @@
    [
     "A",
     "Select"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12201,6 +12369,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12213,6 +12389,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12229,6 +12413,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12241,6 +12433,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12257,6 +12457,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12271,6 +12479,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12279,6 +12495,14 @@
    [
     "A",
     "Select"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12295,6 +12519,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12307,6 +12539,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12323,6 +12563,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12331,6 +12579,14 @@
    [
     "A",
     "Select"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12343,6 +12599,14 @@
     "Select"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12351,6 +12615,14 @@
    [
     "A",
     "Select"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12367,6 +12639,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12379,6 +12659,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12395,6 +12683,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12409,6 +12705,14 @@
     "Choose"
    ],
    [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
     "B",
     "Back"
    ]
@@ -12421,6 +12725,14 @@
    [
     "LEFT RIGHT",
     "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
    ],
    [
     "B",
@@ -12583,8 +12895,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -12861,8 +13173,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -13139,8 +13451,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -13417,8 +13729,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -13689,8 +14001,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -13961,8 +14273,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -14233,8 +14545,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
@@ -14505,8 +14817,8 @@
    [
     "wux",
     "Wii U to .wux",
-    "Tool missing",
-    "{A} downloads wuatool (once, about 2 MB)"
+    "On",
+    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
    ],
    [
     "wua",
