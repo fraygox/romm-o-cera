@@ -10,6 +10,7 @@ from rbui import pads, theme
 from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, installed_mark, marquee, measure, rich_text,
                        rom_title, rrect, scroll_text, text, wrap)
 from rbui.screens.base import letter_of, ListScreen
+from rbui.screens.compare import compare_entry
 from rbui.screens.game import GameScreen
 from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.screens.text_input import KeyboardScreen
@@ -454,6 +455,8 @@ class GameListScreen(ListScreen):
             else:
                 e.append(("Download every game in this list",
                           "{:,} is more than 1,000. Narrow it with the filters below.".format(tot), None))
+        if (self.platform or self.collection) and not self.search and self.static is None:
+            e.append(compare_entry(self.app, self.menu_title(), self.platform, self.collection))
         if self.platform:
             sy = self.platform["_system"]
             e.append(("Fill in game info for roms/%s" % sy,

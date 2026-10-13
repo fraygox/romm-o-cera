@@ -12,11 +12,12 @@ across the whole screen.
 import pygame
 from rbui import theme
 from rbui.theme import H, mix, W
-from rbui.draw import chevron as draw_chevron, circle, focus_box, hline, installed_mark, marquee, measure, meter, \
-    rich_text, rrect, scroll_text, text, wrap
-from rbui.widgets.chips import button_chip, button_chip_width, tag as draw_tag
+from rbui.draw import (chevron as draw_chevron, circle, doc_layout, focus_box, hline, installed_mark, marquee, measure,
+                       meter, rich_text, rrect, scroll_doc, scroll_text, text, wrap)
+from rbui.widgets.chips import button_chip, button_chip_width, status_chip, tag as draw_tag
 from rbui.widgets.factsheet import facts
 from rbui.widgets.hero import VERB_H, verb_button
+from rbui.widgets.tiles import cover, placeholder
 
 CONTENT = pygame.Rect(32, 80, W - 64, 576)     # under the top bar, above the hint bar
 GAP = 20                                       # between the list and the panel
@@ -137,19 +138,26 @@ class Panel:
         self.n += 1
         return "%s-%d" % (self.slot, self.n)
 
-    def title(self, s, sub=None, sub_color=None, lines=2, center=False):
-        """The heading (wraps, up to `lines`, then scrolls) and a line under it; center: both
-        centred in the panel (under a cover) while the heading fits its lines."""
-        lh = 32
-        rows = wrap(self.f.h2, s, self.w) if center else ()
-        if center and len(rows) <= lines:
+    def title(self, s, sub=None, sub_color=None, lines=2, note=None, small=False, center=False):
+        """The heading (wraps, up to `lines`, then scrolls) and a line under it. note: a quiet
+        word at the top right ("a minute's read"); small: the h3 heading (beside cover art);
+        center: heading and line centred in the panel (under a cover) while the heading fits."""
+        font, lh = (self.f.h3, 25) if small else (self.f.h2, 32)
+        w = self.w
+        rows = wrap(font, s, w) if center and not note else ()
+        if rows and len(rows) <= lines:
             for ln in rows:
-                text(self.c, self.f.h2, ln, (self.x + self.w // 2, self.y), theme.TEXT, "midtop")
+                text(self.c, font, ln, (self.x + self.w // 2, self.y), theme.TEXT, "midtop")
                 self.y += lh
             self.y += 4
         else:
-            self.y = scroll_text(self.c, self.f.h2, s, (self.x, self.y, self.w, lines * lh), theme.TEXT,
-                                 key=self.key, line_h=lh, slot=self._slot()).bottom + 4
+            center = False
+            if note:
+                nr = text(self.c, self.f.small, note, (self.x + self.w, self.y + 6), theme.FAINT, "topright",
+                          maxw=self.w // 2)
+                w = nr.left - 16 - self.x
+            self.y = scroll_text(self.c, font, s, (self.x, self.y, w, lines * lh), theme.TEXT, key=self.key,
+                                 line_h=lh, slot=self._slot()).bottom + 4
         if sub:
             self.line(sub, sub_color or theme.DIM, self.f.body, center, 30)
         self.y += 12
@@ -163,6 +171,30 @@ class Panel:
             marquee(self.c, font, s, (self.x, self.y), color or theme.DIM, maxw=self.w, bg=theme.PANEL,
                     slot=self._slot())
         self.y += h
+
+    def art(self, rom, size=(104, 138), name=""):
+        """Cover art at the top left (rom None: a quiet box with name); the title and the lines
+        drawn next go beside it, until under_art()."""
+        r = pygame.Rect(self.x, self.y + 2, size[0], size[1])
+        if rom is not None and self.app is not None:
+            cover(self.c, self.app, rom, r, fit=True)
+        else:
+            placeholder(self.c, self.f, name, r)
+        self._art = (r, self.x, self.w)
+        self.x, self.w = r.right + 18, self.w - size[0] - 18
+
+    def under_art(self, gap=16):
+        """Back to the panel's full width, under the cover art."""
+        art = getattr(self, "_art", None)
+        if art:
+            r, self.x, self.w = art
+            self.y = max(self.y, r.bottom + gap)
+            self._art = None
+
+    def status(self, label, color=None):
+        """A coloured state chip (chips.status_chip): "Newer in RomM"."""
+        r = status_chip(self.c, self.f.small, label, (self.x, self.y), color, h=26)
+        self.y = r.bottom + 10
 
     def fact(self, label, value, color=None):
         """A grey label with its value under it (skipped when there's no value)."""
@@ -229,6 +261,16 @@ class Panel:
             self.y += 24
         self.y += 6
 
+    def doc(self, lines, slot=None):
+        """A document ([(kind, text)]: headings, bullets, paragraphs; draw.scroll_doc) in all the
+        room left, scrolling when longer. slot: name it to scroll_nudge it. True when it overflows."""
+        h = self.room()
+        if not lines or h < 24:
+            return False
+        slot = slot or self._slot()
+        used = scroll_doc(self.c, self.f, lines, (self.x, self.y, self.w, h), key=self.key, slot=slot)
+        self.y = used.bottom + 14
+        return doc_layout(self.f, lines, self.w)[1] > h + 0.5
 
     def rule(self):
         hline(self.c, theme.LINE, (self.x, self.y), (self.x + self.w, self.y))
@@ -271,9 +313,10 @@ class Panel:
         rich_text(self.c, self.f, self.f.small, s, (self.x, y), color or theme.DIM, "midleft", maxw=left - self.x)
         self.bottom = y - 36
 
-    def verb(self, label, kind="go", detail="", glyph="A", frac=0.0, fn=None, foot=False):
-        """hero.verb_button across the panel (fn: tapping it); foot: at the bottom (above any
-        foot line, drawn before the body) instead of under the last piece. Returns its rect."""
+    def verb(self, label, kind="go", detail="", glyph="A", frac=0.0, fn=None, foot=True):
+        """The panel's one big action (hero.verb_button), tapped like fn: at the bottom (a footer,
+        above any foot line: draw it before the body), or with foot=False under the last piece.
+        Returns its rect."""
         r = pygame.Rect(self.x, self.bottom - VERB_H if foot else self.y, self.w, VERB_H)
         if fn and self.app:
             self.app.hit(r, fn)

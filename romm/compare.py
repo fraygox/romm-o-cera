@@ -17,7 +17,7 @@ _RANK = {MATCHES: 0, COMPRESSED: 1, NEWER: 2}        # a set of discs shows its 
 # the RomM fields Compare reads (roms_all keeps only these: a big platform's
 # full records are hundreds of MB)
 COMPARE_FIELDS = ("id", "name", "fs_name", "fs_name_no_ext", "fs_extension", "fs_size_bytes", "sha1_hash",
-                  "md5_hash", "crc_hash", "platform_id", "platform_slug", "path_cover_small", "path_cover_large")
+                  "md5_hash", "crc_hash", "platform_id", "platform_slug", "path_cover_small", "path_cover_large", "updated_at")
 _TRACK_TAG = re.compile(r"\s*\((?:track|disc track)\s*\d+\)$", re.I)
 _TRACK_EXTS = {".bin", ".raw", ".wav", ".img", ".sub", ".sbi"}
 

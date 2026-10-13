@@ -693,6 +693,58 @@ def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None,
     return scroll_box(surf, rect, len(lines) * lh, paint, (s, key, rect.width), slot, bg, t, lh * 0.7)
 
 
+def doc_layout(fonts, lines, width):
+    """Rows for release-note style lines [(kind, text)] (kind "h" heading, "li" bullet, "p"
+    paragraph) wrapped to width: [(font, colour, x offset, text, y)], and the total height."""
+    rows, y, prev = [], 0.0, None
+    for kind, s in lines:
+        if kind == "h":
+            y += 14 if prev is not None else 0
+            font, col, indent = fonts.h3, theme.TEXT, 0
+        else:
+            font, col, indent = fonts.body, theme.DIM, (22 if kind == "li" else 0)
+            y += 6 if prev == "p" and kind == "p" else 0
+        lh = font.get_height() / theme.K + 4
+        for k, ln in enumerate(wrapped(font, s, int(width - indent)) or [""]):
+            if kind == "li" and k == 0:
+                rows.append((font, theme.FAINT, 6, "•", y))
+            rows.append((font, col, indent, ln, y))
+            y += lh
+        prev = kind
+    return rows, y
+
+
+def scroll_doc(surf, fonts, lines, rect, key=None, bg=None, slot=None, t=None):
+    """scroll_text for a document: [(kind, text)] lines with headings (h), bullets (li) and
+    paragraphs (p), e.g. update.release_note_lines(). Scrolls by itself when taller than rect
+    (scroll_nudge moves it). Returns the rect it took up."""
+    rect = pygame.Rect(rect)
+    rows, total = doc_layout(fonts, lines, rect.width)
+    if total - rect.height > 0.5:
+        rows, total = doc_layout(fonts, lines, rect.width - SCROLL_BAR)
+    clip = SR(rect)
+
+    def paint(top):
+        for font, col, dx, s, y in rows:
+            py = S(top + y)
+            if py + font.get_height() < clip.top or py > clip.bottom:
+                continue
+            text(surf, font, s, (rect.left + dx, top + y), col)
+    return scroll_box(surf, rect, total, paint, (tuple(lines), key, rect.width), slot, bg, t)
+
+
+def scroll_nudge(slot, seconds):
+    """Move a scroller (scroll_text, scroll_doc, scroll_box by its slot) as if `seconds` more
+    (or, negative, fewer) had passed: up/down on a long text. No-op for a slot not drawn yet."""
+    st = _SCROLLS.get(slot)
+    if st is None:
+        return
+    el = st[2] - st[1]
+    if seconds > 0 and el < SCROLL_WAIT:          # past the pause at the top at once
+        el = SCROLL_WAIT
+    st[1] = st[2] - max(0.0, el + seconds)
+
+
 def scroll_fits(font, s, width, height, line_h=None):
     """Whether scroll_text would draw s still (it fits width x height)."""
     s = "\n".join(s) if isinstance(s, (list, tuple)) else (s or "")

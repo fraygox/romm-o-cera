@@ -2041,6 +2041,50 @@
    "toasts": [],
    "wake": 0
   },
+  "bare/defaults/whatsnew/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/whatsnew/ok": {
+   "bg": 1,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "WhatsNewScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/whatsnew/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "bare/defaults/wua/left": {
    "bg": 0,
    "cfg": {},
@@ -3964,6 +4008,50 @@
    "wake": 0
   },
   "full/changed/url/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/whatsnew/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/whatsnew/ok": {
+   "bg": 1,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "WhatsNewScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/whatsnew/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -5915,6 +6003,50 @@
    "toasts": [],
    "wake": 0
   },
+  "full/defaults/whatsnew/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/whatsnew/ok": {
+   "bg": 1,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "WhatsNewScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/whatsnew/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/defaults/wua/left": {
    "bg": 0,
    "cfg": {},
@@ -7739,6 +7871,47 @@
    "wake": 0
   },
   "full/odd/url/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/whatsnew/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/whatsnew/ok": {
+   "bg": 1,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "WhatsNewScreen"
+   ],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/whatsnew/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -9641,6 +9814,50 @@
    "wake": 0
   },
   "tools/changed/url/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/whatsnew/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/whatsnew/ok": {
+   "bg": 1,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "WhatsNewScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/whatsnew/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -11616,6 +11833,50 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/whatsnew/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/whatsnew/ok": {
+   "bg": 1,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [
+    "WhatsNewScreen"
+   ],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/whatsnew/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/wua/left": {
    "bg": 0,
    "cfg": {},
@@ -11914,6 +12175,7 @@
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer version, then downloads it, checks it and restarts to install it. Downloads pause meanwhile, and the current version is kept so you can go back.",
   "url": "Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// sends the token unencrypted.",
+  "whatsnew": "This version's release notes from GitHub: what changed, in a minute's read.",
   "wua": "Turns Wii U discs into .wua for Cemu with the disc keys of games you own: in Cemu's keys.txt, bios/wiiukeys or RomM's Wii U firmware (none come with the app). Checked first; a .wua can't become the disc image again. A disc without its key becomes a .wux.",
   "wux": "Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 2 MB), downloaded by itself when needed.",
   "xboxboot": "xemu boots only a disc's game partition (a full image says \"Please insert an Xbox disc\"). This keeps just that part and renames .xiso to .iso so EmulationStation lists them.",
@@ -12629,6 +12891,24 @@
     "Back"
    ]
   ],
+  "whatsnew": [
+   [
+    "A",
+    "Open"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
   "wua": [
    [
     "A",
@@ -13013,6 +13293,12 @@
     "Download, check and install v9.9.9"
    ],
    [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
+   ],
+   [
     "rollback",
     "Go back to the previous version",
     "v0.7.0",
@@ -13289,6 +13575,12 @@
     "Updates",
     "v9.9.9 available",
     "Download, check and install v9.9.9"
+   ],
+   [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
    ],
    [
     "rollback",
@@ -13569,6 +13861,12 @@
     "Download, check and install v9.9.9"
    ],
    [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
+   ],
+   [
     "rollback",
     "Go back to the previous version",
     "v0.7.0",
@@ -13845,6 +14143,12 @@
     "Updates",
     "v0.7.1",
     "Check GitHub for a newer release"
+   ],
+   [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
    ]
   ],
   "full/defaults": [
@@ -14117,6 +14421,12 @@
     "Updates",
     "v0.7.1",
     "Check GitHub for a newer release"
+   ],
+   [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
    ]
   ],
   "full/odd": [
@@ -14389,6 +14699,12 @@
     "Updates",
     "v0.7.1",
     "Check GitHub for a newer release"
+   ],
+   [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
    ]
   ],
   "tools/changed": [
@@ -14661,6 +14977,12 @@
     "Updates",
     "v0.7.1",
     "Check GitHub for a newer release"
+   ],
+   [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
    ]
   ],
   "tools/defaults": [
@@ -14933,6 +15255,12 @@
     "Updates",
     "v0.7.1",
     "Check GitHub for a newer release"
+   ],
+   [
+    "whatsnew",
+    "What's new in this version",
+    "Open",
+    "The release notes of v0.7.1"
    ]
   ]
  }

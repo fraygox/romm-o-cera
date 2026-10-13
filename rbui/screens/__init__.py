@@ -4,6 +4,7 @@
   home         Home, the platform list
   collection   collections (RomM's own and the virtual ones)
   games        a game list, Search
+  compare      Compare with RomM, inside a platform or a collection
   game         a game's own page
   gamenight    Game night: a random game for tonight's players
   backlog      your RomM backlog and Download my backlog
@@ -12,6 +13,7 @@
   settings     Settings
   themes       Settings, Theme: the theme picker
   about        Documentation, Credits
+  whatsnew     What's new: the release notes, once after an update
   box          On this box (box_data: what its screens share, the space bar)
   compress     Compress games already here
   installed    Games from RomM, Conversions

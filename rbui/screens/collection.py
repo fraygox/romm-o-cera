@@ -7,6 +7,7 @@ from rbui.theme import H, W
 from rbui.draw import focus_box, hline, installed_mark, measure, text, wrap
 from rbui.widgets.chips import tag as draw_tag
 from rbui.screens.base import letter_of, ListScreen
+from rbui.screens.compare import compare_entry
 from rbui.screens.games import GameListScreen
 from rbui.screens.backlog import BacklogScreen
 from rbui.screens.gamenight import GameNightScreen, Scope
@@ -165,7 +166,8 @@ class CollectionScreen(ListScreen):
     def menu(self, it):
         app = self.app
         n = it.get("count") or 0
-        e = [("Open", "", lambda: app.push(GameListScreen(app, it["full"], collection=it)))]
+        e = [("Open", "", lambda: app.push(GameListScreen(app, it["full"], collection=it))),
+             compare_entry(app, it["full"], collection=it)]
         if n:
             e.append(("Game night", "Roll one of its {:,} games for tonight".format(n),
                       lambda: app.push(GameNightScreen(app, Scope.collection(app, it)))))

@@ -16,6 +16,7 @@ from rbui.input import Input
 from rbui.screens.base import ListScreen
 from rbui.screens.home import HomeScreen
 from rbui.screens.downloads import DownloadsScreen
+from rbui.screens.whatsnew import notes_at_start, WhatsNewScreen
 from rbui.screens.welcome import WelcomeScreen, welcome_due, welcome_on_rejected
 from rbui.modals import ActionMenu, Confirm
 from rbui.startup import read_marker, write_marker
@@ -443,12 +444,12 @@ class App:
                 then()
         self.bg(lambda: self.library.uninstall_group(group, system), done)
 
-    def start_download(self, rom):
+    def start_download(self, rom, replace=None):
         system = self.system_for(rom)
         if not system:
             self.toast("No Batocera system for this platform", theme.RED)
             return
-        self.downloader.enqueue(rom, system)
+        self.downloader.enqueue(rom, system, replace=replace)
         self.toast("Queued: %s" % rom_title(rom) + self.hours_note(), theme.GREEN)
         self.space_check()
 
@@ -666,6 +667,20 @@ class App:
         if len(self.stack) > 1:
             self.stack.pop()
             self.stack[-1].enter()
+            self.show_notes()
+
+    notes_pending = None             # (release, previous version): What's new, waiting for Home
+
+    def _notes_found(self, res):
+        self.notes_pending = res
+        self.show_notes()
+
+    def show_notes(self):
+        """What's new over Home, when it's due and nothing else is open (else on the way back)."""
+        if self.notes_pending and len(self.stack) == 1 and self.modal is None:
+            rel, prev = self.notes_pending
+            self.notes_pending = None
+            self.push(WhatsNewScreen(self, rel, prev))
 
     def request_quit(self):
         if getattr(self, "updating", False):
@@ -807,6 +822,9 @@ class App:
         self.fetch_tools()
         self.push(HomeScreen(self))
         self.welcome()
+        if not self.headless:                     # What's new, once after an update; offline: next time
+            cfg = dict(self.cfg)
+            self.bg(lambda: notes_at_start(cfg), self._notes_found, lambda e: None)
         while self.running:
             dt = clock.tick(self.fps) / 1000.0
             self.t += dt

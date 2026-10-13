@@ -463,7 +463,7 @@ class HomeScreen(Screen):
             p.rule()
 
     def panel_collection(self, p, coll):
-        p.verb("Open the collection", "go", fn=lambda: self.action("ok"), foot=True)
+        p.verb("Open the collection", "go", fn=lambda: self.action("ok"))
         mh = max(100, min(300, p.room() - 110))
         mw = mh * 232 // 300
         mosaic(p.c, self.app, self.coll_roms.get(coll["id"], []), (p.x + (p.w - mw) // 2, p.y, mw, mh))
@@ -487,7 +487,7 @@ class HomeScreen(Screen):
     def panel_game(self, p, key, rom):
         app = self.app
         self.want_played(rom)
-        p.verb(fn=lambda: self.action("ok"), foot=True, **game_verb(app, rom))
+        p.verb(fn=lambda: self.action("ok"), **game_verb(app, rom))
         ch = max(120, min(COVER_BOX[1], p.room() - 162))        # leaves a line of title, meta, status, 2 of summary
         cw = ch * 3 // 4
         cover(p.c, app, rom, (p.x + (p.w - cw) // 2, p.y, cw, ch), fit=True)

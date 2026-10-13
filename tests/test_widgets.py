@@ -435,6 +435,6 @@ def test_panel_figure_legend_and_verb(rb, app, fonts):
     p.legend([(rb.theme.ACCENT, "12 fit now"), (None, "10 GB free")])
     assert p.y == y1 + 2 * 24 + 6
     tapped = []
-    vr = p.verb("Download 14", "go", "13.5 GB", glyph="Y", fn=lambda: tapped.append(1))
+    vr = p.verb("Download 14", "go", "13.5 GB", glyph="Y", fn=lambda: tapped.append(1), foot=False)
     assert vr.width == p.w and vr.height == rb.VERB_H and p.y == vr.bottom + 14
     assert any(t[0] == vr for t in app.targets)

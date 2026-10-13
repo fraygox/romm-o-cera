@@ -242,7 +242,7 @@ class BacklogScreen(ListScreen):
         legend.append((None, "%s free after the queue" % human_size(max(0, p["free"]))))
         legend.append((None, "Keeping %s free (Settings)" % human_size(keep)))
         pn.legend(legend)
-        pn.verb("Download %d" % len(todo), "go", human_size(total), glyph="Y", fn=self.download_all)
+        pn.verb("Download %d" % len(todo), "go", human_size(total), glyph="Y", fn=self.download_all, foot=False)
         if nw:
             note = ("%d start now; the other %d wait for room." % (nf, nw)) if nf else "All of them wait for room."
             note += " {X} %s has Free up space." % pads.ACTIONS

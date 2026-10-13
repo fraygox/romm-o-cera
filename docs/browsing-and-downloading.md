@@ -125,6 +125,8 @@ and the menu stays open; the actions close it.
   in this menu downloads them together (see
   [Controls](controls.md#picking-several)).
 - **Download every game in this list** (up to 1,000).
+- **Compare with RomM** (a platform's or a collection's list): see
+  [Compare with RomM](#compare-with-romm).
 - **Fill in game info** for this system's games already on the box (see
   [On this box](on-this-box.md#fill-in-game-info)).
 - **Get BIOS for** the platform, when the box is missing BIOS files that
@@ -136,6 +138,29 @@ filter first).
 
 Bulk downloads estimate the space they need once extracted and offer to
 download only what fits.
+
+### Compare with RomM
+
+**Compare with RomM** (X in a platform's or a collection's game list, or X on
+a collection) lists the games of that platform or collection that are on the
+box, each against RomM's copy. It works per platform or collection on
+purpose: on a big library one list of everything would be too long to use.
+The pills on top (**Y** switches them, or tap one) filter by state, each with
+its count:
+
+- **Matches RomM**: the same file RomM has, or *Matches RomM (compressed)*:
+  RomM's game, compressed here by the app (a .chd from RomM's .zip). Nothing
+  to do.
+- **Newer in RomM**: RomM's file changed since this one was downloaded (or a
+  file copied over by hand has RomM's name at another size). **A** (*Get the
+  newer one*) downloads it again through the usual download dialog and
+  replaces the copy here; saves are kept.
+- **Not in RomM** (platforms only): a game put on the box another way. It
+  still plays.
+
+The panel shows both copies (format, size, folder, when it came here and when
+RomM last changed it) and says in one sentence what it means. RomM's list is
+read in the background; **B** stops it. **Compare again** is in the X menu.
 
 ## Downloading
 
@@ -258,4 +283,8 @@ never leaves the box without the app. **Update channel** picks what it
 offers: *Stable* releases, or *Nightly* builds of the newest changes as they
 land. A daily check flags a newer version on your channel (turn it off with
 **Check for updates daily**; Updates still checks when you select it).
+After an update, **What's new** shows the new version's release notes once at
+start (A or B continues; X shows a QR code of the full notes on GitHub). Without
+a connection it waits for the next start, and Settings → Updates → **What's new
+in this version** shows them any time.
 Details in the [main README](../README.md#updating).

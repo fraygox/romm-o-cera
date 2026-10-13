@@ -313,7 +313,9 @@ class DownloadConfirm(Confirm):
     """Download one game. A disc of a multi-disc set first looks the set up in
     RomM, then offers all discs (one ES entry via an .m3u) or just this one."""
 
-    def __init__(self, app, rom):
+    def __init__(self, app, rom, replace=None):
+        """replace: files on the box this download takes the place of (another name: Compare's
+        "Get the newer one"), removed once it's in."""
         system = app.system_for(rom)
         st = app.rom_status(rom)
         name = rom.get("name") or rom.get("fs_name_no_ext")
@@ -327,7 +329,8 @@ class DownloadConfirm(Confirm):
             return
         self.app = app
         body = self._body(rom, system, st)
-        super().__init__(app, name, body, "Download", lambda: app.start_download(rom))
+        super().__init__(app, name, body, "Download", (lambda: app.start_download(rom, replace)) if replace
+                         else (lambda: app.start_download(rom)))
         if rommlib.needs_listing(rom, system):       # an estimate until RomM tells what the zip holds
             def listed(_):
                 if app.modal is self and not self.pending:
