@@ -15,11 +15,11 @@ from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.screens.text_input import KeyboardScreen
 from rbui.widgets.keyboard import Keyboard
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
-from rbui.widgets.chips import tag
+from rbui.widgets.chips import pill_row, tag
 from rbui.widgets.factsheet import facts
 from rbui.widgets.hero import game_verb, rom_year, verb_button, VERB_H
 from rbui.widgets.tiles import cover
-from rbui.widgets.layout import bubble_at, split
+from rbui.widgets.layout import bubble_at, CONTENT, split
 
 
 REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Australia": "AU",
@@ -28,6 +28,9 @@ REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Au
 
 
 GAME_LIST, GAME_PANEL = split(676)      # the rows (name, regions, size, platform tag) and RomM's record beside them
+PILLS_Y = 84                            # a collection's box filter pills; its rows start under them
+PILLS_AREA = pygame.Rect(CONTENT.left, 134, CONTENT.width, CONTENT.bottom - 134)
+BOX_FILTERS = [("all", "All"), ("here", "On this box"), ("away", "Not here")]
 
 JUNK_MARKERS = ("~hack~", "~unlicensed~", "~prototype~", "~demo~", "~homebrew~", "(proto",
                 "(beta", "(demo", "(sample", "(hack", "(pirate", "(unl)")
@@ -84,13 +87,18 @@ class GameListScreen(ListScreen):
     PICKS, PICK_ALL, PICK_WHAT = True, False, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works in full lists sorted by name"
     BUBBLE_AT = bubble_at(GAME_LIST)
+    lst, pan = GAME_LIST, GAME_PANEL  # the rows and the panel (lower, under the pills, for a whole collection)
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
-                 order_by="name", static=None, why=None, crumb="More like this"):
+                 order_by="name", static=None, why=None, crumb="More like this", group=None, whole=False):
+        """collection with whole: every game of it is fetched (up to BULK_MAX) and the list is held
+        here, with the box filter pills (All / On this box / Not here); without: paged from RomM
+        as a platform's list is. group: the collection's shelf, for the crumbs."""
         super().__init__(app)
         self.static = static          # a fixed list (e.g. "More like this"): no paging/filters
         self.why = why or {}          # rom id -> why it's listed (Recommended for you), on the detail panel
         self.crumb = crumb            # a fixed list's breadcrumb
+        self.group = group
         self.only_verified = False
         self.hide_junk = False
         self.title = title
@@ -101,11 +109,49 @@ class GameListScreen(ListScreen):
         self.region_i = 0
         self.players = 0              # the party filter: only games for this many players or more (0: any)
         self.hide_installed = False
+        self.box_filter = "all"       # the pills: "all", "here" (on this box), "away" (not here)
+        self.counts = {}              # the pills' counts, from the whole collection
         self.bios = None              # [(missing, firmware)] RomM can supply
+        self.whole = bool(collection and whole)
+        if self.whole:
+            self.lst, self.pan = split(676, content=PILLS_AREA)
+            self.BUBBLE_AT = bubble_at(self.lst)
+            self.ROWS = (PILLS_AREA.height - 40) // self.ROW_H     # under the pills: fewer rows fit
+        self.fetching_whole = self.whole and static is None
         self.reset()
+        if self.fetching_whole:
+            col = (collection["param"], collection["id"])
+
+            def got(roms):
+                self.fetching_whole = False
+                self.static = roms or []
+                self.reset()
+
+            def failed(e):
+                self.fetching_whole = False
+                self.static = []
+                self.load_failed("items")(e)
+                self.total = 0
+            app.bg(lambda: app.api.roms_all(limit=250, cap=self.BULK_MAX, collection=col), got, failed)
         if platform and platform.get("_system"):
             app.bg(lambda: rommlib.bios_offer(app.api, platform["_system"], platform["id"]),
                    lambda offers: setattr(self, "bios", offers), lambda e: None)
+
+    @property
+    def pills(self):
+        """The box filter pills show: a whole collection, once its games are in."""
+        return self.whole and self.static is not None
+
+    def box_ok(self, rom):
+        return self.box_filter == "all" or (self.box_filter == "here") == self.installed(rom)
+
+    def set_box_filter(self, i):
+        self.box_filter = BOX_FILTERS[i][0]
+        self.reset()
+
+    def cycle_box_filter(self):
+        keys = [k for k, _ in BOX_FILTERS]
+        self.set_box_filter((keys.index(self.box_filter) + 1) % len(keys))
 
     @property
     def regions(self):
@@ -131,22 +177,27 @@ class GameListScreen(ListScreen):
         self.gen = getattr(self, "gen", 0) + 1
         self.bubble, self.bubble_until = None, 0.0
         self.server_off, self.server_total, self.exhausted = 0, None, False
+        if self.fetching_whole:
+            return                    # the whole collection is on its way: nothing to page
         if self.static is not None:
+            if self.whole:
+                here = sum(1 for r in self.static if self.installed(r))
+                self.counts = {"all": len(self.static), "here": here, "away": len(self.static) - here}
             self.items = [r for r in self.static if not (self.hide_installed and self.installed(r))
-                          and self.party_ok(r)]
+                          and self.party_ok(r) and self.box_ok(r)]
             self.total = self.server_total = len(self.items)
             self.exhausted = True
             return
         self.fetch_page(0)
 
     def crumbs(self):
+        if self.collection:             # the full name is shown (unclipped) in the list header
+            return ["Collections"] + ([self.group] if self.group else [])
         if self.static is not None:
             return [self.crumb]
         out = []
         if self.platform and not self.search:
             out.append("Platforms")
-        elif self.collection:
-            return ["Collections"]      # full name is shown (unclipped) in the list header
         if self.search:
             out.append("Search")
             if self.platform:
@@ -343,6 +394,8 @@ class GameListScreen(ListScreen):
         elif a == "ok" and n and self.items[self.sel] is not None:
             rom = self.items[self.sel]
             self.app.push(GameScreen(self.app, rom, self.why.get(rom["id"]), source=self))
+        elif a == "y" and self.pills:
+            self.cycle_box_filter()
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.platform))
         else:
@@ -365,10 +418,10 @@ class GameListScreen(ListScreen):
         super().open_menu()
 
     def menu_title(self):
+        if self.collection:
+            return self.collection.get("full") or self.title
         if self.static is not None or self.search:
             return self.title if self.static is not None else 'Results for "%s"' % self.search
-        if self.collection:
-            return self.collection.get("name") or self.title
         return self.title
 
     def pick_entries(self, roms):
@@ -388,7 +441,12 @@ class GameListScreen(ListScreen):
             e.append(("Game night", ("Roll one of these {:,} games for tonight".format(shown) if shown else
                                      "Roll a game from this list for tonight"), self.game_night))
         tot = self.server_total
-        if tot is None:
+        if self.pills:
+            away = [r for r in self.static if not self.installed(r)]
+            e.append(("Download the rest", "{:,} game{} · {}".format(
+                len(away), "" if len(away) == 1 else "s", human_size(sum(r.get("fs_size_bytes") or 0 for r in away)))
+                if away else "Every game is on this box already", self._download_rest if away else None))
+        elif tot is None:
             e.append(("Download every game in this list", "Counting games…", None))
         elif tot:
             if tot <= self.BULK_MAX:
@@ -397,7 +455,7 @@ class GameListScreen(ListScreen):
             else:
                 e.append(("Download every game in this list",
                           "{:,} is more than 1,000. Narrow it with the filters below.".format(tot), None))
-        if (self.platform or self.collection) and not self.search and self.static is None:
+        if (self.platform or self.collection) and not self.search and (self.static is None or self.whole):
             e.append(compare_entry(self.app, self.menu_title(), self.platform, self.collection))
         if self.platform:
             sy = self.platform["_system"]
@@ -418,7 +476,8 @@ class GameListScreen(ListScreen):
         if self.static is None:
             e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1], "choice"))
         e.append(("Players", "", self._cycle_players, self.player_label(), "choice"))
-        e.append(("Hide games on this box", "", self._toggle_hide, self.hide_installed, "switch"))
+        if not self.pills:                          # the pills do this on a whole collection
+            e.append(("Hide games on this box", "", self._toggle_hide, self.hide_installed, "switch"))
         if self.static is None:
             e.append(("Hide prototypes, demos and hacks", "", self._toggle_junk, self.hide_junk, "switch"))
             e.append(("Only checksum-verified dumps", "", self._toggle_verified, self.only_verified, "switch"))
@@ -518,6 +577,11 @@ class GameListScreen(ListScreen):
     def _download_marked(self):
         self._queue_many(self.picked(), "Download picked games?")
 
+    def _download_rest(self):
+        """A whole collection: what isn't on the box yet, whatever the pills show."""
+        self._queue_many([r for r in self.static if not self.installed(r)],
+                         "Download %s?" % (self.collection.get("full") or self.title))
+
     def _download_all(self):
         app = self.app
         if self.static is not None:                # "More like this": exactly what's shown
@@ -549,14 +613,23 @@ class GameListScreen(ListScreen):
         app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
-        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", "Search"))
+        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", "Filter" if self.pills else "Search"))
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)
 
+    def draw_pills(self, c):
+        """The box filter pills of a whole collection, each with its count, the current one lit."""
+        labels = ["%s · {:,}".format(self.counts.get(k, 0)) % lab for k, lab in BOX_FILTERS]
+        idx = [k for k, _ in BOX_FILTERS].index(self.box_filter)
+        pill_row(c, self.f.body, labels, CONTENT.left, CONTENT.right, PILLS_Y, focus=idx,
+                 dots=[None, theme.GREEN, theme.FAINT], app=self.app, on_tap=self.set_box_filter)
+
     def draw(self, c):
         app = self.app
-        lx, ly, lw = GAME_LIST.left, GAME_LIST.top, GAME_LIST.width
+        if self.pills:
+            self.draw_pills(c)
+        lx, ly, lw = self.lst.left, self.lst.top, self.lst.width
         # list header
         if self.total is None:
             cnt = "Loading…"
@@ -635,12 +708,12 @@ class GameListScreen(ListScreen):
         if self.items and self.items[self.sel] is not None:
             self.draw_detail(c, self.items[self.sel])
         elif self.items:
-            rrect(c, theme.PANEL, GAME_PANEL, 16)
-            text(c, self.f.body, "Loading…", GAME_PANEL.center, theme.DIM, "center")
+            rrect(c, theme.PANEL, self.pan, 16)
+            text(c, self.f.body, "Loading…", self.pan.center, theme.DIM, "center")
 
     def draw_detail(self, c, rom):
         app = self.app
-        p = GAME_PANEL
+        p = self.pan
         rrect(c, theme.PANEL, p, 16)
         cov = pygame.Rect((p.left + 24, p.top + 24), COVER_BOX)
         if app.cover(rom):

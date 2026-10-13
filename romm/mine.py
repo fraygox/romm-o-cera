@@ -100,13 +100,24 @@ def ra_progress(user, rom):
     return None
 
 
-def screenshot_paths(rom):
-    """The game's screenshots on the RomM server (merged_screenshots: what
-    RomM's scrapers stored), as server paths Api.fetch_screenshot takes;
-    anything that isn't a plain server path is left out."""
+def server_paths(paths):
+    """The plain server paths among paths (the only ones the session may fetch), in order, no repeats."""
     out = []
-    for p in rom.get("merged_screenshots") or []:
+    for p in paths or []:
         if isinstance(p, str) and p.startswith("/") and not p.startswith("//") \
                 and ".." not in p.split("?")[0].split("/") and p not in out:
             out.append(p)
     return out
+
+
+def screenshot_paths(rom):
+    """The game's screenshots on the RomM server (merged_screenshots: what
+    RomM's scrapers stored), as server paths Api.fetch_screenshot takes;
+    anything that isn't a plain server path is left out."""
+    return server_paths(rom.get("merged_screenshots"))
+
+
+def collection_cover_paths(coll):
+    """A collection's cover paths (path_covers_small: RomM's own 2x2 of its games' covers,
+    up to four used), as server paths Api.fetch_collection_cover takes."""
+    return server_paths(coll.get("path_covers_small"))[:4]

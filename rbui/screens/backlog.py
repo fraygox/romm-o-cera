@@ -6,6 +6,7 @@ from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import scroll_text, text
 from rbui.screens.base import ListScreen
+from rbui.screens.game import GameScreen
 from rbui.screens.space import FreeUpScreen
 from rbui.modals import ActionMenu
 from rbui.widgets.hero import meta_line, press_verb
@@ -118,6 +119,10 @@ class BacklogScreen(ListScreen):
     def current(self):
         return self.items[self.sel] if self.items and self.sel < len(self.items) else None
 
+    def page_rom(self, i):
+        """Row i's game for the game page's previous/next."""
+        return self.items[i] if 0 <= i < len(self.items) else None
+
     def verb_label(self, rom):
         st = self.app.rom_status(rom)[0]
         if not self.app.system_for(rom) or st == "active":
@@ -147,7 +152,7 @@ class BacklogScreen(ListScreen):
 
     def hints(self):
         rom = self.current()
-        h = [("A", self.verb_label(rom))] if rom is not None and self.verb_label(rom) else []
+        h = [("A", "Open")] if rom is not None else []
         h.append(("X", pads.ACTIONS))
         if self.plan and self.plan["todo"]:
             h.append(("Y", "Download my backlog"))
@@ -158,7 +163,7 @@ class BacklogScreen(ListScreen):
         if self.nav(a):
             return
         if a == "ok" and rom is not None:
-            press_verb(self.app, rom)
+            self.app.push(GameScreen(self.app, rom, source=self))
         elif a == "x":
             self.app.modal = ActionMenu(self.app, "Backlog", self.menu_entries())
         elif a == "y":

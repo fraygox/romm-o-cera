@@ -312,6 +312,12 @@ class App:
         own key: the Surface, or None while it loads (or when there's none: art_missing)."""
         return self.art(("shot", rom["id"], i), lambda: self.api.fetch_screenshot(rom, i), shot_fit)
 
+    def collection_cover(self, coll, i):
+        """The i-th cover of a collection's record (Api.fetch_collection_cover) in the covers'
+        store, under ("coll", param, id, i): the Surface, or None while it loads (or none)."""
+        key = ("coll", coll.get("param"), coll["id"], i)
+        return self.art(key, lambda: self.api.fetch_collection_cover(coll, i), cover_fit)
+
     def art_missing(self, key):
         """True when RomM had no image for a key of art() (not merely still loading)."""
         return key in self.covers and self.covers[key] is None

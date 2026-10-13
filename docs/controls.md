@@ -59,7 +59,8 @@ goes back. A keyboard and a pad work side by side.
 Every list moves the same way:
 
 - **Up/down** move a row; **L/R** (PgUp/PgDn) and **left/right** move a
-  page. In Collections, left/right go to the previous or next group instead;
+  page. In Collections, up/down move between shelves and left/right along
+  one (on a wall, up/down move a row of tiles);
   on the tiles above Space's and Check games' lists they move between the
   tiles; and the platform cards and theme cards are grids, where left/right
   move one card. On a game's page they go to the previous or next game.
@@ -103,13 +104,13 @@ A question shows its buttons: **A** for what it offers ("Download",
 
 | Screen | A | X | Y | L2/R2 |
 |---|---|---|---|---|
-| Home | A game: Play now / Download; a pill or collection: Open | A game's Actions: more like this, the whole shelf | Game night | |
+| Home | A game: its page; a pill or collection: Open | A game's Actions: more like this, the whole shelf | Game night | |
 | Platforms | Open | Game night from this platform | Search this platform | |
-| Collections | Open | A collection's menu: open, Game night, download every game | | A–Z (in a single list) |
-| Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search | A–Z |
+| Collections | Open the collection (or a Browse by door) | A collection's Actions: open, Compare with RomM, Game night, download the rest | The kind as a wall, and back | |
+| Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search (a collection: the On this box / Not here pills) | A–Z |
 | A game's page | Download / Play now | Actions: more like this, Game night, delete (on the box) | | |
-| Game night | Play now or Download the pick | Actions: players, only what's on this box | Another | |
-| Backlog | Play now or Download | Actions: download my backlog, free up space | Download my backlog | |
+| Game night | The pick's page | Actions: players, only what's on this box | Another | |
+| Backlog | The game's page | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
 | Activity (downloads) | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |

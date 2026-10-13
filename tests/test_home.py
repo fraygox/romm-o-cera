@@ -36,6 +36,9 @@ class FakeApi:
     def roms(self, platform_ids=None, collection=None, limit=60, **kw):
         return {"items": [_rom(400 + collection[1] * 10 + i) for i in range(4)]}
 
+    def roms_all(self, collection=None, **kw):
+        return [_rom(400 + collection[1] * 10 + i) for i in range(5)]
+
 
 @pytest.fixture
 def home(isolated, rb, monkeypatch):
@@ -191,18 +194,23 @@ def test_the_rail_pills_end_at_the_column_edge_and_open_on_tap(home, rb):
 
 def test_the_verb_and_the_actions_menu(home, rb, monkeypatch):
     app = home.app
-    assert home.hints() == [("A", "Download"), ("X", rb.pads.ACTIONS), ("Y", "Game night"), ("B", "Exit")]
-    app.dispatch("ok")
-    assert isinstance(app.modal, rb.DownloadConfirm)
-    app.modal = None
-    app.on_box.add(0)
+    assert home.hints() == [("A", "Open"), ("X", rb.pads.ACTIONS), ("Y", "Game night"), ("B", "Exit")]
+    app.dispatch("ok")                                            # A: the game's page, its shelf as the source
+    page = app.stack[-1]
+    assert isinstance(page, rb.GameScreen) and page.rom is home.focused()[2]
+    page.action("right")                                          # left/right there step along the shelf
+    assert page.rom["id"] == 1 and home.cols["playing"] == 1
+    app.pop()
+    app.on_box.add(1)
     app.draw()
-    assert home.hints()[0] == ("A", "Play now")
-    assert rb.game_verb(app, home.focused()[2])["label"] == "Play now"
+    assert rb.game_verb(app, home.focused()[2])["label"] == "Play now"    # the panel's button still plays
     played = []
     monkeypatch.setattr(app, "play_entry", lambda rom, *a: ("Play now", "", lambda: played.append(rom["id"])))
-    app.dispatch("ok")                                            # A plays it
-    assert played == [0] and app.modal is None
+    app.targets = []
+    app.draw()
+    verb = next(r for r, fn in app.targets if r.width > 300 and r.left > rb.HOME_PANEL.left)
+    app.tap(verb.center)
+    assert played == [1] and app.modal is None
     app.dispatch("x")
     labels = [e[0] for e in app.modal.entries if e]
     assert labels[0] == "Play now" and "More like this" in labels and "See the whole shelf" in labels
@@ -213,7 +221,7 @@ def test_the_verb_and_the_actions_menu(home, rb, monkeypatch):
     app.pop()
     app.modal = None
     opened = []
-    home.open_game = opened.append                                # the one place A on a game goes
+    home.open_game = lambda rom, key=None: opened.append(rom)     # the one place A on a game goes
     app.dispatch("ok")
     assert opened == [home.focused()[2]]
 
@@ -244,11 +252,13 @@ def test_a_collection_tile_opens_its_list(home, rb):
     app = home.app
     home.focus_shelf("collections", 0)
     app.draw()
-    assert home.coll_roms                                         # its card fetched four covers
+    assert home.art.roms                                          # no covers on the record: four games fetched
     assert home.hints()[0] == ("A", "Open")
     app.dispatch("ok")
     gl = app.stack[-1]
     assert isinstance(gl, rb.GameListScreen) and gl.collection["id"] == 7
+    assert gl.whole and gl.pills and gl.counts["all"] == 5        # the whole collection, with the box pills
+    assert gl.crumbs() == ["Collections", "Themes"]
 
 
 def test_tap_a_tile_focuses_then_acts(home, rb):
@@ -259,8 +269,9 @@ def test_tap_a_tile_focuses_then_acts(home, rb):
     app.tap(rect.center)
     assert home.focused()[0] == "new" and home.cols["new"] == 2 and app.modal is None
     app.draw()
-    app.tap(rect.center)
-    assert isinstance(app.modal, rb.DownloadConfirm) and home.focused()[2]["id"] == 202
+    app.tap(rect.center)                                          # the second tap: its page
+    assert isinstance(app.stack[-1], rb.GameScreen) and app.stack[-1].rom["id"] == 202
+    assert home.focused()[2]["id"] == 202
 
 
 def test_status_line_says_how_recently_it_was_played_here(home, rb, monkeypatch):

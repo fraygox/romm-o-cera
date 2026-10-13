@@ -86,9 +86,9 @@ def test_game_night_screen(live, rb, monkeypatch):
     assert gn.current() is gn.picks[-2]
     app.dispatch("down")
     assert gn.current() is newest
-    app.dispatch("ok")                                   # not here yet: the download prompt
-    assert isinstance(app.modal, rb.DownloadConfirm)
-    app.modal = None
+    app.dispatch("ok")                                   # A: the pick's page (its verb is there)
+    assert isinstance(app.stack[-1], rb.GameScreen) and app.stack[-1].rom is newest
+    app.pop()
     app.dispatch("right")                                # who's playing: 2+, and a roll for them
     assert app.night_opts["players"] == 2
     _pump(app, lambda: not gn.rolling)
@@ -109,8 +109,11 @@ def test_game_night_screen(live, rb, monkeypatch):
     monkeypatch.setattr(app, "play_now", lambda path, system, title: played.append(path))
     gn.sel = len(gn.picks) - 1
     gn.picks[gn.sel] = newest
-    assert gn.hints()[0] == ("A", "Play now")
-    app.dispatch("ok")
+    assert gn.hints()[0] == ("A", "Open")
+    app.dispatch("ok")                                   # its page: Play now is the big button there
+    page = app.stack[-1]
+    assert isinstance(page, rb.GameScreen) and page.hints()[0] == ("A", "Play now")
+    page.action("ok")
     assert played
 
 
@@ -208,9 +211,10 @@ def test_backlog_from_collections(live, rb):
     app = live
     cs = rb.CollectionScreen(app)
     app.push(cs)
-    _pump(app, lambda: cs.items)
-    cs.sel = next(i for i, it in enumerate(cs.items) if it.get("screen") == "backlog")
+    _pump(app, lambda: cs.kinds)
+    cs.row = len(cs.kinds) - 1                                    # Browse by: the Backlog door
+    cs.col = next(i for i, it in enumerate(cs.kinds[-1]["items"]) if it.get("screen") == "backlog")
     assert ("X", rb.pads.ACTIONS) not in cs.hints()
     app.dispatch("ok")
     assert isinstance(app.stack[-1], rb.BacklogScreen)
-    assert app.stack[-1].crumbs() == ["Collections", "Your RomM lists", "Backlog"]
+    assert app.stack[-1].crumbs() == ["Collections", "Browse by", "Backlog"]

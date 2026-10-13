@@ -209,18 +209,13 @@ class GameNightScreen(Screen):
         self.app.push(GameScreen(self.app, self.current()))
 
     def hints(self):
-        h = []
-        rom = self.current()
-        if rom is not None and self.app.system_for(rom):
-            st = self.app.rom_status(rom)[0]
-            if st != "active":
-                h.append(("A", "Play now" if st == "installed" else "Download"))
+        h = [("A", "Open")] if self.current() is not None else []
         return h + [("Y", "Another"), ("X", pads.ACTIONS), ("LEFT RIGHT", "Players"), ("B", "Back")]
 
     def action(self, a):
         rom = self.current()
         if a == "ok" and rom is not None:
-            press_verb(self.app, rom)
+            self.open_page()
         elif a == "y":
             self.roll()
         elif a == "x":

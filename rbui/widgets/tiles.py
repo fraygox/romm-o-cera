@@ -7,7 +7,8 @@ they stay under SCALED_SHARE of draw.COVER_BUDGET."""
 import pygame
 from rbui import draw, theme
 from rbui.theme import mix, SR
-from rbui.draw import card, installed_mark, measure, rrect, scroll_text, smooth_scale, surface_bytes, text, wrap
+from rbui.draw import (card, installed_mark, measure, meter, rrect, scroll_text, smooth_scale, surface_bytes, text,
+                       wrap)
 
 SCALED_SHARE = 0.5          # scaled copies may take this much of draw.COVER_BUDGET
 
@@ -138,14 +139,34 @@ def cover_tile(c, app, rom, rect, focused=False, on_box=None, badge=0, radius=8)
     return r
 
 
-def mosaic(c, app, roms, rect, gap=2, radius=8):
-    """Up to four covers as a 2x2 mosaic filling rect; missing ones leave a quiet cell."""
+def art(c, app, key, img, rect, radius=8):
+    """Any image of app.art's store (img: what it returned for key, None while it loads) filling
+    rect (logical), cropped evenly; a quiet box while it loads. True when it was drawn."""
+    rect = pygame.Rect(rect)
+    pr = SR(rect)
+    out = art_variant(app, key, img, ("crop", pr.size), lambda im: crop_to(im, pr.size))
+    if out:
+        c.blit(out, pr.topleft)
+        return True
+    placeholder(c, app.fonts, "", rect, radius)
+    return False
+
+
+def mosaic(c, app, cells, rect, gap=2, radius=8):
+    """Up to four covers as a 2x2 mosaic filling rect; missing ones leave a quiet cell. cells:
+    roms (their covers), or (key, img) pairs of app.art's store (a collection record's own
+    covers, app.collection_cover). One cell alone fills the whole square."""
     rect = pygame.Rect(rect)
     rrect(c, theme.BG2, rect, radius)
+    cells = list(cells)[:4]
     cw, ch = (rect.width - gap) // 2, (rect.height - gap) // 2
-    for i, rom in enumerate(roms[:4]):
-        cell = pygame.Rect(rect.left + (i % 2) * (cw + gap), rect.top + (i // 2) * (ch + gap), cw, ch)
-        cover(c, app, rom, cell, radius=4, label=False)
+    for i, cell in enumerate(cells):
+        r = rect if len(cells) == 1 else \
+            pygame.Rect(rect.left + (i % 2) * (cw + gap), rect.top + (i // 2) * (ch + gap), cw, ch)
+        if isinstance(cell, tuple):
+            art(c, app, cell[0], cell[1], r, 4)
+        else:
+            cover(c, app, cell, r, radius=4, label=False)
 
 
 def mosaic_tile(c, app, roms, rect, focused=False, radius=8):
@@ -155,6 +176,43 @@ def mosaic_tile(c, app, roms, rect, focused=False, radius=8):
     if focused:
         focus_ring(c, r, radius)
     return r
+
+
+TILE_LINE = 19              # a collection tile's name line
+TILE_FOOT = 24              # its sub line's room under the name
+
+
+def collection_tile(c, app, name, cells, rect, focused=False, sub="", frac=None, radius=8, slot=None):
+    """A tall collection tile for a wall or shelf: the mosaic square across its top (lifted in
+    the ring when focused), the name under it (two lines; the focused one scrolls when it's
+    longer), sub in a quiet line under that. frac (0..1, how much of it is on this box): a thin
+    green line along the mosaic's foot, the on-the-box tick when all of it is here. Returns the
+    mosaic's rect."""
+    rect = pygame.Rect(rect)
+    f = app.fonts
+    art_r = pygame.Rect(rect.left, rect.top, rect.width, rect.width)
+    m = mosaic_tile(c, app, cells, art_r, focused, radius)
+    if frac:
+        if frac >= 1:
+            installed_mark(c, (m.right - 12, m.bottom - 12), 8)
+        else:
+            meter(c, (m.left + 6, m.bottom - 9, m.width - 12, 4), [(frac, theme.GREEN)], least=3)
+    y = art_r.bottom + 6
+    if focused:
+        scroll_text(c, f.small, name, (rect.left, y, rect.width, 2 * TILE_LINE), theme.TEXT, line_h=TILE_LINE,
+                    bg=theme.BG, slot=slot or ("tile",) + tuple(rect))
+    else:
+        for i, ln in enumerate(wrap(f.small, name, rect.width, 2)):
+            text(c, f.small, ln, (rect.left, y + i * TILE_LINE), theme.DIM, maxw=rect.width)
+    if sub:
+        text(c, f.tiny, sub, (rect.left, rect.bottom - 18), theme.GREEN if frac and frac >= 1 else theme.FAINT,
+             maxw=rect.width)
+    return m
+
+
+def collection_tile_h(side):
+    """How tall collection_tile needs to be for a side-wide mosaic: art, two lines, a sub."""
+    return side + 6 + 2 * TILE_LINE + TILE_FOOT
 
 
 def collection_card(c, app, name, roms, rect, focused=False, sub=""):

@@ -380,6 +380,45 @@ def build_collections(roms, seed=11):
             for i, (n, ids) in enumerate(cols)]
 
 
+MORE_WORDS = ["Lorem", "Ipsum", "Dolor", "Amet", "Tempor", "Magna", "Aliqua", "Veniam", "Nostrud", "Fugiat",
+              "Mollit", "Cupidatat", "Pariatur", "Velit", "Nisi", "Minim", "Labore", "Sunt", "Culpa", "Quis"]
+MORE_MOODS = ["Nights", "Picks", "Favourites", "Gems", "Classics", "Rainy Days", "Long Weekends", "Party",
+              "Cosy", "Speedruns", "Deep Cuts", "First Hours", "Comfort Games", "Late Shift"]
+
+
+def build_more(roms, n, first_id=100, seed=17):
+    """n more lorem-named collections, the mix of a curated server (mostly Series, then Themes,
+    Top-N lists and a few of a kind of its own): screenshots and tests at scale."""
+    rng = random.Random(seed)
+    lorem = [r["id"] for r in roms if r["metadatum"]["developers"][0] == "Lorem Ipsum Soft"]
+    plats = [name for _, _, name in PLATFORMS]
+    out, seen = [], set()
+    while len(out) < n:
+        k = len(out) % 7
+        if k < 3:
+            name = "Series: %s %s" % (rng.choice(MORE_WORDS), rng.choice(MORE_WORDS + MORE_MOODS))
+        elif k < 5:
+            name = "Theme: %s %s" % (rng.choice(MORE_WORDS), rng.choice(MORE_MOODS))
+        elif k == 5:
+            name = "Top %d: %s" % (rng.choice([10, 25, 50, 100]), rng.choice(plats))
+        else:
+            name = "Picks: %s %s" % (rng.choice(MORE_WORDS), rng.choice(MORE_MOODS))
+        if name in seen:
+            continue
+        seen.add(name)
+        ids = rng.sample(lorem, rng.randint(4, 90))
+        out.append({"id": first_id + len(out), "name": name, "rom_count": len(ids), "rom_ids": ids})
+    return out
+
+
+def collection_record(c, by_id):
+    """A collection as RomM 5 lists it: its game ids and, like RomM's own cards, up to four of its
+    games' covers (path_covers_small)."""
+    out = dict(c)
+    out["path_covers_small"] = [by_id[i]["path_cover_small"] for i in c["rom_ids"][:4] if i in by_id]
+    return out
+
+
 def build_smart(roms):
     short = [r["id"] for r in roms if r["fs_size_bytes"] < 64 * 1024]
     multi = [r["id"] for r in roms if r["metadatum"]["player_count"] == "1-4"]
@@ -594,7 +633,7 @@ class Handler(BaseHTTPRequestHandler):
                             "display_name": name, "rom_count": n})
             return self._json(out)
         if path == "/api/collections":
-            return self._json([{k: v for k, v in c.items() if k != "rom_ids"} for c in self.collections])
+            return self._json([collection_record(c, self.by_id) for c in self.collections])
         if path == "/api/firmware":
             pid = int((q.get("platform_id") or ["0"])[0])
             return self._json([{k: v for k, v in f.items() if k != "data"}
@@ -605,11 +644,10 @@ class Handler(BaseHTTPRequestHandler):
             if f:
                 return self._stream(len(f["data"]), f["data"])
         if path == "/api/collections/smart":
-            return self._json([{k: v for k, v in c.items() if k != "rom_ids"} for c in self.smart])
+            return self._json([collection_record(c, self.by_id) for c in self.smart])
         if path == "/api/collections/virtual":
             vt = (q.get("type") or [""])[0]
-            return self._json([{k: v for k, v in c.items() if k != "rom_ids"}
-                               for c in build_virtual(self.roms, vt)])
+            return self._json([collection_record(c, self.by_id) for c in build_virtual(self.roms, vt)])
         if path == "/api/users/me":
             return self._json(users_me(self.roms))
         m = re.match(r"^/repos/[^/]+/[^/]+/releases/(?:tags/([^/]+)|latest)$", path)
@@ -836,13 +874,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--rate-mb", type=float, default=12, help="download speed, MB/s")
+    ap.add_argument("--collections", type=int, default=0, help="this many more lorem-named collections (a curated server)")
     a = ap.parse_args()
     Handler.roms = build_library()
     add_special(Handler.roms)
     add_user_data(Handler.roms)
     Handler.by_id = {r["id"]: r for r in Handler.roms}
     Handler.files = {f["id"]: f for r in Handler.roms for f in r["files"]}
-    Handler.collections = build_collections(Handler.roms)
+    Handler.collections = build_collections(Handler.roms) + build_more(Handler.roms, a.collections)
     Handler.smart = build_smart(Handler.roms)
     Handler.rate = a.rate_mb * 1024 * 1024
     print("mock RomM: %d games on http://127.0.0.1:%d" % (len(Handler.roms), a.port), flush=True)

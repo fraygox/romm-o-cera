@@ -53,7 +53,8 @@ def free_port():
 
 port = free_port()
 mock = subprocess.Popen([sys.executable, os.path.join(APP, "tools", "mock_romm.py"), "--port", str(port),
-                         "--rate-mb", "400"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         "--rate-mb", "400", "--collections", "150"], stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL)
 os.environ["ROMM_URL"] = "http://127.0.0.1:%d" % port
 os.environ["ROMM_TOKEN"] = "demo"
 os.environ["ROMM_BROWSER_GITHUB_API"] = os.environ["ROMM_URL"]     # What's new reads the mock's release notes
@@ -511,14 +512,56 @@ class WidgetsGallery(rb.Screen):
         rb.progress_bar(c, (788, 630, vr.width, 8), 0.7, rb.GREEN)
 
 
+def collections_box():
+    """Some of a few collections' games on the box (files + install records), so the shelves
+    show their green lines: a third of the first few, all of the homebrew Top list."""
+    install_some()
+    lib = app.library
+    for k, c in enumerate(app.api.collections()[:6]):
+        roms = app.api.roms_all(collection=("collection_id", c["id"]))
+        for r in roms[:len(roms) if k == 0 else len(roms) // 3]:
+            sy = app.platform_by_id[r["platform_id"]]["_system"]
+            p = os.path.join(R, sy, r["fs_name_no_ext"] + ".chd")
+            if not os.path.exists(p):
+                mk(os.path.relpath(p, R), 4 * MB)
+            lib.mark(r, sy, [p])
+
+
+def collections_at(row, col, wall=False, menu=False, inside=None):
+    """Collections with a shelf (row; -1: the last, Browse by) and tile focused; wall: that kind as
+    a wall; menu: its Actions; inside: its games ("away": the Not here pills)."""
+    collections_box()
+    scr = rb.CollectionScreen(app)
+    app.push(scr)
+
+    def after():
+        scr.row = row if row >= 0 else len(scr.kinds) - 1
+        scr.col, scr.wall = col, wall
+        it = scr.current()[1]
+        if not rb.door(it):
+            scr.fetch_roms(it)                 # at once, not after the focus has rested
+        if menu:
+            scr.menu(it)
+        elif inside:
+            gl = scr.list_of(it)
+            if inside == "away":
+                gl.box_filter = "away"
+            app.push(gl)
+    app._after = after
+
+
 # (name, setup) — setup pushes a screen / opens a modal; returns an optional
 # "ready" predicate (default: no background work pending)
 SCENES = [
     ("home", lambda: None),
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
-    ("collections", lambda: app.push(rb.CollectionScreen(app))),
-    ("collection-menu", lambda: (app.push(rb.CollectionScreen(app)),
-                                 setattr(app, "_after", lambda: app.stack[-1].menu(collection_item())))),
+    ("collections", lambda: collections_at(1, 4)),
+    ("collections-top", lambda: collections_at(0, 0)),
+    ("collections-wall", lambda: collections_at(1, 9, wall=True)),
+    ("collections-browse", lambda: collections_at(-1, 0)),
+    ("collection-menu", lambda: collections_at(1, 4, menu=True)),
+    ("collection-games", lambda: collections_at(1, 4, inside=True)),
+    ("collection-games-away", lambda: collections_at(1, 4, inside="away")),
     ("game-list", lambda: app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform()))),
     ("list-menu", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                            setattr(app, "_after", lambda: app.stack[-1].action("x")))),
@@ -769,7 +812,7 @@ with open(os.path.join(args.out, "index.html"), "w") as f:
     f.write("</table>")
 README_SET = {"home": "home", "platforms": "platforms", "game-list": "game-list", "list-menu": "menu",
               "search": "search", "manage": "manage", "on-this-box": "on-this-box", "downloads": "downloads",
-              "settings-compression": "settings", "collection-menu": "collections",
+              "settings-compression": "settings", "collections": "collections",
               "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits",
               "compress-system": "compress", "theme-picker": "theme-picker", "theme-custom": "custom-theme",
               "game-night": "game-night", "home-recommended": "recommended"}

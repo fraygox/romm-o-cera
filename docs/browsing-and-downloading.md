@@ -6,10 +6,10 @@
   games RomM has and how many of that system's games are already on the box
   (green). **Y** searches the platform under the cursor, **X** picks a random
   game from it.
-- **Collections**: your own, smart collections, and RomM's virtual ones
-  (genre, franchise, series, company, game mode). Like the platform cards,
-  each shows how many of its games are already on the box (a green ✓ and a
-  count, next to RomM's total), including games you copied over yourself.
+- **Collections**: shelves of cover mosaics, a shelf per kind of collection
+  (Top lists, Themes, Series, your own kinds, Smart, Browse by), each tile
+  with a green line for how much of it is already on the box. See
+  [Collections](#collections).
 - **Home** is a rail of destinations (Search, Platforms, Collections,
   Downloads, On this box, Settings) over shelves of covers: **Playing** and
   **Backlog** (your RomM statuses, RomM 5 and newer), **Recommended for you**,
@@ -17,11 +17,13 @@
   your RomM can't list, doesn't show. Up/down moves between the rail and the
   shelves, left/right along one (L/R a page). The panel on the right shows
   what has the focus: a game's cover, your status ("Playing · played here
-  today") and its verb, **A** to Play now or Download; on a rail pill, what's
-  behind it. **X** on a game: more like this, or the whole shelf as a list
-  (New in RomM is the full **Recently added** list, Backlog opens
-  [Backlog](#backlog)). On a touch screen a tap focuses a cover and a second
-  tap acts on it; a tap on a pill opens it.
+  today") and its verb (a tap on it plays or downloads); on a rail pill,
+  what's behind it. **A** on a game opens [its page](#the-game-page), where
+  left/right step along the shelf; **A** on a collection opens it. **X** on
+  a game: more like this, or the whole shelf as a list (New in RomM is the
+  full **Recently added** list, Backlog opens [Backlog](#backlog)). On a
+  touch screen a tap focuses a cover and a second tap opens it; a tap on a
+  pill opens it.
 - **Recommended for you** (RomM 5.4 and newer): games RomM picks from what
   you play, ranked from its similarity graph and your play history. Its
   list says why for each game ("Because you played …", a series, genre or
@@ -45,9 +47,9 @@
 ![Game night: a random game, shown big](../screenshots/game-night.png)
 
 Can't decide? Game night rolls a random game and shows it big: cover, name,
-platform, year, genre, how many can play and its description. **A** plays it
-when it's on the box or downloads it when it isn't, **Y** rolls another, **B**
-goes back. The rolls you pass on stay down the left (the last four, until you
+platform, year, genre, how many can play and its description. **A** opens its
+page (Play now or Download is the big button there; a tap on the pick's own
+button does it at once), **Y** rolls another, **B** goes back. The rolls you pass on stay down the left (the last four, until you
 leave): **up/down** brings one back.
 
 Across the top: who's playing tonight (**Anyone, 2, 3 or 4 players**, changed
@@ -77,7 +79,67 @@ Backlog in RomM, in RomM's order: a cover, on-the-box tick or size, and
 fits now and what waits (against the space left once the queue has landed,
 keeping Settings' keep-free space), and a line per platform. Everything is
 queued in that order (up to 1,000); the ones that don't fit wait for room.
-**X Actions** has Free up space. **A** plays the selected game or downloads it.
+**X Actions** has Free up space. **A** opens the selected game's page.
+
+## Collections
+
+![Collections: shelves of cover mosaics](../screenshots/collections.png)
+
+Your RomM collections as shelves of cover mosaics, one shelf per kind:
+**Top lists**, **Themes**, **Series**, then any kind of your own, **Your
+collections** (the ones without a kind), **Smart** (RomM's smart
+collections) and **Browse by** (RomM's own groupings: genre, franchise,
+series, company, game mode; and your Backlog). Every tile carries a thin
+green line along its foot for how much of that collection is on this box
+(a tick when all of it is), with the count under its name ("17 of 48
+here"). Up/down move between shelves, left/right along one, L/R a page.
+
+The panel on the right is the focused collection: its mosaic, how many of
+its games are on this box, the number and size of the rest, whether that
+fits in the space left, and its platforms (the size and platforms appear a
+moment after a tile gets the focus, once its games have been read).
+
+- **A** opens the collection: its games as a list, with pills across the
+  top, **All / On this box / Not here**, each with its count (**Y** switches
+  them, or tap one). **A** on a game opens its page.
+- **X Actions**: Open, [Compare with RomM](#compare-with-romm), Game night
+  from this collection, and **Download the rest** (how many and how big,
+  skipping what's here already; a collection of more than 1,000 games: open
+  it and filter first).
+- **Y** turns the focused kind into a wall, six tiles a row with a scrollbar
+  (handy with 60 themes or 90 series), and back to the shelves.
+- A **Browse by** door opens that grouping as a wall; each of its groups
+  opens like any collection.
+
+### Naming collections for the shelves
+
+The shelf a collection lands on comes from its name in RomM. A name of the
+form `Kind: Name` puts it on the shelf for that kind, and the tile shows
+just the name after the colon:
+
+| Name in RomM | Shelf | Tile |
+|---|---|---|
+| `Top 10: Platformers`, `Top 100: PlayStation` | Top lists (sorted by the number, then the name) | the whole name, the number matters |
+| `Theme: Hidden Gems` | Themes | Hidden Gems |
+| `Series: Dolor` | Series | Dolor |
+| `Picks: Rainy Day`, `Picks: Sunday`, `Picks: Late` | Picks, a shelf of its own | Rainy Day, Sunday, Late |
+| `Weekend Favourites` | Your collections | Weekend Favourites |
+| `Lorem: Best Of` (only one with that prefix) | Your collections | Lorem: Best Of |
+
+The rules:
+
+- `Top N` (any number, `Top10` and `Top 10` alike), `Theme` and `Series`
+  always count as kinds. Any other prefix becomes a kind of its own once
+  **three or more** collections share it; those shelves come after Series,
+  A–Z, named after the prefix as you first spelled it. With fewer, the colon
+  is just part of the name and the collection stays in Your collections.
+- Case and spaces around the colon don't matter: `theme : Cosy Nights`,
+  `THEME:Cosy Nights` and `Theme: Cosy Nights` all land on Themes, as
+  "Cosy Nights".
+- Within a shelf, collections are sorted by name (Top lists by their number
+  first). An empty collection shows nowhere.
+- Smart collections (RomM 5 and newer) go on the Smart shelf as named;
+  RomM's virtual collections are behind the Browse by doors.
 
 ## The detail panel
 
@@ -90,7 +152,8 @@ another region or revision of the game is already on the box.
 
 ## The game page
 
-**A** on a game in a list (or in Games from RomM) opens its page: the cover
+**A** on a game anywhere (a list, a Home shelf, Game night, Backlog, Games
+from RomM) opens its page: the cover
 over a soft backdrop, its facts and description, and your side of RomM in
 one strip: your status (Playing, On your backlog, Finished…), your rating,
 your newest note, and your RetroAchievements progress. Up to three
@@ -135,8 +198,8 @@ and the menu stays open; the actions close it.
   your RomM has (checksum-verified; all systems: [On this box](on-this-box.md#bios-files)).
 
 **Download a whole collection** straight from Collections: X on a collection,
-then Download every game (up to 1,000 games; a bigger one: open it and
-filter first).
+then Download the rest (up to 1,000 games; a bigger one: open it and filter
+first). Inside a collection the same entry is in its Actions menu.
 
 Bulk downloads estimate the space they need once extracted and offer to
 download only what fits.

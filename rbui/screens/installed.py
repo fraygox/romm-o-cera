@@ -27,6 +27,7 @@ class InstalledScreen(ListScreen):
     BUBBLE_AT = (LX + LW // 2, H // 2)
     sort = "size"
     draw_detail = GameListScreen.draw_detail        # RomM's record: cover, facts, summary
+    lst, pan = GAME_LIST, GAME_PANEL
     variants = GameListScreen.variants
     _more_like = GameListScreen._more_like
 

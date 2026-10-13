@@ -311,7 +311,7 @@ on `sys.path`, imports it and runs `main()`. The modules, in import order
 | `rbui/sfx.py` | the UI's sounds |
 | `rbui/input.py` | keyboard, game controllers and raw joysticks to actions |
 | `rbui/modals.py` | menus and dialogs: `ActionMenu`, `ManageMenu`, `Confirm`, `InfoDialog`, `DownloadConfirm` |
-| `rbui/widgets/` | what screens compose instead of drawing it themselves: `tiles.py` (the scaled-cover cache `cover_variant`, `cover`, `cover_tile`, `Shelf`, `mosaic`, `collection_card`), `hero.py` (`verb_button`, `game_verb`, `verb_note`, `backdrop`), `chips.py` (`pill_row`, `fill_widths`, `status_chip`, `tag`, `stars`), `factsheet.py` (`facts`, `facts_layout`) |
+| `rbui/widgets/` | what screens compose instead of drawing it themselves: `tiles.py` (the scaled-cover cache `cover_variant`, `cover`, `art`, `cover_tile`, `Shelf`, `mosaic`, `collection_tile`, `collection_card`), `hero.py` (`verb_button`, `game_verb`, `verb_note`, `backdrop`), `chips.py` (`pill_row`, `fill_widths`, `status_chip`, `tag`, `stars`), `factsheet.py` (`facts`, `facts_layout`) |
 | `rbui/screens/` | the screens, a module per family (`base.py`: `Screen`, `ListScreen`; `box_data.py`: what the On this box screens share) |
 | `rbui/startup.py` | start-up chores: markers, registering with ES, memory budgets, malloc tuning |
 | `rbui/app.py` | the `App` (screen stack, modal, toasts, main loop, background work) and the cover loader |

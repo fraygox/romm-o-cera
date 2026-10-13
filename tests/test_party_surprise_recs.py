@@ -234,8 +234,8 @@ def test_game_night_from_home_platforms_and_collections(live, rb):
 
     cs = rb.CollectionScreen(app)
     app.push(cs)
-    _pump(app, lambda: cs.items)
-    it = next(x for x in cs.items if x.get("param") == "collection_id")
+    _pump(app, lambda: cs.kinds)
+    it = next(x for k in cs.kinds for x in k["items"] if x.get("param") == "collection_id")
     cs.menu(it)
     app.modal.sel = _menu_row(app, "Game night")
     app.dispatch("ok")

@@ -8,7 +8,7 @@ from rbui import pads, theme
 from rbui.theme import SR, W
 from rbui.draw import _fade, card, COVER_BOX, installed_mark, measure, rom_title, scrollbar, text, wrap
 from rbui.screens.base import Screen
-from rbui.screens.collection import CollectionScreen
+from rbui.screens.collection import collection_items, CollectionArt, CollectionScreen
 from rbui.screens.games import GameListScreen, SearchScreen, more_like
 from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.screens.backlog import BacklogScreen
@@ -42,7 +42,6 @@ class HomeScreen(Screen):
     GAP = 12
     HEAD = 30                       # a shelf's heading, above its covers
     LIST_MAX = 60                   # a RomM list's first page: what a shelf shows
-    MOSAICS = 24                    # collections whose four covers are fetched for their cards
 
     def __init__(self, app):
         super().__init__(app)
@@ -54,8 +53,8 @@ class HomeScreen(Screen):
         self.free = None
         self.on_box = 0
         self.lists = {}             # "playing"/"backlog" -> {items, total}; [] items when unsupported
-        self.colls = None           # [{name, full, count, param, id}]
-        self.coll_roms = {}         # collection id -> its first four roms
+        self.colls = None           # collection items (rbui.screens.collection.item), by name
+        self.art = CollectionArt(app)   # what their cards show
         self.played = {}            # rom id -> rommlib.played_here(...) (None: not on the box)
         self.rail_rects = []
         self._busy = set()
@@ -112,7 +111,7 @@ class HomeScreen(Screen):
         if self.gen == self.app.conn_gen:
             return
         self.gen = self.app.conn_gen
-        self.lists, self.colls, self.coll_roms, self.recent = {}, None, {}, None
+        self.lists, self.colls, self.recent = {}, None, None
         self.played, self.cols, self.shelf_of = {}, {}, {}
         self._busy, self._retry = set(), set()
         self.focus, self.top = None, 0
@@ -126,8 +125,6 @@ class HomeScreen(Screen):
                 self.colls = None
             elif key == "recent":
                 self.recent = None
-            elif isinstance(key, tuple) and key[0] == "mosaic":
-                self.coll_roms.pop(key[1], None)
         self._retry = set()
 
     def load(self):
@@ -150,21 +147,7 @@ class HomeScreen(Screen):
             self._once("colls", app.api.collections, self._got_colls, lambda e: setattr(self, "colls", []))
 
     def _got_colls(self, cols):
-        self.colls = sorted(({"name": c["name"], "full": c["name"], "count": c["rom_count"],
-                              "param": "collection_id", "id": c["id"]}
-                             for c in cols or [] if c.get("rom_count")), key=lambda c: c["name"].lower())
-
-    def want_mosaic(self, coll):
-        """A collection card's four covers, fetched when it's first drawn (one at a time)."""
-        cid = coll["id"]
-        if cid in self.coll_roms or any(k[0] == "mosaic" for k in self._busy if isinstance(k, tuple)):
-            return
-        app = self.app
-        pids = [p["id"] for p in app.platforms]
-        self._once(("mosaic", cid),
-                   lambda: app.api.roms(platform_ids=pids, collection=(coll["param"], cid), limit=4).get("items", []),
-                   lambda roms: self.coll_roms.__setitem__(cid, roms[:4]),
-                   lambda e: self.coll_roms.__setitem__(cid, []))
+        self.colls = sorted(collection_items(cols or []), key=lambda c: c["full"].lower())
 
     recent = None
 
@@ -275,8 +258,7 @@ class HomeScreen(Screen):
     def hints(self):
         key, shelf, it = self.focused()
         if shelf and key != "collections":
-            a = "Play now" if self.app.rom_status(it)[0] == "installed" else "Download"
-            return [("A", a), ("X", pads.ACTIONS), ("Y", "Game night"), ("B", "Exit")]
+            return [("A", "Open"), ("X", pads.ACTIONS), ("Y", "Game night"), ("B", "Exit")]
         return [("A", "Open"), ("Y", "Game night"), ("B", "Exit")]
 
     def action(self, a):
@@ -302,7 +284,7 @@ class HomeScreen(Screen):
             elif key == "collections":
                 self.open_collection(it)
             else:
-                self.open_game(it)
+                self.open_game(it, key)
         elif a == "x" and shelf and key != "collections":
             self.game_actions(it, shelf)
 
@@ -317,16 +299,17 @@ class HomeScreen(Screen):
         self.focus_shelf("rail", i)
         self.action("ok")
 
-    def open_game(self, rom):
-        """A on a game: its verb (Play now, or the download prompt)."""
-        press_verb(self.app, rom)
+    def open_game(self, rom, key=None):
+        """A on a game: its page (left/right there step along its shelf)."""
+        self.open_page(rom, key)
 
-    def open_page(self, rom):
+    def open_page(self, rom, key=None):
         why = next((w for r, w, _ in self.app.recs or [] if r["id"] == rom["id"] and w), None)
-        self.app.push(GameScreen(self.app, rom, why=why))
+        self.app.push(GameScreen(self.app, rom, why=why, source=ShelfSource(self, key) if key else None))
 
     def open_collection(self, coll):
-        self.app.push(GameListScreen(self.app, coll["full"], collection=coll))
+        self.app.push(GameListScreen(self.app, coll["full"], collection=coll, group=coll.get("group"),
+                                     whole=coll["count"] <= GameListScreen.BULK_MAX))
 
     def open_shelf(self, key):
         """The shelf as a full list: New in RomM is the Recently added list."""
@@ -344,7 +327,7 @@ class HomeScreen(Screen):
         app = self.app
         key, heading = shelf[0], shelf[1]
         name = rom_title(rom)
-        more = [("Open the game page", "Facts, screenshots and your RomM notes", lambda: self.open_page(rom)),
+        more = [("Open the game page", "Facts, screenshots and your RomM notes", lambda: self.open_page(rom, key)),
                 ("More like this", name, lambda: more_like(app, rom)),
                 ("See the whole shelf", heading, lambda: self.open_shelf(key))]
         if app.rom_status(rom)[0] == "installed":
@@ -445,8 +428,7 @@ class HomeScreen(Screen):
             _fade(c, theme.BG, SR(pygame.Rect(area.left, self.Y1 - 44, area.width, 44)), "bottom")
 
     def draw_card(self, c, coll, rect, on):
-        self.want_mosaic(coll)
-        return collection_card(c, self.app, coll["full"], self.coll_roms.get(coll["id"], []), rect, on,
+        return collection_card(c, self.app, coll["full"], self.art.cells(coll), rect, on,
                                sub="{:,} games".format(coll["count"]))
 
     def draw_panel(self, c, key, shelf, it):
@@ -510,7 +492,7 @@ class HomeScreen(Screen):
         p.verb("Open the collection", "go", fn=lambda: self.action("ok"))
         mh = max(100, min(300, p.room() - 110))
         mw = mh * 232 // 300
-        mosaic(p.c, self.app, self.coll_roms.get(coll["id"], []), (p.x + (p.w - mw) // 2, p.y, mw, mh))
+        mosaic(p.c, self.app, self.art.cells(coll), (p.x + (p.w - mw) // 2, p.y, mw, mh))
         p.space(mh + 16)
         p.title(coll["full"], sub="{:,} games".format(coll["count"]), center=True)
 
@@ -531,7 +513,7 @@ class HomeScreen(Screen):
     def panel_game(self, p, key, rom):
         app = self.app
         self.want_played(rom)
-        p.verb(fn=lambda: self.action("ok"), **game_verb(app, rom))
+        p.verb(fn=lambda: press_verb(app, rom), **game_verb(app, rom))      # a tap: the verb itself; A: the page
         ch = max(120, min(COVER_BOX[1], p.room() - 162))        # leaves a line of title, meta, status, 2 of summary
         cw = ch * 3 // 4
         cover(p.c, app, rom, (p.x + (p.w - cw) // 2, p.y, cw, ch), fit=True)
@@ -545,6 +527,36 @@ class HomeScreen(Screen):
         if summary and p.room() >= 22:
             p.space(4)
             p.prose(summary, color=theme.FAINT, line_h=20)
+
+
+class ShelfSource:
+    """A Home shelf as a game page's source: left/right on the page step along the shelf, and
+    the shelf's focus follows (GameScreen.step reads sel, listed(), page_rom(i), why)."""
+
+    def __init__(self, home, key):
+        self.home, self.key = home, key
+
+    @property
+    def sel(self):
+        return self.home.cols.get(self.key, 0)
+
+    @sel.setter
+    def sel(self, i):
+        self.home.focus_shelf(self.key, i)
+
+    @property
+    def why(self):
+        return {r["id"]: w for r, w, _ in self.home.app.recs or [] if w} if self.key == "recommended" else {}
+
+    def listed(self):
+        return next((s[3] for s in self.home.shelves() if s[0] == self.key), [])
+
+    def page_rom(self, i):
+        items = self.listed()
+        return items[i] if 0 <= i < len(items) else None
+
+    def game_night(self):
+        self.home.game_night()
 
 
 class PlatformScreen(Screen):

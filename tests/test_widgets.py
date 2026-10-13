@@ -462,3 +462,38 @@ def test_step_dot_notice_code_slots_and_row_chevron(rb, fonts):
     lr = pygame.Rect(100, 500, 400, 64)
     tx = rb.list_row(c, fonts, lr, True, "Type an API token instead", "x" * 200, chevron=True, slot="t-chev")
     assert tx == lr.left + 22
+
+
+def test_a_collection_tile_is_a_square_mosaic_over_its_name_with_the_box_line_along_its_foot(rb, app, fonts,
+                                                                                                monkeypatch):
+    import pygame
+    monkeypatch.setattr(app, "cover", lambda rom: None)
+    roms = [{"id": i, "name": "Lorem %d" % i, "platform_id": 7} for i in range(4)]
+    c = _canvas(rb)
+    side = 129
+    r = pygame.Rect(48, 100, side, rb.collection_tile_h(side))
+    m = rb.collection_tile(c, app, "Lorem Nights", roms, r, sub="3 of 10 here", frac=0.3)
+    assert m == pygame.Rect(48, 100, side, side)               # the art is a square across the top
+    assert c.get_at((60, m.bottom - 7))[:3] == rb.GREEN         # the on-box line, 30% of the way
+    assert c.get_at((m.right - 20, m.bottom - 7))[:3] != rb.GREEN
+    assert r.bottom - m.bottom >= 6 + 2 * rb.TILE_LINE + 18     # room for two lines and the sub
+    full = rb.collection_tile(c, app, "Lorem Nights", roms, r.move(200, 0), focused=True, sub="All 10 here", frac=1)
+    assert full == pygame.Rect(244, 96, side + 8, side + 8)     # lifted inside the ring; the tick, no bar
+    assert c.get_at((full.left + 12, full.bottom - 7))[:3] != rb.GREEN
+
+
+def test_a_mosaic_takes_a_records_own_covers_and_one_alone_fills_it(rb, app, fonts, monkeypatch):
+    import pygame
+    img = pygame.Surface((30, 40))
+    img.fill((200, 10, 10))
+    cells = [(("coll", "collection_id", 7, i), img) for i in range(4)]
+    c = _canvas(rb)
+    rb.mosaic(c, app, cells, pygame.Rect(0, 0, 100, 100))
+    assert c.get_at((25, 25))[:3] == (200, 10, 10) and c.get_at((75, 75))[:3] == (200, 10, 10)
+    monkeypatch.setattr(app, "cover", lambda rom: None)
+    c = _canvas(rb)
+    rb.mosaic(c, app, cells[:1], pygame.Rect(0, 0, 100, 100))   # one cover: the whole square
+    assert c.get_at((75, 75))[:3] == (200, 10, 10)
+    c = _canvas(rb)
+    rb.mosaic(c, app, [(("coll", "collection_id", 8, 0), None)], pygame.Rect(0, 0, 100, 100))
+    assert c.get_at((50, 50))[:3] == rb.BG2                     # still loading: a quiet square

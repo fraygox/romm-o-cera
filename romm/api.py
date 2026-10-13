@@ -339,6 +339,15 @@ class Api:
         tag = hashlib.sha1(paths[i].encode("utf-8", "replace")).hexdigest()[:12]   # a new shot: a new file
         return self.fetch_asset(paths[i], "%d-shot-%s" % (rom["id"], tag))
 
+    def fetch_collection_cover(self, coll, i):
+        """Cached copy of the i-th cover of a collection's record (collection_cover_paths), as
+        fetch_cover: its path, None when there's none, CoverError for now."""
+        paths = _mine.collection_cover_paths(coll)
+        if not 0 <= i < len(paths):
+            return None
+        import hashlib
+        return self.fetch_asset(paths[i], "coll-%s" % hashlib.sha1(paths[i].encode("utf-8", "replace")).hexdigest()[:16])
+
     def fetch_asset(self, path, key, cap=None):
         """A RomM asset (a server path: cover, screenshot...) in the cover
         cache as <key>.img, fetched once and pruned with the covers (least

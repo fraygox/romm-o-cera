@@ -816,22 +816,17 @@ def test_collections_show_how_many_of_their_games_are_on_the_box(isolated, rb, m
             for i in (1, 2, 3)]
     _w(os.path.join(rommlib.ROMS_ROOT, "xbox360", "G2.iso"))           # copied over by hand
     app.library.mark(roms[0], "xbox360", [_w(os.path.join(rommlib.ROMS_ROOT, "xbox360", "G1.iso"))])
-    seen = []
-
-    def fake_roms(**kw):
-        seen.append(kw.get("collection"))
-        off = kw.get("offset", 0)
-        return {"items": roms[off:off + kw.get("limit", 60)], "total": 3}
-    monkeypatch.setattr(app.api, "roms", fake_roms)
-    sc = rb.CollectionScreen.__new__(rb.CollectionScreen)
-    rb.Screen.__init__(sc, app)
-    sc.vtype, sc.items, sc.sel, sc.scroll, sc.here = None, None, 0, 0, {}
-    it = {"name": "Xbox 360", "tag": "", "group": "Your collections", "count": 3, "full": "Xbox 360",
-          "param": "collection_id", "id": 11}
-    assert sc.count_here(it) == 2 and seen[0] == ("collection_id", 11)
-    sc.items = [it]
-    sc.here[("collection_id", 11)] = 2
-    sc.draw(app.canvas)                              # the row shows it (no crash; drawn beside the total)
+    monkeypatch.setattr(app, "bg", lambda fn, done=None, err=None: None)
+    sc = rb.CollectionScreen(app)
+    it = {"name": "Xbox 360", "kind": "", "group": "Your collections", "count": 3, "full": "Xbox 360",
+          "param": "collection_id", "id": 11, "rom_ids": [1, 2, 3], "path_covers_small": []}
+    st = sc.state(it)
+    assert st["here"] == 1                           # at once: this app's own install, from RomM's game ids
+    st["roms"] = roms
+    sc.measure(st)
+    assert st["here"] == 2 and st["rest"] == 0       # exact once its games are in: the hand-copied one too
+    sc.kinds = [{"key": "yours", "label": "Your collections", "items": [it]}]
+    sc.draw(app.canvas)                              # the tile and the panel show it (no crash)
 
 
 def test_compress_games_already_here_scans_without_changing_anything_and_queues(isolated, monkeypatch):

@@ -495,55 +495,6 @@ def test_downloads_tap_selects_the_job_and_the_highlight_follows_it(app, rb, mon
     assert opened == ["ok"] and len(jobs) == 10
 
 
-def _collections(groups):
-    return [{"name": "%s %02d" % (g, i), "tag": "", "group": g, "count": i + 1, "full": "%s %02d" % (g, i),
-             "param": "collection_id", "id": 100 * k + i} for k, (g, m) in enumerate(groups) for i in range(m)]
-
-
-# (sel, scroll) on 3 groups (Top lists 5, Themes 14, Series 13): _script(10) + left/right group jumps
-TRACE_COLLECTIONS = [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0), (10, 1), (11, 2),
-                     (21, 12), (31, 22), (31, 22), (21, 21), (20, 20), (19, 19), (18, 18), (28, 19), (31, 22),
-                     (31, 22), (31, 22), (31, 22), (21, 21), (11, 11), (1, 1), (0, 0), (0, 0), (0, 0), (5, 0),
-                     (19, 10), (19, 10), (5, 5), (6, 5), (0, 0), (0, 0), (0, 0), (0, 0)]
-
-
-def test_collections_move_page_jump_groups_and_open_on_tap(app, rb, monkeypatch):
-    """Collections: rows as everywhere, left/right to the previous or next
-    group, A-Z only in a single list (L2/R2 do nothing here), one tap opens."""
-    scr = rb.CollectionScreen(app)
-    scr.items = _collections([("Top lists", 5), ("Themes", 14), ("Series", 13)])
-    app.push(scr)
-    n, rows = len(scr.items), 10
-    rects = _frame(app, scr)
-    assert rects == [(48, 80 + k * 54, rb.W - 96, 50) for k in range(rows)]
-    seen = []
-    for a in _script(rows) + ["right", "right", "right", "left", "down", "left", "left", "r2", "l2"]:
-        scr.action(a)
-        rects = _frame(app, scr)
-        seen.append((scr.sel, scr.scroll))
-        assert scr.scroll <= scr.sel < scr.scroll + rows
-        assert rects == [(48, 80 + k * 54, rb.W - 96, 50) for k in range(min(rows, n - scr.scroll))]
-    assert seen == TRACE_COLLECTIONS
-    opened = []
-    monkeypatch.setattr(scr, "action", opened.append)
-    app.tap((rb.W // 2, 80 + 3 * 54 + 25))
-    assert scr.sel == scr.scroll + 3 and opened == ["ok"]   # one tap opens
-
-
-def test_collections_letter_jump_in_one_list(app, rb):
-    """A Browse-by list: L2/R2 jump to the next or previous letter, put at the
-    top of the list (as in a game list)."""
-    scr = rb.CollectionScreen(app, "genre", "Genre")
-    scr.items = [dict(it, name=chr(65 + i // 4) + it["name"]) for i, it in enumerate(_collections([("Genre", 30)]))]
-    app.push(scr)
-    seen = []
-    for a in ["r2", "r2", "down", "l2", "l2", "r1", "r1", "r2", "l2"]:
-        scr.action(a)
-        _frame(app, scr)
-        seen.append((scr.sel, scr.scroll))
-    assert seen == [(4, 4), (8, 8), (9, 8), (8, 8), (4, 4), (14, 5), (24, 15), (28, 20), (24, 20)]
-
-
 # (sel, scroll, rows asked to be fetched) on a 40-row list: _script(12), left/right paging, then A–Z jumps
 TRACE_GAMES = [(1, 0, (13,)), (2, 0, (14,)), (3, 0, (15,)), (4, 0, (16,)), (5, 0, (17,)), (6, 0, (18,)),
                (7, 0, (19,)), (8, 0, (20,)), (9, 0, (21,)), (10, 0, (22,)), (11, 0, (23,)), (12, 1, (24,)),
