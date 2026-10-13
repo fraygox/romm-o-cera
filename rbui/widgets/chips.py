@@ -1,11 +1,11 @@
 """Pills and chips: a row of pills that ends flush at its column's edge (Home's rail, filter
-rows), a small status chip, a quiet tag, and a star rating."""
+rows), a button chip with its pad glyph, a small status chip, a quiet tag, and a star rating."""
 import math
 
 import pygame
 from rbui import theme
 from rbui.theme import mix, S
-from rbui.draw import circle, focus_box, marquee, measure, rrect, text
+from rbui.draw import button_glyph, circle, glyph_width, focus_box, marquee, measure, rrect, text
 
 PILL_H, PILL_GAP, PILL_PAD = 38, 10, 16
 MIN_PAD = 6                 # a tight row still keeps this much padding each side of a label
@@ -88,6 +88,25 @@ def pill_row(c, font, labels, x0, x1, y, focus=None, active=None, dots=None, h=P
     return rects
 
 
+def button_chip_width(f, token, label, maxw=None):
+    """How wide button_chip draws token and label (at most maxw)."""
+    w = 12 + glyph_width(f, token) + 8 + measure(f.small, label) + 16
+    return int(min(w, maxw) if maxw else w)
+
+
+def button_chip(c, f, pos, token, label, hot=False, maxw=None):
+    """A small button with its pad glyph ([X] Compress all), 36 tall from pos (topleft); hot:
+    lifted with the accent outline. Returns its rect."""
+    r = pygame.Rect(pos[0], pos[1], button_chip_width(f, token, label, maxw), 36)
+    rrect(c, theme.PANEL_HI if hot else theme.BG2, r, 18)
+    if hot:
+        rrect(c, theme.ACCENT, r, 18, 2)
+    g = button_glyph(c, f, token, r.left + 12, r.centery - 11)
+    text(c, f.small, label, (r.left + 12 + g + 8, r.centery), theme.TEXT if hot else theme.DIM, "midleft",
+         maxw=r.right - 16 - (r.left + 12 + g + 8) + 1)
+    return r
+
+
 def status_chip(c, font, label, pos, color=None, anchor="topleft", h=24):
     """A small rounded chip: label in color on a tint of it (default the accent): "Playing",
     "On your backlog". anchor: topleft, topright, midleft or midright of pos. Returns its rect."""
@@ -100,14 +119,14 @@ def status_chip(c, font, label, pos, color=None, anchor="topleft", h=24):
     return r
 
 
-def tag(c, font, label, pos, anchor="topleft", warn=False):
-    """A quiet tag on a row or tile (roms/psx, a system name): recessed, faint, square-ish;
-    warn tints it red (a platform with no Batocera system). Returns its rect."""
+def tag(c, font, label, pos, anchor="topleft", warn=False, color=None):
+    """A quiet tag on a row or tile (roms/psx, a system name): recessed, square-ish, its label in
+    color (default FAINT); warn tints it red (a platform with no Batocera system). Returns its rect."""
     w = int(measure(font, label)) + 12
     r = pygame.Rect(0, 0, w, 20)
     setattr(r, anchor, pos)
     rrect(c, mix(theme.BG, theme.RED, 0.22) if warn else theme.BG2, r, 6)
-    text(c, font, label, r.center, theme.FAINT, "center")
+    text(c, font, label, r.center, theme.FAINT if color is None else color, "center")
     return r
 
 

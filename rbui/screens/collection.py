@@ -1,11 +1,11 @@
 """Collections (RomM's own and the virtual ones: genre, franchise, ...)."""
 import re
 
-import pygame
 import rommlib
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, hline, installed_mark, measure, rrect, text, wrap
+from rbui.draw import focus_box, hline, installed_mark, measure, text, wrap
+from rbui.widgets.chips import tag as draw_tag
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.games import GameListScreen, surprise
 from rbui.modals import ActionMenu
@@ -215,11 +215,8 @@ class CollectionScreen(ListScreen):
             right = 150 + (24 + int(measure(self.f.small, "{:,}".format(here))) if here else 0)
             tag = it["tag"]
             if tag:
-                tw = int(measure(self.f.tiny, tag)) + 14
-                tr = pygame.Rect(r.right - right - tw, r.centery - 10, tw, 20)
-                rrect(c, theme.BG2, tr, 6)
-                text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
-                right += tw + 16
+                tr = draw_tag(c, self.f.tiny, tag, (r.right - right, r.centery), "midright", color=theme.DIM)
+                right += tr.width + 16
             # full name: one line if it fits, else two smaller lines — never "…"
             name = it["name"]
             avail = r.width - 22 - right
@@ -241,10 +238,4 @@ class CollectionScreen(ListScreen):
             if here:                                   # like the platform cards: green tick + count
                 hr = text(c, self.f.small, "{:,}".format(here), (cr.left - 14, r.centery), theme.GREEN, "midright")
                 installed_mark(c, (hr.left - 11, r.centery), 7)
-        n = len(self.items)
-        if n > rows:
-            track = pygame.Rect(W - 30, 80, 4, rows * self.ROW_H - 4)
-            rrect(c, theme.LINE, track, 2)
-            h = max(24, track.height * rows // n)
-            yy = track.top + int((track.height - h) * (self.sel / max(1, n - 1)))
-            rrect(c, theme.ACCENT, (track.left, yy, 4, h), 2)
+        self.draw_scrollbar(c, W - 30, 80, rows)

@@ -664,12 +664,7 @@ class GameListScreen(ListScreen):
         if self.loading:
             text(c, self.f.body, "Loading…", (lx + lw // 2, ly + 120), theme.DIM, "center")
         # scrollbar
-        if self.total and self.total > self.ROWS:
-            track = pygame.Rect(lx + lw + 6, ly, 4, self.ROWS * self.ROW_H - 4)
-            rrect(c, theme.LINE, track, 2)
-            h = max(24, track.height * self.ROWS // self.total)
-            yy = track.top + int((track.height - h) * (self.sel / max(1, self.total - 1)))
-            rrect(c, theme.ACCENT, (track.left, yy, 4, h), 2)
+        self.draw_scrollbar(c, lx + lw + 6, ly, n=self.total or 0)
         # detail panel
         if self.items and self.items[self.sel] is not None:
             self.draw_detail(c, self.items[self.sel])

@@ -6,8 +6,7 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import theme
-from rbui.theme import S, SR
-from rbui.draw import measure, rrect, text
+from rbui.draw import hatch, measure, meter, rrect, text
 
 
 # ---- On this box: shared data and the space bar
@@ -135,16 +134,6 @@ def conversion_status(r):
     return st, (pct or 0) / 100.0
 
 
-def hatch(surf, rect, color, step=9):
-    """Diagonal stripes: space that's set aside, not used."""
-    pr = SR(rect)
-    old = surf.get_clip()
-    surf.set_clip(pr.clip(old) if old else pr)
-    for x in range(pr.left - pr.height, pr.right, max(2, S(step))):
-        pygame.draw.line(surf, color, (x, pr.bottom), (x + pr.height, pr.top), max(1, S(2)))
-    surf.set_clip(old)
-
-
 def space_parts(rows, total, free):
     """The space bar's used parts, summed over systems; the rest of the used
     space is Batocera itself, saves and BIOS."""
@@ -160,28 +149,8 @@ def space_bar(surf, fonts, rect, parts, total, free, keep, cols=2):
     x, y, w, h = rect
     if total <= 0:
         return y
-    pr = SR(rect)
-    bar = pygame.Surface(pr.size, pygame.SRCALPHA)
-    bar.fill(theme.BG2)
-    kw = int(pr.width * min(keep, total) / total)
-    kr = pygame.Rect(pr.width - kw, 0, kw, pr.height)
-    old = bar.get_clip()
-    bar.set_clip(kr)
-    for sx in range(kr.left - pr.height, kr.right, max(2, S(9))):
-        pygame.draw.line(bar, theme.LINE, (sx, pr.height), (sx + pr.height, 0), max(1, S(2)))
-    bar.set_clip(old)
-    cx = 0
-    for key, col, lab, n in parts:
-        sw = int(pr.width * n / total)
-        if n and sw < S(3):
-            sw = S(3)
-        if sw:
-            bar.fill(col, (cx, 0, sw, pr.height))
-            cx += sw
-    mask = pygame.Surface(pr.size, pygame.SRCALPHA)
-    pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=pr.height // 2)
-    bar.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-    surf.blit(bar, pr.topleft)
+    meter(surf, rect, [(n / total, col) for key, col, lab, n in parts], track=theme.BG2, least=3,
+          reserve=min(keep, total) / total)
     usable = max(0, free - keep)
     items = [(lab, n, col) for key, col, lab, n in parts if n] + \
         [("Free for downloads", usable, None), ("Kept free", min(keep, total), "hatch")]

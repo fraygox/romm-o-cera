@@ -7,7 +7,7 @@ they stay under SCALED_SHARE of draw.COVER_BUDGET."""
 import pygame
 from rbui import draw, theme
 from rbui.theme import mix, SR
-from rbui.draw import installed_mark, measure, rrect, scroll_text, smooth_scale, surface_bytes, text, wrap
+from rbui.draw import card, installed_mark, measure, rrect, scroll_text, smooth_scale, surface_bytes, text, wrap
 
 SCALED_SHARE = 0.5          # scaled copies may take this much of draw.COVER_BUDGET
 
@@ -142,7 +142,7 @@ def collection_card(c, app, name, roms, rect, focused=False, sub=""):
     """A wide collection tile: the mosaic at its left, the name (two lines) and sub beside it."""
     rect = pygame.Rect(rect)
     f = app.fonts
-    rrect(c, theme.PANEL_HI if focused else theme.PANEL, rect, 10)
+    card(c, rect, focused, 10)
     side = min(rect.height - 12, rect.width // 2)
     mosaic(c, app, roms, (rect.left + 6, rect.top + 6, side, rect.height - 12), radius=6)
     tx = rect.left + side + 18
@@ -155,8 +155,6 @@ def collection_card(c, app, name, roms, rect, focused=False, sub=""):
             text(c, f.body, ln, (tx, rect.top + 12 + i * 24), theme.DIM)
     if sub:
         text(c, f.small, sub, (tx, rect.bottom - 30), theme.FAINT, maxw=tw)
-    if focused:
-        rrect(c, theme.ACCENT, rect, 10, 2)
     return rect
 
 

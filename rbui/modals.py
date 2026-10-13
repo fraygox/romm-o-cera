@@ -7,8 +7,8 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import (button_glyph, circle, focus_box, hline, marquee, polyline, rom_title, rrect, scroll_text,
-                       text)
+from rbui.draw import chevron, circle, focus_box, hline, marquee, rom_title, rrect, scroll_text, text
+from rbui.widgets.hero import verb_button
 
 
 # ------------------------------------------------------------------ modals
@@ -94,8 +94,8 @@ class ActionMenu:
         self.off = off = max(0, min(off, body - view))
         for up, show in ((True, off > 0), (False, off + view < body)):
             if show:                             # more rows above / below
-                cy, d = (r.top + 62, -5) if up else (r.bottom - 10, 5)
-                polyline(c, theme.FAINT, [(r.centerx - 8, cy - d), (r.centerx, cy + d), (r.centerx + 8, cy - d)], 2)
+                chevron(c, theme.FAINT, (r.centerx, r.top + 62 if up else r.bottom - 10), "up" if up else "down",
+                        16, 10)
         for i, e in enumerate(self.entries):
             h = self._height(e)
             y = r.top + 72 + tops[i] - off
@@ -123,11 +123,8 @@ class ActionMenu:
             elif kind == "choice":
                 vr = text(c, f.body, str(value), (row.right - 40, row.centery),
                           theme.ACCENT_HI if on else theme.DIM, "midright")
-                for side, x0 in ((-1, vr.left - 16), (1, row.right - 26)):
-                    pts = [(x0 + 4, row.centery - 6), (x0 - 2, row.centery), (x0 + 4, row.centery + 6)]
-                    if side > 0:
-                        pts = [(x0 - 2, row.centery - 6), (x0 + 4, row.centery), (x0 - 2, row.centery + 6)]
-                    polyline(c, theme.ACCENT_HI if on else theme.FAINT, pts, 2)
+                for side, x0 in (("left", vr.left - 15), ("right", row.right - 25)):
+                    chevron(c, theme.ACCENT_HI if on else theme.FAINT, (x0, row.centery), side)
                 if fn:                                  # ‹ and the value's left half step back
                     bx = min(vr.left - 28, vr.centerx - 60)
                     self.app.hit((bx, row.top, vr.centerx - bx, row.height), lambda i=i: self.tap(i, "left"))
@@ -229,24 +226,15 @@ class Confirm:
         bx = r.left + 32
         by = r.bottom - 58
         okw, nw = (220, 150) if self.alt else (260, 180)
-        okr = pygame.Rect(bx, by, okw, 40)
+        okr = verb_button(c, f, (bx, by, okw, 40), self.ok_label, "danger" if self.danger else "go")
         self.app.hit(okr, lambda: self.action("ok"))
-        rrect(c, theme.RED if self.danger else theme.ACCENT, okr, 10)
-        g = button_glyph(c, f, "A", okr.left + 12, okr.centery - 11)
-        text(c, f.h3, self.ok_label, (okr.left + 22 + g, okr.centery), theme.TEXT, "midleft")
         nx = okr.right + 16
         if self.alt:
-            ar = pygame.Rect(nx, by, 170, 40)
+            ar = verb_button(c, f, (nx, by, 170, 40), self.alt[0], "quiet", glyph="Y")
             self.app.hit(ar, lambda: self.action("y"))
-            rrect(c, theme.PANEL_HI, ar, 10)
-            g = button_glyph(c, f, "Y", ar.left + 12, ar.centery - 11)
-            text(c, f.h3, self.alt[0], (ar.left + 22 + g, ar.centery), theme.TEXT, "midleft")
             nx = ar.right + 16
-        nr = pygame.Rect(nx, by, nw, 40)
+        nr = verb_button(c, f, (nx, by, nw, 40), "Back", "quiet", glyph="B")
         self.app.hit(nr, lambda: self.action("back"))
-        rrect(c, theme.PANEL_HI, nr, 10)
-        g = button_glyph(c, f, "B", nr.left + 12, nr.centery - 11)
-        text(c, f.h3, "Back", (nr.left + 22 + g, nr.centery), theme.DIM, "midleft")
 
 
 class InfoDialog(Confirm):

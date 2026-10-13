@@ -4,7 +4,7 @@ import time
 import pygame
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import measure, polyline, rrect, scroll_text, text
+from rbui.draw import measure, polyline, rrect, scroll_text, scrollbar, text
 from rbui.modals import ActionMenu
 
 
@@ -313,6 +313,13 @@ class ListScreen(Screen):
         elif k >= self.scroll + rows:
             self.scroll = k - rows + 1
         return range(self.scroll, min(len(self.listed()), self.scroll + rows))
+
+    def draw_scrollbar(self, c, x, y, rows=None, n=None):
+        """Where sel is in the list: draw.scrollbar at x from y, as tall as rows rows, when the
+        list (n rows, default all listed) is longer than that."""
+        rows, n = rows or self.ROWS, len(self.listed()) if n is None else n
+        if n > rows:
+            scrollbar(c, (x, y, 4, rows * self.ROW_H - 4), rows / n, (self.sel - self.base) / max(1, n - 1))
 
     def tile_nav(self, a, wrap=False):
         """The `base` tiles above the rows: left/right among them (wrap: past

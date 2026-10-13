@@ -24,10 +24,12 @@ def facts_layout(f, pairs, width, cols=2):
     return cells, y
 
 
-def facts(c, f, pairs, rect, cols=2, key=None, slot=None, bg=None, strong=()):
-    """The facts in rect (logical): label (faint) over value (labels in strong: the value in TEXT,
-    the rest DIM). When they're taller than rect they scroll in it like prose does (scroll_box).
-    bg: the colour behind (default PANEL). Returns the rect they took up."""
+def facts(c, f, pairs, rect, cols=2, key=None, slot=None, bg=None, strong=(), colors=None):
+    """The facts in rect (logical): label (faint) over value (labels in strong: the value in TEXT;
+    colors: {label: colour} for others; the rest DIM). When they're taller than rect they scroll
+    in it like prose does (scroll_box). bg: the colour behind (default PANEL). Returns the rect
+    they took up."""
+    colors = colors or {}
     rect = pygame.Rect(rect)
     cells, total = facts_layout(f, pairs, rect.width, cols)
     if total > rect.height:
@@ -38,5 +40,5 @@ def facts(c, f, pairs, rect, cols=2, key=None, slot=None, bg=None, strong=()):
             text(c, f.small, label, (rect.left + x, top + y), theme.FAINT)
             for j, ln in enumerate(lines):
                 text(c, f.cond, ln, (rect.left + x, top + y + LABEL_H + j * LINE_H),
-                     theme.TEXT if label in strong else theme.DIM)
+                     colors.get(label) or (theme.TEXT if label in strong else theme.DIM))
     return scroll_box(c, rect, total, paint, (tuple(cells), key), slot or ("facts",) + tuple(rect), bg)

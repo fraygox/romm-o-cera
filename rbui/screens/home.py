@@ -6,7 +6,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import W
-from rbui.draw import focus_box, hline, installed_mark, measure, rrect, scroll_text, text, wrap
+from rbui.draw import card, focus_box, hline, installed_mark, measure, rrect, scroll_text, scrollbar, text, wrap
 from rbui.screens.base import Screen
 from rbui.screens.collection import CollectionScreen
 from rbui.screens.games import GameListScreen, SearchScreen, surprise
@@ -305,9 +305,7 @@ class PlatformScreen(Screen):
                             y0 + (r_i - self.scroll) * (self.CH + self.GAP), self.CW, self.CH)
             self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
-            rrect(c, theme.PANEL_HI if on else theme.PANEL, r, 14)
-            if on:
-                rrect(c, theme.ACCENT, r, 14, 2)
+            card(c, r, on, 14)
             name = p.get("display_name") or p["name"]
             lines = wrap(self.f.h3, name, r.width - 36, 2)
             for k, ln in enumerate(lines):
@@ -326,8 +324,5 @@ class PlatformScreen(Screen):
         # scrollbar
         total_rows = (len(plats) + self.COLS - 1) // self.COLS
         if total_rows > rows_vis:
-            track = pygame.Rect(W - 20, y0, 4, rows_vis * (self.CH + self.GAP) - self.GAP)
-            rrect(c, theme.LINE, track, 2)
-            h = max(30, track.height * rows_vis // total_rows)
-            yy = track.top + (track.height - h) * self.scroll // (total_rows - rows_vis)
-            rrect(c, theme.ACCENT, (track.left, yy, 4, h), 2)
+            scrollbar(c, (W - 20, y0, 4, rows_vis * (self.CH + self.GAP) - self.GAP), rows_vis / total_rows,
+                      self.scroll / (total_rows - rows_vis))

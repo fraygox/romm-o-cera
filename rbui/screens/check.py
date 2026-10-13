@@ -7,7 +7,8 @@ import pygame
 import rommlib
 from rbui import pads, theme
 from rbui.theme import W
-from rbui.draw import circle, focus_box, hline, marquee, measure, rrect, scroll_text, text
+from rbui.draw import circle, focus_box, hline, measure, rrect, scroll_text, text
+from rbui.widgets.layout import list_row
 from rbui.screens.base import ListScreen, Screen
 from rbui.screens.box_data import plural
 from rbui.screens.unseen import UnseenScreen
@@ -206,21 +207,12 @@ class AuditScreen(ListScreen):
     def draw_rows(self, c, y, rows):
         for i, r, on in self.row_rects(y, gap=6, rows=rows):
             f = self.findings[i]
-            if on:
-                focus_box(c, r)
             col = theme.RED if f["severity"] == "damaged" else theme.AMBER
-            if not self.draw_pick(c, f, (r.left + 18, r.top + 20)):
-                circle(c, col, (r.left + 18, r.top + 20), 5)
-            name = os.path.relpath(f["path"], os.path.join(rommlib.ROMS_ROOT, f["system"]))
-            marquee(c, self.f.row, name, (r.left + 34, r.top + 8), theme.TEXT if on else theme.DIM,
-                    maxw=r.width - 230, focused=on, slot="check-name")
-            marquee(c, self.f.small, f["problem"], (r.left + 34, r.top + 34), col, maxw=r.width - 230, focused=on,
-                    slot="check-problem")
-            tag = "queued" if f["path"] in self.queued else f["system"]
-            tw = int(measure(self.f.tiny, tag)) + 14
-            tr = pygame.Rect(r.right - 20 - tw, r.top + 10, tw, 20)
-            rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.GREEN if f["path"] in self.queued else theme.DIM, "center")
+            queued = f["path"] in self.queued
+            list_row(c, self.f, r, on, os.path.relpath(f["path"], os.path.join(rommlib.ROMS_ROOT, f["system"])),
+                     f["problem"], sub_color=col, slot="check", tag="queued" if queued else f["system"],
+                     tag_color=theme.GREEN if queued else theme.DIM,
+                     mark=lambda ctr, f=f, col=col: self.draw_pick(c, f, ctr) or circle(c, col, ctr, 5) or True)
 
 
 class CheckScreen(AuditScreen):

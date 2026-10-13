@@ -5,7 +5,7 @@ import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import marquee, measure, progress_bar, rich_text, rrect, text
+from rbui.draw import card, marquee, measure, progress_bar, rich_text, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import plural
 from rbui.screens.installed import ConversionsScreen
@@ -262,9 +262,7 @@ class DownloadsScreen(ListScreen):
         npend = sum(1 for j in jobs if j.active or j.state == J.PAUSED)
         for i, r, on in self.row_rects(y, gap=6, rows=rows):
             j = jobs[i]
-            rrect(c, theme.PANEL_HI if on else theme.PANEL, r, 12)
-            if on:
-                rrect(c, theme.ACCENT, r, 12, 2)
+            card(c, r, on)
             x = r.left + 20
             if self.draw_pick(c, j, (x + 9, r.top + 24)):
                 x += 30

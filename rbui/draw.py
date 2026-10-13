@@ -436,26 +436,90 @@ def rich_text(surf, fonts, font, s, pos, color=None, anchor="topleft", maxw=None
     return pygame.Rect(pos[0], top, x - pos[0], lh)
 
 
+def card(surf, rect, on=False, radius=12, bg=None):
+    """A row or tile's box: focused, the focus box; else a plain fill (default PANEL)."""
+    if on:
+        focus_box(surf, rect, radius)
+    else:
+        rrect(surf, theme.PANEL if bg is None else bg, rect, radius)
+
+
+def chevron(surf, color, center, side, span=12, depth=6, width=2):
+    """A chevron pointing to side ("left", "right", "up", "down"): a choice's ‹ ›, "more above"."""
+    cx, cy = center
+    d = 1 if side in ("right", "down") else -1
+    s, k = span / 2, depth / 2
+    if side in ("left", "right"):
+        pts = [(cx - k * d, cy - s), (cx + k * d, cy), (cx - k * d, cy + s)]
+    else:
+        pts = [(cx - s, cy - k * d), (cx, cy + k * d), (cx + s, cy - k * d)]
+    polyline(surf, color, pts, width)
+
+
+def scrollbar(surf, rect, shown, pos, color=None, min_h=24, radius=2):
+    """Where a list is: a LINE track (rect, logical) with a thumb `shown` (0..1) of it tall at
+    `pos` (0 top .. 1 bottom), in color (default ACCENT). Draw it only when the list overflows."""
+    track = pygame.Rect(rect)
+    rrect(surf, theme.LINE, track, radius)
+    th = min(track.height, max(min_h, int(track.height * min(1.0, shown))))
+    y = track.top + int((track.height - th) * max(0.0, min(1.0, pos)))
+    rrect(surf, theme.ACCENT if color is None else color, (track.left, y, track.width, th), radius)
+
+
 def progress_bar(surf, rect, frac, color=None):
     """A rounded bar on a LINE track, frac (0..1) of it filled in color (default ACCENT)."""
     meter(surf, rect, [(frac, theme.ACCENT if color is None else color)])
 
 
-def meter(surf, rect, parts, track=None):
+def _stripes(surf, prect, color, step=9):
+    old = surf.get_clip()
+    surf.set_clip(prect.clip(old) if old else prect)
+    for x in range(prect.left - prect.height, prect.right, max(2, S(step))):
+        pygame.draw.line(surf, color, (x, prect.bottom), (x + prect.height, prect.top), max(1, S(2)))
+    surf.set_clip(old)
+
+
+def hatch(surf, rect, color, step=9):
+    """Diagonal stripes over rect (logical): space that's set aside, not used."""
+    _stripes(surf, SR(rect), color, step)
+
+
+_MASKS = OrderedDict()      # physical size -> the rounded-bar alpha mask meter() clips to
+
+
+def meter(surf, rect, parts, track=None, least=None, reserve=0.0):
     """A bar of segments, left to right: parts = [(fraction of the whole, colour)], on a track
-    (default LINE). Each segment shows at least as wide as the bar is tall; the bar keeps its
-    rounded ends (Backlog: what fits now in ACCENT, then what waits in AMBER)."""
-    x, y, w, h = rect
-    rrect(surf, theme.LINE if track is None else track, rect, h // 2)
-    cx, end = x, x + w
-    for frac, col in parts:
-        if frac <= 0 or cx >= end:
-            continue
-        sw = min(end - cx, max(h, int(round(w * min(1.0, frac)))))
-        rrect(surf, col, (cx, y, sw, h), h // 2)
-        if cx > x:                      # joined to the one before: square its left end
-            rrect(surf, col, (cx, y, min(sw, h // 2 + 1), h), 0)
+    (default LINE), the whole clipped to one rounded bar; the last segment's end is rounded.
+    least: the narrowest a segment shows (logical, default the bar's height). reserve: the last
+    fraction of the track striped in LINE (space downloads never use). Progress, Backlog's
+    "fits now / waits", the drive's space by kind."""
+    pr = SR(rect)
+    w, h = pr.size
+    if w <= 0 or h <= 0:
+        return
+    bar = pygame.Surface(pr.size, pygame.SRCALPHA)
+    bar.fill(theme.LINE if track is None else track)
+    if reserve > 0:
+        kw = int(w * min(1.0, reserve))
+        _stripes(bar, pygame.Rect(w - kw, 0, kw, h), theme.LINE)
+    least = h if least is None else S(least)
+    shown = [(frac, col) for frac, col in parts if frac > 0]
+    cx = 0
+    for k, (frac, col) in enumerate(shown):
+        if cx >= w:
+            break
+        sw = min(w - cx, max(least, int(round(w * min(1.0, frac)))))
+        cap = h // 2 if k == len(shown) - 1 else -1
+        pygame.draw.rect(bar, col, (cx, 0, sw, h), border_top_right_radius=cap, border_bottom_right_radius=cap)
         cx += sw
+    mask = _MASKS.get(pr.size)
+    if mask is None:
+        mask = _MASKS[pr.size] = pygame.Surface(pr.size, pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=h // 2)
+        if len(_MASKS) > 32:
+            _MASKS.popitem(last=False)
+    bar.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    surf.blit(bar, pr.topleft)
 
 
 def state_stripe(surf, rect, color):
@@ -579,10 +643,8 @@ def scroll_box(surf, rect, total, paint, sig, slot=None, bg=None, t=None, edge=1
             _fade(surf, bg, pygame.Rect(prect.left, prect.top, prect.width, fh), "top")
         if off < over - 0.5:
             _fade(surf, bg, pygame.Rect(prect.left, prect.bottom - fh, prect.width, fh), "bottom")
-        track = pygame.Rect(rect.right - 3, rect.top + 2, 3, rect.height - 4)
-        rrect(surf, theme.LINE, track, 1)
-        th = max(12, track.height * rect.height / total)
-        rrect(surf, theme.FAINT, (track.left, track.top + (track.height - th) * off / over, 3, th), 1)
+        scrollbar(surf, (rect.right - 3, rect.top + 2, 3, rect.height - 4), rect.height / total, off / over,
+                  theme.FAINT, 12, 1)
     surf.set_clip(old)
     return pygame.Rect(rect.left, rect.top, rect.width, int(min(total, rect.height) + 0.999))
 

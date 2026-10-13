@@ -12,7 +12,9 @@ across the whole screen.
 import pygame
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import button_glyph, focus_box, hline, marquee, measure, rich_text, rrect, scroll_text, text
+from rbui.draw import focus_box, hline, marquee, measure, meter, rich_text, rrect, scroll_text, text
+from rbui.widgets.chips import button_chip, button_chip_width, tag as draw_tag
+from rbui.widgets.factsheet import facts
 
 CONTENT = pygame.Rect(32, 80, W - 64, 576)     # under the top bar, above the hint bar
 GAP = 20                                       # between the list and the panel
@@ -57,10 +59,11 @@ def list_head(c, f, lst, title, note="", note_color=None, color=None):
 
 
 def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_color=None, sub_color=None,
-             mark=None, slot="row"):
+             mark=None, slot="row", tag=None, tag_color=None):
     """One row: the focus box, a mark at the left (mark(center) draws a tick box or dot and
     returns True when it did), the label with a grey line under it (the focused row's slide
-    when too long), and a short status right-aligned in the row. Returns the text's x."""
+    when too long), a short status right-aligned in the row and, left of it, a tag (chips.tag:
+    a system, "queued"). Returns the text's x."""
     if on:
         focus_box(c, r)
     tx = r.left + (48 if mark and mark((r.left + 22, r.centery)) else ROW_PAD)
@@ -69,6 +72,8 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         sr = text(c, f.small, status, (right, r.centery), status_color or theme.DIM, "midright",
                   maxw=r.width * 2 // 5)
         right = sr.left - 24
+    if tag:
+        right = draw_tag(c, f.tiny, tag, (right, r.centery), "midright", color=tag_color).left - 16
     lh, sh = f.row.get_height() / theme.K, f.small.get_height() / theme.K
     top = r.centery - ((lh + sh) / 2 if sub else lh / 2)
     marquee(c, f.row, label, (tx, top), label_color or (theme.TEXT if on else theme.DIM), maxw=right - tx,
@@ -77,28 +82,6 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         marquee(c, f.small, sub, (tx, top + lh), sub_color or theme.FAINT, maxw=right - tx, focused=on,
                 slot=slot + "-sub")
     return tx
-
-
-def chip(c, f, pos, token, label, hot=False, maxw=None):
-    """A small button with its pad glyph ([X] Compress all): its rect."""
-    lw = measure(f.small, label)
-    if maxw:
-        lw = min(lw, maxw - 58)
-    r = pygame.Rect(pos[0], pos[1], int(12 + 22 + 8 + lw + 16), 36)
-    rrect(c, theme.PANEL_HI if hot else theme.BG2, r, 18)
-    if hot:
-        rrect(c, theme.ACCENT, r, 18, 2)
-    g = button_glyph(c, f, token, r.left + 12, r.centery - 11)
-    text(c, f.small, label, (r.left + 12 + g + 8, r.centery), theme.TEXT if hot else theme.DIM, "midleft",
-         maxw=int(lw) + 1)
-    return r
-
-
-def fact(c, f, label, value, x, y, w, color=None):
-    """A grey label with its value under it; returns the y below."""
-    text(c, f.small, label, (x, y), theme.FAINT)
-    text(c, f.cond, str(value), (x, y + 17), color or theme.DIM, maxw=w)
-    return y + 42
 
 
 class Panel:
@@ -138,7 +121,17 @@ class Panel:
         """A grey label with its value under it (skipped when there's no value)."""
         if value in (None, "") or self.room() < 40:
             return
-        self.y = fact(self.c, self.f, label, value, self.x, self.y, self.w, color) + 6
+        self.facts([(label, value)], cols=1, colors={label: color} if color else None)
+
+    def facts(self, pairs, cols=2, lines=None, strong=(), colors=None):
+        """factsheet.facts in the panel's width: label-over-value cells in cols columns, scrolling
+        when they're taller than `lines` fact rows (default: all the room left)."""
+        h = self.room() if lines is None else min(self.room(), lines * 42)
+        if h < 40:
+            return
+        used = facts(self.c, self.f, pairs, (self.x, self.y, self.w, h), cols, key=self.key, slot=self._slot(),
+                     strong=strong, colors=colors)
+        self.y = used.bottom + 6 if used.height else self.y
 
     def pair(self, label, value, color=None, label_color=None):
         """Label on the left, value on the right of one line (a long label ends in "…")."""
@@ -148,9 +141,9 @@ class Panel:
         self.y += 24
 
     def bar(self, frac, color=None):
-        rrect(self.c, theme.LINE, (self.x, self.y, self.w, 10), 5)
-        if frac > 0:
-            rrect(self.c, color or theme.ACCENT, (self.x, self.y, max(10, int(self.w * min(1.0, frac))), 10), 5)
+        """A progress bar across the panel: frac (0..1) of it in color, or parts as for meter."""
+        meter(self.c, (self.x, self.y, self.w, 10), frac if isinstance(frac, list) else
+              [(frac, theme.ACCENT if color is None else color)])
         self.y += 22
 
     def prose(self, s, label=None, color=None, lines=None, line_h=22):
@@ -177,7 +170,7 @@ class Panel:
         with fn is tapped like its button."""
         lines, cur, cw = [], [], 0
         for tok, lab, fn in items:
-            w = 12 + 22 + 8 + min(measure(self.f.small, lab), self.w - 58) + 16
+            w = button_chip_width(self.f, tok, lab, self.w)
             if cur and cw + 8 + w > self.w:
                 lines.append(cur)
                 cur, cw = [], 0
@@ -189,7 +182,7 @@ class Panel:
         for line in reversed(lines):
             x = self.x
             for tok, lab, fn in line:
-                r = chip(self.c, self.f, (x, y), tok, lab, maxw=self.w)
+                r = button_chip(self.c, self.f, (x, y), tok, lab, maxw=self.w)
                 if fn and self.app:
                     self.app.hit(r, fn)
                 x = r.right + 8

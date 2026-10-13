@@ -6,7 +6,9 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import theme
-from rbui.draw import circle, focus_box, hline, measure, progress_bar, rich_text, rrect, scroll_text, text
+from rbui.draw import (circle, focus_box, hline, meter, progress_bar, rich_text, rrect, scroll_text,
+                       state_stripe, text)
+from rbui.widgets.chips import status_chip, tag
 from rbui.screens.base import Screen
 from rbui.screens.box_data import (bios_pill, bios_rows, conversion_rows, conversion_status, disk_space,
                                    installed_games, pending_roms, plural, space_bar, space_parts, storage_by_system)
@@ -201,11 +203,7 @@ class OnThisBoxScreen(Screen):
         yy = p.top + 72
         for g in self.games[:7]:
             text(c, self.f.row, g["name"], (x, yy), theme.DIM, maxw=p.width - 240)
-            tag = g["system"] or "?"
-            tw = int(measure(self.f.tiny, tag)) + 14
-            tr = pygame.Rect(p.right - 128 - tw, yy + 3, tw, 20)
-            rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
+            tag(c, self.f.tiny, g["system"] or "?", (p.right - 128, yy + 3), "topright", color=theme.DIM)
             text(c, self.f.small, human_size(g["size"]), (p.right - 28, yy + 3), theme.DIM, "topright")
             yy += 44
         if len(self.games) > 7:
@@ -229,12 +227,8 @@ class OnThisBoxScreen(Screen):
             big = self.storage[0]["total"] or 1
             for r in self.storage[:3]:
                 text(c, self.f.body, r["system"], (x, yy), theme.DIM, maxw=110)
-                bx, bw = x + 120, w - 230
-                for k, col, _ in theme.SPACE_PARTS:
-                    sw = int(bw * r[k] / big)
-                    if sw:
-                        rrect(c, col, (bx, yy + 8, max(4, sw), 8), 4)
-                        bx += sw + 2
+                meter(c, (x + 120, yy + 8, w - 230, 8), [(r[k] / big, col) for k, col, _ in theme.SPACE_PARTS],
+                      track=theme.PANEL, least=4)
                 text(c, self.f.small, human_size(r["total"]), (p.right - 28, yy + 1), theme.DIM, "topright")
                 yy += 30
         if self.leftovers:
@@ -254,12 +248,9 @@ class OnThisBoxScreen(Screen):
         yy = p.top + 70
         for it in here[:6]:
             pill, col, sub = bios_pill(it)
-            pw = int(measure(self.f.small, pill)) + 24
-            text(c, self.f.row, it["name"], (x, yy), theme.DIM, maxw=p.width - 90 - pw)
-            text(c, self.f.small, sub, (x, yy + 26), theme.FAINT, maxw=p.width - 90 - pw)
-            pr = pygame.Rect(p.right - 28 - pw, yy + 6, pw, 30)
-            rrect(c, theme.BG2, pr, 15)
-            text(c, self.f.small, pill, pr.center, col, "center")
+            pr = status_chip(c, self.f.small, pill, (p.right - 28, yy + 6), col, "topright", h=30)
+            text(c, self.f.row, it["name"], (x, yy), theme.DIM, maxw=pr.left - 34 - x)
+            text(c, self.f.small, sub, (x, yy + 26), theme.FAINT, maxw=pr.left - 34 - x)
             yy += 64
         others = len(self.bios) - len(here)
         more = (["%s more" % plural(len(here) - 6, "system")] if len(here) > 6 else []) + \
@@ -284,7 +275,7 @@ class OnThisBoxScreen(Screen):
                 col = theme.RED if f["severity"] == "damaged" else theme.AMBER
                 r = pygame.Rect(x, yy, p.width - 56, 70)
                 rrect(c, theme.BG2, r, 10)
-                rrect(c, col, (r.left, r.top + 12, 4, r.height - 24), 2)
+                state_stripe(c, r, col)
                 name = (f.get("rom") or {}).get("name") or os.path.basename(f["path"])
                 text(c, self.f.row, name, (r.left + 20, r.top + 10), theme.TEXT, maxw=r.width - 120)
                 text(c, self.f.small, f["problem"], (r.left + 20, r.top + 40), col, maxw=r.width - 40)

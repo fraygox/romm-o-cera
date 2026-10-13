@@ -5,7 +5,7 @@ import pygame
 from rbui import theme
 from rbui.theme import (apply_theme, CUSTOM_MODES, H, custom_from, custom_palette, hue_name, palette_of, set_custom, SR,
                         THEME_DESC, THEME_GROUPS, theme_base, theme_oled, THEMES)
-from rbui.draw import circle, polyline, rich_text, rich_width, rrect, scroll_text, text
+from rbui.draw import card, chevron, circle, focus_box, polyline, rich_text, rich_width, rrect, scroll_text, scrollbar, text
 from rbui.pads import theme_for
 from rbui.screens.base import Screen
 
@@ -290,11 +290,8 @@ class ThemePickerScreen(Screen):
             self.draw_card(c, i, rr, area)
         c.set_clip(clip)
         if total > view:                                            # where in the list
-            track = pygame.Rect(self.X0 + self.COLS * (self.CW + self.GAP) + 2, self.TOP, 4, view - 5)
-            rrect(c, theme.LINE, track, 2)
-            h = max(30, track.height * view // total)
-            yy = track.top + int((track.height - h) * min(1, self.scroll_f / max(1, total - view)))
-            rrect(c, theme.ACCENT, (track.left, yy, 4, h), 2)
+            scrollbar(c, (self.X0 + self.COLS * (self.CW + self.GAP) + 2, self.TOP, 4, view - 5), view / total,
+                      self.scroll_f / max(1, total - view))
         self.draw_panel(c)
 
     def draw_card(self, c, i, rr, area):
@@ -387,8 +384,7 @@ class ThemePickerScreen(Screen):
             self.app.hit(self.copy_button, self.edit_copy)
         # a row as the lists draw it, focused and not: the text at its real size
         row = pygame.Rect(x, p.bottom - 176, w, 52)
-        rrect(c, theme.PANEL_HI, row, 12)
-        rrect(c, theme.ACCENT, row, 12, 2)
+        focus_box(c, row, 12)
         text(c, self.f.h3, "A focused row", (row.left + 16, row.top + 4), theme.TEXT, maxw=w - 32)
         text(c, self.f.small, "Its grey line", (row.left + 16, row.top + 28), theme.FAINT, maxw=w - 32)
         row = row.move(0, 58)
@@ -516,16 +512,13 @@ class CustomThemeScreen(Screen):
             r = pygame.Rect(48, self.ROW_Y + n * self.ROW_H, 700, self.ROW_H - 8)
             on = n == self.sel
             self.app.hit(r, lambda n=n: setattr(self, "sel", n))
-            rrect(c, theme.PANEL_HI if on else theme.PANEL, r, 12)
-            if on:
-                rrect(c, theme.ACCENT, r, 12, 2)
+            card(c, r, on)
             text(c, self.f.h3, label, (r.left + 22, r.top + 8), theme.TEXT if on else theme.DIM)
             vr = text(c, self.f.body, self.value_text(row), (r.right - 22, r.top + 20), theme.TEXT if on else theme.DIM,
                       "midright", maxw=240)
             if on:                                                  # ‹ › around the value
-                for x0, d in ((vr.left - 12, -1), (r.right - 12, 1)):
-                    polyline(c, theme.ACCENT_HI, [(x0 - 3 * d, r.top + 14), (x0 + 3 * d, r.top + 20),
-                                                  (x0 - 3 * d, r.top + 26)], 2)
+                for x0, side in ((vr.left - 12, "left"), (r.right - 12, "right")):
+                    chevron(c, theme.ACCENT_HI, (x0, r.top + 20), side)
             strip = pygame.Rect(r.left + 22, r.top + 44, r.width - 44, 22)
             if row in ("accent", "tint"):
                 cols = self.hue_swatches() if row == "accent" else self.tint_swatches()

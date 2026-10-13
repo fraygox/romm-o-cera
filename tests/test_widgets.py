@@ -276,3 +276,70 @@ def test_meter_segments_follow_each_other(rb, fonts):
     assert c.get_at((290, 105))[:3] == rb.LINE
     rb.state_stripe(c, (100, 200, 400, 56), rb.BLUE)
     assert c.get_at((101, 228))[:3] == rb.BLUE
+
+
+def test_meter_keeps_small_parts_visible_and_stripes_the_reserve(rb, fonts):
+    c = _canvas(rb)
+    rb.meter(c, (100, 100, 400, 20), [(0.001, rb.ACCENT), (0.5, rb.BLUE)], track=rb.BG2, least=3, reserve=0.25)
+    assert c.get_at((101, 110))[:3] == rb.ACCENT          # at least 3 px wide
+    assert c.get_at((200, 110))[:3] == rb.BLUE
+    stripes = {tuple(c.get_at((x, 110))[:3]) for x in range(410, 490)}
+    assert tuple(rb.LINE) in stripes and tuple(rb.BG2) in stripes
+    assert {tuple(c.get_at((x, 110))[:3]) for x in range(320, 390)} == {tuple(rb.BG2)}
+    assert c.get_at((100, 100))[:3] == rb.BG               # the corner stays round
+    rb.progress_bar(c, (100, 200, 200, 10), 0.0)
+    assert c.get_at((200, 205))[:3] == rb.LINE
+
+
+def test_scrollbar_thumb_follows_the_position(rb, fonts):
+    c = _canvas(rb)
+    rb.scrollbar(c, (100, 100, 4, 200), 0.25, 0.0)
+    assert c.get_at((101, 110))[:3] == rb.ACCENT and c.get_at((101, 290))[:3] == rb.LINE
+    c = _canvas(rb)
+    rb.scrollbar(c, (100, 100, 4, 200), 0.01, 1.0)        # never thinner than min_h
+    assert c.get_at((101, 290))[:3] == rb.ACCENT and c.get_at((101, 278))[:3] == rb.ACCENT
+    assert c.get_at((101, 120))[:3] == rb.LINE
+
+
+def test_card_is_the_focus_box_when_focused(rb, fonts):
+    c = _canvas(rb)
+    rb.card(c, (100, 100, 200, 60), False)
+    rb.card(c, (100, 200, 200, 60), True)
+    assert c.get_at((200, 130))[:3] == rb.PANEL
+    assert c.get_at((200, 230))[:3] == rb.PANEL_HI and c.get_at((200, 200))[:3] == rb.ACCENT
+
+
+def test_button_chip_is_as_wide_as_it_says(rb, fonts):
+    c = _canvas(rb)
+    for tok in ("A", "SELECT"):
+        r = rb.button_chip(c, fonts, (10, 10), tok, "Compress all")
+        assert r.width == rb.button_chip_width(fonts, tok, "Compress all")
+    assert rb.button_chip_width(fonts, "SELECT", "x") > rb.button_chip_width(fonts, "A", "x")
+    assert rb.button_chip(c, fonts, (10, 10), "A", "A long label " * 9, maxw=200).width == 200
+
+
+def test_facts_take_a_colour_per_label(rb, fonts, monkeypatch):
+    seen = {}
+    real = rb.draw.text
+
+    def spy(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
+        seen[s] = color
+        return real(surf, font, s, pos, color, anchor, maxw)
+    rb.patch(monkeypatch, "text", spy)
+    rb.facts(_canvas(rb), fonts, [("License", "GPL"), ("Size", "1 GB"), ("Region", "USA")], (0, 0, 400, 200),
+             strong=("Size",), colors={"License": rb.ACCENT_HI})
+    assert seen["GPL"] == rb.ACCENT_HI and seen["1 GB"] == rb.TEXT and seen["USA"] == rb.DIM
+
+
+def test_a_dialogs_buttons_are_verb_buttons(rb, app, monkeypatch):
+    kinds = []
+    real = rb.verb_button
+
+    def spy(c, f, rect, label, kind="go", *a, **k):
+        kinds.append((label, kind, k.get("glyph", "A")))
+        return real(c, f, rect, label, kind, *a, **k)
+    rb.patch(monkeypatch, "verb_button", spy)
+    d = rb.Confirm(app, "Delete?", "Gone for good.", "Delete", lambda: None, danger=True)
+    d.alt = ("Another", lambda: None)
+    d.draw(app.canvas)
+    assert kinds == [("Delete", "danger", "A"), ("Another", "quiet", "Y"), ("Back", "quiet", "B")]

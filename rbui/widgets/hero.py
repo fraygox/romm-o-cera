@@ -12,10 +12,11 @@ VERB_H = 52                 # the verb button's height
 
 
 def verb_button(c, f, rect, label, kind="go", detail="", glyph="A", frac=0.0):
-    """The one big action. kind: "play" (green: the game is here), "go" (the accent: download,
-    pick, open), "quiet" (recessed: an undo, such as Unpick), "busy" (the label over a progress
-    bar at frac), "off" (nothing to do: the label faint and centred). detail sits at the right
-    (a size, a folder) when it fits whole beside the label. Returns rect."""
+    """The one big action, and any button bigger than a chip (a dialog's). kind: "play" (green:
+    the game is here), "go" (the accent: download, pick, open), "danger" (red: delete), "quiet"
+    (recessed: an undo such as Unpick, a dialog's Back), "busy" (the label over a progress bar
+    at frac), "off" (nothing to do: the label faint and centred). detail sits at the right (a
+    size, a folder) when it fits whole beside the label. Returns rect."""
     rect = pygame.Rect(rect)
     if kind == "off":
         rrect(c, theme.BG2, rect, 12)
@@ -27,8 +28,8 @@ def verb_button(c, f, rect, label, kind="go", detail="", glyph="A", frac=0.0):
         progress_bar(c, (rect.left + 18, rect.bottom - 16, rect.width - 36, 6), frac, theme.BLUE)
         return rect
     play = kind == "play"
-    rrect(c, mix(theme.BG, theme.GREEN, 0.18) if play else theme.BG2 if kind == "quiet" else theme.ACCENT,
-          rect, 12)
+    rrect(c, mix(theme.BG, theme.GREEN, 0.18) if play else theme.BG2 if kind == "quiet" else
+          theme.RED if kind == "danger" else theme.ACCENT, rect, 12)
     gx = rect.left + 18
     if glyph:
         gx += button_glyph(c, f, glyph, gx, rect.centery - 11) + 12
@@ -37,7 +38,8 @@ def verb_button(c, f, rect, label, kind="go", detail="", glyph="A", frac=0.0):
     if detail and measure(f.small, detail) <= room:      # whole or not at all
         text(c, f.small, detail, (rect.right - 20, rect.centery), theme.TEXT if kind == "go" else theme.DIM,
              "midright")
-    text(c, f.h3, label, (gx, rect.centery), theme.GREEN if play else theme.TEXT, "midleft", maxw=lw + 1)
+    text(c, f.h3, label, (gx, rect.centery), theme.GREEN if play else theme.DIM if kind == "quiet" else theme.TEXT,
+         "midleft", maxw=lw + 1)
     return rect
 
 

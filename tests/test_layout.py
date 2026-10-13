@@ -154,3 +154,29 @@ def test_compress_panel_says_now_and_after(app, rb, monkeypatch):
     scr._loaded(cands, [], {"createcd": 0.5})
     scr.draw(app.canvas)
     assert "After" in said and "500.0 MB, saves 500.0 MB" in said
+
+
+def test_a_row_tag_sits_left_of_the_status(app, rb, monkeypatch):
+    import pygame
+    tags = []
+    real = rb.chips.tag
+
+    def spy(c, font, label, pos, anchor="topleft", warn=False, color=None):
+        r = real(c, font, label, pos, anchor, warn, color)
+        tags.append((label, r, color))
+        return r
+    monkeypatch.setattr(rb.layout, "draw_tag", spy)
+    r = pygame.Rect(32, 124, 600, 52)
+    rb.list_row(app.canvas, app.fonts, r, True, "Dolor Dash (USA).chd", "Smaller than RomM's copy", "2.1 GB",
+                tag="psx", tag_color=rb.GREEN)
+    (label, tr, col), = tags
+    assert label == "psx" and col == rb.GREEN and r.left + 200 < tr.left and tr.right < r.right - 20 - 40
+
+
+def test_panel_facts_fill_columns_and_move_down(app, rb):
+    p = rb.Panel(app.canvas, app.fonts, rb.split(None)[1], app=app)
+    y = p.y
+    p.facts([("Size", "1.0 GB"), ("Format", "CHD"), ("Region", "USA")], cols=2)
+    assert p.y == y + 2 * 42 + 6
+    p.fact("Where", "")                                     # nothing to say: nothing drawn
+    assert p.y == y + 2 * 42 + 6

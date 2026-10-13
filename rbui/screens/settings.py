@@ -9,7 +9,7 @@ import rommlib
 from rommlib import human_size
 from rbui import APP_NAME, theme
 from rbui.theme import S, THEMES
-from rbui.draw import hline, marquee, measure, polyline, rich_text, rrect, scroll_text, text
+from rbui.draw import card, chevron, hline, marquee, measure, rich_text, rrect, scroll_text, scrollbar, text
 from rbui.pads import style_from_names, STYLE_NAMES
 from rbui.screens.base import Screen
 from rbui.screens.text_input import TextInputScreen
@@ -654,9 +654,7 @@ class SettingsScreen(Screen):
             r = pygame.Rect(48, y, 700, 52)
             self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
-            rrect(c, theme.PANEL_HI if on else theme.PANEL, r, 12)
-            if on:
-                rrect(c, theme.ACCENT, r, 12, 2)
+            card(c, r, on)
             text(c, self.f.h3, label, (r.left + 22, r.top + 4), theme.TEXT if on else theme.DIM)
             warn = sub.startswith("Plain HTTP")
             marquee(c, self.f.small, sub, (r.left + 22, r.top + 28), theme.AMBER if warn else theme.FAINT, maxw=420,
@@ -667,16 +665,11 @@ class SettingsScreen(Screen):
                 bx = min(vr.left - 28, vr.centerx - 60)
                 self.app.hit((bx, y, vr.centerx - bx, 52), lambda i=i: self.tap_now(i, "left"))
                 if on:                                # ‹ › around the value: back and on
-                    for x0, d in ((vr.left - 12, -1), (r.right - 12, 1)):
-                        polyline(c, theme.ACCENT_HI, [(x0 - 3 * d, r.centery - 6), (x0 + 3 * d, r.centery),
-                                                (x0 - 3 * d, r.centery + 6)], 2)
+                    for x0, side in ((vr.left - 12, "left"), (r.right - 12, "right")):
+                        chevron(c, theme.ACCENT_HI, (x0, r.centery), side)
         c.set_clip(clip)
         if total > view:
-            track = pygame.Rect(756, self.TOP, 4, view - 5)
-            rrect(c, theme.LINE, track, 2)
-            h = max(30, track.height * view // total)
-            yy = track.top + (track.height - h) * self.scroll // max(1, total - view)
-            rrect(c, theme.ACCENT, (track.left, yy, 4, h), 2)
+            scrollbar(c, (756, self.TOP, 4, view - 5), view / total, self.scroll / max(1, total - view))
         # right panel: what the selected setting does, then About
         p = pygame.Rect(776, 84, 472, 554)
         rrect(c, theme.PANEL, p, 16)
