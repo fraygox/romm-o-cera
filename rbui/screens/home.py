@@ -62,6 +62,9 @@ class HomeScreen(Screen):
         self._retry = set()         # keys whose fetch failed: asked again on the next enter
         self.gen = app.conn_gen     # the connection the cached shelves came from
 
+    def nav_key(self):
+        return self.focus, self.rail_i, tuple(sorted(self.cols.items()))
+
     # ---------------------------------------------------------------- data
 
     def load_recs(self):

@@ -21,6 +21,10 @@ class Screen:
     def crumbs(self):
         return []
 
+    def nav_key(self):
+        """What a move changed beyond sel/scroll (the app plays the move sound when it differs)."""
+        return None
+
     def trail(self, *more):
         """Crumbs that follow the way here: the screen below's, then ours."""
         st = self.app.stack

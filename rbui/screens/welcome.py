@@ -74,6 +74,10 @@ class WelcomeScreen(Screen):
         self.busy = None            # what's being checked ("Connecting to …")
         self.done = False
 
+    def nav_key(self):
+        keys = self.kb.nav_key() if self.text_entry else None
+        return (self.step, self.view, self.field, self.adv_sel, self.err_sel, keys)
+
     # ---- state
     @property
     def kb(self):
@@ -135,7 +139,7 @@ class WelcomeScreen(Screen):
         self.busy = "Connecting to %s…" % urllib.parse.urlsplit(url).hostname
         self.cert, self.view = None, "keys"
 
-        def ok(_plats):
+        def ok(_plats, _version):
             self.busy = None
             if token:
                 app.cfg["token"] = token

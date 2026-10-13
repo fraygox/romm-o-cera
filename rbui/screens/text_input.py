@@ -17,6 +17,9 @@ class KeyboardScreen(Screen):
     own_start = True
     text_entry = True
 
+    def nav_key(self):
+        return self.kb.nav_key()
+
     def type_text(self, s):
         self.kb.type_text(s)
 

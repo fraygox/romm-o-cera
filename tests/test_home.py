@@ -113,6 +113,29 @@ def test_shelf_navigation(home, rb):
     assert home.cols["backlog"] == home.per_shelf()
 
 
+def test_moving_on_home_sounds_and_the_edge_stays_quiet(home):
+    app, played = home.app, []
+    app.sfx.play = played.append
+    app.dispatch("right")                                         # along a shelf
+    app.dispatch("down")                                          # to the next shelf
+    app.dispatch("up")
+    app.dispatch("up")                                            # to the rail
+    app.dispatch("right")                                         # along the rail
+    assert played == ["move"] * 5
+    played.clear()
+    app.dispatch("up")                                            # above the rail: nothing moves
+    assert played == []
+
+
+def test_moving_on_the_keyboard_sounds(home, rb):
+    app, played = home.app, []
+    app.sfx.play = played.append
+    app.push(rb.TextInputScreen(app, "Search", "", lambda v: None))
+    app.dispatch("right")
+    app.dispatch("down")
+    assert played == ["move", "move"]
+
+
 def test_empty_and_unsupported_shelves_are_hidden(isolated, rb, home):
     app = home.app
     app.api.lists["playing"] = []

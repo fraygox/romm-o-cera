@@ -48,6 +48,10 @@ class Keyboard:
         self.r, self.c = 1, 0
         self.insert(value or "", notify=False)
 
+    def nav_key(self):
+        """The cursor and layer: a change is a move (the app's move sound)."""
+        return self.r, self.c, self.shift, self.sym
+
     # ---- layout, in key pitches (one letter key + its gap = 1)
     def char_rows(self):
         if self.mode == "code":

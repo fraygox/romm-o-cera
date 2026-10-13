@@ -60,6 +60,9 @@ class DownloadsScreen(ListScreen):
     def crumbs(self):
         return ["Activity"]
 
+    def nav_key(self):
+        return self.focus, id(getattr(self, "sel_job", None))
+
     def listed(self):
         return self.view()
 

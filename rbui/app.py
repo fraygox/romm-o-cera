@@ -995,7 +995,7 @@ class App:
     def nav_state(self):
         """What a move/page could change: focus, scroll, keyboard cursor,
         menu row, screen/dialog identity."""
-        out = [len(self.stack), id(self.modal), id(self.stack[-1])]
+        out = [len(self.stack), id(self.modal), id(self.stack[-1]), self.stack[-1].nav_key()]
         for o in (self.stack[-1], self.modal):
             if o is not None:
                 out += [getattr(o, k, None) for k in ("sel", "scroll", "r", "c", "region_i")]

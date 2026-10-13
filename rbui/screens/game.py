@@ -168,6 +168,9 @@ class GameScreen(Screen):
     def crumbs(self):
         return self.trail(rom_title(self.rom))
 
+    def nav_key(self):
+        return self.rom.get("id")
+
     def action(self, a):
         if a == "ok":
             self.go()
