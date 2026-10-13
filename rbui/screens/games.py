@@ -50,6 +50,25 @@ def rank_search(query, items):
     return sorted(items, key=key)
 
 
+def surprise_about(rom):
+    """Genre, players and year of a Surprise me pick, for its prompt (from Home
+    there's no detail panel behind it)."""
+    md = rom.get("metadatum") or {}
+    bits = []
+    if md.get("genres"):
+        bits.append(", ".join(md["genres"][:2]))
+    n = rommlib.max_players(md.get("player_count"))
+    if n > 1:
+        bits.append("up to %d players" % n)
+    ts = md.get("first_release_date")
+    if ts:
+        try:
+            bits.append(time.strftime("%Y", time.gmtime(int(ts) / (1000 if int(ts) > 10 ** 11 else 1))))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    return " · ".join(bits) + "." if bits else ""
+
+
 def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"):
     """Surprise me: a random game, then its download prompt (its menu when it's
     already on the box). From RomM (page/scope: Api.surprise()) or from a list
@@ -71,10 +90,17 @@ def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"
                 app.modal = ManageMenu(app, rom)
                 app.modal.entries.append(("Another surprise", "Pick again from %s" % where, again))
             else:
+                scr = app.stack[-1] if app.stack else None
+                items = getattr(scr, "items", None)
+                if isinstance(items, list) and rom in items and hasattr(scr, "sel"):
+                    scr.sel = items.index(rom)          # the panel behind shows the pick, cover and all
                 app.modal = DownloadConfirm(app, rom)
-                if not app.modal.pending and app.modal.ok_label == "Download":
+                if app.modal.ok_label == "Download":
                     app.modal.title = "Surprise: " + app.modal.title
                     app.modal.alt = ("Another", again)
+                    about = surprise_about(rom)
+                    if about and not app.modal.pending:
+                        app.modal.body = about + "  " + app.modal.body
     if pool is not None:
         got = [r for r in pool if r and fits(r)]
         return done((random.choice(got), None) if got else (None, "skipped" if pool else "empty"))

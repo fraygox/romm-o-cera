@@ -381,7 +381,10 @@ class DownloadConfirm(Confirm):
         if var:
             entries += [None, ("Already here: %s" % var[0],
                                ("and %d more" % (len(var) - 1)) if len(var) > 1 else "Another version", None)]
-        app.modal = ActionMenu(app, app.set_title(rom), entries)
+        if self.alt:                          # a Surprise me pick: roll again from the discs menu too
+            entries += [None, ("Another surprise", "Pick again", self.alt[1])]
+        app.modal = ActionMenu(app, (self.title.split(":", 1)[0] + ": " if self.alt else "") + app.set_title(rom),
+                               entries)
 
     def action(self, a):
         if self.pending and a == "ok":

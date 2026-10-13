@@ -248,8 +248,8 @@ class Api:
     def recommendations(self, limit=50):
         """RomM's Recommended for you (5.4 and newer), best first:
         [{"rom": {...}, "score": 0.8, "reasons": [{"facet": "genre", "value":
-        "Puzzle"}], "seed_rom_id": 12, "seed_rom_name": "..."}]. Empty until
-        RomM's nightly job has built its similarity graph (or a cold start:
+        "Puzzle"}], "seed_rom_id": 12, "seed_rom_name": "..."}]. Empty when
+        RomM has nothing to rank yet (or a cold start:
         its best-rated games, reason "top_rated"). None from a RomM without
         recommendations (no such route)."""
         try:

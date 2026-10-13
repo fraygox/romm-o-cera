@@ -44,8 +44,8 @@ class HomeScreen(Screen):
         return self.ITEMS[:k] + [(self.REC[0], self.REC[1], sub)] + self.ITEMS[k:]
 
     def load_recs(self):
-        """Recommended for you, asked once a session. Nothing to show (RomM's
-        nightly job hasn't run, a RomM before 5.4, or an error) hides the row:
+        """Recommended for you, asked once a session. Nothing to show (nothing to
+        recommend yet, a RomM before 5.4, or an error) hides the row:
         never a message at start."""
         app = self.app
         if app.recs is not None or not app.platforms:

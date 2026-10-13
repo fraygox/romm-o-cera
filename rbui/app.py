@@ -1040,6 +1040,6 @@ class App:
             rrect(c, theme.PANEL_HI, r, 20)
             circle(c, color, (r.left + 18, r.centery), 5)
             rich_text(c, self.fonts, self.fonts.body, msg, (r.left + 30, r.centery), theme.TEXT, "midleft", maxw=w - 44)
-            if len(t) > 4 and t[4]:
+            if len(t) > 4 and t[4] and self.modal is None:     # never tapped through an open dialog
                 self.hit(r, t[4])
             y -= 48

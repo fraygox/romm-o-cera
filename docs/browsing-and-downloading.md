@@ -10,8 +10,8 @@
   count, next to RomM's total), including games you copied over yourself.
 - **Recently added**, on the home screen and as a full list.
 - **Recommended for you** (RomM 5.4 and newer), on the home screen: games
-  RomM picks from what you play, from its similarity graph (built by its
-  nightly job) and your play history. Focus it and the home screen's shelf
+  RomM picks from what you play, ranked from its similarity graph and your
+  play history. Focus it and the home screen's shelf
   shows them; open it for the list, where each game's detail panel says why
   ("Because you played …", a series, genre or decade, "Highly rated"). Until
   you've played a few, RomM suggests the library's best-rated games. When

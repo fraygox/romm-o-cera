@@ -420,3 +420,29 @@ def test_a_plain_download_prompt_has_no_another(live, rb, opened):
     app.modal = p
     app.dispatch("y")
     assert app.modal is p                                 # Y does nothing there
+
+
+def test_a_surprise_from_a_loaded_list_moves_the_cursor_to_it(live, rb, opened):
+    """The detail panel behind the prompt shows the pick, not the row you were on."""
+    app = live
+    gba = next(p for p in app.platforms if p["_system"] == "gba")
+    gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
+    app.push(gl)
+    _pump(app, lambda: gl.server_total)
+    rb.surprise(app, pool=[r for r in gl.items if r][:30])
+    pick = app.modal.rom
+    assert gl.items[gl.sel] is pick
+
+
+def test_the_ready_toast_cant_be_tapped_through_a_dialog(live, rb):
+    app = live
+    fired = []
+    app.toasts.append(("Ready: Lorem", rb.theme.GREEN, time.time() + 6, 1, lambda: fired.append(1)))
+    app.modal = rb.Confirm(app, "Lorem", "Ipsum", "OK", lambda: None)
+    app.targets = []
+    app.draw()
+    assert not any(fn and fn.__code__ is app.toasts[-1][4].__code__ for _, fn in app.targets)
+    app.modal = None
+    app.targets = []
+    app.draw()
+    assert any(fn and fn.__code__ is app.toasts[-1][4].__code__ for _, fn in app.targets)
