@@ -8,6 +8,8 @@ highlight. A new install starts on Default.
 
 ## The theme picker
 
+![The theme picker: every theme as a card, previewed live](../screenshots/theme-picker.png)
+
 Every theme is a card with a small picture of the app in its colours, in
 groups. Moving onto a card puts the whole app in that theme straight away,
 so you see it for real before you keep it. The panel beside the cards names
@@ -80,13 +82,16 @@ If your theme is an OLED one, every card starts on its OLED version.
 
 | | |
 |---|---|
+| ![Synthwave theme](../screenshots/themes/synthwave.png) | ![Brick theme](../screenshots/themes/brick.png) |
 | ![PlayStation OLED theme](../screenshots/themes/playstation-oled.png) | ![Xbox theme](../screenshots/themes/xbox.png) |
-| ![Kyoto theme](../screenshots/themes/nintendo.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
+| ![Kyoto theme](../screenshots/themes/kyoto.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
 
 ## Custom
 
 **Custom**, the last card, is a theme you make from four choices. Press A on
 its card to open it:
+
+![Custom: accent, tint, strength and mode, with a live preview](../screenshots/custom-theme.png)
 
 - **Accent colour**: the highlight, the logo and progress bars, picked round
   the colour wheel.

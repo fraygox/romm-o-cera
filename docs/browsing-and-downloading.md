@@ -19,6 +19,9 @@
   you've played a few, RomM suggests the library's best-rated games. When
   RomM has nothing to suggest yet (or is older than 5.4), the entry doesn't
   show.
+
+  ![Recommended for you on the home screen](../screenshots/recommended.png)
+
 - **Search** (on the home screen) looks through every platform, with an
   on-screen keyboard and the top matches shown as you type (or just type on
   a keyboard). Move right past the keyboard to open a match straight away
@@ -35,7 +38,11 @@ titled "Surprise: …" with the game's genre, players and year. **A**
 downloads it, **Y Another** picks again, **B** goes back. A game that's
 already on the box opens its menu instead (Play now is right there), and a
 disc of a multi-disc set opens the set's menu; both have **Another
-surprise** at the end. Where to find it:
+surprise** at the end.
+
+![Surprise me: Download, Another or Back](../screenshots/surprise.png)
+
+Where to find it:
 
 - **Home: Y.** From your whole library. A small menu first: **Pick a game**,
   how many **Players** (Any, 2+, 3+, 4+), and **Only games not on this box**.
