@@ -1,5 +1,6 @@
 """A game list (platform, collection, search results) and Search."""
 import os
+import random
 import time
 
 import pygame
@@ -47,6 +48,28 @@ def rank_search(query, items):
             score -= 1
         return score
     return sorted(items, key=key)
+
+
+def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"):
+    """Surprise me: a random game, then its download prompt (its menu when it's
+    already on the box). From RomM (page/scope: Api.surprise()) or from a list
+    already loaded (pool). Only games with a Batocera system, and keep(rom)."""
+    def fits(r):
+        return bool(app.system_for(r)) and (keep is None or keep(r))
+
+    def done(res):
+        rom, why = res
+        if rom is None:
+            app.toast(("Every game it tried in %s is already on this box" % where) if why == "skipped" else
+                      "No game in %s to pick from" % where, theme.AMBER)
+        elif app.modal is not None:                # something else opened meanwhile: don't cover it
+            app.toast("Surprise: %s" % rom_title(rom))
+        else:
+            app.modal = ManageMenu(app, rom) if app.rom_status(rom)[0] == "installed" else DownloadConfirm(app, rom)
+    if pool is not None:
+        got = [r for r in pool if r and fits(r)]
+        return done((random.choice(got), None) if got else (None, "skipped" if pool else "empty"))
+    app.bg(lambda: app.api.surprise(page, scope, fits), done)
 
 
 class GameListScreen(ListScreen):
@@ -347,6 +370,10 @@ class GameListScreen(ListScreen):
         if cur is not None:
             e.append(("More like this", cur.get("name") or cur.get("fs_name_no_ext") or "",
                       lambda: self._more_like(cur)))
+        shown = self.total if self.dense or self.static is not None else self.server_total
+        if shown != 0:
+            e.append(("Surprise me", ("One of these {:,} games, picked at random".format(shown) if shown else
+                                      "A game from this list, picked at random"), self.surprise_me))
         tot = self.server_total
         if tot is None:
             e.append(("Download every game in this list", "Counting games…", None))
@@ -397,6 +424,19 @@ class GameListScreen(ListScreen):
                 return
             app.push(GameListScreen(app, "Games like %s" % name, static=roms))
         app.bg(lambda: app.api.similar(rom["id"]), done)
+
+    def surprise_me(self):
+        """A random game from this list as it's filtered now. RomM picks when
+        no filter narrows the list; otherwise one of the filtered pages does."""
+        if self.static is not None:
+            return surprise(self.app, pool=self.items)
+        filtered = (self.search or self.regions or self.players or self.hide_junk or self.only_verified
+                    or self.hide_installed)
+        col = (self.collection["param"], self.collection["id"]) if self.collection else None
+        scope = None if filtered else {"platform_ids": self._pids() or [p["id"] for p in self.app.platforms],
+                                       "collection": col}
+        surprise(self.app, page=lambda off, lim: self._query(off, lim), scope=scope,
+                 keep=(lambda r: not self.installed(r)) if self.hide_installed else None)
 
     def _toggle_junk(self):
         app = self.app

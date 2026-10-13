@@ -7,7 +7,7 @@ from rbui import theme
 from rbui.theme import H, W
 from rbui.draw import focus_box, hline, installed_mark, measure, rrect, text, wrap
 from rbui.screens.base import letter_of, ListScreen
-from rbui.screens.games import GameListScreen
+from rbui.screens.games import GameListScreen, surprise
 from rbui.modals import ActionMenu
 
 
@@ -155,6 +155,12 @@ class CollectionScreen(ListScreen):
         app = self.app
         n = it.get("count") or 0
         e = [("Open", "", lambda: app.push(GameListScreen(app, it["full"], collection=it)))]
+        if n:
+            pids = [p["id"] for p in app.platforms]
+            col = (it["param"], it["id"])
+            e.append(("Surprise me", "One of its {:,} games, picked at random".format(n), lambda: surprise(
+                app, page=lambda off, lim: app.api.roms(platform_ids=pids, collection=col, offset=off, limit=lim),
+                scope={"platform_ids": pids, "collection": col}, where=it["full"])))
         if n <= GameListScreen.BULK_MAX:
             e.append(("Download every game", "{:,} games, skipping any already on this box".format(n),
                       lambda: self.download_all(it)))
@@ -179,7 +185,7 @@ class CollectionScreen(ListScreen):
     def hints(self):
         h = [("A", "Open")]
         if self.items and not self.items[self.sel].get("vtype"):
-            h.append(("X", "Download all"))
+            h.append(("X", "Menu"))
         return self.list_hints(*h)
 
     def crumbs(self):

@@ -5,9 +5,9 @@ without a real server — or a real library.
   python tools/mock_romm.py [--port 8765] [--rate-mb 12]
 
 Then point the app at it: ROMM_URL=http://127.0.0.1:8765 ROMM_TOKEN=demo.
-Implements only what the app uses (platforms, collections, roms list/detail
-and filters, content downloads with Range, covers, pairing). Any bearer token is accepted;
-the pairing code ABCD2345 works once.
+Implements only what the app uses (platforms, collections, roms list/detail,
+filters and random picks, content downloads with Range, covers, pairing).
+Any bearer token is accepted; the pairing code ABCD2345 works once.
 
 The library is made of freely distributed homebrew / open-source games (with
 descriptions written for this mock, not copied) plus invented "lorem ipsum"
@@ -458,6 +458,21 @@ class Handler(BaseHTTPRequestHandler):
                                for c in build_virtual(self.roms, vt)])
         if path == "/api/roms/filters":            # every filter's values across the library
             return self._json(self.filter_values())
+        if path == "/api/roms/random":             # RomM 5.4: one game from the scope, or null
+            items = self.roms
+            if "platform_ids" in q:
+                pids = {int(x) for x in q["platform_ids"]}
+                items = [r for r in items if r["platform_id"] in pids]
+            for key, cols in (("collection_id", self.collections), ("smart_collection_id", self.smart)):
+                if q.get(key):
+                    ids = set(next((c["rom_ids"] for c in cols if c["id"] == int(q[key][0])), []))
+                    items = [r for r in items if r["id"] in ids]
+            # the same picks in the same order every run (tests, screenshots)
+            Handler.random_n = getattr(Handler, "random_n", 0) + 1
+            if not items:
+                return self._json(None)
+            r = random.Random("%s#%d" % (u.query, Handler.random_n)).choice(items)
+            return self._json({k: v for k, v in r.items() if k not in ("files", "_data", "sibling_roms")})
         if path == "/api/roms":
             items = self.roms
             if q.get("smart_collection_id"):

@@ -14,6 +14,23 @@
   arrow keys ([Controls](controls.md)).
 - **L2/R2** jump letter by letter; **L/R** or left/right page.
 
+### Surprise me
+
+Can't decide? Surprise me picks a random game and opens its download prompt
+(or its menu, if it's already on the box):
+
+- **Home: Y.** From your whole library. Its menu sets how many players
+  (Any, 2+, 3+, 4+) and whether to pick only games not on this box yet;
+  both stay set until you exit.
+- **A game list: X › Surprise me.** One of the games in the list as it's
+  filtered right now: the region, Players, hidden prototypes and "Hide games
+  on this box" all count.
+- **Platforms: X** on a platform, and **Collections: X › Surprise me** on a
+  collection.
+
+Only games with a Batocera system are picked. RomM 5.4 picks the game
+itself; with an older RomM the app picks from the list's pages.
+
 ## The detail panel
 
 Beside every list: cover, description, players, release date and genre, how
@@ -26,6 +43,7 @@ another region or revision of the game is already on the box.
 ## The list menu (X)
 
 - **More like this**: games similar to the selected one.
+- **Surprise me**: a random game from the list (see [Surprise me](#surprise-me)).
 - **Filters**: hide games already on the box, pick a region, hide
   prototypes/demos/hacks, show only checksum-verified dumps; sort.
 - **Players** (the party filter): only games for 2+, 3+ or 4+ players, going
@@ -42,8 +60,8 @@ another region or revision of the game is already on the box.
 - **Get BIOS for** the platform, when the box is missing BIOS files that
   your RomM has (checksum-verified; all systems: [On this box](on-this-box.md#bios-files)).
 
-**Download a whole collection** straight from Collections: X on a collection
-(up to 1,000 games).
+**Download a whole collection** straight from Collections: X on a collection,
+then Download every game (up to 1,000 games).
 
 Bulk downloads estimate the space they need once extracted and offer to
 download only what fits.

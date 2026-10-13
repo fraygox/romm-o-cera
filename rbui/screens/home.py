@@ -9,7 +9,8 @@ from rbui.theme import SR, W
 from rbui.draw import focus_box, hline, installed_mark, measure, rrect, smooth_scale, text, wrap
 from rbui.screens.base import Screen
 from rbui.screens.collection import CollectionScreen
-from rbui.screens.games import GameListScreen, SearchScreen
+from rbui.screens.games import GameListScreen, SearchScreen, surprise
+from rbui.modals import ActionMenu
 from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
@@ -38,9 +39,54 @@ class HomeScreen(Screen):
             self.free = None
 
     def hints(self):
-        return [("A", "Select"), ("B", "Exit")]
+        return [("A", "Select"), ("Y", "Surprise me"), ("B", "Exit")]
+
+    PARTY = [(0, "Any"), (2, "2+"), (3, "3+"), (4, "4+")]
+
+    def surprise_menu(self):
+        """Y: a random game from the whole library, for this many players and
+        maybe only ones not on the box yet (kept for the session)."""
+        app = self.app
+        if not app.platforms:
+            app.toast(app.error or "Still loading platforms…", theme.AMBER)
+            return
+        o = app.__dict__.setdefault("surprise_opts", {"players": 0, "new": False})
+
+        def players(step=1):
+            ns = [n for n, _ in self.PARTY]
+            o["players"] = ns[(ns.index(o["players"]) + step) % len(ns)]
+
+        def entries():
+            n = len(app.platforms)
+            return [("Pick a game", "From all %d platforms%s%s" % (
+                        n, ", for %d+ players" % o["players"] if o["players"] else "",
+                        ", not on this box yet" if o["new"] else ""), self.surprise_now),
+                    None,
+                    ("Players", "", players, dict(self.PARTY)[o["players"]], "choice"),
+                    ("Only games not on this box", "", lambda: o.update(new=not o["new"]), o["new"], "switch")]
+        app.modal = ActionMenu(app, "Surprise me", entries(), refresh=entries)
+
+    def surprise_now(self):
+        app, o = self.app, self.app.surprise_opts
+        pids = [p["id"] for p in app.platforms]
+        keep = (lambda r: app.rom_status(r)[0] != "installed") if o["new"] else None
+        if not o["players"]:
+            return surprise(app, page=lambda off, lim: app.api.roms(platform_ids=pids, offset=off, limit=lim),
+                            scope={"platform_ids": pids}, keep=keep, where="your library")
+
+        def page(off, lim):
+            if app.player_counts is None:                  # RomM's player count values, once a session
+                app.player_counts = [c for c in app.api.rom_filters().get("player_counts") or []
+                                     if isinstance(c, str)]
+            counts = rommlib.party_values(app.player_counts, o["players"])
+            if not counts:
+                return {"items": [], "total": 0}
+            return app.api.roms(platform_ids=pids, offset=off, limit=lim, player_counts=counts)
+        surprise(app, page=page, keep=keep, where="your library for %d+ players" % o["players"])
 
     def action(self, a):
+        if a == "y":
+            return self.surprise_menu()
         if a == "up":
             self.sel = (self.sel - 1) % len(self.ITEMS)
         elif a == "down":
@@ -188,11 +234,15 @@ class PlatformScreen(Screen):
                                          platform=p))
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.app.platforms[self.sel]))
+        elif a == "x":
+            p = self.app.platforms[self.sel]
+            surprise(self.app, page=lambda off, lim: self.app.api.roms(platform_ids=[p["id"]], offset=off, limit=lim),
+                     scope={"platform_ids": [p["id"]]}, where=p.get("display_name") or p["name"])
         else:
             super().action(a)
 
     def hints(self):
-        return [("A", "Open"), ("Y", "Search platform"), ("L", "Page up"),
+        return [("A", "Open"), ("X", "Surprise me"), ("Y", "Search platform"), ("L", "Page up"),
                 ("R", "Page down"), ("B", "Back")]
 
     def draw(self, c):

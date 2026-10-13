@@ -1,6 +1,7 @@
 """The RomM API client, and pairing a box with a code."""
 import os
 import queue
+import random
 import re
 import threading
 import urllib.parse
@@ -104,6 +105,51 @@ class Api:
                                          "with_char_index": "false", "with_rom_id_index": "false"})
             got = got.get("filter_values") if isinstance(got, dict) else None
         return got if isinstance(got, dict) else {}
+
+    def random_rom(self, platform_ids=None, collection=None):
+        """One game RomM picks at random from these platforms and/or this
+        collection ((param, id) as for roms()), or None when they hold none.
+        RomM samples by id, so it's as quick in a 60,000-game library."""
+        params = {}
+        if platform_ids:
+            params["platform_ids"] = list(platform_ids)
+        if collection:
+            params[collection[0]] = collection[1]
+        r = self.get("/api/roms/random", params)
+        return r if isinstance(r, dict) and r.get("id") else None
+
+    def surprise(self, page, scope=None, keep=None, tries=12):
+        """A random game: (rom, None), or (None, "empty") when there's nothing
+        to pick from, (None, "skipped") when every game tried was one keep()
+        turned down (e.g. already on the box). page(offset, limit) lists the
+        games to pick from, filters and all (blocking). scope: random_rom()'s
+        arguments when no filter narrows that list, so RomM can pick (a RomM
+        without /api/roms/random falls back to page()). A list of up to 250
+        is read whole, so the pick is never a skipped one while one is left."""
+        ok = keep or (lambda r: True)
+        if scope is not None:
+            try:
+                for _ in range(tries):
+                    r = self.random_rom(**scope)
+                    if r is None:
+                        return None, "empty"
+                    if ok(r):
+                        return r, None
+                return None, "skipped"
+            except _core.RommError as e:
+                if "HTTP 404" not in str(e) and "HTTP 422" not in str(e):   # 422: read as a rom id
+                    raise
+        total = page(0, 1).get("total") or 0
+        if not total:
+            return None, "empty"
+        if total <= 250:
+            got = [r for r in page(0, total).get("items") or [] if ok(r)]
+            return (random.choice(got), None) if got else (None, "skipped")
+        for off in random.sample(range(total), min(tries, total)):
+            got = page(off, 1).get("items") or []
+            if got and ok(got[0]):
+                return got[0], None
+        return None, "skipped"
 
     def by_hash(self, **hashes):
         """RomM's game with this hash (crc_hash / md5_hash / sha1_hash / ra_hash), or None."""

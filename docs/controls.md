@@ -70,9 +70,10 @@ picking, so there A picks from the start and B goes back.
 
 | Screen | A | X | Y | L2/R2 |
 |---|---|---|---|---|
-| Game lists | Download (a game on the box: its menu) | Menu: more like this, download all, filters (region, players), sort, pick several | Search | Letter |
-| Platforms | Open | | Search this platform | |
-| Collections | Open | Download every game | | Letter (one list) |
+| Home | Open | | Surprise me: a random game | |
+| Game lists | Download (a game on the box: its menu) | Menu: more like this, surprise me, download all, filters (region, players), sort, pick several | Search | Letter |
+| Platforms | Open | Surprise me: a random game from it | Search this platform | |
+| Collections | Open | Menu: open, surprise me, download every game | | Letter (one list) |
 | Downloads | That download's options (a finished game: Play now) | Menu: pause or resume all, clear finished, pick several | Clear finished | Conversions |
 | Conversions | Options | Start now | Clear finished | |
 | Games from RomM | The game's menu: play now, delete, download again, more like this | Menu: sort, pick several | Sort | Letter (by name) |
