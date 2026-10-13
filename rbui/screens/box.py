@@ -354,7 +354,9 @@ class OnThisBoxScreen(Screen):
             yy += 32
             for r in rows:
                 text(c, self.f.body, r["title"], (x, yy), theme.DIM, maxw=p.width - 300)
-                if r["kind"] == "queued":
+                if r["kind"] == "queued" and r.get("tool"):
+                    s, col = "Waiting for %s" % r["tool"], theme.AMBER
+                elif r["kind"] == "queued":
                     s, col = "%s, %s" % (mode(r), human_size(r["size"])), theme.FAINT
                 else:
                     s = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(

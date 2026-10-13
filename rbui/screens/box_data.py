@@ -110,6 +110,7 @@ def conversion_rows():
             except OSError:
                 pass
         rows.append({"kind": "running" if n == cur.get("task") else "queued", "name": n, "task": t,
+                     "tool": rommlib.waits_for_tool(t),          # "wiiu-tools": waiting for it, not failed
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0] if srcs else n,
                      "discs": len(srcs), "size": size, "cur": cur if n == cur.get("task") else None})
     rows.sort(key=lambda r: r["kind"] != "running")

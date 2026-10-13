@@ -335,7 +335,7 @@ class ConversionsScreen(ListScreen):
                 progress_bar(c, (box.left + 460, box.top + 40, box.width - 480, 8), frac, theme.BLUE)
                 sub = "%s · %s" % (mode, human_size(r["size"]))
             elif k == "queued":
-                st = "Queued"
+                st = "Waiting for %s" % r["tool"] if r.get("tool") else "Queued"
                 sub = "%s · %s" % (mode, human_size(r["size"]))
             else:
                 st = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(k, k)

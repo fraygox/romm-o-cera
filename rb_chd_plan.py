@@ -106,7 +106,8 @@ def games_for(system):
 
 
 def queued_sources():
-    """Every source file a queued conversion task already covers."""
+    """Every source file a queued conversion task already covers (not one waiting
+    for its tool: Compress keeps listing that game, as needing the tool)."""
     out = set()
     try:
         names = os.listdir(rommlib.CHD_QUEUE_DIR)
@@ -117,7 +118,12 @@ def queued_sources():
             continue
         try:
             with open(os.path.join(rommlib.CHD_QUEUE_DIR, t)) as f:
-                out.update(json.load(f)["sources"])
+                task = json.load(f)
+            conv = rommlib.CONVERTER.get(task.get("mode"))
+            tool = getattr(conv, "tool", None)
+            if tool is not None and not tool.installed():
+                continue
+            out.update(task["sources"])
         except (OSError, ValueError, KeyError, TypeError):
             pass
     return out

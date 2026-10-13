@@ -81,7 +81,9 @@ def test_wiiu_discs_map_to_wua(isolated):
     assert rommlib.conversion_for("wiiu", ".wud", cfg, enabled=False).mode == "wua"
     assert rommlib.conversion_for("wiiu", "/r/G.WUX", cfg, enabled=False).output_path("/r/G.WUX") == "/r/G.wua"
     assert rommlib.conversion_for("wiiu", ".wua", cfg, enabled=False) is None
-    assert rommlib.conversion_for("wiiu", ".wud", cfg) is None             # wuatool isn't installed here
+    # wuatool isn't installed here: queued all the same (the app fetches it; the worker waits for it)
+    assert rommlib.conversion_for("wiiu", ".wud", cfg).mode == "wua"
+    assert rommlib.conversion_for("wiiu", ".wud", dict(cfg, wua=False, wux=False)) is None
     assert rommlib.output_converter("/r/G.wua").mode == "wua"
     assert issubclass(rommlib.WiiuError, rommlib.CHECK_ERRORS) or rommlib.WiiuError in rommlib.CHECK_ERRORS
     lay = rommlib.disc_layout({"files": [{"file_name": "G.wux", "file_size_bytes": 5}]}, "wiiu", cfg)

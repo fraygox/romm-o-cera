@@ -130,3 +130,52 @@ def test_compress_says_what_it_waits_for(tools, rb, monkeypatch):
     app.cfg["wux"] = False
     assert needs_toast(app, cand) == "Turn on Wii U to .wux in Settings first"
     assert needs_text(app, {"mode": "createcd", "setting": "CHD"}) == "turn on CHD in Settings"
+
+
+def test_a_download_waits_for_its_tool_then_converts(isolated, rb, tmp_path, monkeypatch):
+    """Wii U to .wux on, wuatool not here yet: the download still queues its .wux;
+    the worker keeps the task (Conversions and Compress say why) until the app has
+    fetched the tool, then starts the worker, which converts it."""
+    pytest.importorskip("cryptography")
+    from test_wua import KEYS, TARBALL, _idle, mkdisc
+    from test_rvz_overlap import _serve
+    if not os.path.exists(TARBALL) or not rommlib.wua_supported():
+        pytest.skip("wiiu-tools not built here")
+    monkeypatch.setenv("ROMM_BROWSER_TOOLS", str(tmp_path / "tools"))
+    rb_chd = _idle(monkeypatch)
+    import rb_chd_plan
+    from rbui.screens.box_data import conversion_rows
+    disc = os.path.join(rommlib.ROMS_ROOT, "wiiu", "Lorem Kart (USA).wud")
+    os.makedirs(os.path.dirname(disc))
+    mkdisc.make_disc(disc, KEYS)
+    cfg = dict(rommlib.DEFAULT_CONFIG, keep_free_gb=0)
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(cfg))
+    d = rommlib.Downloader(None, rommlib.Library(), cfg, persist=False)
+    d.es = {"wiiu": {".wud", ".wux", ".wua"}}
+    j = rommlib.Job({"id": 9}, "wiiu")
+    d._maybe_chd(j, "wiiu", [disc], [disc])
+    assert j.chd_task and j.chd_mode == "wux"                   # queued though wuatool isn't here
+    rb_chd.main()
+    rb_chd.main()
+    assert os.listdir(rommlib.CHD_QUEUE_DIR) == [j.chd_task] and os.path.exists(disc)
+    log = open(rommlib.LOG_PATH).read()
+    assert log.count("wiiu-tools isn't installed yet") == 2 and "SKIP" not in log     # once per run
+    assert not os.path.exists(rommlib.chd_results_path())       # not failed, not skipped: waiting
+    assert [r["tool"] for r in conversion_rows() if r["kind"] == "queued"] == ["wiiu-tools"]
+    assert rommlib.conversions_waiting_for_tools() == {"wiiu-tools": 1}
+    cands = rb_chd_plan.candidates(["wiiu"], cfg)               # Compress still lists it, needing the tool
+    assert [(c["mode"], c["enabled"]) for c in cands] == [("wux", False)]
+
+    app = _app(rb, monkeypatch)
+    srv, url = _serve(open(TARBALL, "rb").read())
+    real = rommlib.install_tool
+    monkeypatch.setattr(rommlib, "install_tool", lambda spec, progress=None: real(spec, progress, url=url))
+    started = []
+    monkeypatch.setattr(app, "spawn_helper", lambda script: (started.append(script), rb_chd.main()))
+    try:
+        app.fetch_tools({"wiiu"})
+    finally:
+        srv.shutdown()
+    assert started == ["rb_chd.py"]
+    assert os.path.exists(disc[:-4] + ".wux") and not os.path.exists(disc)
+    assert os.listdir(rommlib.CHD_QUEUE_DIR) == [] and rommlib.conversions_waiting_for_tools() == {}

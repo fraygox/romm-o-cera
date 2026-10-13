@@ -618,6 +618,12 @@ class Converter:
     tool: Optional[object] = None  # the ToolSpec it needs downloaded (romm/tools.py), if any
     fallback: str = ""         # the mode that takes a source this one is off for or refuses (its check), when
                                # it takes that extension: listed after it in the table (see settle)
+    on: Optional[Callable] = None  # (cfg, system) -> its switch is on, its tool here or not (None: enabled)
+
+    def switched_on(self, cfg, system):
+        """Its switch is on. A file it takes is queued even while its tool is still
+        being fetched; the worker keeps the task until the tool is here (enabled)."""
+        return (self.on or self.enabled)(cfg, system)
 
     @property
     def sources(self):
@@ -667,6 +673,7 @@ CONVERTERS = (
     Converter("rvz", "RVZ", "rvz", frozenset(_core.RVZ_SYSTEMS), dict.fromkeys(_core.RVZ_SOURCES, ".rvz"),
               "rvz", _config.SETTING["rvz"].label, "turned off, or dolphin-tool isn't installed",
               lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit, tool=_tools.TOOL_DOLPHIN,
+              on=lambda cfg, system: bool(_config.config_value(cfg, "rvz")),
               priority=("gamecube", "wii")),
     # Xbox: images are made bootable (make_xiso, .xiso -> .iso) first, when xbox_bootable is on
     Converter("squashfs", "squashfs", "squashfs", frozenset(_core.SQUASH_SYSTEMS), {".iso": ".squashfs"},
@@ -682,18 +689,21 @@ CONVERTERS = (
     Converter("zar", "ZAR", "zar", frozenset(_tools.ZAR_SYSTEMS), {".iso": ".zar"},
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
+              on=lambda cfg, system: system in _tools.ZAR_SYSTEMS and bool(_config.config_value(cfg, "zar")),
               audit=zar_audit, tool=_tools.TOOL_X360, priority=("xbox360",)),
     # Wii U: the disc's game partition, decrypted with the disc's key, becomes a .wua Cemu opens;
     # a .wud it can't take (Decrypt Wii U discs off, or no key for it) falls back to .wux
     Converter("wua", "WUA", "wua", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wua", ".wux": ".wua"},
               "wua", _config.SETTING["wua"].label, "turned off, or wuatool isn't installed",
               lambda cfg, system: wua_enabled(cfg, system), planner_skips_done=True,
+              on=lambda cfg, system: system in _tools.WUA_SYSTEMS and bool(_config.config_value(cfg, "wua")),
               check=lambda src: _wiiu.wiiu_check(src), audit=wua_audit, tool=_tools.TOOL_WIIU,
               priority=("wiiu",), fallback="wux"),
     # Wii U .wud -> .wux: lossless, no keys; wuatool expands it through Cemu's reader and compares
     Converter("wux", "WUX", "wux", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wux"},
               "wux", _config.SETTING["wux"].label, "turned off, or wuatool isn't installed",
               lambda cfg, system: wux_enabled(cfg, system), planner_skips_done=True,
+              on=lambda cfg, system: system in _tools.WUA_SYSTEMS and bool(_config.config_value(cfg, "wux")),
               check=lambda src: _wiiu.wiiu_disc(src), audit=wux_audit, tool=_tools.TOOL_WIIU),
     # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
     # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
@@ -766,7 +776,7 @@ def settle(conv, system, src, cfg, alt_enabled=True):
     if not conv.fallback:
         return conv, "", False
     why, off = "", False
-    if not conv.enabled(cfg, system):
+    if not conv.switched_on(cfg, system):
         why, off = conv.off_reason, True
     elif conv.check and os.path.isfile(src):
         try:
@@ -776,7 +786,7 @@ def settle(conv, system, src, cfg, alt_enabled=True):
     if not why:
         return conv, "", False
     alt = CONVERTER[conv.fallback]
-    if _ext(src) in alt.targets and (not alt_enabled or alt.enabled(cfg, system)):
+    if _ext(src) in alt.targets and (not alt_enabled or alt.switched_on(cfg, system)):
         return alt, why, off
     return conv, why, off
 
@@ -797,7 +807,7 @@ def conversion_for(system, path, cfg=None, accepts=None, enabled=True, renamed=F
                 if why and taker is c:
                     return None
                 c = taker
-            elif enabled and not c.enabled(cfg, system):
+            elif enabled and not c.switched_on(cfg, system):
                 return None
             if accepts is not None and not accepts(system, c.output_ext(ext)):
                 return None
@@ -814,6 +824,35 @@ def conversion_tasks(system, paths, cfg, accepts=None):
         if c is not None:
             groups.setdefault(c.mode, (c, []))[1].append(p)
     return [groups[c.mode] for c in CONVERTERS if c.mode in groups]
+
+
+def waits_for_tool(task):
+    """The tool (its slug) a queued task waits for: its converter's isn't installed
+    yet (being fetched); None when it can run."""
+    c = CONVERTER.get((task or {}).get("mode"))
+    return c.tool.slug if c and c.tool and not c.tool.installed() else None
+
+
+def conversions_waiting_for_tools():
+    """{tool slug: queued tasks waiting for it}. Reads the tasks only while a
+    converter's tool is missing (the Downloads screen asks every second)."""
+    if all(c.tool.installed() for c in CONVERTERS if c.tool):
+        return {}
+    out = {}
+    try:
+        names = [n for n in os.listdir(_core.CHD_QUEUE_DIR) if n.endswith(".json")]
+    except OSError:
+        names = []
+    for n in names:
+        try:
+            with open(os.path.join(_core.CHD_QUEUE_DIR, n)) as f:
+                task = json.load(f)
+        except (OSError, ValueError):
+            continue
+        slug = waits_for_tool(task if isinstance(task, dict) else None)
+        if slug:
+            out[slug] = out.get(slug, 0) + 1
+    return out
 
 
 def conversion_output(mode, stem, src):

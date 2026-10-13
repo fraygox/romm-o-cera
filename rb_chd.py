@@ -66,6 +66,11 @@ class ToolMissing(Exception):
     """A converter other than chdman (dolphin-tool) isn't installed."""
 
 
+class ToolWaiting(Exception):
+    """A task's switch is on but its tool isn't here yet (the app fetches it):
+    the task stays queued; args[0] names the tool."""
+
+
 class MemoryGuard(Exception):
     """chdman was stopped to protect the box's memory. .retry: try again later
     (a game needed the RAM) rather than give up on this disc."""
@@ -700,6 +705,9 @@ def convert(task):
             task["mode"] = mode                 # the results list shows what it became
     # CHD tasks run even with CHD turned off since they were queued; the others need their switch
     if conv and not conv.chd and not conv.enabled(rommlib.load_config(), system):
+        on = getattr(conv, "switched_on", None)        # (an older rommlib in memory has none)
+        if on and getattr(conv, "tool", None) is not None and on(rommlib.load_config(), system):
+            raise ToolWaiting(conv.tool.slug)          # switched on, its tool still coming: keep the task
         note("chd: SKIP %s %s (%s)" % (mode, os.path.basename(srcs[0]), conv.off_reason))
         return False
     if conv and conv.check:
@@ -963,9 +971,10 @@ def finalize_later():
     rommlib.spawn_detached("rb_finalize.py")
 
 
-def pending():
+def pending(skip=()):
+    """A queued task (not one of skip: those waiting for their tool)."""
     try:
-        return any(t.endswith(".json") for t in os.listdir(rommlib.CHD_QUEUE_DIR))
+        return any(t.endswith(".json") and t not in skip for t in os.listdir(rommlib.CHD_QUEUE_DIR))
     except OSError:
         return False
 
@@ -978,19 +987,22 @@ def main():
     signal.signal(signal.SIGTERM, _sigterm)
     os.umask(0o022)       # CHDs readable like any other rom, however this worker was started
     os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
+    waiting = {}
     while True:
         with rommlib.try_lock(rommlib.chd_lock_path()) as fd:
             if fd is None:
                 return                          # another worker has it
-            work(fd)
+            work(fd, waiting)
         # a task queued while we were giving up the lock would find it taken
-        # and not start a worker: look once more after releasing it
-        if not pending():
+        # and not start a worker: look once more after releasing it (the app
+        # starts one again once a missing tool is here)
+        if not pending(waiting):
             return
 
 
-def work(fd):
+def work(fd, waiting=None):
     since_finalize = 0
+    waiting = {} if waiting is None else waiting   # tasks whose tool isn't here yet, this run: name -> tool
     try:
         os.remove(rommlib.chd_current_path())   # left by a killed run
     except OSError:
@@ -1001,7 +1013,7 @@ def work(fd):
         except OSError:
             pass
     while True:
-        tasks = sorted(t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json"))
+        tasks = sorted(t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json") and t not in waiting)
         if not tasks:
             if not since_finalize:
                 break
@@ -1031,6 +1043,16 @@ def work(fd):
                                                      "skip" in _state["last"].lower() else "failed"))
             if res:
                 since_finalize += 1
+        except ToolWaiting as e:
+            if str(e) not in waiting.values():          # once per tool: the tasks behind it still run
+                note("chd: %s isn't installed yet; its conversions stay queued until the app has fetched it"
+                     % e)
+            waiting[tasks[0]] = str(e)
+            try:
+                os.remove(cur)
+            except OSError:
+                pass
+            continue
         except ToolMissing as e:
             conv = rommlib.CONVERTER.get(task.get("mode")) if isinstance(task, dict) else None
             note("chd: %s isn't installed; dropping %s (Settings, %s)" % (

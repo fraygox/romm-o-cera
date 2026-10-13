@@ -230,6 +230,7 @@ class DownloadsScreen(ListScreen):
         if now - getattr(self, "_chd_at", 0) > 1.0:   # disk reads once a second, not every frame
             self._chd_at = now
             self._chd_n = rommlib.conversions_waiting()
+            self._chd_tools = rommlib.conversions_waiting_for_tools() if self._chd_n else {}
             self._chd_st = {}
             self._fc = rommlib.queue_forecast(d.jobs, rommlib.free_bytes(),
                                               rommlib.keep_free_bytes(self.app.cfg), self.app.cfg["chd"],
@@ -244,9 +245,11 @@ class DownloadsScreen(ListScreen):
             y += 28
         chd = self._chd_n
         if chd:
-            text(c, self.f.small, "%d disc game%s waiting for background compression "
-                 "(runs when no game is playing) · {L2 R2} Conversions" % (chd, "s" if chd > 1 else ""),
-                 (48, y), theme.AMBER)
+            tools = getattr(self, "_chd_tools", {})
+            text(c, self.f.small, "%d disc game%s waiting for background compression " % (chd, "s" if chd > 1 else "")
+                 + ("(%s waiting for %s, being fetched) · {L2 R2} Conversions" % (
+                     sum(tools.values()), ", ".join(sorted(tools))) if tools else
+                    "(runs when no game is playing) · {L2 R2} Conversions"), (48, y), theme.AMBER)
             y += 28
         if not jobs:
             text(c, self.f.h2, "No downloads yet", (W // 2, 300), theme.DIM, "center")

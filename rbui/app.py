@@ -727,6 +727,8 @@ class App:
 
         def done(paths):
             self.toast("%s %s is ready" % (spec.slug, spec.pin["version"]), theme.GREEN)
+            if rommlib.conversions_pending():
+                self.spawn_helper("rb_chd.py")      # the conversions queued while it was coming
 
         def failed(e):
             rommlib.log("tools: %s %s couldn't be fetched: %r" % (spec.slug, spec.pin["version"], e))

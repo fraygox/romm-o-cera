@@ -169,8 +169,11 @@ downloaded once. The app fetches it by itself, in the background, once there
 are Wii U disc images on the box (or a Wii U game finishes downloading) and
 whenever a newer version replaces the one installed (the old one is removed);
 a box without Wii U games downloads nothing. Selecting the switch in Settings
-fetches it too. Decrypt Wii U discs uses the same download. Any converter
-tool whose switch is on is updated the same way. wuatool is built from
+fetches it too. A game that finishes downloading before the tool is here is
+queued all the same and converted once the tool arrives (Conversions shows it
+as "Waiting for wiiu-tools"; if the tool can't be fetched, Compress games
+already here still lists it). Decrypt Wii U discs uses the same download. Any
+converter tool whose switch is on is updated the same way. wuatool is built from
 Cemu's own disc code and the ZArchive library Cemu reads `.wua` with, from
 their published source; licenses and source are on RomM-o-Cera's `wiiu-tools`
 release. Its `.wux` writer is RomM-o-Cera's own, written to the layout Cemu's
