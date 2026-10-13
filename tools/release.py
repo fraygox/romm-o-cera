@@ -93,7 +93,8 @@ def draft_notes(tag):
             continue
         kind = m.group(1) if m.group(1) in by else "refactor"
         text = m.group(3).strip()
-        text = text[0].upper() + text[1:]
+        if text.split(" ", 1)[0].isalpha():   # a sentence, not a name like romm-browser.log or deploy.sh
+            text = text[0].upper() + text[1:]
         by[kind].append("- **%s:** %s" % (kind, text.rstrip(".") + "."))
     out = []
     for k, title in GROUPS:
