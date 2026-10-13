@@ -62,7 +62,7 @@ Every list moves the same way:
   page. In Collections, left/right go to the previous or next group instead;
   on the tiles above Space's and Check games' lists they move between the
   tiles; and the platform cards and theme cards are grids, where left/right
-  move one card.
+  move one card. On a game's page they go to the previous or next game.
 - **L2/R2** (`[` `]`) jump to the previous or next letter in a list sorted
   by name, or to the previous or next system in a list grouped by system.
   Where you land goes to the top of the list. Lists you can sort (Free up
@@ -107,13 +107,14 @@ pick adds **Y Another**, to roll again.
 | Home | Open | | Surprise me | |
 | Platforms | Open | Surprise me from this platform | Search this platform | |
 | Collections | Open | A collection's menu: open, surprise me, download every game | | A–Z (in a single list) |
-| Game lists | Download (a game on the box: its menu) | Actions: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
+| Game lists | The game's page | Actions: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
+| A game's page | Download / Play now | Actions: more like this, surprise me, delete (on the box) | | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
 | Downloads | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |
-| Games from RomM | The game's menu: play now, delete, download again, more like this | Actions: sort, pick several | Sort | A–Z (by name) |
+| Games from RomM | The game's page (play now; X: delete, download again, more like this) | Actions: sort, pick several | Sort | A–Z (by name) |
 | Space | Open / free up space in that system | | | |
 | Free up space | Pick | Actions: delete picked, pick enough to free 10–100 GB, sort | Sort | A–Z (by name) |
 | Leftovers | Delete it | Actions: delete all, pick several | Delete all | System |

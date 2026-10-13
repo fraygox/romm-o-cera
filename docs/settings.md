@@ -109,6 +109,7 @@ described in [Themes](themes.md).
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
 | `notes_seen` | — | written by the app: the version whose notes What's new last showed, so they show once per update |
+| `welcome_seen` | `false` | written by the app: the first-run Welcome was finished or put off with Later, so it doesn't open by itself again |
 | `config_version` | `2` | written by the app, last; leave it alone |
 
 A value the app can't use, such as text where a number belongs

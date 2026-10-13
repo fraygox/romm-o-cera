@@ -11,9 +11,9 @@ across the whole screen.
 """
 import pygame
 from rbui import theme
-from rbui.theme import H, W
-from rbui.draw import (doc_layout, focus_box, hline, marquee, measure, meter, rich_text, rrect, scroll_doc,
-                       scroll_text, text)
+from rbui.theme import H, mix, W
+from rbui.draw import (chevron as draw_chevron, doc_layout, focus_box, hline, marquee, measure, meter, rich_text,
+                       rrect, scroll_doc, scroll_text, text)
 from rbui.widgets.chips import button_chip, button_chip_width, status_chip, tag as draw_tag
 from rbui.widgets.factsheet import facts
 from rbui.widgets.hero import verb_button, VERB_H
@@ -62,15 +62,19 @@ def list_head(c, f, lst, title, note="", note_color=None, color=None):
 
 
 def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_color=None, sub_color=None,
-             mark=None, slot="row", tag=None, tag_color=None):
+             mark=None, slot="row", tag=None, tag_color=None, chevron=False):
     """One row: the focus box, a mark at the left (mark(center) draws a tick box or dot and
     returns True when it did), the label with a grey line under it (the focused row's slide
     when too long), a short status right-aligned in the row and, left of it, a tag (chips.tag:
-    a system, "queued"). Returns the text's x."""
+    a system, "queued"); chevron: a › at the right end (the row opens something). Returns the
+    text's x."""
     if on:
         focus_box(c, r)
     tx = r.left + (48 if mark and mark((r.left + 22, r.centery)) else ROW_PAD)
     right = r.right - 20
+    if chevron:
+        draw_chevron(c, theme.DIM if on else theme.FAINT, (right - 4, r.centery), "right")
+        right -= 28
     if status:
         sr = text(c, f.small, status, (right, r.centery), status_color or theme.DIM, "midright",
                   maxw=r.width * 2 // 5)
@@ -85,6 +89,20 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         marquee(c, f.small, sub, (tx, top + lh), sub_color or theme.FAINT, maxw=right - tx, focused=on,
                 slot=slot + "-sub")
     return tx
+
+
+def notice(c, f, rect, title, body, color=None, slot="notice"):
+    """A boxed message in a state colour (default RED): the title in that colour over a tint of
+    it, the explanation under it (scrolling when longer than the box). Returns the rect."""
+    color = theme.RED if color is None else color
+    rect = pygame.Rect(rect)
+    bg = mix(theme.BG2, color, 0.12)
+    rrect(c, bg, rect, 14)
+    rrect(c, color, rect, 14, 2)
+    text(c, f.h3, title, (rect.left + 20, rect.top + 16), color, maxw=rect.width - 40)
+    scroll_text(c, f.small, body, (rect.left + 20, rect.top + 46, rect.width - 40, rect.height - 60), theme.DIM,
+                line_h=21, bg=bg, slot=slot)
+    return rect
 
 
 class Panel:

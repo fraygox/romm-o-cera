@@ -8,10 +8,11 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
-from rbui.draw import circle, day_label, installed_mark, text
-from rbui.modals import ActionMenu, DownloadConfirm
+from rbui.draw import circle, installed_mark, text
+from rbui.modals import DownloadConfirm
 from rbui.screens.base import letter_of, ListScreen
 from rbui.widgets.chips import pill_row
+from rbui.widgets.hero import time_ago
 from rbui.widgets.layout import CONTENT, Panel, list_row, need_width, split
 
 TOP = 134                                   # the rows' y, under the filter pills
@@ -325,12 +326,12 @@ class CompareScreen(ListScreen):
         p.status(it["label"], state_color(it["status"]))
         p.under_art()
         here = ext_of(it["path"]) + (" · " + human_size(it["size"]) if it.get("size") is not None else "")
-        added = day_label(self.added(it)) or "not known"
+        added = time_ago(self.added(it)) or "not known"
         if rom:
             pairs = [("Here", here), ("In RomM", "%s · %s" % (rom_ext(rom), human_size(rom.get("fs_size_bytes")))),
                      ("Folder", "roms/" + system_of(it)), ("RomM's file", rom.get("fs_name") or "not known"),
                      ("Added here", added),
-                     ("Updated in RomM", day_label(rommlib.utc_seconds(rom.get("updated_at"))) or "not known")]
+                     ("Updated in RomM", time_ago(rommlib.utc_seconds(rom.get("updated_at"))) or "not known")]
         else:
             pairs = [("Here", here), ("Folder", "roms/" + system_of(it)), ("Added here", added)]
         p.facts(pairs, cols=2, lines=4, strong=("Here", "In RomM"))

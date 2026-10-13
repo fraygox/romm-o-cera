@@ -347,6 +347,19 @@ def cover_fit(img):
     return img if size == (iw, ih) else smooth_scale(img, size)
 
 
+SHOT_BOX = (400, 225)           # a screenshot's largest drawn size (logical): the game page crops from it
+
+
+def shot_fit(img):
+    """A decoded screenshot scaled down once to cover SHOT_BOX (never enlarged): a 1080p shot
+    kept whole is ~8 MB."""
+    iw, ih = img.get_size()
+    pw, ph = SR(pygame.Rect((0, 0), SHOT_BOX)).size
+    f = min(1.0, max(pw / iw, ph / ih))
+    size = (max(1, int(iw * f + 0.5)), max(1, int(ih * f + 0.5)))
+    return img if size == (iw, ih) else smooth_scale(img, size)
+
+
 def smooth_scale(img, size):
     try:
         return pygame.transform.smoothscale(img, size)
@@ -362,23 +375,6 @@ def rom_title(rom):
     if d and not rommlib.disc_info(name):
         return "%s (Disc %d)" % (name, d[1])
     return name
-
-
-def day_label(ts, now=None):
-    """A short date for epoch seconds: "today", "yesterday", "12 Aug", or "12 Aug 2025" in
-    another year; "" for none."""
-    if not ts:
-        return ""
-    import time
-    now = time.time() if now is None else now
-    d, n = time.localtime(ts), time.localtime(now)
-    days = (time.mktime(n[:3] + (0, 0, 0, 0, 0, -1)) - time.mktime(d[:3] + (0, 0, 0, 0, 0, -1))) / 86400
-    if -0.5 < days < 0.5:
-        return "today"
-    if 0.5 <= days < 1.5:
-        return "yesterday"
-    s = "%d %s" % (d.tm_mday, time.strftime("%b", d))
-    return s if d.tm_year == n.tm_year else "%s %d" % (s, d.tm_year)
 
 
 GLYPH_RE = re.compile(r"\{(%s)\}" % "|".join(re.escape(t) for t in TOKENS))

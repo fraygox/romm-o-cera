@@ -11,6 +11,7 @@ from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, installed_mark,
                        rom_title, rrect, scroll_text, text, wrap)
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.compare import compare_entry
+from rbui.screens.game import GameScreen
 from rbui.screens.text_input import KeyboardScreen
 from rbui.widgets.keyboard import Keyboard
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
@@ -384,14 +385,23 @@ class GameListScreen(ListScreen):
                 self.ensure(self.sel + self.ROWS)
         elif a == "ok" and n and self.items[self.sel] is not None:
             rom = self.items[self.sel]
-            if self.rom_status(rom)[0] == "installed":
-                self.app.modal = ManageMenu(self.app, rom)
-            else:
-                self.app.modal = DownloadConfirm(self.app, rom)
+            self.app.push(GameScreen(self.app, rom, self.why.get(rom["id"]), source=self))
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.platform))
         else:
             super().action(a)
+
+    def panel_verb(self, rom):
+        """A tap on the panel's button: its dialog at once ({A} opens the game's page)."""
+        if self.picking:
+            return self.action("ok")
+        self.app.modal = ManageMenu(self.app, rom) if self.rom_status(rom)[0] == "installed" else \
+            DownloadConfirm(self.app, rom)
+
+    def page_rom(self, i):
+        """Row i's game for the game page's previous/next (None while its page loads)."""
+        self.ensure(i)
+        return self.items[i] if 0 <= i < len(self.items) else None
 
     def open_menu(self):
         self.menu_rom = self.items[self.sel] if self.items and self.sel < len(self.items) else None
@@ -586,7 +596,7 @@ class GameListScreen(ListScreen):
         app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
-        return self.list_hints(("A", "Download"), ("X", pads.ACTIONS), ("Y", "Search"))
+        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", "Search"))
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)
@@ -714,7 +724,7 @@ class GameListScreen(ListScreen):
                 fmt += " (becomes %s)" % lay["convert"]        # Rubik has no arrow glyph
         # action area
         ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, VERB_H)
-        self.app.hit(ar, lambda: self.action("ok"))
+        self.app.hit(ar, lambda: self.panel_verb(rom))
         st, j = self.rom_status(rom)
         system = app.system_for(rom)
         notes = (st == "failed") + bool(system and not self.picking and st not in ("installed", "active")
@@ -742,8 +752,9 @@ class GameListScreen(ListScreen):
             verb_button(c, self.f, ar, "Unpick" if on else "Pick", "quiet" if on else "go",
                         "%d picked" % self.pick_count())
             return
-        verb_button(c, self.f, ar, **game_verb(app, rom, (st, j), play="On this box", play_detail="roms/%s" % system,
-                                               go_detail="to roms/%s" % system))
+        verb_button(c, self.f, ar, glyph="", **game_verb(app, rom, (st, j), play="On this box",
+                                                         play_detail="roms/%s" % system,
+                                                         go_detail="to roms/%s" % system))
         if system and st not in ("installed", "active"):
             yy = ar.top - 22
             if st == "failed":

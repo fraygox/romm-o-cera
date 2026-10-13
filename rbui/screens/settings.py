@@ -7,7 +7,7 @@ import time
 import pygame
 import rommlib
 from rommlib import human_size
-from rbui import APP_NAME, theme
+from rbui import APP_NAME, server, theme
 from rbui.theme import S, THEMES
 from rbui.draw import card, chevron, hline, marquee, measure, rich_text, rrect, scroll_text, scrollbar, text
 from rbui.pads import style_from_names, STYLE_NAMES
@@ -142,25 +142,8 @@ class SettingsScreen(Screen):
         if not (cfg["url"] or "").strip():
             app.toast("Set the server address first, then pair", theme.AMBER)
             return
-
-        def paired(res):
-            cfg["token"] = res["token"]
-            app.apply_config(reconnect=True)
-            app.toast("Paired with RomM" + (" (%s)" % res["name"] if res.get("name") else "")
-                      + " — reconnecting", theme.GREEN)
-
-        def submit(v):
-            try:
-                code = rommlib.normalize_pair_code(v)
-            except rommlib.RommError as e:
-                app.toast(str(e), theme.RED)
-                return
-            app.toast("Pairing…")
-            url, verify = cfg["url"], cfg["verify_tls"]
-            app.bg(lambda: rommlib.exchange_pair_code(url, code, verify), paired,
-                   lambda e: app.toast(str(e), theme.RED))
-        app.push(TextInputScreen(app, "Pairing code from RomM", "", submit, mode="code", primary="Pair",
-                                 help=field_help("pair")))
+        app.push(TextInputScreen(app, "Pairing code from RomM", "", lambda v: server.pair(app, v), mode="code",
+                                 primary="Pair", help=field_help("pair")))
 
     @staticmethod
     def section(title):
@@ -295,45 +278,24 @@ class SettingsScreen(Screen):
             key = self.items()[self.sel][0]
             app, cfg = self.app, self.app.cfg
             if key == "url" and a == "ok":
-                def save_url(v):
-                    if v and "://" not in v:
-                        v = "https://" + v
-                    if rommlib.url_has_userinfo(v):
-                        app.toast("Leave user:password out of the URL — the token is the login", theme.RED)
-                        return
-                    cfg["url"] = v.rstrip("/")
-                    app.apply_config(reconnect=True)
-                    app.toast("Server saved — reconnecting", theme.GREEN)
                 cur = cfg["url"] or "https://"
                 if rommlib.url_has_userinfo(cur):
                     cur = "https://"          # never pre-fill an embedded password
-                app.push(TextInputScreen(app, "RomM server URL", cur, save_url,
+                app.push(TextInputScreen(app, "RomM server URL", cur, lambda v: server.save_url(app, v),
                                          context="url", help=field_help("url")))
             elif key == "token" and a == "ok":
-                def save_tok(v):
-                    cfg["token"] = v
-                    app.apply_config(reconnect=True)
-                    app.toast("Token saved — reconnecting", theme.GREEN)
-                app.push(TextInputScreen(app, "RomM client API token", cfg["token"] or "", save_tok, secret=True,
-                                         context="token", help=field_help("token")))
+                app.push(TextInputScreen(app, "RomM client API token", cfg["token"] or "",
+                                         lambda v: server.save_token(app, v), secret=True, context="token",
+                                         help=field_help("token")))
             elif key == "pair" and a == "ok":
                 self.pair()
             elif key == "tls":
-                cur = rommlib.norm_verify(cfg["verify_tls"])
-                ca = cfg["verify_tls_ca"] or ""
-                if isinstance(cur, str):
-                    cfg["verify_tls_ca"] = ca = cur          # remember the bundle when cycling away
-                cycle = [True, False] + ([ca] if ca else [])
-                i = next((k for k, v in enumerate(cycle) if v == cur), 0)
-                cfg["verify_tls"] = cycle[(i + (-1 if a == "left" else 1)) % len(cycle)]
-                app.apply_config(reconnect=True)
-                if cfg["verify_tls"] is False:
-                    app.toast("Certificates aren't checked now — only for a self-signed RomM", theme.AMBER)
+                server.step_verify(app, -1 if a == "left" else 1)
             elif key == "test" and a == "ok":
                 app.toast("Testing…")
-                app.bg(app.api.platforms,
-                       lambda p: app.toast("Connected: %d platforms on the server" % len(p), theme.GREEN),
-                       lambda e: app.toast(str(e), theme.RED))
+                server.check_server(app, cfg["url"],
+                                    lambda p: app.toast("Connected: %d platforms on the server" % len(p), theme.GREEN),
+                                    lambda e: app.toast(str(e), theme.RED))
             elif key in SETTING_ROW and SETTING_ROW[key].kind == "onoff":
                 st = SETTING_ROW[key]
                 if not self._available(st):

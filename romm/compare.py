@@ -109,6 +109,18 @@ def _primary(paths):
     return min(paths, key=rank)
 
 
+def box_copy(library, rom, system):
+    """The box's copy of a game: {"paths", "size" (bytes), "format" ("CHD", "ISO"... from its
+    main file; "folder" for one without an extension)}, or None when it isn't here. Blocking:
+    sizes folders."""
+    paths = library.paths_for(rom, system)
+    if not paths:
+        return None
+    ext = _lower_ext(_primary([p for p in paths if _lower_ext(p) != ".m3u"] or paths))
+    return {"paths": paths, "size": sum(_core.path_size(p) for p in paths),
+            "format": ext[1:].upper() if ext else "folder"}
+
+
 def _top(path, sysdir):
     """The top-level entry of roms/<system> a path is or lies in, or None."""
     rel = os.path.relpath(os.path.normpath(path), sysdir)

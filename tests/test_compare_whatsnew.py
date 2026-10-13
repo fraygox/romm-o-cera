@@ -1,7 +1,7 @@
 """Compare with RomM (inside a platform or a collection) and What's new: filters and their
 counts, the comparison off the UI thread and stopped by B, "Get the newer one" through the
 download-again dialog, What's new shown once after an update (never in the way, never when
-offline) and the shared pieces they added (scroll_doc, scroll_nudge, day_label, Panel.art,
+offline) and the shared pieces they added (scroll_doc, scroll_nudge, Panel.art,
 Panel.verb, Panel.doc)."""
 import os
 import time
@@ -305,15 +305,6 @@ def test_scroll_doc_scrolls_when_long_and_scroll_nudge_moves_it(rb, fonts, monke
     rb.scroll_nudge("doc", -10.0)
     assert st[2] - st[1] == 0
     rb.scroll_nudge("nothing", 1.0)
-
-
-def test_day_label(rb):
-    now = time.mktime((2026, 10, 13, 15, 0, 0, 0, 0, -1))
-    assert rb.day_label(now - 3600, now) == "today"
-    assert rb.day_label(now - 86400, now) == "yesterday"
-    assert rb.day_label(time.mktime((2026, 8, 12, 9, 0, 0, 0, 0, -1)), now) == "12 Aug"
-    assert rb.day_label(time.mktime((2025, 8, 12, 9, 0, 0, 0, 0, -1)), now) == "12 Aug 2025"
-    assert rb.day_label(None) == ""
 
 
 def test_panel_art_verb_status_and_doc(rb, app, fonts):
