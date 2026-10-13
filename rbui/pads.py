@@ -32,6 +32,9 @@ KEY_LABELS = {"A": "Enter", "B": "Esc", "X": "X", "Y": "Y", "L": "PgUp", "R": "P
 TOKEN_ACTION = {"A": "ok", "B": "back", "X": "x", "Y": "y", "L": "l1", "R": "r1", "L2 R2": "r2",
                 "START": "start", "SELECT": "select", "LEFT RIGHT": "right", "BKSP": "x"}
 TOKEN_BACK = {"LEFT RIGHT": "left", "L2 R2": "l2"}      # a tap on the left half of these glyphs
+# What X is called wherever it opens a list or game menu (Xbox's Menu and PlayStation's
+# Options are Start's names, so X never reuses them).
+ACTIONS = "Actions"
 # Every control shown on screen is one of these tokens, drawn by button_glyph():
 # in hints as (token, label), in prose as "{token}" through rich_text/rich_lines.
 TOKENS = ("A", "B", "X", "Y", "L", "R", "L2 R2", "START", "SELECT", "LEFT RIGHT", "TYPE", "BKSP")

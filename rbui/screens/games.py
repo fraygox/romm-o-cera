@@ -575,7 +575,7 @@ class GameListScreen(ListScreen):
         app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
-        return self.list_hints(("A", "Download"), ("X", "Menu"), ("Y", "Search"))
+        return self.list_hints(("A", "Download"), ("X", pads.ACTIONS), ("Y", "Search"))
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)

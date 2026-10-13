@@ -369,7 +369,7 @@ def test_pick_several_then_unpack_them_all(ui, rb):
     sc = app.stack[-1]
     names = [os.path.basename(i["path"]) for i in sc.items]
     assert names == ["Mystery.xyz", "Lorem Racer.zip", "Broken.zip", "Ipsum Quest.zip"]
-    assert sc.hints()[:2] == [("A", "Options"), ("X", "Menu")]
+    assert sc.hints()[:2] == [("A", "Options"), ("X", "Actions")]
     sc.action("x")                                            # the list's menu: start picking, or pick all
     assert [e[0] for e in app.modal.entries if e] == ["Pick several files", "Pick all 4"]
     app.modal.action("down")

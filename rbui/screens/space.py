@@ -4,7 +4,7 @@ import os
 import pygame
 import rommlib
 from rommlib import human_size
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import circle, focus_box, hline, marquee, measure, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
@@ -278,7 +278,7 @@ class LeftoversScreen(ListScreen):
     """Partial files and empty folders that interrupted downloads or
     conversions left behind, and copies of games already here converted (a
     .7z beside its .rvz). Partial downloads still queued are kept. A deletes
-    one; the X menu deletes the picked ones or all of them (Y)."""
+    one; the X Actions menu deletes the picked ones or all of them (Y)."""
     ROWS, ROW_H = 9, 56
     PICKS, PICK_WHAT, JUMP = True, "leftovers", "System"
 
@@ -303,7 +303,7 @@ class LeftoversScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return self.list_hints(("A", "Delete"), ("X", "Menu"), ("Y", "Delete all"))
+        return self.list_hints(("A", "Delete"), ("X", pads.ACTIONS), ("Y", "Delete all"))
 
     def jump_label(self, it):
         """Grouped by system: roms/<system>/…, then the app's own folder."""

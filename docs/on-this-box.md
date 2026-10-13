@@ -26,7 +26,7 @@ for downloads.
 
 - **Free up space**: every game EmulationStation lists, including ones copied
   over another way, least played first (**Y** sorts by size or name
-  instead). **A** picks games, or the X menu picks the least played, biggest
+  instead). **A** picks games, or the X Actions menu picks the least played, biggest
   ones until 10, 20, 50 or 100 GB would be freed; check the ticks, then X
   deletes them in one go, after asking. Saves and states are kept.
 - **Clean up leftovers**: partial files and empty folders that interrupted
@@ -39,7 +39,7 @@ for downloads.
   file a queued conversion will use, and not on arcade systems (where
   `game.zip` and `game.chd` belong together). Partial downloads still queued
   are kept so they can resume. **A** deletes one, **Y** all of them, and the
-  X menu the ones you pick; each asks first.
+  X Actions menu the ones you pick; each asks first.
 - **By system**: where the space went in each system, in the same colours as
   the bar. Pick a system to free up space in just that one.
 
@@ -123,7 +123,7 @@ has changed since (replaced or deleted) drops off the list.
 Damaged games can be downloaded again, one at a time (**A**) or all at once
 (**Y**); a fresh copy replaces a cut-short CHD. To download several findings
 again, amber ones included, pick them (X › Pick several) and choose
-**Download … again** from the X menu. A damaged game RomM names differently is found
+**Download … again** from the X Actions menu. A damaged game RomM names differently is found
 by its RetroAchievements hash, else by the matching title, disc and region;
 saves move to the new name and playlists follow.
 
@@ -159,7 +159,7 @@ stay. If RomM-o-Cera installed the file, it forgets it.
 
 To do several at once, pick them as in any list (X › **Pick several files**
 or **Pick all**, then **A** picks; see
-[Controls](controls.md#picking-several)). The X menu then offers **Unpack**
+[Controls](controls.md#picking-several)). The X Actions menu then offers **Unpack**
 for every picked archive or **Delete** for all of them, each after one
 confirmation. They're done one after another; one that can't be (a damaged
 archive, say) is left as it is and named at the end, and the rest go on.

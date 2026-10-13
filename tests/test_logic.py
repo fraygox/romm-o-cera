@@ -1231,3 +1231,9 @@ def test_conversions_waiting_counts_the_queue_by_name(isolated):
     for n in ("1-a.json", "2-b.json", ".3-c.json.1-2.tmp"):
         open(os.path.join(rommlib.CHD_QUEUE_DIR, n), "w").write("{")      # half-written still counts
     assert rommlib.conversions_waiting() == 2
+
+
+def test_x_is_actions_not_menu_on_every_pad():
+    from rbui import pads
+    assert pads.ACTIONS == "Actions"
+    assert pads.OTHER["xbox"]["START"] == "Menu" and pads.ACTIONS not in pads.OTHER["xbox"].values()

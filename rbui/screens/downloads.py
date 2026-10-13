@@ -3,7 +3,7 @@ import time
 
 import rommlib
 from rommlib import human_size
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import marquee, measure, progress_bar, rich_text, rrect, text
 from rbui.screens.base import ListScreen
@@ -38,7 +38,7 @@ class DownloadsScreen(ListScreen):
 
     def hints(self):
         d = self.app.downloader
-        h = [("A", "Options"), ("X", "Menu")] if d.jobs else []
+        h = [("A", "Options"), ("X", pads.ACTIONS)] if d.jobs else []
         if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
             h.append(("Y", "Clear finished"))
         return self.list_hints(*h + [("L2 R2", "Conversions")])
@@ -223,7 +223,7 @@ class DownloadsScreen(ListScreen):
         self.follow(jobs)
         y = 84
         if d.hold and d.pending_count():
-            rich_text(c, self.f, self.f.small, "Downloads are paused. Resume them from the {X} menu.", (48, y),
+            rich_text(c, self.f, self.f.small, "Downloads are paused. Resume them from {X} Actions.", (48, y),
                       theme.AMBER)
             y += 28
         now = time.time()

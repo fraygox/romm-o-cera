@@ -5,7 +5,7 @@ import time
 import pygame
 import rommlib
 from rommlib import human_size
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import focus_box, marquee, progress_bar, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
@@ -69,7 +69,7 @@ class InstalledScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return self.list_hints(("A", "Options"), ("X", "Menu"), ("Y", dict(self.SORTS)[self.sort]))
+        return self.list_hints(("A", "Options"), ("X", pads.ACTIONS), ("Y", dict(self.SORTS)[self.sort]))
 
     def pick_key(self, it):
         return it["id"]

@@ -3,7 +3,7 @@ import re
 
 import pygame
 import rommlib
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import focus_box, hline, installed_mark, measure, rrect, text, wrap
 from rbui.screens.base import letter_of, ListScreen
@@ -185,7 +185,7 @@ class CollectionScreen(ListScreen):
     def hints(self):
         h = [("A", "Open")]
         if self.items and not self.items[self.sel].get("vtype"):
-            h.append(("X", "Menu"))
+            h.append(("X", pads.ACTIONS))
         return self.list_hints(*h)
 
     def crumbs(self):

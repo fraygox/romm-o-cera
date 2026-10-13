@@ -615,7 +615,7 @@ def test_every_list_picks_several_the_same_way(app, rb, name, monkeypatch):
     scr = _picking(rb, app, name, 12, monkeypatch)
     app.push(scr)
     _frame(app, scr)
-    assert ("X", "Menu") in scr.hints() and not scr.picking
+    assert ("X", "Actions") in scr.hints() and not scr.picking
     scr.action("x")
     labels = [e[0] for e in app.modal.entries if e]
     k = next(i for i, e in enumerate(app.modal.entries) if e and e[0].startswith("Pick several"))
@@ -623,7 +623,7 @@ def test_every_list_picks_several_the_same_way(app, rb, name, monkeypatch):
     app.modal.action("ok")
     assert app.modal is None and scr.picking
     h = scr.hints()
-    assert h[:2] == [("A", "Pick"), ("X", "Menu")] and h[-1] == ("B", "Stop picking")
+    assert h[:2] == [("A", "Pick"), ("X", "Actions")] and h[-1] == ("B", "Stop picking")
     scr.action("ok")
     scr.action("ok")
     assert scr.pick_count() == 2 and scr.sel == 2 and scr.hints()[1] == ("X", "2 picked")
@@ -674,7 +674,7 @@ def test_free_up_space_is_always_picking(app, rb, monkeypatch):
     app.push(rb.Screen(app))
     scr = _make(rb, app, "FreeUpScreen", 12, monkeypatch)[0]
     app.push(scr)
-    assert scr.hints()[:3] == [("A", "Pick"), ("X", "Menu"), ("Y", "Least played first")]
+    assert scr.hints()[:3] == [("A", "Pick"), ("X", "Actions"), ("Y", "Least played first")]
     scr.action("ok")
     assert scr.pick_count() == 1 and scr.sel == 1
     scr.action("x")

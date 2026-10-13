@@ -3,7 +3,7 @@ import os
 
 import rommlib
 from rommlib import human_size
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import focus_box, marquee, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
@@ -244,7 +244,7 @@ class CantConvertScreen(ListScreen):
 
 class CompressSystemScreen(ListScreen):
     """One system's games that could still be compressed: A queues one; the
-    X menu queues them all, or the picked ones (asks first: it can take hours)."""
+    X Actions menu queues them all, or the picked ones (asks first: it can take hours)."""
     ROWS, ROW_H = 9, 58
     PICKS, PICK_WHAT, JUMP = True, "games", "A–Z"
 
@@ -283,7 +283,7 @@ class CompressSystemScreen(ListScreen):
             return [("B", "Back")]
         if not self.cands[0]["enabled"]:
             return self.list_hints()
-        return self.list_hints(("A", "Compress this one"), ("X", "Menu"))
+        return self.list_hints(("A", "Compress this one"), ("X", pads.ACTIONS))
 
     def list_actions(self):
         return [("Compress all %d" % len(self.cands), "%s · asks first: it can take hours" % human_size(

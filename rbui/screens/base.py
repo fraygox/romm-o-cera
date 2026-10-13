@@ -2,7 +2,7 @@
 import time
 
 import pygame
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import measure, polyline, rrect, scroll_text, text
 from rbui.modals import ActionMenu
@@ -160,7 +160,7 @@ class ListScreen(Screen):
         own = list(own)
         if self.picking or self.PICK_ALWAYS:
             n = self.pick_count()
-            own = [("A", "Pick"), ("X", "%d picked" % n if n else "Menu")] + \
+            own = [("A", "Pick"), ("X", "%d picked" % n if n else pads.ACTIONS)] + \
                 [h for h in own if h[0] not in ("A", "X")]
             if not self.PICK_ALWAYS:
                 back = "Stop picking"

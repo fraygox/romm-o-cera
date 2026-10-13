@@ -69,7 +69,7 @@ Every list moves the same way:
   space, Games from RomM) jump only while sorted by name.
 - The hint bar shows L/R only when the list is longer than a page, and L2/R2
   only when there's somewhere to jump.
-- **X** opens the list's menu: what you can do with the whole list, its
+- **X** opens the list's Actions menu: what you can do with the whole list, its
   sort and filters, and picking. A few lists have just one such action, and
   X does it straight away (the hint bar names it).
 
@@ -107,20 +107,20 @@ pick adds **Y Another**, to roll again.
 | Home | Open | | Surprise me | |
 | Platforms | Open | Surprise me from this platform | Search this platform | |
 | Collections | Open | A collection's menu: open, surprise me, download every game | | A–Z (in a single list) |
-| Game lists | Download (a game on the box: its menu) | Menu: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
+| Game lists | Download (a game on the box: its menu) | Actions: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
 | Search keyboard | Type the key | Delete | Space | |
-| Downloads | That download's options (a finished game: Play now) | Menu: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Downloads | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |
-| Games from RomM | The game's menu: play now, delete, download again, more like this | Menu: sort, pick several | Sort | A–Z (by name) |
+| Games from RomM | The game's menu: play now, delete, download again, more like this | Actions: sort, pick several | Sort | A–Z (by name) |
 | Space | Open / free up space in that system | | | |
-| Free up space | Pick | Menu: delete picked, pick enough to free 10–100 GB, sort | Sort | A–Z (by name) |
-| Leftovers | Delete it | Menu: delete all, pick several | Delete all | System |
+| Free up space | Pick | Actions: delete picked, pick enough to free 10–100 GB, sort | Sort | A–Z (by name) |
+| Leftovers | Delete it | Actions: delete all, pick several | Delete all | System |
 | Compress | That system's games (a can't-convert row: why) | Compress the whole system | | |
-| Compress › a system | Compress this one | Menu: compress all, pick several | | A–Z |
+| Compress › a system | Compress this one | Actions: compress all, pick several | | A–Z |
 | BIOS files | Get from RomM | Get all from RomM | | A–Z |
-| Check games | Start a check / look / download again | Menu: download all damaged again, pick several | Download all damaged again | System |
-| Games ES can't see | Its options: unpack, move, delete | Menu: pick several, pick all | | System |
+| Check games | Start a check / look / download again | Actions: download all damaged again, pick several | Download all damaged again | System |
+| Games ES can't see | Its options: unpack, move, delete | Actions: pick several, pick all | | System |
 | Settings | Change / open | | | |
 | Theme picker | Keep this theme (Custom: open it) | Edit a copy | OLED on/off | |
 | Custom theme | Keep and use it | | | |

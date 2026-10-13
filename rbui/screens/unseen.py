@@ -4,7 +4,7 @@ import os
 import pygame
 import rommlib
 from rommlib import human_size
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import circle, focus_box, marquee, measure, rrect, text
 from rbui.screens.base import ListScreen
@@ -17,7 +17,7 @@ class UnseenScreen(ListScreen):
     EmulationStation ignores because the system doesn't list their extension
     (rommlib.find_unseen). Archives can be unpacked (as after a download),
     games in the wrong system folder moved, and anything deleted after a
-    confirmation that names what goes. The X menu picks files for doing
+    confirmation that names what goes. The X Actions menu picks files for doing
     several at once: unpack every picked archive, or delete them all."""
     ROWS, ROW_H = 9, 56
     MOVE_CHOICES = 5                   # the menu has no scrolling: the likeliest systems first
@@ -49,7 +49,7 @@ class UnseenScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return self.list_hints(("A", "Options"), ("X", "Menu"))
+        return self.list_hints(("A", "Options"), ("X", pads.ACTIONS))
 
     def jump_label(self, it):
         return it["system"]

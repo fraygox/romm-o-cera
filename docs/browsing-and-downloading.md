@@ -65,9 +65,9 @@ disc games the format and what it becomes on the box, for example
 lists the archive's contents, "~" when estimated). It also tells you when
 another region or revision of the game is already on the box.
 
-## The list menu (X)
+## The Actions menu (X)
 
-Press **X** in a game list for its menu. Filters change the list in place
+Press **X** in a game list for its Actions menu. Filters change the list in place
 and the menu stays open; the actions close it.
 
 - **More like this**: games similar to the selected one.

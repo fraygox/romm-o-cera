@@ -5,7 +5,7 @@ import time
 
 import pygame
 import rommlib
-from rbui import theme
+from rbui import pads, theme
 from rbui.theme import W
 from rbui.draw import circle, focus_box, hline, marquee, measure, rrect, scroll_text, text
 from rbui.screens.base import ListScreen, Screen
@@ -18,7 +18,7 @@ class AuditScreen(ListScreen):
     """Check what's on the box against RomM; damaged games can be downloaded
     again. Red: damaged or incomplete. Amber: not RomM's copy (another dump,
     a trimmed image…), which may well play. Picked findings (amber ones
-    too) download again together from the X menu."""
+    too) download again together from the X Actions menu."""
     LOAD_ERROR_HEAD = "The check didn't finish"
     ROWS, ROW_H = 8, 62
     PICKS, PICK_WHAT, JUMP = True, "findings", "System"
@@ -69,7 +69,7 @@ class AuditScreen(ListScreen):
     def hints(self):
         if self.findings is None:
             return [("B", "Stop")]
-        h = [("A", "Download again"), ("X", "Menu")] if self.findings else []
+        h = [("A", "Download again"), ("X", pads.ACTIONS)] if self.findings else []
         if self.redownloadable():
             h.append(("Y", "Download all damaged again"))
         return self.list_hints(*h)
@@ -259,7 +259,7 @@ class CheckScreen(AuditScreen):
         y = [("Y", "Download all damaged again")] if self.redownloadable() else []
         if self.sel >= self.base:
             return AuditScreen.hints(self)
-        return [("A", "Look" if self.sel == 2 else "Start")] + ([("X", "Menu")] if self.findings else []) + y + \
+        return [("A", "Look" if self.sel == 2 else "Start")] + ([("X", pads.ACTIONS)] if self.findings else []) + y + \
             [("B", "Stop picking" if self.picking else "Back")]
 
     def action(self, a):
