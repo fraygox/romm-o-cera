@@ -268,3 +268,22 @@ def test_install_sh_nightly_keeps_following_nightlies(release_zip, tmp_path):
         assert oct(cfg.stat().st_mode & 0o777) == "0o600"
     finally:
         srv.shutdown()
+
+
+def test_saving_config_never_writes_the_environments_server_or_token(isolated, monkeypatch):
+    """An env-configured box: What's new's Continue saves config.json, without ROMM_URL/ROMM_TOKEN;
+    values the file had are kept, a Settings change that differs from the env is saved."""
+    monkeypatch.setenv("ROMM_URL", "https://env.example.com")
+    monkeypatch.setenv("ROMM_TOKEN", " rmm_env ")
+    cfg = rommlib.load_config()
+    assert cfg["url"] == "https://env.example.com" and cfg["token"] == "rmm_env"
+    assert rommlib.mark_notes_seen(cfg)
+    saved = json.load(open(rommlib.CONFIG_PATH))
+    assert "url" not in saved and "token" not in saved and saved["notes_seen"] == rommlib.VERSION_LABEL
+    with open(rommlib.CONFIG_PATH, "w") as f:
+        json.dump(dict(saved, url="https://file.example.com", token="rmm_file"), f)
+    cfg = rommlib.load_config()
+    cfg["token"] = "rmm_typed"
+    rommlib.save_config(cfg)
+    saved = json.load(open(rommlib.CONFIG_PATH))
+    assert saved["url"] == "https://file.example.com" and saved["token"] == "rmm_typed"

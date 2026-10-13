@@ -407,6 +407,16 @@ def _check_config(data):
     return data
 
 
+def _from_env():
+    """{key: value} the environment sets (ENV_OVERRIDES), as load_config reads them."""
+    out = {}
+    for env, key in ENV_OVERRIDES.items():
+        v = os.environ.get(env)
+        if v:
+            out[key] = norm_verify(v) if key == "verify_tls" else v.strip() if key == "token" else v
+    return out
+
+
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     try:
@@ -416,10 +426,7 @@ def load_config():
         data = None
     if data is not None:
         cfg.update(_check_config(_migrate_config(data)))
-    for env, key in ENV_OVERRIDES.items():
-        v = os.environ.get(env)
-        if v:
-            cfg[key] = v
+    cfg.update(_from_env())
     cfg["verify_tls"] = norm_verify(cfg.get("verify_tls", True))
     cfg["token"] = (cfg.get("token") or "").strip()
     return cfg
@@ -450,6 +457,17 @@ def save_config(cfg, force=False):
         raise _core.ConfigUnreadable("config.json can't be read; not saving over it")
     os.makedirs(_core.DATA_DIR, exist_ok=True)
     keep = {k: cfg[k] for k in DEFAULT_CONFIG if k in cfg}
+    env = _from_env()
+    if env:                    # ROMM_URL / ROMM_TOKEN values never land in the file: it keeps its own
+        try:
+            before = _read_config_file() or {}
+        except ValueError:
+            before = {}
+        for key, v in env.items():
+            if keep.get(key) == v:
+                keep.pop(key)
+                if key in before:
+                    keep[key] = before[key]
     keep["config_version"] = CONFIG_VERSION
     _core.atomic_write_json(_core.CONFIG_PATH, keep, mode=0o600, indent=1)
 
