@@ -115,7 +115,7 @@ class DownloadsScreen(ListScreen):
         super().tap_row(i)
 
     def action(self, a):
-        app, d = self.app, self.app.downloader
+        app = self.app
         jobs = self.view()
         self.follow(jobs)
         if self.nav(a):

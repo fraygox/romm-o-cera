@@ -141,6 +141,47 @@ def tag(c, font, label, pos, anchor="topleft", warn=False, color=None):
     return r
 
 
+def switch(c, rect, on):
+    """An on/off switch: the accent track with the knob right when on, a LINE track with it left
+    when off. Returns rect."""
+    rect = pygame.Rect(rect)
+    rrect(c, theme.ACCENT if on else theme.LINE, rect, rect.height // 2)
+    k = rect.height // 2
+    circle(c, theme.TEXT if on else theme.DIM, (rect.right - k if on else rect.left + k, rect.centery), k - 4)
+    return rect
+
+
+def switch_pill_width(font, label):
+    return int(measure(font, label)) + 2 * PILL_PAD + 56
+
+
+def switch_pill(c, font, label, rect, on, focused=False):
+    """A pill holding a label and its switch at the right ("Only what's on this box  [o ]"): a
+    setting's state shown on the screen it changes. Returns the switch's rect."""
+    rect = pygame.Rect(rect)
+    if focused:
+        focus_box(c, rect, rect.height // 2)
+    else:
+        rrect(c, theme.PANEL, rect, rect.height // 2)
+    sw = pygame.Rect(rect.right - PILL_PAD - 40, rect.centery - 11, 40, 22)
+    text(c, font, label, (rect.left + PILL_PAD, rect.centery), theme.TEXT if on or focused else theme.DIM,
+         "midleft", maxw=sw.left - 12 - rect.left - PILL_PAD)
+    return switch(c, sw, on)
+
+
+def player_dots(c, f, total, lit, pos, label=None, r=8, pitch=24):
+    """Up to four dots for the players a game takes, `lit` of them green (tonight's party), then
+    label beside them (e.g. "4 can play"). pos: the first dot's midleft. Returns the x after."""
+    x, y = pos
+    n = max(1, min(4, total))
+    for i in range(n):
+        circle(c, theme.GREEN if i < lit else theme.LINE, (x + r + i * pitch, y), r)
+    x += r * 2 + (n - 1) * pitch
+    if label:
+        x = text(c, f.small, label, (x + 12, y), theme.DIM, "midleft").right
+    return x
+
+
 def stars(c, n, pos, out_of=5, r=8, pitch=19, color=None):
     """n of out_of five-point stars (drawn: no app font has ★), starting at pos (midleft), the
     rest as outlines. Returns the x just past the last."""

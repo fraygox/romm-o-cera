@@ -190,11 +190,11 @@ def test_actions_menu_is_the_games_menu(rb, app):
     gl.action("ok")
     page = app.stack[-1]
     page.action("x")
-    assert [e and e[0] for e in app.modal.entries] == ["More like this", "Surprise me"]
+    assert [e and e[0] for e in app.modal.entries] == ["More like this", "Game night"]
     app.modal = None
     _install(app, rom)
     page.action("x")
-    assert [e and e[0] for e in app.modal.entries] == ["More like this", "Surprise me", None,
+    assert [e and e[0] for e in app.modal.entries] == ["More like this", "Game night", None,
                                                        "Delete from this box", "Download again"]
 
 

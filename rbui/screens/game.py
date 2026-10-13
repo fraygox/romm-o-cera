@@ -1,6 +1,5 @@
 """A game's own page: cover and backdrop, facts, summary, your RomM (status, rating, note,
 RetroAchievements), screenshots, a QR to open it on your phone, and its one verb."""
-import time
 
 import pygame
 import rommlib
@@ -8,12 +7,13 @@ from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import W
 from rbui.draw import card, marquee, measure, progress_bar, rom_title, scroll_text, text
-from rbui.modals import ActionMenu, DownloadConfirm, ManageMenu
+from rbui.modals import ActionMenu, ManageMenu
 from rbui.screens.about import draw_qr
 from rbui.screens.base import Screen
 from rbui.widgets.chips import stars, status_chip
 from rbui.widgets.factsheet import facts
-from rbui.widgets.hero import backdrop, game_note, game_verb, time_ago, verb_button, verb_note, VERB_H
+from rbui.widgets.hero import (backdrop, game_note, game_verb, meta_line, press_verb, time_ago, verb_button, verb_note,
+                               VERB_H)
 from rbui.widgets.tiles import cover, placeholder, shot
 
 X0, X1 = 48, W - 48                 # the page's edges
@@ -118,23 +118,7 @@ class GameScreen(Screen):
         return bool(name) and name in self.trail()
 
     def meta_line(self, rec):
-        md = rec.get("metadatum") or {}
-        plat = self.app.platform_by_id.get(rec.get("platform_id"))
-        bits = []
-        if not self.platform_in_crumbs():
-            bits.append((plat.get("display_name") or plat["name"]) if plat else rec.get("platform_display_name") or "")
-        ts = md.get("first_release_date")
-        if ts:
-            try:
-                bits.append(time.strftime("%Y", time.gmtime(int(ts) / (1000 if int(ts) > 10 ** 11 else 1))))
-            except (TypeError, ValueError, OverflowError):
-                pass
-        if md.get("genres"):
-            bits.append(", ".join(md["genres"][:2]))
-        n = rommlib.max_players(md.get("player_count"))
-        if n > 1:
-            bits.append("up to %d players" % n)
-        return " · ".join(b for b in bits if b)
+        return meta_line(self.app, rec, platform=not self.platform_in_crumbs())
 
     def facts(self, rec):
         app = self.app
@@ -195,25 +179,17 @@ class GameScreen(Screen):
             super().action(a)
 
     def go(self):
-        """The verb: Play now when it's here (the game menu's own Play now), else the list's A."""
-        app, rom = self.app, self.rom
-        if self.status()[0] == "installed":
-            label, why, fn = app.play_entry(rom)
-            if fn:
-                fn()
-            else:
-                app.toast(why, theme.AMBER)
-            return
-        app.modal = DownloadConfirm(app, rom)
+        """The verb: Play now when it's here (the game menu's own Play now), else the download prompt."""
+        press_verb(self.app, self.rom, self.status())
 
     def open_menu(self):
         """The game's Actions: what its menu in a list offers (delete, download again when it's
-        here), More like this, and Surprise me from the list it came from."""
+        here), More like this, and Game night from the list it came from."""
         app, rom = self.app, self.rom
         entries = [("More like this", "Games RomM says are like it", self.more_like)]
-        surprise = getattr(self.source, "surprise_me", None)
-        if surprise:
-            entries.append(("Surprise me", "A game from the list this one is in, picked at random", surprise))
+        night = getattr(self.source, "game_night", None)
+        if night:
+            entries.append(("Game night", "Roll a game from the list this one is in", night))
         if self.status()[0] == "installed":
             entries += [None] + [e for e in ManageMenu(app, rom, then=self.then).entries if e and e[0] != "Play now"]
         app.modal = ActionMenu(app, rom_title(rom), entries)

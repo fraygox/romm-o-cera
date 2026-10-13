@@ -12,12 +12,13 @@ from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, installed_mark,
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.compare import compare_entry
 from rbui.screens.game import GameScreen
+from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.screens.text_input import KeyboardScreen
 from rbui.widgets.keyboard import Keyboard
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
 from rbui.widgets.chips import tag
 from rbui.widgets.factsheet import facts
-from rbui.widgets.hero import game_verb, verb_button, VERB_H
+from rbui.widgets.hero import game_verb, rom_year, verb_button, VERB_H
 from rbui.widgets.tiles import cover
 from rbui.widgets.layout import bubble_at, split
 
@@ -70,13 +71,8 @@ def surprise_about(rom):
     n = rommlib.max_players(md.get("player_count"))
     if n > 1:
         bits.append("up to %d players" % n)
-    ts = md.get("first_release_date")
-    if ts:
-        try:
-            bits.append(time.strftime("%Y", time.gmtime(int(ts) / (1000 if int(ts) > 10 ** 11 else 1))))
-        except (TypeError, ValueError, OverflowError):
-            pass
-    return " · ".join(bits) + "." if bits else ""
+    bits.append(rom_year(rom))
+    return " · ".join(b for b in bits if b) + "." if bits else ""
 
 
 def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"):
@@ -212,11 +208,13 @@ class GameListScreen(ListScreen):
             return [p["id"] for p in self.app.platforms]
         return None
 
-    def _query(self, offset, limit, char_index=False):
-        """One page from RomM with this list's filters (blocking)."""
+    def _query(self, offset, limit, char_index=False, players=None):
+        """One page from RomM with this list's filters (blocking); players: another party
+        filter than the list's own (Game night's)."""
         app, pids = self.app, self._pids()
-        counts = rommlib.party_values(app.player_counts, self.players) if self.players else None
-        if self.players and not counts:
+        players = self.players if players is None else players
+        counts = rommlib.party_values(app.player_counts, players) if players else None
+        if players and not counts:
             return {"items": [], "total": 0}           # no game in the library is for that many players
         if self.order_by == "id_desc":
             p = {"offset": offset, "limit": limit, "with_char_index": "false",
@@ -428,8 +426,8 @@ class GameListScreen(ListScreen):
                       lambda: self._more_like(cur)))
         shown = self.total if self.dense or self.static is not None else self.server_total
         if shown != 0:
-            e.append(("Surprise me", ("One of these {:,} games, picked at random".format(shown) if shown else
-                                      "A game from this list, picked at random"), self.surprise_me))
+            e.append(("Game night", ("Roll one of these {:,} games for tonight".format(shown) if shown else
+                                     "Roll a game from this list for tonight"), self.game_night))
         tot = self.server_total
         if tot is None:
             e.append(("Download every game in this list", "Counting games…", None))
@@ -482,6 +480,23 @@ class GameListScreen(ListScreen):
                 return
             app.push(GameListScreen(app, "Games like %s" % name, static=roms))
         app.bg(lambda: app.api.similar(rom["id"]), done)
+
+    def night_scope(self):
+        """Where Game night rolls from when opened here: this list with its filters, its party
+        filter left to Game night's own."""
+        where = self.menu_title()
+        if self.static is not None:
+            return Scope(where, pool=list(self.static))
+        filtered = self.search or self.regions or self.hide_junk or self.only_verified
+        col = (self.collection["param"], self.collection["id"]) if self.collection else None
+        pids = self._pids() or [p["id"] for p in self.app.platforms]
+        whole = self.platform and not filtered and not col
+        return Scope(where, query=lambda off, lim, n: self._query(off, lim, players=n),
+                     random=None if filtered else {"platform_ids": pids, "collection": col},
+                     systems={self.platform["_system"]} if whole else None)
+
+    def game_night(self):
+        self.app.push(GameNightScreen(self.app, self.night_scope()))
 
     def surprise_me(self):
         """A random game from this list as it's filtered now. RomM picks when
@@ -711,9 +726,7 @@ class GameListScreen(ListScreen):
             y += 25 + used.height
         md = rom.get("metadatum") or {}
         plat = app.platform_by_id.get(rom.get("platform_id"))
-        year = ""
-        if md.get("first_release_date"):
-            year = time.strftime("%Y", time.gmtime(md["first_release_date"] / 1000))
+        year = rom_year(rom)
         size, fmt = human_size(rom.get("fs_size_bytes")), ""
         lay = app.layout(rom)
         if lay:

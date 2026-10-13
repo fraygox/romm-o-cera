@@ -104,6 +104,50 @@ def time_ago(ts, now=None):
             return "%d %s%s ago" % (n, unit, "" if n == 1 else "s")
 
 
+def press_verb(app, rom, status=None):
+    """What pressing a game's verb does: Play now when it's on the box (or says why it can't
+    start), the download prompt when it isn't, a word while it downloads."""
+    st = (status or app.rom_status(rom))[0]
+    if not app.system_for(rom):
+        app.toast("No Batocera system for this platform", theme.AMBER)
+    elif st == "installed":
+        label, why, fn = app.play_entry(rom)
+        if fn:
+            fn()
+        else:
+            app.toast(why, theme.AMBER)
+    elif st == "active":
+        app.toast("Already downloading", theme.AMBER)
+    else:
+        from rbui.modals import DownloadConfirm
+        app.modal = DownloadConfirm(app, rom)
+
+
+def rom_year(rom):
+    """The year RomM says a game came out ("" when it doesn't)."""
+    ts = (rom.get("metadatum") or {}).get("first_release_date")
+    try:
+        ts = int(ts)
+        return time.strftime("%Y", time.gmtime(ts / (1000 if ts > 10 ** 11 else 1))) if ts else ""
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ""
+
+
+def meta_line(app, rom, platform=True, players=True):
+    """A game in one grey line: platform · year · two genres · up to N players (what's known)."""
+    md = rom.get("metadatum") or {}
+    bits = []
+    if platform:
+        pl = app.platform_by_id.get(rom.get("platform_id")) or {}
+        bits.append(pl.get("display_name") or pl.get("name") or rom.get("platform_display_name") or "")
+    bits.append(rom_year(rom))
+    bits.append(", ".join((md.get("genres") or rom.get("genres") or [])[:2]))
+    n = rommlib.max_players(md.get("player_count"))
+    if players and n > 1:
+        bits.append("up to %d players" % n)
+    return " · ".join(b for b in bits if b)
+
+
 # ------------------------------------------------------------------ the backdrop
 
 BACKDROP_SHARE = 0.25       # a backdrop is drawn only when it takes at most this much of COVER_BUDGET

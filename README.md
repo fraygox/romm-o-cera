@@ -31,8 +31,9 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
 - **Find something to play from the couch.** Browse your RomM library by
   platform, collection, recently added or **Recommended for you**, search it
   with an on-screen keyboard, filter a list to games for **2+, 3+ or 4+
-  players** on a game night, or let **Surprise me** pick one (and roll
-  **Another** if you don't fancy it).
+  players**, or let **Game night** roll one for tonight's players (and roll
+  again if you don't fancy it). Your RomM **Backlog** downloads in one go,
+  what fits first.
   → [Browsing and downloading](docs/browsing-and-downloading.md)
 - **Download and play.** A game lands in the right `/userdata/roms/<system>/`
   folder, unpacked, checked against RomM's checksums, with its cover,
@@ -136,7 +137,7 @@ Easiest to read on the **[documentation site](https://fraygox.github.io/romm-o-c
 
 | | |
 |---|---|
-| [Browsing and downloading](docs/browsing-and-downloading.md) | finding games, Surprise me, filters, Play now, the queue, space, download hours, game info |
+| [Browsing and downloading](docs/browsing-and-downloading.md) | finding games, Game night, Backlog, filters, Play now, the queue, space, download hours, game info |
 | [On this box](docs/on-this-box.md) | installed games, space, compressing what's here, BIOS, Check games, conversions, game info |
 | [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, 3DS, Xbox 360, Wii U, converting a library you already have |
 | [PS3 games](docs/ps3.md) | `.ps3` game folders, encrypted discs, where disc keys go (`bios/ps3keys`), keys in RomM |

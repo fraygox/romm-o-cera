@@ -345,6 +345,79 @@ def test_a_dialogs_buttons_are_verb_buttons(rb, app, monkeypatch):
     assert kinds == [("Delete", "danger", "A"), ("Another", "quiet", "Y"), ("Back", "quiet", "B")]
 
 
+# ------------------------------------------------------------------ wave 2: Game night, Backlog
+
+def test_switch_and_switch_pill(rb, fonts):
+    c = _canvas(rb)
+    on = rb.switch(c, (10, 10, 44, 24), True)
+    assert c.get_at((on.right - 12, on.centery))[:3] == rb.theme.TEXT        # the knob at the right
+    off = rb.switch(c, (10, 50, 44, 24), False)
+    assert c.get_at((off.left + 12, off.centery))[:3] == rb.theme.DIM
+    w = rb.switch_pill_width(fonts.body, "Only what's on this box")
+    sw = rb.switch_pill(c, fonts.body, "Only what's on this box", (100, 100, w, 38), True)
+    assert sw.right <= 100 + w and sw.left > 100 + rb.measure(fonts.body, "Only what's on this box")
+
+
+def test_player_dots_light_tonights_party(rb, fonts):
+    c = _canvas(rb)
+    x = rb.player_dots(c, fonts, 4, 2, (20, 30), "4 can play")
+    assert c.get_at((28, 30))[:3] == rb.theme.GREEN and c.get_at((28 + 2 * 24, 30))[:3] == rb.theme.LINE
+    assert x > 20 + 3 * 24 + 16 + rb.measure(fonts.small, "4 can play") - 1
+    assert rb.player_dots(c, fonts, 8, 8, (20, 80)) == 20 + 16 + 3 * 24        # four dots at most
+
+
+def test_meta_line_and_year(rb, app):
+    rom = {"id": 1, "platform_id": 7, "metadatum": {"genres": ["Action", "Shooter", "Puzzle"],
+                                                    "player_count": "1-4", "first_release_date": 946684800000}}
+    assert rb.meta_line(app, rom) == "PlayStation · 2000 · Action, Shooter · up to 4 players"
+    assert rb.meta_line(app, rom, platform=False, players=False) == "2000 · Action, Shooter"
+    assert rb.rom_year({"metadatum": {"first_release_date": "junk"}}) == ""
+    assert rb.meta_line(app, {"id": 2, "platform_id": 99}) == ""
+
+
+def test_press_verb_follows_the_games_state(rb, app, monkeypatch):
+    rom = {"id": 1, "name": "Lorem", "platform_id": 7, "fs_name": "Lorem.chd", "fs_size_bytes": 10}
+    monkeypatch.setattr(app, "rom_status", lambda r: ("remote", None))
+    rb.press_verb(app, rom)
+    assert isinstance(app.modal, rb.DownloadConfirm)
+    app.modal = None
+    ran = []
+    monkeypatch.setattr(app, "rom_status", lambda r: ("installed", None))
+    monkeypatch.setattr(app, "play_entry", lambda r: ("Play now", "", lambda: ran.append(1)))
+    rb.press_verb(app, rom)
+    assert ran == [1]
+    monkeypatch.setattr(app, "play_entry", lambda r: ("Play now", "It's still downloading", None))
+    rb.press_verb(app, rom)
+    assert app.toasts[-1][0] == "It's still downloading"
+    rb.press_verb(app, dict(rom, platform_id=99))
+    assert app.toasts[-1][0] == "No Batocera system for this platform"
+
+
+def test_list_row_thumb_and_status_tick(rb, fonts, monkeypatch):
+    import pygame
+    c = _canvas(rb)
+    got = []
+    r = pygame.Rect(40, 100, 600, 52)
+    tx = rb.list_row(c, fonts, r, False, "Lorem", "Ipsum", "On this box", rb.theme.GREEN,
+                     thumb=lambda tr: got.append(pygame.Rect(tr)), status_tick=True)
+    assert got[0].height == 44 and got[0].width == 33 and tx == got[0].right + 14
+    sr_left = r.right - 20 - rb.measure(fonts.small, "On this box")
+    assert c.get_at((int(sr_left - 14), r.centery))[:3] != rb.theme.BG       # the tick before the status
+
+
+def test_panel_figure_legend_and_verb(rb, app, fonts):
+    c = _canvas(rb)
+    p = rb.Panel(c, fonts, (800, 80, 400, 560), app=app)
+    y0 = p.y
+    p.figure("13.5 GB", "14 games not on this box yet")
+    assert p.y == y0 + 46 + 30 + 6
+    y1 = p.y
+    p.legend([(rb.theme.ACCENT, "12 fit now"), (None, "10 GB free")])
+    assert p.y == y1 + 2 * 24 + 6
+    tapped = []
+    vr = p.verb("Download 14", "go", "13.5 GB", glyph="Y", fn=lambda: tapped.append(1))
+    assert vr.width == p.w and vr.height == rb.VERB_H and p.y == vr.bottom + 14
+    assert any(t[0] == vr for t in app.targets)
 # ------------------------------------------------------------------ Welcome's pieces
 
 def test_step_dot_notice_code_slots_and_row_chevron(rb, fonts):
