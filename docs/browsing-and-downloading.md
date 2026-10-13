@@ -31,30 +31,42 @@
 - In any list, **L2/R2** jump letter by letter and **L/R** or left/right
   page ([Controls](controls.md#lists)).
 
-### Surprise me
+### Game night
 
-Can't decide? Surprise me picks a random game and opens its download prompt,
-titled "Surprise: …" with the game's genre, players and year. **A**
-downloads it, **Y Another** picks again, **B** goes back. A game that's
-already on the box opens its menu instead (Play now is right there), and a
-disc of a multi-disc set opens the set's menu; both have **Another
-surprise** at the end.
+Can't decide? Game night rolls a random game and shows it big: cover, name,
+platform, year, genre, how many can play and its description. **A** plays it
+when it's on the box or downloads it when it isn't, **Y** rolls another, **B**
+goes back. The rolls you pass on stay down the left (the last four, until you
+leave): **up/down** brings one back.
 
-![Surprise me: Download, Another or Back](../screenshots/surprise.png)
+Across the top: who's playing tonight (**Anyone, 2, 3 or 4 players**, changed
+with **left/right** or a tap) and **Only what's on this box**, switched in
+**X Actions**. Both roll again when they change and stay set until you exit.
+The line at the bottom left says what it's rolling from ("Rolling from 1,234
+games in PlayStation, for 2+ players").
 
 Where to find it:
 
-- **Home: Y.** From your whole library. A small menu first: **Pick a game**,
-  how many **Players** (Any, 2+, 3+, 4+), and **Only games not on this box**.
-  Both stay set until you exit.
-- **Platforms: X** on a platform picks from it straight away.
-- **Collections: X › Surprise me** on a collection.
-- **A game list: X › Surprise me.** One of the games in the list as it's
-  filtered right now: the region, Players, hidden prototypes and "Hide games
-  on this box" all count.
+- **Home: Y.** From your whole library.
+- **Platforms: X** on a platform: from that platform.
+- **Collections: X › Game night** on a collection.
+- **A game list: X › Game night.** From the list as it's filtered right now
+  (region, hidden prototypes...); Game night's own players and on-the-box
+  choices replace the list's.
 
-Only games with a Batocera system are picked. RomM 5.4 picks the game
-itself; with an older RomM the app picks from the list's pages.
+Only games with a Batocera system come up. RomM 5.4 picks the game itself;
+with an older RomM the app picks from the list's pages.
+
+### Backlog
+
+**Collections › Your RomM lists › Backlog** lists the games you marked
+Backlog in RomM, in RomM's order: a cover, on-the-box tick or size, and
+**Waits for space** in amber for those that won't fit yet. The panel sums up
+**Download my backlog** (**Y**): the total, how many aren't here yet, what
+fits now and what waits (against the space left once the queue has landed,
+keeping Settings' keep-free space), and a line per platform. Everything is
+queued in that order (up to 1,000); the ones that don't fit wait for room.
+**X Actions** has Free up space. **A** plays the selected game or downloads it.
 
 ## The detail panel
 
@@ -71,7 +83,7 @@ Press **X** in a game list for its Actions menu. Filters change the list in plac
 and the menu stays open; the actions close it.
 
 - **More like this**: games similar to the selected one.
-- **Surprise me**: a random game from the list (see [Surprise me](#surprise-me)).
+- **Game night**: roll a game from the list (see [Game night](#game-night)).
 - **Filters**: hide games already on the box, pick a region (USA + World,
   Europe + World, Japan), hide prototypes/demos/hacks, show only
   checksum-verified dumps; in a platform's list and Recently added, sort by

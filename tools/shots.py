@@ -248,6 +248,39 @@ def install_some():
     return r
 
 
+def install_backlog():
+    """Three of the mock's backlog games on the box."""
+    lib = app.library
+    got = [r for r in app.api.user_list("backlog", limit=100)["items"] if app.system_for(r)]
+    for r in got[:6:2]:
+        sy = app.system_for(r)
+        p = os.path.join(R, sy, r["fs_name_no_ext"] + ".chd")
+        mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // 2)
+        lib.mark(r, sy, [p])
+
+
+def game_night(players=0, here=False, rolls=4, scope=None, then=None):
+    """Game night from Home after a few rolls (the same ones every run)."""
+    import random
+    random.seed(7)
+    if here:
+        install_some()
+    app.night_opts = {"players": players, "here": here}
+    scr = rb.GameNightScreen(app, scope or rb.Scope.library(app))
+    app.push(scr)
+
+    def more():
+        for _ in range(rolls - 1):
+            rom, why, pool = rb.gamenight.roll(app, scr.scope, players, here, [r["id"] for r in scr.picks])
+            if rom:
+                scr.picks.append(rom)
+                scr.rolls += 1
+        scr.sel = max(0, len(scr.picks) - 1)
+        if then:
+            then()
+    app._after = more
+
+
 def search_ready():
     sc = rb.SearchScreen(app)
     app.push(sc)
@@ -397,8 +430,14 @@ SCENES = [
                                                               [app.dispatch(k) for k in ("r1", "ok", "down", "ok")])))),
     ("game-list-party", lambda: party_list(2)),
     ("list-menu-party", lambda: party_list(4, menu=True)),
-    ("home-surprise", lambda: (app.__dict__.update(surprise_opts={"players": 2, "new": True}),
-                               app.stack[0].surprise_menu())),
+    ("game-night", lambda: game_night()),
+    ("game-night-here", lambda: game_night(players=2, here=True)),
+    ("game-night-menu", lambda: game_night(rolls=1, then=lambda: app.dispatch("x"))),
+    ("game-night-empty", lambda: game_night(players=4, here=True, rolls=1, scope=rb.Scope("Lorem", pool=[]))),
+    ("backlog", lambda: (install_backlog(), app.push(rb.BacklogScreen(app)),
+                         setattr(app, "_after", lambda: [app.dispatch("down") for _ in range(3)]))),
+    ("backlog-tight", lambda: (install_backlog(), app.cfg.update(keep_free_gb=636),
+                               app.push(rb.BacklogScreen(app)))),
     ("surprise-pick", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                                setattr(app, "_after", lambda: app.stack[-1].surprise_me()))),
     ("home-recommended", lambda: setattr(app, "_after", lambda: setattr(
@@ -501,8 +540,10 @@ def reset():
     app.toasts = []
     app._after = None
     app.downloader.hold = True
+    app.cfg["keep_free_gb"] = KEEP_FREE
 
 
+KEEP_FREE = app.cfg.get("keep_free_gb", 20)
 bad_tokens = set()
 failures = []
 results = {}

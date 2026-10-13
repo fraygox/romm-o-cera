@@ -7,7 +7,8 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import chevron, circle, focus_box, hline, marquee, rom_title, rrect, scroll_text, text
+from rbui.draw import chevron, focus_box, hline, marquee, rom_title, rrect, scroll_text, text
+from rbui.widgets.chips import switch
 from rbui.widgets.hero import verb_button
 
 
@@ -116,9 +117,7 @@ class ActionMenu:
             col = (theme.TEXT if on else theme.DIM) if fn else theme.FAINT
             vw = 0
             if kind == "switch":
-                tr = pygame.Rect(row.right - 18 - 44, row.centery - 12, 44, 24)
-                rrect(c, theme.ACCENT if value else theme.LINE, tr, 12)
-                circle(c, theme.TEXT if value else theme.DIM, (tr.right - 12 if value else tr.left + 12, tr.centery), 8)
+                switch(c, (row.right - 18 - 44, row.centery - 12, 44, 24), value)
                 vw = 44 + 24
             elif kind == "choice":
                 vr = text(c, f.body, str(value), (row.right - 40, row.centery),

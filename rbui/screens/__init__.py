@@ -4,6 +4,8 @@
   home         Home, the platform list
   collection   collections (RomM's own and the virtual ones)
   games        a game list, Search
+  gamenight    Game night: a random game for tonight's players
+  backlog      your RomM backlog and Download my backlog
   downloads    the download queue
   text_input   a text setting, typed on the shared keyboard (rbui/widgets/keyboard.py)
   settings     Settings
