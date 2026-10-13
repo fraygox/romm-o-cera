@@ -40,6 +40,19 @@ def _fast_polls(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _pad_state():
+    """The controller style and keyboard mode are module state: a test that switches them
+    (Settings, a key press) leaves the next test on the same worker drawing other glyphs."""
+    from rbui import pads
+    style, mode = dict(pads.PAD_STYLE), dict(pads.INPUT_MODE)
+    yield
+    pads.PAD_STYLE.clear()
+    pads.PAD_STYLE.update(style)
+    pads.INPUT_MODE.clear()
+    pads.INPUT_MODE.update(mode)
+
+
+@pytest.fixture(autouse=True)
 def _stop_workers():
     """Each test's download workers stop before the next test starts (they'd
     otherwise keep writing into whatever paths the next test patches in), and
