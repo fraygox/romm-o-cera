@@ -132,6 +132,23 @@ def test_collections(api):
         assert page["total"] == c["rom_count"]
 
 
+def test_collection_records_carry_their_games_and_covers(api, tmp_path, monkeypatch):
+    """Collections' shelves: a record lists its games (rom_ids, matching rom_count) and RomM's
+    own cover paths (path_covers_small, fetched like any asset), regular and virtual alike."""
+    monkeypatch.setattr(rommlib, "COVER_CACHE", str(tmp_path))
+    recs = [c for c in api.collections() if c.get("rom_count")]
+    recs += [c for c in api.virtual_collections("genre") if c.get("rom_count")][:3]
+    if not recs:
+        pytest.skip("no collection with games on this server")
+    for c in recs[:10]:
+        assert isinstance(c.get("rom_ids"), list) and len(c["rom_ids"]) == c["rom_count"], c["name"]
+        assert isinstance(c.get("path_covers_small"), list), c["name"]
+    covered = next((c for c in recs if rommlib.collection_cover_paths(c)), None)
+    if covered:
+        path = api.fetch_collection_cover(covered, 0)
+        assert path and os.path.getsize(path) > 0
+
+
 def test_smart_collections_endpoint(api):
     smart = api.smart_collections()
     assert isinstance(smart, list)
