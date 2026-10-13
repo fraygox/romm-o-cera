@@ -688,7 +688,8 @@ class App:
         if self.notes_pending and len(self.stack) == 1 and self.modal is None:
             rel, prev = self.notes_pending
             self.notes_pending = None
-            self.push(WhatsNewScreen(self, rel, prev))
+            if rommlib.notes_due(self.cfg):           # not read meanwhile (Settings, What's new)
+                self.push(WhatsNewScreen(self, rel, prev))
 
     def request_quit(self):
         if getattr(self, "updating", False):

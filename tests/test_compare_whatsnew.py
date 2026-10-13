@@ -293,6 +293,18 @@ def test_whats_new_waits_for_home_and_never_covers_a_dialog(rb, app):
     assert isinstance(app.stack[-1], rb.WhatsNewScreen) and app.notes_pending is None
 
 
+def test_whats_new_read_from_settings_meanwhile_is_not_shown_again(rb, app):
+    home = rb.Screen(app)
+    app.push(home)
+    app.cfg["notes_seen"] = "0.0.1"
+    scr = rb.WhatsNewScreen(app, REL, "0.8.2")          # Settings, What's new, while the start fetch runs
+    app.push(scr)
+    scr.action("ok")
+    assert app.stack == [home]
+    app._notes_found((REL, "0.8.2"))
+    assert app.stack == [home] and app.notes_pending is None
+
+
 def test_notes_at_start_is_none_offline_or_when_already_seen(rb, app, monkeypatch):
     monkeypatch.setattr(rommlib, "whats_new", lambda cfg: None)
     assert rb.notes_at_start(app.cfg) is None
