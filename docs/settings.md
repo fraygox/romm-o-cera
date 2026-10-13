@@ -1,11 +1,13 @@
 # Settings
 
-On the box: **Pygame → RomM-o-Cera → Settings**. Settings are grouped
-(RomM server, Controller, Downloads, Disc compression, This app, Updates), and
-the panel beside the list explains the selected one. Everything is saved to
-`/userdata/system/romm-browser/config.json` straight away.
+**Settings** is on the home screen. Its rows are grouped (RomM server,
+Controller, Downloads, Disc compression, This app, Updates), and the panel
+beside the list explains the selected one. **A** changes a setting (or opens
+it), **left/right** step through its choices, and **L/R** jump six rows.
+Everything is saved to `/userdata/system/romm-browser/config.json` straight
+away.
 
-The rows that aren't a setting do something when you press confirm:
+The rows that aren't a setting do something when you press A:
 
 **RomM server**
 
@@ -54,71 +56,15 @@ The rows that aren't a setting do something when you press confirm:
 on for boxes with less than 4 GB of RAM, and the row says which it is and
 why ("Auto (Off, 8.0 GB RAM)").
 
-**Theme** (in This app) sets the colours of the whole app. Built in:
-Default (RomM violet), PlayStation, Xbox and Kyoto (red), each also as an
-**OLED** version with a pure black background, plus **High contrast** (black
-and white with a yellow highlight) and **High contrast light** (black on
-white). Twenty more:
-
-- **Consoles**: Brick (four greens), Red Visor OLED (red on true black), Red &
-  White (maroon, cream and gold), Lavender (greys and purple), Mega Drive
-  (black and red), Dreamcast (a light theme, white and orange), Indigo Cube,
-  Sixty-Four (charcoal and green), TurboGrafx (black and orange), Neo Geo
-  (black and gold), Atari 2600 (woodgrain and orange) and Commodore 64.
-- **Screens and moods**: Green phosphor, Amber monitor, Synthwave and Sakura.
-- **Classic palettes**: Nord, Solarized, Dracula and Paper (a warm light
-  theme).
-
-Confirm on **Theme** opens the theme picker: every theme as a card with a
-small picture of the app in its colours, grouped as above. Moving onto a card
-puts the whole app in that theme straight away, so you see it for real;
-confirm keeps it, back puts the one you had back. **Y** switches a card to its
-OLED version (cards that have one show an OLED pill; Red Visor is only OLED).
-The side panel names the theme, says what it's after, shows what its colours
-mean (focus, ready, working, problem, info) and a row at its real size. A
-tick marks the theme you use. Left and right on the Theme row still step
-through the themes without opening the picker.
-
-**Custom**, under Yours at the end of the picker, is your own theme: confirm
-on its card opens it. Pick an **accent colour** and a **background tint**
-round the colour wheel (left and right go 15° at a time, L and R 60°; on a
-touch screen, tap a colour), how strong the **tint** is (from neutral grey to
-fully tinted), and the **mode**: Dark, OLED (pure black) or Light. The whole
-app shows it as you change it; confirm keeps it and uses it, back leaves it as
-it was. Every colour is made from those four choices and then nudged until it
-meets the same readability floors as every other theme, with warnings kept
-apart from the accent, so no choice can make it hard to read. It's saved in
-`config.json` as four `theme_custom_` settings.
-
-**X** on any other card (on a touch screen, the side panel's **Edit a copy**
-button) starts Custom from that theme: the accent
-takes the theme's accent hue, the tint and its strength are worked out from
-the theme's backgrounds so Custom comes as close to its look as the four
-choices can, and the mode follows its background (pure black: OLED, light:
-Light, otherwise Dark; switch the card to its OLED version first to copy
-that). The Custom screen then opens on those colours, saying which theme they
-came from, for you to tweak. Nothing is saved until you confirm there; back
-returns to the picker with your Custom theme as it was, and so does going
-Home. The copy is close rather than exact, since Custom's lightness levels are
-fixed: themes with unusually bright backgrounds (Commodore 64, Indigo Cube) or
-rules (High contrast) come out a little deeper.
-
-Every theme keeps text at least as readable as Default, and warnings never share a
-colour with the highlight (in Kyoto, warnings are coral, not red). A new
-install starts on Default.
-
-**Match theme to controller** (off by default) uses the theme made for the
-controller the app sees instead of your Theme: PlayStation, Xbox or Kyoto for a
-Nintendo controller, in its OLED version if your Theme is an OLED one. With a
-keyboard, or a controller whose name doesn't say who made it, your Theme stays. When Button
-labels is set by hand, it follows that instead. High contrast themes are never
-replaced. It changes as soon as a controller connects or disconnects, and the
-Theme row shows what's on screen ("Default (now PlayStation)").
-
-| | |
-|---|---|
-| ![PlayStation OLED theme](../screenshots/themes/playstation-oled.png) | ![Xbox theme](../screenshots/themes/xbox.png) |
-| ![Kyoto theme](../screenshots/themes/nintendo.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
+**Theme** (in This app) sets the colours of the whole app: 26 themes and a
+Custom one of your own; Default, PlayStation, Xbox and Kyoto also come in a
+pure-black OLED version. Confirm opens
+the theme picker, which previews each theme across the whole app as you move
+onto it; left and right on the row step through the themes without opening
+it. **Match theme to controller** (off by default) shows the PlayStation,
+Xbox or Kyoto theme for the controller you're holding instead, and the Theme
+row then says what's on screen ("Default (now PlayStation)"). Both are
+described in [Themes](themes.md).
 
 ## `config.json`
 
