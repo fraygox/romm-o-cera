@@ -1,6 +1,7 @@
 """Play now: the app quits and a detached waiter has EmulationStation start
 the game, once ES lists it (rb_finalize adds new downloads after the app has
-quit) and nothing else has started meanwhile."""
+quit) and rb_finalize has finished writing game info, and nothing else has
+started meanwhile."""
 import os
 import time
 
@@ -87,6 +88,77 @@ def test_once_listed_it_is_launched_once_and_left_to_es(es):
     assert _until(lambda: es.launched)
     time.sleep(3)
     assert es.launched == [game] and es.notes == []
+
+
+def _finalizing():
+    """rb_finalize in the middle of a batch: its queue claimed into .work,
+    its lock held (by this test, as rb_finalize holds it)."""
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    open(rommlib.GAMELIST_QUEUE + ".work", "w").write('{"system": "gba"}\n')
+    return rommlib.try_lock(rommlib.finalize_lock_path())
+
+
+def test_the_waiter_reads_rb_finalizes_own_lock():
+    import rb_finalize
+    assert rommlib.finalize_lock_path() == rb_finalize.lock_path()
+
+
+def test_the_game_starts_only_once_rb_finalize_is_done(es):
+    """ES lists the game as soon as rb_finalize reloads its games, while it is
+    still writing game info: /launch waits for it to finish."""
+    game = _game()
+    es.reload()
+    with _finalizing() as fd:
+        assert fd is not None
+        assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
+        time.sleep(3.5)
+        assert es.launched == []                       # listed, but rb_finalize is still writing
+        os.remove(rommlib.GAMELIST_QUEUE + ".work")    # its batch is done
+        assert _until(lambda: es.running == game)
+    assert es.launched == [game] and es.notes == []
+
+
+def test_a_finished_finalize_still_holding_its_lock_doesnt_hold_the_game(es):
+    game = _game()
+    es.reload()
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    with rommlib.try_lock(rommlib.finalize_lock_path()):   # no batch left: it's on its way out
+        assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
+        assert _until(lambda: es.running == game)
+
+
+def test_a_batch_no_finalize_is_working_on_doesnt_hold_the_game(es):
+    """A .work left by a killed rb_finalize, or a queue no finalize has started
+    on: nothing writes to ES now, and the next finalize waits for the game."""
+    game = _game()
+    es.reload()
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    open(rommlib.GAMELIST_QUEUE + ".work", "w").write('{"system": "gba"}\n')
+    open(rommlib.GAMELIST_QUEUE, "w").write('{"system": "gba"}\n')
+    assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
+    assert _until(lambda: es.running == game)
+
+
+def test_while_finalize_writes_a_game_the_player_starts_wins(es):
+    game = _game()
+    es.reload()
+    with _finalizing():
+        assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
+        time.sleep(2.2)
+        es.running = "/userdata/roms/gba/Ipsum.gba"    # the player starts another game meanwhile
+        time.sleep(2)
+        os.remove(rommlib.GAMELIST_QUEUE + ".work")
+        time.sleep(1.5)
+    assert es.launched == [] and es.running == "/userdata/roms/gba/Ipsum.gba"
+
+
+def test_a_finalize_that_outlasts_the_wait_gets_a_popup_not_a_launch(es):
+    game = _game()
+    es.reload()
+    with _finalizing():
+        assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=1)
+        assert _until(lambda: es.notes, 8)
+    assert es.launched == [] and es.notes == ["Lorem Quest is ready: start it from gba."]
 
 
 def test_reopening_after_an_update_uses_the_same_waiter(es, tmp_path, monkeypatch):

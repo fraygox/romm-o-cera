@@ -126,9 +126,10 @@ converted file (CHD, RVZ, .zar, .wua…). A game that's waiting to be
 compressed, or being compressed, can't start until that's done, and the menu
 says so. A new download isn't in EmulationStation's lists until RomM-o-Cera
 hands it over after closing, so the game starts once EmulationStation lists
-it (up to 10 minutes on Batocera 43.1, which reloads every list for it);
-starting another game meanwhile cancels it, and a popup says where to find
-the game if EmulationStation never lists it. Where EmulationStation asks
+it and its game info and images are written (up to 10 minutes on Batocera
+43.1, which reloads every list for it); starting another game meanwhile
+cancels it, and a popup says where to find the game if it isn't ready by
+then. Where EmulationStation asks
 before starting a game (a system with missing BIOS files), it asks then too.
 
 ### The Downloads screen

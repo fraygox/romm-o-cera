@@ -300,12 +300,19 @@ def es_messagebox(msg):
 # list: its reply is 200 either way. A game downloaded this session isn't
 # listed until rb_finalize hands it to ES, which it does once the app has quit
 # and ES is idle, so with `system` the waiter first waits (up to `wait` s)
-# for /systems/<system>/games to list the path. A listed game then starts,
-# or ES asks the player first (its "missing BIOS" warning waits for an
-# answer), so nothing is checked after the launch.
+# for /systems/<system>/games to list the path. ES lists it as soon as
+# rb_finalize has reloaded its games, while rb_finalize is still writing
+# game info and media (for it and others), so the waiter then also waits,
+# within the same `wait`, until rb_finalize is done: its batch (the queue
+# and its .work file) is gone, or no rb_finalize holds its lock (read from
+# /proc/locks, never taken: a finalize starting then would think another
+# runs and skip). A listed game then starts, or ES asks the player first
+# (its "missing BIOS" warning waits for an answer), so nothing is checked
+# after the launch.
 _LAUNCHER = r"""
-import json, sys, time, urllib.parse, urllib.request
+import json, os, sys, time, urllib.parse, urllib.request
 es, path, system, name, wait = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], float(sys.argv[5])
+lock, queue = (sys.argv[6], sys.argv[7]) if len(sys.argv) > 7 else ("", "")
 def get(p, timeout=10):
     with urllib.request.urlopen(es + p, timeout=timeout) as r:
         return r.read()
@@ -328,6 +335,26 @@ def say(msg):
         post("/notify", msg)
     except Exception:
         pass
+def pending():
+    try:
+        if os.path.getsize(queue) > 0:
+            return True
+    except OSError:
+        pass
+    return os.path.exists(queue + ".work")
+def locked():
+    try:
+        st = os.stat(lock)
+    except OSError:
+        return False
+    key = "%02x:%02x:%d" % (os.major(st.st_dev), os.minor(st.st_dev), st.st_ino)
+    try:
+        with open("/proc/locks") as f:
+            return any(key in line.split() for line in f if "FLOCK" in line)
+    except OSError:
+        return True                   # can't tell: the batch files say
+def finalizing():
+    return bool(queue) and pending() and locked()
 end = time.time() + 60
 while time.time() < end and running() != "":
     time.sleep(0.3)
@@ -343,22 +370,35 @@ if system:
             say("%s isn't in EmulationStation's list yet: start it from %s once it shows." % (name, system))
             sys.exit()
         time.sleep(2)
+    while finalizing():               # rb_finalize still writing game info: never under a running game
+        if running():
+            sys.exit()
+        if time.time() >= end:
+            say("%s is ready: start it from %s." % (name, system))
+            sys.exit()
+        time.sleep(1)
     if running():
         sys.exit()
 post("/launch", path)
 """
 
 
+def finalize_lock_path():
+    """rb_finalize's lock (rb_finalize.lock_path(); the same file)."""
+    return os.path.join(_core.DATA_DIR, "finalize.lock")
+
+
 def launch_when_closed(path, system=None, name=None, wait=600, python=None):
     """Start the waiter that has ES launch `path` once this app has quit.
     system: the game's system, when ES may not list it yet (Play now: the
-    waiter waits for the list); name: the game's name for the popup if ES
-    never lists it. True when the waiter is running."""
+    waiter waits for the list, then for rb_finalize to finish); name: the
+    game's name for the popup if ES never lists it. True when the waiter is
+    running."""
     import subprocess
     import sys
     try:
         subprocess.Popen([python or sys.executable, "-c", _LAUNCHER, ES_API, path, system or "", name or "",
-                          str(wait)], start_new_session=True,
+                          str(wait), finalize_lock_path(), _core.GAMELIST_QUEUE], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except OSError:
