@@ -574,8 +574,9 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
     """Gamelist entries for games already in roms/<system> that RomM knows
     (matched by file name, like "already on this box") and whose ES entry
     lacks something RomM has for it: text, images, video, manual (offered(),
-    as Settings' Metadata section asks: cfg). Entries carry "fill": the merge
-    only sets what's missing. Returns (entries, stats)."""
+    as Settings' Metadata section asks: cfg). Media noted as never arriving
+    (library.skipped_tags) doesn't count as lacking. Entries carry "fill":
+    the merge only sets what's missing. Returns (entries, stats)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
     if not os.path.isdir(sysdir):
@@ -602,6 +603,7 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
             if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
                 sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
     have = _gamelist_info(sysdir)
+    skips = _library.media_skips()
     in_m3u = set()
     for n in names:
         if n.lower().endswith(".m3u"):
@@ -642,7 +644,7 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
         e["fill"] = True
         if title:
             e["name"] = title
-        if offered(e) <= got:
+        if offered(e) <= got | _library.skipped_tags(e, cfg, skips):
             stats["complete"] += 1
             continue
         entries.append(e)

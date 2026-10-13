@@ -517,6 +517,73 @@ def es_pick(media, cfg):
     return out
 
 
+# -- media RomM offers that never arrives (a video over the size cap, a file that 404s):
+# noted per game and tag, so Fill in game info stops listing the game as incomplete for
+# it. A different file at RomM (a new path) or a cap it fits under is tried again.
+SKIPS_MAX = 2000                  # games remembered (the oldest forgotten first)
+
+
+def media_skips_path():
+    return os.path.join(_core.DATA_DIR, "media-skipped.json")
+
+
+def media_skips():
+    """{"system/rom id": {tag: {"path": server path, "size": bytes or None}}}."""
+    try:
+        with open(media_skips_path()) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _save_skips(d):
+    while len(d) > SKIPS_MAX:
+        del d[next(iter(d))]
+    os.makedirs(_core.DATA_DIR, exist_ok=True)
+    _core.atomic_write_json(media_skips_path(), d)
+
+
+def record_media_skip(system, rom_id, tag, path, size=None):
+    """Note that `tag` for this game couldn't be fetched from `path` (size: it was
+    over the video cap, that big; None: the file didn't come)."""
+    if not rom_id:
+        return
+    d = media_skips()
+    key = "%s/%s" % (system, rom_id)
+    game = d.pop(key, None) or {}
+    game[tag] = {"path": path, "size": size}
+    d[key] = game
+    _save_skips(d)
+
+
+def clear_media_skip(system, rom_id, tag):
+    """The tag came after all: forget its note."""
+    d = media_skips()
+    key = "%s/%s" % (system, rom_id)
+    if rom_id and tag in (d.get(key) or {}):
+        del d[key][tag]
+        if not d[key]:
+            del d[key]
+        _save_skips(d)
+
+
+def skipped_tags(entry, cfg, skips=None):
+    """The entry's media tags a recorded skip still covers: the same first path at RomM,
+    and (for a video over the cap) still bigger than today's cap."""
+    skips = media_skips() if skips is None else skips
+    noted = skips.get("%s/%s" % (entry.get("system"), entry.get("rom_id"))) or {}
+    out = set()
+    for tag, paths in (entry.get("media") or {}).items():
+        n = noted.get(tag)
+        if isinstance(n, dict) and paths and n.get("path") == paths[0]:
+            if n.get("size") is None or n["size"] > es_video_max(cfg):
+                out.add(tag)
+    if "manual" in noted and entry.get("manual") and noted["manual"].get("path") == entry["manual"]:
+        out.add("manual")
+    return out
+
+
 # RomM's region and language names (its filename tags and providers) as the codes
 # EmulationStation keeps. Regions: Batocera's ES shows a region's flag by its code
 # (resources/flags/<code>.png: "us", "eu", "jp", "wr" for World, "es" Spain, "sw" Sweden...),

@@ -47,9 +47,11 @@ MEDIA_TAGS = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "be
               "titleshot", "wheel", "boxart", "cartridge", "magazine")
 IMAGE_MAX = 20 << 20     # an image from RomM bigger than this isn't one
 VIDEO_MAX = 50 << 20     # a game's video clip: a bigger one is skipped (and logged)
-# Settings → Metadata (v0.11): a rommlib still in memory from before an update lacks this
-# (tests/test_package.py): then the cap stays VIDEO_MAX
+# Settings → Metadata (v0.11): a rommlib still in memory from before an update lacks these
+# (tests/test_package.py): then the cap stays VIDEO_MAX and skips aren't noted
 _video_max = getattr(rommlib, "es_video_max", None)
+_note_skip = getattr(rommlib, "record_media_skip", lambda *a: None)
+_forget_skip = getattr(rommlib, "clear_media_skip", lambda *a: None)
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
           ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
@@ -239,8 +241,9 @@ def fetch_media(api, tag, path, video_max=None, info=None):
 
 def upload_media(api, esapi, system, g, e, cfg=None):
     """Every media file the entry offers that the game has none of in ES yet
-    (what's there is never replaced): the first of its RomM paths that comes;
-    videos follow today's cap (cfg)."""
+    (what's there is never replaced): the first of its RomM paths that comes.
+    A tag none of them comes for is noted (library.record_media_skip), so Fill
+    in game info stops asking for it; videos follow today's cap (cfg)."""
     media = entry_media(e)
     if e.get("image_local") and os.path.isfile(e["image_local"]):
         media.pop("image", None)
@@ -255,10 +258,16 @@ def upload_media(api, esapi, system, g, e, cfg=None):
     for tag, paths in media.items():
         if tag not in MEDIA_TAGS or g.get(tag):
             continue
+        info, came = {}, False
         for p in paths:
-            got = fetch_media(api, tag, p, video_max)
+            got = fetch_media(api, tag, p, video_max, info)
+            came = came or bool(got)
             if got and esapi.set_media(system, g["id"], tag, got[0], got[1]):
+                _forget_skip(system, e.get("rom_id"), tag)
                 break
+        else:
+            if not came:
+                _note_skip(system, e.get("rom_id"), tag, paths[0], info.get("too_big"))
 
 
 def as_png(data):

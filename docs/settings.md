@@ -33,7 +33,8 @@ RomM has a piece of media only when its `config.yml` lists it under
   RomM's screenshot (the default; the cover when it has none) or its box
   art. The small picture (the Box view) stays the box art either way.
 - **Videos**: the game's video clip, up to 25, 50 (the default) or 100 MB, or
-  Off. A clip over the size is left out.
+  Off. A clip over the size is left out, and the game doesn't count as
+  incomplete for it afterwards (raising the size brings it next time).
 - **Extra art**: the logo, title screen, 3D box, box back, fan art and
   cartridge picture, for themes that show them. On by default.
 - **Region, language and series**: the game's region (EmulationStation shows
@@ -120,7 +121,7 @@ seven, six or four. It takes effect at once.
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail (a full drive or a refused token gets a message box either way) |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
 | `es_image` | `screenshot` | EmulationStation's big picture for a game: `screenshot` (RomM's screenshot, the cover when it has none) or `boxart` (the cover); the small one is the box art either way |
-| `es_video_mb` | `50` | the game's video clip from RomM, up to this many MB (`0`: no videos); a bigger one is left out |
+| `es_video_mb` | `50` | the game's video clip from RomM, up to this many MB (`0`: no videos); a bigger one is left out and noted in `media-skipped.json`, so Fill in game info stops asking for it until the limit allows it |
 | `es_extra_art` | `true` | the logo, title screen, 3D box, box back, fan art and cartridge picture too |
 | `es_tags` | `true` | region, languages and series (family) in the gamelist |
 | `chd` | `true` | background CHD compression of extracted disc games |
