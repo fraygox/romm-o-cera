@@ -16,6 +16,7 @@ from rbui.input import Input
 from rbui.screens.base import ListScreen
 from rbui.screens.home import HomeScreen
 from rbui.screens.downloads import DownloadsScreen
+from rbui.screens.welcome import WelcomeScreen, welcome_due, welcome_on_rejected
 from rbui.modals import ActionMenu, Confirm
 from rbui.startup import read_marker, write_marker
 
@@ -122,6 +123,7 @@ class App:
         self.api = rommlib.Api.from_config(self.cfg)
         self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
         self.loaded = False
+        self.fetched = False          # the platform list was asked for once (a 401 then opens Welcome)
         self.junk = None              # filename tags hidden by "Hide prototypes, demos & hacks"
         self.player_counts = None     # RomM's player count values (the Players filter), asked for on first use
         self.recs = None              # Recommended for you: [(rom, why, seed name)], [] when RomM has none (Home asks once)
@@ -212,9 +214,13 @@ class App:
             self.error = None
             self.loaded = True
 
+        first, self.fetched = not self.fetched, True
+
         def err(e):
             self.status = "Offline"
             self.error = str(e)
+            if first and isinstance(e, rommlib.AuthRejected) and welcome_on_rejected(self):
+                self.push(WelcomeScreen(self, step=1 if self.cfg["url"] else 0))
         self.bg(self.api.platforms, done, err)
 
     def system_for(self, rom):
@@ -758,6 +764,11 @@ class App:
                 "server and token again." % (kept[-1] if kept else "config.json.bad-…"),
                 "Reset settings", self.reset_config, danger=True)
 
+    def welcome(self):
+        """The first-run Welcome over Home, when the box isn't set up yet."""
+        if welcome_due(self.cfg) and not self.modal:
+            self.push(WelcomeScreen(self))
+
     def reset_config(self):
         rommlib.reset_config()
         self.cfg.clear()
@@ -780,6 +791,7 @@ class App:
             self.bg(lambda: rommlib.newer_release(self.cfg), self._update_found, lambda e: None)
         self.fetch_tools()
         self.push(HomeScreen(self))
+        self.welcome()
         while self.running:
             dt = clock.tick(self.fps) / 1000.0
             self.t += dt

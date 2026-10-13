@@ -301,6 +301,17 @@ def picker_at(key, oled=False):
     p.preview()
 
 
+def welcome_at(step=0, url="https://romm.", view="keys", code="", cert=None, field="url"):
+    w = rb.WelcomeScreen(app, step=step)
+    w.url_kb.clear()
+    w.url_kb.insert(url)
+    w.code_kb.insert(code, notify=False)
+    w.view, w.cert, w.field = view, cert, field
+    if field == "token":
+        w.token_kb.insert("rmm_" + "7f3a9c2e" * 3)
+    app.push(w)
+
+
 def custom_at(sel=0, **v):
     """Settings, Theme, Custom with these choices made (previewed, as making them would)."""
     s = rb.CustomThemeScreen(app)
@@ -440,6 +451,11 @@ SCENES = [
                                                                             mode="light")))),
     ("theme-custom-oled", lambda: (picker_at("custom"), app.push(custom_at(accent=330, tint=280, strength=100,
                                                                            mode="oled", sel=2)))),
+    ("welcome-server", lambda: welcome_at()),
+    ("welcome-advanced", lambda: welcome_at(url="https://romm.example.com", view="advanced")),
+    ("welcome-tls-error", lambda: welcome_at(url="https://romm.example.com", view="cert", cert="unknown")),
+    ("welcome-token", lambda: welcome_at(url="https://romm.example.com", field="token")),
+    ("welcome-pair", lambda: welcome_at(step=1, url="https://romm.example.com", code="ABCD2")),
     ("url-edit", lambda: app.push(rb.TextInputScreen(app, "RomM server URL", "https://romm.example.com",
                                                      lambda v: None, context="url", help=rb.field_help("url")))),
     ("token-edit", lambda: app.push(rb.TextInputScreen(app, "RomM client API token", "rmm_" + "7f3a9c2e" * 5,

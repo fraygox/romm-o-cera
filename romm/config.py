@@ -203,6 +203,8 @@ SETTINGS = (
             valid=_parses(lambda v: dict(v or {}))),
     Setting("notes_seen", "",           # the version whose release notes What's new last showed
             valid=lambda v: isinstance(v, str)),
+    Setting("welcome_seen", False,      # the first-run Welcome was finished or put off (Later)
+            valid=lambda v: isinstance(v, bool)),
 )
 SETTING = {s.key: s for s in SETTINGS}
 DEFAULT_CONFIG = {s.key: s.default for s in SETTINGS}     # a plain dict: old workers and tests read it
@@ -306,6 +308,46 @@ def norm_verify(v):
             return True
         return t                      # a CA-bundle path
     return True
+
+
+def tls_choices(cfg):
+    """What Verify TLS certificate steps through: on, off, and the CA bundle last used, if any."""
+    cur = norm_verify(cfg.get("verify_tls", True))
+    ca = cur if isinstance(cur, str) else (cfg.get("verify_tls_ca") or "")
+    return [True, False] + ([ca] if ca else [])
+
+
+def set_verify(cfg, value):
+    """Sets verify_tls, remembering the CA bundle in verify_tls_ca when leaving it (so it can
+    be picked again)."""
+    cur = norm_verify(cfg.get("verify_tls", True))
+    if isinstance(cur, str):
+        cfg["verify_tls_ca"] = cur
+    cfg["verify_tls"] = value
+
+
+def step_verify(cfg, step):
+    """Verify TLS certificate one choice left (-1) or right (+1), wrapping."""
+    cycle = tls_choices(cfg)
+    cur = norm_verify(cfg.get("verify_tls", True))
+    i = next((k for k, v in enumerate(cycle) if v == cur), 0)
+    set_verify(cfg, cycle[(i + step) % len(cycle)])
+
+
+def clean_server_url(v):
+    """A typed server address as the app keeps it: https:// added when there's no scheme,
+    no trailing slash. Raises RommError for one carrying user:password@."""
+    v = (v or "").strip()
+    if v and "://" not in v:
+        v = "https://" + v
+    if url_has_userinfo(v):
+        raise _core.RommError("Leave user:password out of the URL — the token is the login")
+    return v.rstrip("/")
+
+
+def env_configured():
+    """The server and token come from the environment (another launcher): no first-run Welcome."""
+    return bool(os.environ.get("ROMM_URL") and os.environ.get("ROMM_TOKEN"))
 
 
 def url_has_userinfo(url):
