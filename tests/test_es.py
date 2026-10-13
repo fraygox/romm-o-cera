@@ -369,3 +369,19 @@ def test_every_refusal_of_the_token_gets_the_message_box():
               "Download failed: HTTP 401", "Download failed: HTTP 403"):
         assert rb_dl._rejected(m), m
     assert not rb_dl._rejected("Download failed: HTTP 500")
+
+
+def test_a_renamed_games_alt_box_art_is_carried(isolated):
+    """ES keeps a game's alternative box art as <boxart> (its media API name too):
+    a CHD conversion's rename carries it with the rest of the game's media."""
+    import rb_finalize
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "images"))
+    for n in ("Lorem-box.png", "Lorem-image.png"):
+        open(os.path.join(sysdir, "images", n), "wb").write(b"\x89PNG\r\n\x1a\n")
+    with open(os.path.join(sysdir, "gamelist.xml"), "w") as f:
+        f.write("<gameList><game><path>./Lorem.cue</path><name>Lorem</name>"
+                "<image>./images/Lorem-image.png</image><boxart>./images/Lorem-box.png</boxart></game></gameList>")
+    entry = {"system": "psx", "rename": {os.path.join(sysdir, "Lorem.cue"): os.path.join(sysdir, "Lorem.chd")}}
+    carry = rb_finalize.snapshot_renames([entry])
+    assert set(carry[os.path.join(sysdir, "Lorem.chd")]["media"]) == {"image", "boxart"}

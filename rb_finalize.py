@@ -44,7 +44,7 @@ TEXT_FIELDS = ("name", "desc", "releasedate", "developer", "publisher", "genre",
 USAGE_FIELDS = ("playcount", "lastplayed", "gametime", "favorite")
 # gamelist media tags ES accepts uploads for, and the content types it wants
 MEDIA_TAGS = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "bezel", "manual", "map",
-              "titleshot", "wheel", "box", "cartridge", "magazine")
+              "titleshot", "wheel", "boxart", "cartridge", "magazine")
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
           ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
