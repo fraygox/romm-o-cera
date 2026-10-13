@@ -623,6 +623,8 @@ class Converter:
     def switched_on(self, cfg, system):
         """Its switch is on. A file it takes is queued even while its tool is still
         being fetched; the worker keeps the task until the tool is here (enabled)."""
+        if self.tool is not None and not self.tool.supported():
+            return False                   # never built for this CPU: nothing would ever run it
         return (self.on or self.enabled)(cfg, system)
 
     @property
@@ -833,11 +835,23 @@ def waits_for_tool(task):
     return c.tool.slug if c and c.tool and not c.tool.installed() else None
 
 
-def conversions_waiting_for_tools():
-    """{tool slug: queued tasks waiting for it}. Reads the tasks only while a
-    converter's tool is missing (the Downloads screen asks every second)."""
-    if all(c.tool.installed() for c in CONVERTERS if c.tool):
+_WAITING = {}
+
+
+def conversions_waiting_for_tools(cfg=None):
+    """{tool slug: queued tasks waiting for it}. The Downloads screen asks every
+    second: the tasks are read only while a switched-on converter's tool is
+    missing, and again only when the queue folder or the tools change."""
+    missing = tuple(c.tool.slug for c in CONVERTERS if c.tool and not c.tool.installed()
+                    and any(c.switched_on(cfg, s) for s in c.systems))
+    if not missing:
         return {}
+    try:
+        key = (os.stat(_core.CHD_QUEUE_DIR).st_mtime_ns, missing)
+    except OSError:
+        return {}
+    if _WAITING.get("key") == key:
+        return dict(_WAITING["out"])
     out = {}
     try:
         names = [n for n in os.listdir(_core.CHD_QUEUE_DIR) if n.endswith(".json")]
@@ -852,7 +866,8 @@ def conversions_waiting_for_tools():
         slug = waits_for_tool(task if isinstance(task, dict) else None)
         if slug:
             out[slug] = out.get(slug, 0) + 1
-    return out
+    _WAITING.update(key=key, out=out)
+    return dict(out)
 
 
 def conversion_output(mode, stem, src):

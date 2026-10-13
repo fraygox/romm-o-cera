@@ -57,9 +57,10 @@ def test_an_older_version_is_an_upgrade_even_without_games(tools):
     assert ("dolphin-tool", "upgrade") in _fetch({"rvz": True})
 
 
-def test_install_removes_the_old_version(isolated, tmp_path, monkeypatch):
-    """The real archive (when built here) through install_tool: the version before goes."""
-    from test_wua import TARBALL
+def test_install_keeps_the_old_version_for_the_worker_to_remove(isolated, tmp_path, monkeypatch):
+    """The real archive (when built here) through install_tool: the version before
+    stays (a conversion may be using it) until the worker, holding its lock, removes it."""
+    from test_wua import TARBALL, _idle
     from test_rvz_overlap import _serve
     if not os.path.exists(TARBALL) or not rommlib.wua_supported():
         pytest.skip("wiiu-tools not built here")
@@ -72,8 +73,11 @@ def test_install_removes_the_old_version(isolated, tmp_path, monkeypatch):
         rommlib.install_tool(rommlib.TOOL_WIIU, url=url)
     finally:
         srv.shutdown()
+    assert os.path.exists(old) and rommlib.wuatool_path()
+    _idle(monkeypatch).main()
     assert not os.path.exists(old) and rommlib.wuatool_path()
-    assert "wiiu-tools: removed wiiu-tools-2610a" in open(rommlib.LOG_PATH).read()
+    assert "chd: removed wiiu-tools-2610a (replaced by wiiu-tools-%s)" % rommlib.WIIU_TOOLS["version"] in \
+        open(rommlib.LOG_PATH).read()
 
 
 def _app(rb, monkeypatch):
@@ -117,6 +121,17 @@ def test_a_failure_is_said_once_per_version(tools, rb, monkeypatch):
     red = [t[0] for t in app.toasts if t[1] == rb.theme.RED]
     assert red == ["Couldn't get wiiu-tools (Couldn't download wuatool (HTTP 404).); Settings can try again"]
     assert open(rommlib.LOG_PATH).read().count("couldn't be fetched") == 2
+    assert [t[0] for t in app.toasts].count("Getting wiiu-tools for Wii U compression…") == 1
+    app2 = _app(rb, monkeypatch)                   # next start: failed before, so it tries quietly
+    app2.fetch_tools()
+    assert app2.toasts == []
+
+
+def test_a_tool_not_built_for_this_cpu_never_queues(tools, monkeypatch):
+    from romm import tools as T
+    monkeypatch.setattr(T, "wua_supported", lambda: False)
+    assert not rommlib.CONVERTER["wux"].switched_on(dict(rommlib.DEFAULT_CONFIG), "wiiu")
+    assert rommlib.conversion_for("wiiu", ".wud", dict(rommlib.DEFAULT_CONFIG)) is None
 
 
 def test_compress_says_what_it_waits_for(tools, rb, monkeypatch):

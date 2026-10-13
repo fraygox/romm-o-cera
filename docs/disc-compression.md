@@ -29,7 +29,10 @@ verifies each CHD before the original goes.
   runs low; the originals are kept and it's tried again later.
 - **Compression threads**: auto leaves some for the menus.
 - A disc image that's cut short (an interrupted copy) is never converted —
-  Check games can download it again.
+  Check games can download it again. (Wii U's `.wux` is the exception: a
+  `.wud` of the wrong size is compressed as it is, losslessly, with a note in
+  the log; Check games compares the `.wux` with RomM's `.wud`, and a fresh
+  download replaces it.)
 
 ### PSP `.cso` → CHD
 

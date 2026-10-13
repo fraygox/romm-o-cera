@@ -714,7 +714,11 @@ class App:
         if getattr(self, busy, False):
             return
         setattr(self, busy, True)
-        self.toast("Getting %s for %s…" % (spec.slug, spec.purpose or "compression"))
+        mark = "%s-%s" % (spec.slug, spec.pin["version"])
+        told = self.__dict__.setdefault("_tools_told", set())
+        if mark not in told and read_marker(".tool-fetch-failed") != mark:    # failed before: quietly now
+            told.add(mark)                                                  # and once per session
+            self.toast("Getting %s for %s…" % (spec.slug, spec.purpose or "compression"))
         rommlib.log("tools: fetching %s %s by itself (%s)" % (spec.slug, spec.pin["version"], why))
 
         def install():
@@ -732,7 +736,6 @@ class App:
 
         def failed(e):
             rommlib.log("tools: %s %s couldn't be fetched: %r" % (spec.slug, spec.pin["version"], e))
-            mark = "%s-%s" % (spec.slug, spec.pin["version"])
             if read_marker(".tool-fetch-failed") != mark:     # said once; retried quietly next time
                 write_marker(".tool-fetch-failed", mark)
                 self.toast("Couldn't get %s (%s); Settings can try again" % (

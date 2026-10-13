@@ -504,8 +504,6 @@ class SettingsScreen(Screen):
         t = spec.pin
 
         def install():
-            setattr(app, busy, True)
-
             def prog(got, total):
                 setattr(app, spec.setting + "_progress", (got / total) if total else None)
             try:
@@ -519,13 +517,23 @@ class SettingsScreen(Screen):
             app.downloader.cfg = cfg
             app.toast(say["done"].format(version=t["version"]), theme.GREEN)
             self._after_tool_on(key)
+            if rommlib.conversions_pending():
+                app.spawn_helper("rb_chd.py")       # the conversions queued while it was coming
 
         def failed(e):
             app.toast(str(e) if isinstance(e, rommlib.RommError) else say["failed"].format(error=e.__class__.__name__),
                       theme.RED)
         size = (" (%s)" % human_size(t["size"])) if t.get("size") else ""
         app.modal = Confirm(app, say["title"], say["body"].format(version=t["version"], size=size), "Download",
-                            lambda: (app.toast(say["start"]), app.bg(install, done, failed)))
+                            lambda: start())
+
+        def start():
+            if getattr(app, busy, False):            # the app started fetching it meanwhile
+                app.toast(say["busy"])
+                return
+            setattr(app, busy, True)                 # before the thread: never two installs at once
+            app.toast(say["start"])
+            app.bg(install, done, failed)
 
     def _after_tool_on(self, key):
         """Wii U: copy the disc keys in RomM's Wii U firmware (if any) into bios/wiiukeys."""

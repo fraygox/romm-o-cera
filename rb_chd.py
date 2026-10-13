@@ -68,7 +68,31 @@ class ToolMissing(Exception):
 
 class ToolWaiting(Exception):
     """A task's switch is on but its tool isn't here yet (the app fetches it):
-    the task stays queued; args[0] names the tool."""
+    the task stays queued; args[0] is the tool (a ToolSpec)."""
+
+    def __str__(self):
+        return self.args[0].slug
+
+
+def _switched_on(conv, system):
+    """The converter's switch is on, its tool here or not (False on an older
+    rommlib still in memory, which has no such notion)."""
+    on = getattr(conv, "switched_on", None)
+    return bool(on and getattr(conv, "tool", None) is not None and on(rommlib.load_config(), system))
+
+
+def _drop_old_tools():
+    """Other versions of the converter tools, once this version of each is
+    installed: removed here, holding the conversion lock, so no worker is using
+    one (an upgrade leaves them to this). Missing helpers (an older rommlib): nothing."""
+    old_dirs = getattr(rommlib, "old_tool_dirs", None)
+    specs = {id(c.tool): c.tool for c in rommlib.CONVERTERS if getattr(c, "tool", None) is not None}
+    for spec in specs.values() if old_dirs else ():
+        if not spec.installed():
+            continue
+        for d in old_dirs(spec):
+            shutil.rmtree(d, ignore_errors=True)
+            note("chd: removed %s (replaced by %s)" % (os.path.basename(d), spec.folder))
 
 
 class MemoryGuard(Exception):
@@ -554,6 +578,9 @@ def convert_wua(src, tmp):
             pass
 
 
+WUD_SIZE = 25025314816        # every retail Wii U disc image (single layer)
+
+
 def convert_wux(src, tmp):
     """Wii U disc image (.wud) -> .wux, the lossless container Cemu reads (each
     distinct 32 KB sector once), written by wuatool. No keys. Then wuatool
@@ -562,6 +589,9 @@ def convert_wux(src, tmp):
     exe = rommlib.wuatool_path()
     if not exe:
         raise ToolMissing("wuatool")
+    if os.path.getsize(src) != WUD_SIZE:
+        note("chd: note %s isn't a whole Wii U disc's size (%s, not %s): may be cut short; compressed as it is"
+             % (os.path.basename(src), "{:,}".format(os.path.getsize(src)), "{:,}".format(WUD_SIZE)))
     status(step="Compressing", pct=None)
     rc, out = run_tool([exe, "wux", src, tmp], keep_stdout=True)
     if rc != 0 or not os.path.exists(tmp):
@@ -684,6 +714,35 @@ RUNNERS = {
 }
 
 
+def _size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
+
+
+def _wux_size(path):
+    """The disc size a .wux's header gives (0x10), or None when it isn't one."""
+    try:
+        with open(path, "rb") as f:
+            h = f.read(0x18)
+    except OSError:
+        return None
+    return int.from_bytes(h[0x10:0x18], "little") if len(h) == 0x18 and h[:4] == b"WUX0" else None
+
+
+def _wux_instead(mode, rc, system, src, plan):
+    """Where the .wux goes when wuatool found no key for a .wud (rc 3: Python's
+    cryptography module wasn't there to check before) and Wii U to .wux would
+    take it; else None."""
+    wux = rommlib.CONVERTER.get("wux")
+    if mode != "wua" or rc != 3 or wux is None or len(plan) != 1 or not src.lower().endswith(".wud") \
+            or not wux.enabled(rommlib.load_config(), system):
+        return None
+    out = os.path.splitext(plan[0][1])[0] + ".wux"
+    return None if os.path.exists(out) else out
+
+
 def convert(task):
     system, mode = task["system"], task["mode"]
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
@@ -707,7 +766,7 @@ def convert(task):
     if conv and not conv.chd and not conv.enabled(rommlib.load_config(), system):
         on = getattr(conv, "switched_on", None)        # (an older rommlib in memory has none)
         if on and getattr(conv, "tool", None) is not None and on(rommlib.load_config(), system):
-            raise ToolWaiting(conv.tool.slug)          # switched on, its tool still coming: keep the task
+            raise ToolWaiting(conv.tool)               # switched on, its tool still coming: keep the task
         note("chd: SKIP %s %s (%s)" % (mode, os.path.basename(srcs[0]), conv.off_reason))
         return False
     if conv and conv.check:
@@ -788,6 +847,9 @@ def convert(task):
                 continue
             resume.add(out)                          # exactly this copy: just finish the job
             continue
+        if os.path.exists(out) and mode == "wux" and _wux_size(out) != _size(next(s for s, o in plan if o == out)):
+            note("chd: replacing %s: made from a different (cut-short?) image" % out)   # a fresh copy came down
+            continue
         if os.path.exists(out):
             if rommlib.disc_incomplete(out):
                 note("chd: replacing incomplete %s" % out)   # a fresh copy came down
@@ -836,6 +898,15 @@ def convert(task):
             run = RUNNERS.get(mode)
             if run:
                 rc, err = run(src, tmp, threads)
+                alt = _wux_instead(mode, rc, system, src, plan)
+                if alt:                                # no key for it after all: a .wux, as settle would have
+                    note("chd: WUX %s instead of WUA: %s" % (os.path.basename(src), err))
+                    _drop(tmp)
+                    conv, mode, out = rommlib.CONVERTER["wux"], "wux", alt
+                    task["mode"] = mode
+                    plan[0] = (src, out)
+                    tmp = out + ".part"
+                    rc, err = RUNNERS[mode](src, tmp, threads)
             else:
                 rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
                 if rc == 0:
@@ -996,8 +1067,28 @@ def main():
         # a task queued while we were giving up the lock would find it taken
         # and not start a worker: look once more after releasing it (the app
         # starts one again once a missing tool is here)
+        _readmit(waiting)
         if not pending(waiting):
             return
+
+
+def _wait(waiting, name, spec, cur):
+    """Keep a task queued until its tool is here (logged once per tool)."""
+    if all(s is not spec for s in waiting.values()):    # the tasks behind it still run
+        note("chd: %s isn't installed yet; its conversions stay queued until the app has fetched it" % spec.slug)
+    waiting[name] = spec
+    try:
+        os.remove(cur)
+    except OSError:
+        pass
+
+
+def _readmit(waiting):
+    """Tasks whose tool has arrived meanwhile run again (one check per tool)."""
+    here = {}
+    for name, spec in list(waiting.items()):
+        if here.setdefault(id(spec), bool(spec.installed())):
+            del waiting[name]
 
 
 def work(fd, waiting=None):
@@ -1012,7 +1103,9 @@ def work(fd, waiting=None):
             os.remove(left)                     # a Wii U key list a killed run (power cut, kill -9) left
         except OSError:
             pass
+    _drop_old_tools()
     while True:
+        _readmit(waiting)
         tasks = sorted(t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json") and t not in waiting)
         if not tasks:
             if not since_finalize:
@@ -1044,17 +1137,13 @@ def work(fd, waiting=None):
             if res:
                 since_finalize += 1
         except ToolWaiting as e:
-            if str(e) not in waiting.values():          # once per tool: the tasks behind it still run
-                note("chd: %s isn't installed yet; its conversions stay queued until the app has fetched it"
-                     % e)
-            waiting[tasks[0]] = str(e)
-            try:
-                os.remove(cur)
-            except OSError:
-                pass
+            _wait(waiting, tasks[0], e.args[0], cur)
             continue
         except ToolMissing as e:
             conv = rommlib.CONVERTER.get(task.get("mode")) if isinstance(task, dict) else None
+            if conv is not None and _switched_on(conv, task.get("system")) and not conv.tool.installed():
+                _wait(waiting, tasks[0], conv.tool, cur)    # gone mid-task: keep the task, never drop it
+                continue
             note("chd: %s isn't installed; dropping %s (Settings, %s)" % (
                 e, tasks[0], conv.setting_name if conv else rommlib.CONVERTER["rvz"].setting_name))
         except ChdmanMissing:

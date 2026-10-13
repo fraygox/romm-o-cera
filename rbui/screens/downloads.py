@@ -230,7 +230,7 @@ class DownloadsScreen(ListScreen):
         if now - getattr(self, "_chd_at", 0) > 1.0:   # disk reads once a second, not every frame
             self._chd_at = now
             self._chd_n = rommlib.conversions_waiting()
-            self._chd_tools = rommlib.conversions_waiting_for_tools() if self._chd_n else {}
+            self._chd_tools = rommlib.conversions_waiting_for_tools(self.app.cfg) if self._chd_n else {}
             self._chd_st = {}
             self._fc = rommlib.queue_forecast(d.jobs, rommlib.free_bytes(),
                                               rommlib.keep_free_bytes(self.app.cfg), self.app.cfg["chd"],

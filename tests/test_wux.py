@@ -60,6 +60,7 @@ def test_worker_compresses_a_wud_to_wux_and_checks_every_byte(tool, monkeypatch)
     log = open(rommlib.LOG_PATH).read()
     assert "chd: OK Lorem Kart (USA).wud -> Lorem Kart (USA).wux" in log
     assert "CRC32 %08x" % zlib.crc32(raw) in log and hashlib.md5(raw).hexdigest() in log
+    assert "isn't a whole Wii U disc's size (%s, not 25,025,314,816): may be cut short" % "{:,}".format(len(raw)) in log
 
 
 def test_worker_wux_odd_sizes_and_refusals(tool, monkeypatch):

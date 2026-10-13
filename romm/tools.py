@@ -206,9 +206,8 @@ def install_tool(spec, progress=None, url=None, sha256=None):
     os.replace(root, dest)
     shutil.rmtree(staging, ignore_errors=True)
     _core.log("%s %s installed (%s)" % (spec.slug, spec.pin["version"], spec.built_from))
-    for old in old_tool_dirs(spec):            # an upgrade: the version before is no use now
-        shutil.rmtree(old, ignore_errors=True)
-        _core.log("%s: removed %s" % (spec.slug, os.path.basename(old)))
+    # the version before (an upgrade) stays until the conversion worker removes it holding its lock
+    # (rb_chd._drop_old_tools): a conversion may be using it right now
     return spec.installed()
 
 
