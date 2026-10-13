@@ -354,14 +354,15 @@ def url_has_userinfo(url):
     return bool(urllib.parse.urlsplit(url or "").username)
 
 
-def display_url(url):
-    """URL for the screen: never shows user:password@ (the token is the login)."""
+def display_url(url, mask="***@"):
+    """URL for the screen: never shows user:password@ (the token is the login); mask="" drops
+    it altogether (a QR code's address)."""
     u = urllib.parse.urlsplit(url or "")
     if u.username or u.password:
         host = u.hostname or ""
         if u.port:
             host += ":%d" % u.port
-        url = urllib.parse.urlunsplit((u.scheme, "***@" + host, u.path, u.query, u.fragment))
+        url = urllib.parse.urlunsplit((u.scheme, mask + host, u.path, u.query, u.fragment))
     return url
 
 

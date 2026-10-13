@@ -168,6 +168,14 @@ def test_long_title_and_no_url_still_draw(rb, app):
     _draw(app, rb.GameScreen(app, rom))
 
 
+def test_the_qr_code_never_carries_user_and_password(rb, app, monkeypatch):
+    seen = []
+    monkeypatch.setattr(rommlib, "qr_matrix", lambda s, *a: seen.append(s) or [[True]])
+    app.cfg["url"] = "https://bob:pw@romm.example.com:8443/"
+    _draw(app, rb.GameScreen(app, _rom(5)))
+    assert seen == ["https://romm.example.com:8443/rom/5"]
+
+
 def test_left_right_walk_the_list_it_came_from(rb, app):
     roms = [_rom(i) for i in range(1, 4)]
     gl = rb.GameListScreen(app, "Games", static=roms)

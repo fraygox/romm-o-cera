@@ -113,7 +113,7 @@ def _fixed_statvfs(path):
 
 
 os.statvfs = _fixed_statvfs
-rommlib.display_url = lambda url: "romm.example.com"     # not the mock's 127.0.0.1:<port>
+rommlib.display_url = lambda url, **k: "romm.example.com"     # not the mock's 127.0.0.1:<port>
 pygame.init()
 app = rb.App(None, headless=True)
 app.cfg["theme"] = rb.apply_theme(args.theme)

@@ -51,6 +51,7 @@ def test_save_config_is_private(isolated):
 def test_display_url_masks_credentials():
     assert rommlib.display_url("https://bob:pw@romm.lan:8080/x") == "https://***@romm.lan:8080/x"
     assert rommlib.display_url("http://romm.lan") == "http://romm.lan"
+    assert rommlib.display_url("https://bob:pw@romm.lan:8080/x", mask="") == "https://romm.lan:8080/x"
     assert rommlib.url_has_userinfo("https://bob:pw@h") and not rommlib.url_has_userinfo("https://h")
 
 

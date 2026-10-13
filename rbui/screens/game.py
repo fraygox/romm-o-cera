@@ -337,14 +337,14 @@ class GameScreen(Screen):
     def draw_qr(self, c, qr, cap):
         """The QR to the game's page in RomM, its caption and address in cap."""
         app, f, rom = self.app, self.f, self.rom
-        url = app.cfg.get("url") or ""
+        url = rommlib.display_url(app.cfg.get("url") or "", mask="").rstrip("/")
         if not url:
             return
         if self.qr is None:
-            self.qr = rommlib.qr_matrix("%s/rom/%d" % (url.rstrip("/"), rom["id"]))
+            self.qr = rommlib.qr_matrix("%s/rom/%d" % (url, rom["id"]))
         draw_qr(c, self.qr, qr)
         scroll_text(c, f.small, "Open it in RomM on your phone.", (cap.left, cap.top + 2, cap.width, cap.height - 24),
                     theme.DIM, line_h=20, bg=theme.BG, slot="game-qr")
-        host = rommlib.display_url(url).split("://")[-1].rstrip("/")
+        host = url.split("://")[-1]
         text(c, f.tiny, "%s/rom/%d" % (host, rom["id"]), (cap.left, cap.bottom - 2), theme.FAINT, "bottomleft",
              maxw=cap.width)
