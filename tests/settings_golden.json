@@ -11884,41 +11884,41 @@
   "bios": "What each system needs, what's missing, and what your RomM can supply.",
   "cache": "Deletes every cached cover; they download again as you browse.",
   "cachelimit": "How much space game covers may take. The least recently seen go first.",
-  "channel": "Stable gets tested releases. Nightly also gets builds of the newest changes, made as they land: new fixes sooner, less tested. Updates finds the newest straight away. Going back to Stable keeps the nightly you have until a release is newer; Go back to the previous version undoes an update.",
-  "chd": "Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background while nothing runs. Lossless, verified before the original is deleted.",
-  "chdlowmem": "chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right pick Auto, On or Off.",
+  "channel": "Stable gets tested releases. Nightly also gets builds of the newest changes: fixes sooner, less tested.",
+  "chd": "Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background. Lossless, verified before the original is deleted.",
+  "chdlowmem": "Skips chdman's FLAC codec, which leaks memory on some builds: CD audio comes out a bit bigger, still lossless. Auto turns it on under 4 GB of RAM.",
   "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the menus.",
-  "checkupdates": "Once a day, asks GitHub whether a newer version is out on your update channel, and says so when there is one. The request carries nothing about you or your games. Off: no daily check, but Updates still checks whenever you select it.",
+  "checkupdates": "Once a day, asks GitHub whether a newer version is out; the request says nothing about you. Off, Updates still checks when you select it.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
-  "docs": "Point your phone's camera at the code to open the documentation: setting up, every setting, and what to do when something goes wrong. {A} shows it bigger.",
-  "hours": "Downloads only start inside this window, e.g. overnight. A download running when it closes pauses and picks up next time. \"Download now\" in Downloads skips the wait.",
-  "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits (\"Waiting for space\") and starts once there's room; smaller ones behind it keep going.",
+  "docs": "Point your phone's camera at the code to open the documentation. {A} shows it bigger.",
+  "hours": "Downloads only start inside this window, e.g. overnight; one still running pauses when it closes. Download now in Downloads skips the wait.",
+  "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits for room; smaller ones keep going.",
   "manuals": "Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation.",
   "notify": "A popup in EmulationStation when background downloads finish.",
-  "overlap": "While a game unpacks, the next one already downloads. Turn it off on slow storage (SD cards, USB sticks) so the two don't fight over the disk.",
-  "pair": "The easy way to sign in: in RomM's web page open Profile, Client API tokens, press Pair on a token, then type its 8-character code here within a minute. RomM gives that token a new secret, so pair each box with its own token.",
-  "ps3decrypt": "Encrypted PS3 discs (Redump's images are) need their disc key to become a game folder. Uses disc keys for games you own, which you put in bios/ps3keys (.key or .dkey files, or zips of them) or add to RomM as PS3 firmware; turning this on copies RomM's into bios/ps3keys. RomM-o-Cera comes with no keys. A key is matched to its disc by name, and checked against the disc itself, so a wrong one is never used.",
-  "ps3folders": "Turns PS3 disc images (.iso, or the .iso in a zip, read without unzipping it) into .ps3 game folders, the layout RPCS3 installs updates and DLC for. Every file comes from the image and the game's start files are checked before the image is deleted. A zip needs no room for an unzipped copy: only the folder's size. An encrypted disc needs Decrypt PS3 discs; until then it stays as it is and ES doesn't list it.",
-  "resetcfg": "Puts every setting back to its default, including the RomM server address and token. The current settings file is kept beside it (config.json.bad-…) so nothing is lost. Use it when config.json was edited by hand and can't be read any more.",
+  "overlap": "The next game downloads while one unpacks. Turn it off on slow storage (SD cards, USB sticks).",
+  "pair": "Sign in without typing the token: in RomM open Profile, Client API tokens, press Pair, and type the 8-character code here within a minute. Give each box its own token.",
+  "ps3decrypt": "Decrypts PS3 discs with the disc keys of games you own: put them in bios/ps3keys or RomM's PS3 firmware (none come with the app). A wrong key is never used.",
+  "ps3folders": "Turns PS3 disc images (.iso, zipped or not) into .ps3 folders, the layout RPCS3 installs updates and DLC for. Checked before the image is deleted. Encrypted discs need Decrypt PS3 discs.",
+  "resetcfg": "Puts every setting back to its default, server and token included. The old file is kept as config.json.bad-…, so nothing is lost.",
   "rollback": "Swaps the previous version back in and restarts the app. The current one is kept, so this can be undone too.",
-  "rvz": "Turns GameCube and Wii images into RVZ: lossless and usually 30-60% smaller, checked against the original before it's deleted. Needs dolphin-tool (about 8 MB, GPL), downloaded once when you turn this on.",
+  "rvz": "Turns GameCube and Wii images into RVZ, usually 30-60% smaller and lossless; the original is deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once.",
   "sounds": "Clicks and chimes while you browse.",
   "speed": "Caps background downloads while a game runs, so online play and streaming stay smooth.",
-  "squashfs": "Packs Xbox games into a squashfs file, usually 15-45% smaller; Batocera opens it when the game starts. Lossless: the image inside is checked against the original before it's deleted. Packing takes a few minutes of CPU per game. Needs Make Xbox images bootable for full disc images (a packed one xemu can't boot would be no use).",
+  "squashfs": "Packs Xbox games into squashfs, usually 15-45% smaller, which Batocera opens at launch. Lossless, verified before the original is deleted. Full disc images need Make Xbox images bootable.",
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
   "test": "Asks RomM for its platform list right now and says how many it found.",
-  "theme": "Colours for the whole app. {A} shows every theme as a card, and the whole app takes it on as you move: {A} keeps it, {B} goes back. {Y} turns on a card's OLED version (pure black). Left and right step through them here. Custom, under Yours, makes your own. Every theme is as easy to read as Default.",
-  "themeauto": "With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it (PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED one. With a keyboard or another controller, your Theme. High contrast and Custom are always kept.",
+  "theme": "Colours for the whole app. {A} shows every theme, previewed live: {A} keeps one, {B} goes back, {Y} picks its OLED version. Left and right step through them here.",
+  "themeauto": "A PlayStation, Xbox or Nintendo controller shows the theme made for it instead of yours. High contrast and Custom are always kept.",
   "tls": "Checks your RomM's HTTPS certificate. Turn it off only for a self-signed certificate, or point it at your own CA bundle in config.json.",
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
-  "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and restarts the app to install it. Downloads pause and carry on when it's back. The current version is kept so you can go back.",
-  "url": "Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// works but sends the token unencrypted.",
-  "wua": "Wii U discs (.wud, .wux) are encrypted. With its disc key, a disc becomes a .wua: the game's files in an archive Cemu opens directly, usually smaller than a .wux, each file checked against the disc first. Uses disc keys for games you own, which you put in Cemu's keys.txt (bios/cemu) or bios/wiiukeys (.key files, key lists, or zips of them) or add to RomM as Wii U firmware; turning this on copies RomM's into bios/wiiukeys. RomM-o-Cera comes with no keys. A key is checked against the disc itself, so a wrong one is never used. A disc without its key becomes a .wux (Wii U to .wux) instead. A .wua holds the game partition only: it can't become the disc image again. Needs wuatool, downloaded once.",
-  "wux": "Compresses Wii U disc images (.wud) into .wux, which Cemu opens directly: the disc's empty and repeated parts are stored once, often 30-90% smaller. Lossless: the .wux expands back to the exact .wud, and is checked against it byte for byte before the .wud is deleted. Needs no keys. Needs wuatool (about 2 MB), downloaded once when you turn this on or press {A} here. With Decrypt Wii U discs on, a disc whose key is here becomes a .wua instead.",
-  "xboxboot": "xemu boots only an Xbox disc's game partition: a full disc image (as Redump keeps them) shows \"Please insert an Xbox disc\". This keeps just the game partition, in place where the drive allows, and renames .xiso files to .iso so EmulationStation lists them. Images that are already bootable are left as they are.",
-  "z3ds": "Compresses 3DS games (.3ds, .cci, .cxi) to Azahar's own .zcci format, often 40-60% smaller; Azahar opens them directly and saves stay where they are. Lossless: every block is read back and checked against the original before it's deleted. Encrypted dumps (which Azahar can't run anyway) are left alone. Uses the zstd library already on Batocera.",
-  "zar": "Turns Xbox 360 disc images into .zar, a compressed archive xenia-canary opens directly, often 40-60% smaller. It keeps the game's files and leaves out the rest of the disc (video partition, padding), so it isn't a copy of the original image. Every file is checked against the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), downloaded once when you turn this on. xenia (not canary) can't open .zar."
+  "update": "Checks GitHub for a newer version, then downloads it, checks it and restarts to install it. Downloads pause meanwhile, and the current version is kept so you can go back.",
+  "url": "Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// sends the token unencrypted.",
+  "wua": "Turns Wii U discs into .wua for Cemu with the disc keys of games you own: in Cemu's keys.txt, bios/wiiukeys or RomM's Wii U firmware (none come with the app). Checked first; a .wua can't become the disc image again. A disc without its key becomes a .wux.",
+  "wux": "Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 2 MB), downloaded by itself when needed.",
+  "xboxboot": "xemu boots only a disc's game partition (a full image says \"Please insert an Xbox disc\"). This keeps just that part and renames .xiso to .iso so EmulationStation lists them.",
+  "z3ds": "Compresses decrypted 3DS games to Azahar's .zcci, often 40-60% smaller. Lossless, verified before the original is deleted; encrypted dumps are left alone.",
+  "zar": "Turns Xbox 360 images into .zar for xenia-canary, often 40-60% smaller. It keeps the game's files, not the whole disc, each checked before the image is deleted. Downloads two small tools once."
  },
  "hints": {
   "arcade": [
@@ -12896,7 +12896,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -13174,7 +13174,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -13452,7 +13452,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -13730,7 +13730,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -14002,7 +14002,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -14274,7 +14274,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -14546,7 +14546,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",
@@ -14818,7 +14818,7 @@
     "wux",
     "Wii U to .wux",
     "On",
-    "Downloads by itself when needed. {A} downloads wuatool (once, about 2 MB)"
+    "wuatool downloads by itself when needed"
    ],
    [
     "wua",

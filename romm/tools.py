@@ -106,7 +106,7 @@ def tool_state(spec, cfg, setting=None):
     if on and _config.SETTING[key].default is True:
         # on by default (Wii U to .wux): the app fetches the tool once there's something for it, so a
         # box without such games isn't told something is missing
-        return {"label": "On", "help": "Downloads by itself when needed. " + spec.help["missing"]}
+        return {"label": "On", "help": "%s downloads by itself when needed" % spec.subject}
     if on:
         return {"label": "Tools missing" if len(spec.exes) > 1 else "Tool missing", "help": spec.help["missing"]}
     return {"label": "Off", "help": spec.help["off"]}

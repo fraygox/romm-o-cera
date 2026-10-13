@@ -535,11 +535,11 @@ class CustomThemeScreen(Screen):
             else:
                 self.draw_modes(c, strip)
         y = self.ROW_Y + len(self.ROWS) * self.ROW_H + 6
-        note = "Every colour is made from these four, then nudged until it's as easy to read as Default: a " \
-               "custom theme can't be hard to read. {L} and {R} take bigger steps."
+        note = "Every colour comes from these four, nudged to stay as easy to read as Default. {L} and {R} take " \
+               "bigger steps."
         if self.source:
-            note = "Started from %s, as near as these four come. Nothing is saved until {A} keeps it, " \
-                   "{B} goes back and changes nothing. " % self.source + note
+            note = "Started from %s, as near as these four come. Nothing is saved until {A} keeps it; {B} " \
+                   "changes nothing. " % self.source + note
         scroll_text(c, self.f.small, note, (52, y, 700, min(5 * 23, H - 56 - y)), theme.FAINT, bg=theme.BG,
                     line_h=23, slot="custom-note")
         self.draw_panel(c)

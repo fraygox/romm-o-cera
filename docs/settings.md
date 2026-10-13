@@ -57,7 +57,7 @@ on for boxes with less than 4 GB of RAM, and the row says which it is and
 why ("Auto (Off, 8.0 GB RAM)").
 
 **Theme** (in This app) sets the colours of the whole app: 26 themes and a
-Custom one of your own; Default, PlayStation, Xbox and Kyoto also come in a
+Custom one of your own; Default, PlayStation, Xbox, Kyoto and Red Visor also come in a
 pure-black OLED version. Confirm opens
 the theme picker, which previews each theme across the whole app as you move
 onto it; left and right on the row step through the themes without opening

@@ -398,9 +398,9 @@ class SettingsScreen(Screen):
                 if app.update_tag:
                     tag = app.update_tag
                     app.modal = Confirm(app, "Update to %s?" % tag,
-                                        "Downloads it from GitHub and checks it, then restarts %s to install "
-                                        "it: downloads in progress pause and carry on when it's back, and a "
-                                        "disc being compressed starts over. v%s is kept so you can go back."
+                                        "Downloads and checks it, then restarts %s to install it. Downloads pause "
+                                        "and carry on after; a disc being compressed starts over. v%s is kept so "
+                                        "you can go back."
                                         % (APP_NAME, rommlib.VERSION_LABEL),
                                         "Update and restart", lambda: self._do_update())
                 else:
@@ -435,9 +435,8 @@ class SettingsScreen(Screen):
                 "off": "GameCube and Wii conversion off (dolphin-tool stays installed)",
                 "on": "GameCube and Wii games will be converted to RVZ",
                 "title": "Download dolphin-tool?",
-                "body": "RVZ conversion needs Dolphin's dolphin-tool {version}{size}: built from the Dolphin "
-                        "version Batocera uses, GPL-2.0-or-later, checked by SHA-256 before use. "
-                        "Credits are in Settings.",
+                "body": "RVZ needs Dolphin's dolphin-tool {version}{size}, built from the Dolphin Batocera uses "
+                        "(GPL-2.0-or-later) and checked by SHA-256 before use.",
                 "start": "Downloading dolphin-tool…",
                 "fetching": "dolphin-tool, from RomM-o-Cera's GitHub releases",
                 "done": "dolphin-tool {version} installed: GameCube and Wii games convert to RVZ",
@@ -447,9 +446,8 @@ class SettingsScreen(Screen):
                 "off": "Xbox 360 conversion off (the tools stay installed)",
                 "on": "Xbox 360 games will be converted to .zar",
                 "title": "Download the Xbox 360 tools?",
-                "body": "Converting to .zar needs extract-xiso and zarchive{size}, built from their "
-                        "published source and checked by SHA-256 before use. A .zar holds the game's "
-                        "files, not the whole disc image. Credits are in Settings.",
+                "body": "Converting to .zar needs extract-xiso and zarchive{size}, built from their published "
+                        "source and checked by SHA-256 before use. A .zar keeps the game's files, not the whole disc.",
                 "start": "Downloading the Xbox 360 tools…",
                 "fetching": "extract-xiso and zarchive, from RomM-o-Cera's GitHub releases",
                 "done": "Xbox 360 tools installed: Xbox 360 games convert to .zar",
@@ -459,9 +457,8 @@ class SettingsScreen(Screen):
                 "off": "Wii U to .wux off (wuatool stays installed)",
                 "on": "Wii U disc images will be compressed to .wux",
                 "title": "Download wuatool?",
-                "body": "Compressing to .wux needs wuatool {version}{size}: Cemu's own disc code and ZArchive, "
-                        "built from their published source (MPL-2.0) and checked by SHA-256 before use. A .wux "
-                        "is lossless and needs no keys. Credits are in Settings.",
+                "body": "Compressing to .wux needs wuatool {version}{size}: Cemu's disc code and ZArchive "
+                        "(MPL-2.0), checked by SHA-256 before use. A .wux is lossless and needs no keys.",
                 "start": "Downloading wuatool…",
                 "fetching": "wuatool, from RomM-o-Cera's GitHub releases",
                 "done": "wuatool {version} installed: Wii U disc images compress to .wux",
@@ -471,10 +468,9 @@ class SettingsScreen(Screen):
                 "off": "Decrypt Wii U discs off (wuatool stays installed)",
                 "on": "Wii U discs with their key will become .wua",
                 "title": "Download wuatool?",
-                "body": "Decrypting Wii U discs needs wuatool {version}{size}: Cemu's own disc code and ZArchive, "
-                        "built from their published source (MPL-2.0) and checked by SHA-256 before use. Each disc "
-                        "needs its disc key (games you own); a .wua holds the game partition, not the whole disc "
-                        "image. Credits are in Settings.",
+                "body": "Decrypting needs wuatool {version}{size}: Cemu's disc code and ZArchive (MPL-2.0), checked "
+                        "by SHA-256 before use. Each disc needs its key (games you own); a .wua holds the game, not "
+                        "the whole disc.",
                 "start": "Downloading wuatool…",
                 "fetching": "wuatool, from RomM-o-Cera's GitHub releases",
                 "done": "wuatool {version} installed: Wii U discs with their key become .wua",
@@ -711,22 +707,18 @@ class SettingsScreen(Screen):
 # Settings rows for a config.json key take their name, grey line and help from rommlib.SETTINGS
 SETTING_ROW = {s.row: s for s in rommlib.SETTINGS if s.row}
 SETTING_HELP = dict({s.row: s.help for s in rommlib.SETTINGS if s.row}, **{
-    "pair": "The easy way to sign in: in RomM's web page open Profile, Client API tokens, press Pair on "
-            "a token, then type its 8-character code here within a minute. RomM gives that token a new "
-            "secret, so pair each box with its own token.",
+    "pair": "Sign in without typing the token: in RomM open Profile, Client API tokens, press Pair, and "
+            "type the 8-character code here within a minute. Give each box its own token.",
     "test": "Asks RomM for its platform list right now and says how many it found.",
     "arcade": "Where arcade games go: fbneo is forgiving about romset versions, mame needs exact sets.",
-    "resetcfg": "Puts every setting back to its default, including the RomM server address and token. "
-                "The current settings file is kept beside it (config.json.bad-…) so nothing is lost. "
-                "Use it when config.json was edited by hand and can't be read any more.",
+    "resetcfg": "Puts every setting back to its default, server and token included. The old file is kept "
+                "as config.json.bad-…, so nothing is lost.",
     "cache": "Deletes every cached cover; they download again as you browse.",
     "bios": "What each system needs, what's missing, and what your RomM can supply.",
     "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
-    "docs": "Point your phone's camera at the code to open the documentation: setting up, every "
-            "setting, and what to do when something goes wrong. {A} shows it bigger.",
-    "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and restarts the app to "
-              "install it. Downloads pause and carry on when it's back. The current version is kept so you can "
-              "go back.",
+    "docs": "Point your phone's camera at the code to open the documentation. {A} shows it bigger.",
+    "update": "Checks GitHub for a newer version, then downloads it, checks it and restarts to install it. "
+              "Downloads pause meanwhile, and the current version is kept so you can go back.",
     "rollback": "Swaps the previous version back in and restarts the app. The current one is kept, so this can "
                 "be undone too.",
 })

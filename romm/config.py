@@ -50,8 +50,8 @@ SETTINGS = (
     Setting("url", "",                  # your RomM, e.g. https://romm.example.com
             row="url", label="Server address", sub="{A} to edit (http:// or https://)",
             valid=_str_or_null,
-            help="Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// works but "
-                 "sends the token unencrypted."),
+            help="Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// sends the token "
+                 "unencrypted."),
     Setting("token", "",                # RomM client API token (read scopes)
             row="token", label="API token", sub="Create one in RomM under Profile, Client API tokens",
             valid=_str_or_null,
@@ -71,100 +71,76 @@ SETTINGS = (
     Setting("check_updates", True,      # once a day, ask GitHub if a newer release exists
             row="checkupdates", label="Check for updates daily", sub="Updates still checks when you ask",
             kind="onoff", effects=("check_updates",),
-            help="Once a day, asks GitHub whether a newer version is out on your update channel, and says so "
-                 "when there is one. The request carries nothing about you or your games. Off: no daily "
-                 "check, but Updates still checks whenever you select it."),
+            help="Once a day, asks GitHub whether a newer version is out; the request says nothing about you. Off,"
+                 " Updates still checks when you select it."),
     Setting("chd", True,                # background CHD conversion of extracted disc games
             row="chd", label="Compress disc games to CHD", sub="CD systems, PS2 and PSP, in the background",
             kind="onoff", effects=("downloader",),
-            help="Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background "
-                 "while nothing runs. Lossless, verified before the original is deleted."),
+            help="Turns CD and DVD games (PlayStation, PS2, PSP, Saturn, Dreamcast…) into CHD in the background. "
+                 "Lossless, verified before the original is deleted."),
     Setting("chd_threads", "auto",      # chdman threads: "auto" or a number (see chd_threads())
             row="chdthreads", label="Compression threads", sub="More is faster; fewer keeps the menus snappier",
             help="CPU threads conversions may use while nothing else runs. Auto leaves some for the menus."),
     Setting("chd_low_memory", "auto",   # CDs without chdman's leaky FLAC codec: "auto" (on under 4 GB RAM), true, false
             row="chdlowmem", label="Low-memory mode", sub="Skips chdman's leaky FLAC codec for CDs",
             valid=lambda v: isinstance(v, bool) or v == "auto",
-            help="chdman's FLAC codec leaks memory on some builds. Auto turns this on for boxes under 4 GB "
-                 "RAM: CDs skip FLAC, so audio tracks come out a bit bigger. Still lossless. Left and right "
-                 "pick Auto, On or Off."),
+            help="Skips chdman's FLAC codec, which leaks memory on some builds: CD audio comes out a bit bigger, "
+                 "still lossless. Auto turns it on under 4 GB of RAM."),
     Setting("keep_free_gb", 20,         # downloads and CHD conversions never leave less than this free (GB)
             row="keepfree", label="Keep free on disk", sub="Downloads wait instead of filling the drive",
             kind="choice", choices=KEEP_FREE_CHOICES, effects=("downloader",),
             valid=_parses(lambda v: float(v or 0)),     # 0: no reserve; null/"" show as Nothing but keep 20 GB (keep_free_bytes)
-            help="Downloads and conversions never leave less than this free. One that doesn't fit waits "
-                 "(\"Waiting for space\") and starts once there's room; smaller ones behind it keep going."),
+            help="Downloads and conversions never leave less than this free. One that doesn't fit waits for room; "
+                 "smaller ones keep going."),
     Setting("extract_parallel", True,   # the next download starts while the last one is being extracted
             row="overlap", label="Download while extracting", sub="Next download starts during unpacking",
             kind="onoff", effects=("downloader",),
-            help="While a game unpacks, the next one already downloads. Turn it off on slow storage (SD cards, "
-                 "USB sticks) so the two don't fight over the disk."),
+            help="The next game downloads while one unpacks. Turn it off on slow storage (SD cards, USB sticks)."),
     Setting("rvz", False,               # convert GameCube/Wii images to RVZ (downloads dolphin-tool when turned on)
             row="rvz", label="GameCube and Wii to RVZ",
-            help="Turns GameCube and Wii images into RVZ: lossless and usually 30-60% smaller, checked against "
-                 "the original before it's deleted. Needs dolphin-tool (about 8 MB, GPL), downloaded once when "
-                 "you turn this on."),
+            help="Turns GameCube and Wii images into RVZ, usually 30-60% smaller and lossless; the original is "
+                 "deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once."),
     Setting("xbox_bootable", True,      # Xbox: keep only the game partition xemu boots; "X.xiso" -> "X.iso" (ES lists .iso)
             row="xboxboot", label="Make Xbox images bootable", sub="Game partition only; .xiso renamed to .iso",
             kind="onoff", effects=("downloader",),
-            help="xemu boots only an Xbox disc's game partition: a full disc image (as Redump keeps them) shows "
-                 "\"Please insert an Xbox disc\". This keeps just the game partition, in place where the drive "
-                 "allows, and renames .xiso files to .iso so EmulationStation lists them. Images that are "
-                 "already bootable are left as they are."),
+            help="xemu boots only a disc's game partition (a full image says \"Please insert an Xbox disc\"). This "
+                 "keeps just that part and renames .xiso to .iso so EmulationStation lists them."),
     Setting("squashfs", False,          # pack Xbox images into zstd squashfs (Batocera mounts them at launch)
             row="squashfs", label="Xbox to squashfs", sub="Packed smaller; Batocera opens it at launch",
             kind="onoff", effects=("downloader",),
-            help="Packs Xbox games into a squashfs file, usually 15-45% smaller; Batocera opens it when the game "
-                 "starts. Lossless: the image inside is checked against the original before it's deleted. "
-                 "Packing takes a few minutes of CPU per game. Needs Make Xbox images bootable for full disc "
-                 "images (a packed one xemu can't boot would be no use)."),
+            help="Packs Xbox games into squashfs, usually 15-45% smaller, which Batocera opens at launch. "
+                 "Lossless, verified before the original is deleted. Full disc images need Make Xbox images "
+                 "bootable."),
     Setting("z3ds", True,               # compress decrypted 3DS cartridge images to Azahar's .zcci (lossless)
             row="z3ds", label="3DS to .zcci", sub="Compressed copies Azahar opens directly",
             kind="onoff", effects=("downloader",),
-            help="Compresses 3DS games (.3ds, .cci, .cxi) to Azahar's own .zcci format, often 40-60% smaller; "
-                 "Azahar opens them directly and saves stay where they are. Lossless: every block is read back "
-                 "and checked against the original before it's deleted. Encrypted dumps (which Azahar can't run "
-                 "anyway) are left alone. Uses the zstd library already on Batocera."),
+            help="Compresses decrypted 3DS games to Azahar's .zcci, often 40-60% smaller. Lossless, verified "
+                 "before the original is deleted; encrypted dumps are left alone."),
     Setting("zar", False,               # Xbox 360 images -> .zar for xenia-canary (downloads two small tools)
             row="zar", label="Xbox 360 to .zar",
-            help="Turns Xbox 360 disc images into .zar, a compressed archive xenia-canary opens directly, often "
-                 "40-60% smaller. It keeps the game's files and leaves out the rest of the disc (video "
-                 "partition, padding), so it isn't a copy of the original image. Every file is checked against "
-                 "the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), downloaded "
-                 "once when you turn this on. xenia (not canary) can't open .zar."),
+            help="Turns Xbox 360 images into .zar for xenia-canary, often 40-60% smaller. It keeps the game's "
+                 "files, not the whole disc, each checked before the image is deleted. Downloads two small tools "
+                 "once."),
     Setting("wux", True,                # Wii U .wud -> .wux, lossless, no keys (downloads wuatool when turned on)
             row="wux", label="Wii U to .wux", sub="Lossless; Cemu opens .wux directly",
-            help="Compresses Wii U disc images (.wud) into .wux, which Cemu opens directly: the disc's empty "
-                 "and repeated parts are stored once, often 30-90% smaller. Lossless: the .wux expands back to "
-                 "the exact .wud, and is checked against it byte for byte before the .wud is deleted. Needs no "
-                 "keys. Needs wuatool (about 2 MB), downloaded once when you turn this on or press {A} here. "
-                 "With Decrypt Wii U discs on, a disc whose key is here becomes a .wua instead."),
+            help="Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs "
+                 "no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 2 MB), "
+                 "downloaded by itself when needed."),
     Setting("wua", False,               # decrypt Wii U .wud/.wux -> .wua with the user's own disc keys (Cemu)
             row="wua", label="Decrypt Wii U discs", sub="Uses disc keys for games you own",
-            help="Wii U discs (.wud, .wux) are encrypted. With its disc key, a disc becomes a .wua: the game's "
-                 "files in an archive Cemu opens directly, usually smaller than a .wux, each file checked "
-                 "against the disc first. Uses disc keys for games you own, which you put in Cemu's keys.txt "
-                 "(bios/cemu) or bios/wiiukeys (.key files, key lists, or zips of them) or add to RomM as Wii U "
-                 "firmware; turning this on copies RomM's into bios/wiiukeys. RomM-o-Cera comes with no keys. A "
-                 "key is checked against the disc itself, so a wrong one is never used. A disc without its key "
-                 "becomes a .wux (Wii U to .wux) instead. A .wua holds the game partition only: it can't become "
-                 "the disc image again. Needs wuatool, downloaded once."),
+            help="Turns Wii U discs into .wua for Cemu with the disc keys of games you own: in Cemu's keys.txt, "
+                 "bios/wiiukeys or RomM's Wii U firmware (none come with the app). Checked first; a .wua can't "
+                 "become the disc image again. A disc without its key becomes a .wux."),
     Setting("ps3_folders", True,        # PS3 disc images (.iso, zipped .iso) -> "Name.ps3" game folders
             row="ps3folders", label="PS3 games as folders",
             sub="Disc images become .ps3 folders RPCS3 can update",
             kind="onoff", effects=("downloader",),
-            help="Turns PS3 disc images (.iso, or the .iso in a zip, read without unzipping it) into .ps3 game "
-                 "folders, the layout RPCS3 installs updates and DLC for. Every file comes from the image and "
-                 "the game's start files are checked before the image is deleted. A zip needs no room for an "
-                 "unzipped copy: only the folder's size. An encrypted disc needs Decrypt PS3 discs; until then "
-                 "it stays as it is and ES doesn't list it."),
+            help="Turns PS3 disc images (.iso, zipped or not) into .ps3 folders, the layout RPCS3 installs updates"
+                 " and DLC for. Checked before the image is deleted. Encrypted discs need Decrypt PS3 discs."),
     Setting("ps3_decrypt", False,       # decrypt encrypted PS3 discs with the user's own disc keys (bios/ps3keys)
             row="ps3decrypt", label="Decrypt PS3 discs", sub="Uses disc keys for games you own",
-            help="Encrypted PS3 discs (Redump's images are) need their disc key to become a game folder. Uses "
-                 "disc keys for games you own, which you put in bios/ps3keys (.key or .dkey files, or zips of "
-                 "them) or add to RomM as PS3 firmware; turning this on copies RomM's into bios/ps3keys. "
-                 "RomM-o-Cera comes with no keys. A key is matched to its disc by name, and checked against the "
-                 "disc itself, so a wrong one is never used."),
+            help="Decrypts PS3 discs with the disc keys of games you own: put them in bios/ps3keys or RomM's PS3 "
+                 "firmware (none come with the app). A wrong key is never used."),
     Setting("cache_limit_mb", 1024,     # cover cache size cap; least recently used covers go first (0 = no cap)
             row="cachelimit", label="Cover cache limit", sub="Least recently seen covers are removed first",
             kind="choice", choices=CACHE_LIMITS_MB, effects=("cache_limit",),
@@ -174,8 +150,8 @@ SETTINGS = (
             row="hours", label="Download hours", sub="Only download in this window (e.g. overnight)",
             kind="choice", choices=DOWNLOAD_HOURS, effects=("downloader", "wake"),
             valid=lambda v: v == "any" or parse_hours(v) is not None,
-            help="Downloads only start inside this window, e.g. overnight. A download running when it closes "
-                 "pauses and picks up next time. \"Download now\" in Downloads skips the wait."),
+            help="Downloads only start inside this window, e.g. overnight; one still running pauses when it "
+                 "closes. Download now in Downloads skips the wait."),
     Setting("background_downloads", True,  # keep downloading after the app exits
             row="bgdl", label="Keep downloading after exit", sub="Finishes the queue while you play",
             kind="onoff",
@@ -200,24 +176,19 @@ SETTINGS = (
             help="Clicks and chimes while you browse."),
     Setting("theme", "default",         # colours: a THEMES key (rbui/theme.py), e.g. default, xbox_oled, synthwave
             row="theme", label="Theme", sub="Colours for the whole app, previewed live",
-            help="Colours for the whole app. {A} shows every theme as a card, and the whole app takes it on as "
-                 "you move: {A} keeps it, {B} goes back. {Y} turns on a card's OLED version (pure black). Left "
-                 "and right step through them here. Custom, under Yours, makes your own. Every theme is as easy to "
-                 "read as Default."),
+            help="Colours for the whole app. {A} shows every theme, previewed live: {A} keeps one, {B} goes back, "
+                 "{Y} picks its OLED version. Left and right step through them here."),
     Setting("update_channel", "stable",  # stable: releases only; nightly: also the nightly build
             row="channel", label="Update channel", sub="Stable releases, or nightly builds",
             kind="choice", choices=("stable", "nightly"), effects=("update_channel",),
             valid=lambda v: v in ("stable", "nightly"),
-            help="Stable gets tested releases. Nightly also gets builds of the newest changes, made as they "
-                 "land: new fixes sooner, less tested. Updates finds the newest straight away. Going back to "
-                 "Stable keeps the nightly you have until a release is newer; Go back to the previous version "
-                 "undoes an update."),
+            help="Stable gets tested releases. Nightly also gets builds of the newest changes: fixes sooner, less "
+                 "tested."),
     Setting("theme_auto", False,        # True: a PlayStation / Xbox / Nintendo pad picks the theme made for it
             row="themeauto", label="Match theme to controller", sub="Follows a PlayStation, Xbox or Nintendo pad",
             kind="onoff", valid=lambda v: isinstance(v, bool),
-            help="With a PlayStation, Xbox or Nintendo controller connected, the app uses the theme made for it "
-                 "(PlayStation, Xbox or Kyoto) instead of your Theme, in its OLED version if your Theme is an OLED "
-                 "one. With a keyboard or another controller, your Theme. High contrast and Custom are always kept."),
+            help="A PlayStation, Xbox or Nintendo controller shows the theme made for it instead of yours. High "
+                 "contrast and Custom are always kept."),
     # Settings → Theme → Custom: the player's own theme, every colour made from these four (rbui/theme.py's
     # custom_palette); "theme": "custom" uses it
     Setting("theme_custom_accent", 195,     # the accent's hue in degrees (0 red, 120 green, 240 blue)
