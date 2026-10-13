@@ -1,14 +1,14 @@
 """BIOS files."""
 import os
 
-import pygame
 import rommlib
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, marquee, measure, rrect, text
+from rbui.draw import text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import bios_pill, bios_rows
 from rbui.modals import Confirm
+from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_row, need_width, split
 
 
 class BiosScreen(ListScreen):
@@ -104,25 +104,36 @@ class BiosScreen(ListScreen):
         ok = sum(1 for r in self.items if not r["missing"])
         can = sum(1 for r in self.items if r["offers"])
         gone = sum(1 for r in self.items if r["missing"] and not r["offers"])
-        x = 56
+        row = lambda it: (it["name"], ("No games here yet · " if not it.get("here", True) else "") +  # noqa: E731
+                          bios_pill(it)[2], bios_pill(it)[0])
+        lst, pan = split(need_width(self.f, [row(it) for it in self.items[:200]]))
+        x = lst.left + 8
         for label, col in (("%d complete" % ok, theme.GREEN), ("%d RomM can fill" % can, theme.ACCENT_HI),
                            ("%d missing everywhere" % gone, theme.AMBER)):
-            r = text(c, self.f.h3, label, (x, 86), col)
+            r = text(c, self.f.h3, label, (x, lst.top + 6), col, maxw=max(40, lst.right - 8 - x))
             x = r.right + 24
-        text(c, self.f.small, "Files go to /userdata/bios", (W - 56, 90), theme.FAINT, "topright")
-        for i, r, on in self.row_rects(124, gap=6):
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width, gap=6):
             it = self.items[i]
-            if on:
-                focus_box(c, r)
-            pill, col, sub = bios_pill(it)
-            if not it.get("here", True):
-                sub = "No games here yet · " + sub
-            text(c, self.f.row, it["name"], (r.left + 22, r.top + 8), theme.TEXT if on else theme.DIM, maxw=r.width - 420)
-            marquee(c, self.f.small, sub, (r.left + 22, r.top + 34), theme.FAINT, maxw=r.width - 60, focused=on,
-                    slot="bios-sub")
-            pw = int(measure(self.f.small, pill)) + 20
-            pr = pygame.Rect(r.right - 20 - pw, r.top + 8, pw, 24)
-            rrect(c, theme.BG2, pr, 8)
-            text(c, self.f.small, pill, pr.center, col, "center")
+            name, sub, pill = row(it)
+            list_row(c, self.f, r, on, name, sub, pill, bios_pill(it)[1], slot="bios")
+        it = self.items[self.sel]
+        pill, col, _ = bios_pill(it)
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="bios-panel")
+        p.foot("Files go to /userdata/bios")
+        p.actions(hint_actions(self))
+        p.title(it["name"], pill, col)
+        p.fact("Files it needs", len(it["required"]))
+        offered = {os.path.basename(m["file"]) for m, _ in it["offers"]}
+        missing = [os.path.basename(m["file"]) for m in it["missing"]]
+        if offered:
+            p.prose(", ".join(sorted(offered)), label="RomM has", lines=3)
+        gone_here = [m for m in missing if m not in offered]
+        if gone_here:
+            p.prose(", ".join(gone_here), label="Not in RomM either", color=theme.AMBER, lines=3)
+        if it["fetched"]:
+            p.fact("Fetched by RomM-o-Cera", "%d, last %s" % (len(it["fetched"]), max(
+                rec.get("when", "") for rec in it["fetched"].values())[:10]))
+        if not it.get("here", True):
+            p.prose("No games for it on this box yet.", color=theme.FAINT, lines=2)
         if self.busy:
-            text(c, self.f.body, "Fetching from RomM…", (W // 2, H - 90), theme.ACCENT_HI, "center")
+            p.prose("Fetching from RomM…", color=theme.ACCENT_HI, lines=1)

@@ -7,7 +7,7 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
-from rbui.theme import H
+
 from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, installed_mark, marquee, measure, rich_text,
                        rom_title, rrect, scroll_text, text, wrap)
 from rbui.screens.base import letter_of, ListScreen
@@ -18,12 +18,15 @@ from rbui.widgets.chips import tag
 from rbui.widgets.factsheet import facts
 from rbui.widgets.hero import game_verb, verb_button, VERB_H
 from rbui.widgets.tiles import cover
+from rbui.widgets.layout import bubble_at, split
 
 
 REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Australia": "AU",
                "Brazil": "BR", "Korea": "KR", "China": "CN", "Germany": "DE", "France": "FR",
                "Spain": "ES", "Italy": "IT", "UK": "UK", "Asia": "Asia"}
 
+
+GAME_LIST, GAME_PANEL = split(676)      # the rows (name, regions, size, platform tag) and RomM's record beside them
 
 JUNK_MARKERS = ("~hack~", "~unlicensed~", "~prototype~", "~demo~", "~homebrew~", "(proto",
                 "(beta", "(demo", "(sample", "(hack", "(pirate", "(unl)")
@@ -124,7 +127,7 @@ class GameListScreen(ListScreen):
     BULK_MAX = 1000
     PICKS, PICK_ALL, PICK_WHAT = True, False, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works in full lists sorted by name"
-    BUBBLE_AT = (32 + 676 // 2, H // 2)
+    BUBBLE_AT = bubble_at(GAME_LIST)
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
                  order_by="name", static=None, why=None, crumb="More like this"):
@@ -588,7 +591,7 @@ class GameListScreen(ListScreen):
 
     def draw(self, c):
         app = self.app
-        lx, ly, lw = 32, 80, 676
+        lx, ly, lw = GAME_LIST.left, GAME_LIST.top, GAME_LIST.width
         # list header
         if self.total is None:
             cnt = "Loading…"
@@ -672,13 +675,12 @@ class GameListScreen(ListScreen):
         if self.items and self.items[self.sel] is not None:
             self.draw_detail(c, self.items[self.sel])
         elif self.items:
-            p = pygame.Rect(728, 80, 520, 576)
-            rrect(c, theme.PANEL, p, 16)
-            text(c, self.f.body, "Loading…", p.center, theme.DIM, "center")
+            rrect(c, theme.PANEL, GAME_PANEL, 16)
+            text(c, self.f.body, "Loading…", GAME_PANEL.center, theme.DIM, "center")
 
     def draw_detail(self, c, rom):
         app = self.app
-        p = pygame.Rect(728, 80, 520, 576)
+        p = GAME_PANEL
         rrect(c, theme.PANEL, p, 16)
         cov = pygame.Rect((p.left + 24, p.top + 24), COVER_BOX)
         if app.cover(rom):

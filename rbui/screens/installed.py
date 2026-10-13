@@ -2,16 +2,16 @@
 import os
 import time
 
-import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, marquee, progress_bar, rrect, scroll_text, text
+from rbui.draw import progress_bar, text
 from rbui.screens.base import letter_of, ListScreen
-from rbui.screens.games import GameListScreen
+from rbui.screens.games import GAME_LIST, GAME_PANEL, GameListScreen
 from rbui.screens.box_data import conversion_rows, conversion_status, installed_games, plural
 from rbui.modals import ActionMenu, Confirm, ManageMenu
+from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_head, list_row, split
 
 
 class InstalledScreen(ListScreen):
@@ -19,7 +19,7 @@ class InstalledScreen(ListScreen):
     with RomM's cover and details beside them. A: the game's menu, as in a
     game list (delete, download again, more like this); X: delete several."""
     ROWS, ROW_H = 10, 54
-    LX, LW = 32, 676                     # the list; the game panel is to its right, as in a game list
+    LX, LW = GAME_LIST.left, GAME_LIST.width     # the list; the game panel is to its right, as in a game list
     SORTS = (("size", "Biggest first"), ("name", "Name"), ("new", "Newest first"))
     PICKS, PICK_WHAT = True, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works when sorted by name ({Y})"
@@ -183,18 +183,12 @@ class InstalledScreen(ListScreen):
         n = self.pick_count()
         if n:
             head += " · %d picked" % n
-        text(c, self.f.h3, head, (lx + 8, 86), theme.TEXT, maxw=lw - 170)
-        text(c, self.f.small, dict(self.SORTS)[self.sort], (lx + lw - 8, 92), theme.FAINT, "topright")
-        for i, r, on in self.row_rects(124, x=lx, w=lw):
+        list_head(c, self.f, GAME_LIST, head, dict(self.SORTS)[self.sort])
+        for i, r, on in self.row_rects(ROWS_TOP, x=lx, w=lw):
             it = self.items[i]
-            if on:
-                focus_box(c, r)
-            nx = r.left + (44 if self.draw_pick(c, it, (r.left + 22, r.centery)) else 18)
-            sr = text(c, self.f.small, human_size(it["size"]), (r.right - 14, r.centery), theme.DIM, "midright")
-            marquee(c, self.f.row, it["name"], (nx, r.top + 4), theme.TEXT if on else theme.DIM,
-                    maxw=sr.left - 16 - nx, focused=on, slot="installed-name")
             sub = (it["system"] or "?") + ("  ·  added %s" % it["when"][:10] if it.get("when") else "")
-            text(c, self.f.small, sub, (nx, r.top + 29), theme.DIM, maxw=sr.left - 16 - nx)
+            list_row(c, self.f, r, on, it["name"], sub, human_size(it["size"]),
+                     mark=lambda ctr, it=it: self.draw_pick(c, it, ctr), slot="installed")
         it = self.items[self.sel]
         d = self.record(it)
         if d and d.get("id") is not None:
@@ -205,18 +199,12 @@ class InstalledScreen(ListScreen):
 
     def draw_local(self, c, it, note):
         """The panel from what's on the box, while RomM's record isn't here."""
-        p = pygame.Rect(728, 80, 520, 576)
-        rrect(c, theme.PANEL, p, 16)
-        x, y, w = p.left + 24, p.top + 24, p.width - 48
-        y = scroll_text(c, self.f.h3, it["name"], (x, y, w, 3 * 25), theme.TEXT, line_h=25,
-                        slot="local-title").bottom + 12
-        for k, v in (("System", it["system"]), ("Size", human_size(it["size"])), ("Added", it.get("when", "")[:10])):
-            if v:
-                text(c, self.f.small, k, (x, y), theme.FAINT)
-                text(c, self.f.cond, str(v), (x, y + 17), theme.DIM, maxw=w)
-                y += 42
-        scroll_text(c, self.f.small, note, (x, y + 12, w, min(3 * 20, p.bottom - 24 - y - 12)), theme.FAINT,
-                    line_h=20, slot="local-note")
+        p = Panel(c, self.f, GAME_PANEL, slot="local")
+        p.title(it["name"])
+        p.fact("System", it["system"])
+        p.fact("Size", human_size(it["size"]))
+        p.fact("Added", it.get("when", "")[:10])
+        p.prose(note, color=theme.FAINT, lines=3)
 
 
 def _lastplayed_label(lp):
@@ -316,30 +304,57 @@ class ConversionsScreen(ListScreen):
                  (W // 2, 340), theme.FAINT, "center")
             return
         nq = sum(1 for r in self.rows if r["kind"] in ("queued", "running"))
-        text(c, self.f.h3, "%d waiting · runs while nothing is playing" % nq if nq else "Queue empty",
-             (56, 86), theme.TEXT)
-        col = {"running": theme.BLUE, "queued": theme.DIM, "ok": theme.GREEN, "failed": theme.RED,
-               "skipped": theme.AMBER, "waiting": theme.AMBER}
-        for i, box, on in self.row_rects(124, gap=6):
+        lst, pan = split(None)
+        list_head(c, self.f, lst, "%d waiting" % nq if nq else "Queue empty",
+                  "runs while nothing is playing" if nq else "")
+        for i, box, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width, gap=6):
             r = self.rows[i]
-            rrect(c, theme.PANEL_HI if on else theme.PANEL, box, 12)
-            if on:
-                rrect(c, theme.ACCENT, box, 12, 2)
-            mode = self.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")
-            title = r["title"] + (" (%d discs)" % r["discs"] if r["discs"] > 1 else "")
-            marquee(c, self.f.h3, title, (box.left + 20, box.top + 8), theme.TEXT if on else theme.DIM,
-                    maxw=box.width - 500, focused=on, slot="conv-title")
-            k = r["kind"]
-            if k == "running":
-                st, frac = conversion_status(r)
-                progress_bar(c, (box.left + 460, box.top + 40, box.width - 480, 8), frac, theme.BLUE)
-                sub = "%s · %s" % (mode, human_size(r["size"]))
-            elif k == "queued":
-                st = "Waiting for %s" % r["tool"] if r.get("tool") else "Queued"
-                sub = "%s · %s" % (mode, human_size(r["size"]))
-            else:
-                st = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(k, k)
-                sub = r.get("message") or ""
-            text(c, self.f.small, st, (box.right - 20, box.top + 12), col.get(k, theme.DIM), "topright", maxw=440)
-            marquee(c, self.f.small, sub, (box.left + 20, box.top + 34), theme.FAINT,
-                    maxw=(box.width - 40) if k not in ("running",) else 420, focused=on, slot="conv-sub")
+            st, col, sub, frac = self.state(r)
+            list_row(c, self.f, box, on, self.title(r), sub, st if r["kind"] != "running" else "%d%%" % (frac * 100),
+                     col, slot="conv")
+            if r["kind"] == "running":
+                progress_bar(c, (box.left + 22, box.bottom - 5, box.width - 44, 3), frac, theme.BLUE)
+        r = self.rows[self.sel]
+        st, col, sub, frac = self.state(r)
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="conv-panel")
+        p.actions(hint_actions(self))
+        p.title(self.title(r), st, col)
+        if r["kind"] == "running":
+            p.bar(frac, theme.BLUE)
+            p.space(4)
+        p.fact("Becomes", self.mode(r))
+        if r.get("size"):
+            p.fact("Size now", human_size(r["size"]))
+        if r.get("time"):
+            p.fact("Finished", time.strftime("%Y-%m-%d %H:%M", time.localtime(r["time"])))
+        if r["kind"] in ("queued", "running"):
+            p.prose(self.NEXT.get(r["kind"]) if not r.get("tool") else
+                    "It starts once %s is installed (Settings)." % r["tool"], lines=3)
+        elif r.get("message"):
+            p.prose(r["message"], label="What happened", color=col if r["kind"] != "ok" else None)
+
+    NEXT = {"queued": "It starts when nothing is playing and there's room. The original stays until the copy "
+                      "checks out.",
+            "running": "It pauses by itself while a game runs. The original goes only after the copy checks out."}
+    COLOURS = {"running": "BLUE", "queued": "DIM", "ok": "GREEN", "failed": "RED", "skipped": "AMBER",
+               "waiting": "AMBER"}
+
+    def mode(self, r):
+        return self.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")
+
+    @staticmethod
+    def title(r):
+        return r["title"] + (" (%d discs)" % r["discs"] if r["discs"] > 1 else "")
+
+    def state(self, r):
+        """(status, its colour, the grey line, progress 0-1) of a row."""
+        k, mode = r["kind"], self.mode(r)
+        col = getattr(theme, self.COLOURS.get(k, "DIM"))
+        if k == "running":
+            st, frac = conversion_status(r)
+            return st, col, "%s · %s" % (mode, human_size(r["size"])), frac
+        if k == "queued":
+            return ("Waiting for %s" % r["tool"] if r.get("tool") else "Queued"), col, \
+                "%s · %s" % (mode, human_size(r["size"])), 0
+        st = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(k, k)
+        return st, col, r.get("message") or "", 0

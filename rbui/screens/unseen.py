@@ -1,15 +1,15 @@
 """Files EmulationStation can't see."""
 import os
 
-import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import circle, focus_box, marquee, measure, rrect, text
+from rbui.draw import circle, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import plural
 from rbui.modals import ActionMenu, Confirm
+from rbui.widgets.layout import Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width, split
 
 
 class UnseenScreen(ListScreen):
@@ -240,29 +240,34 @@ class UnseenScreen(ListScreen):
                  (56, 124), theme.DIM, maxw=W - 112)
             return
         n_sys = len({i["system"] for i in self.items})
-        head = "%s ES can't see, in %s" % (plural(len(self.items), "file"), plural(n_sys, "system"))
+        row = lambda it: (os.path.relpath(it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"])),  # noqa: E731
+                          it["why"][:1].upper() + it["why"][1:], human_size(it["size"]))
+        lst, pan = split(need_width(self.f, [row(it) for it in self.items[:200]], mark=True))
+        self.BUBBLE_AT = bubble_at(lst)
         picked = self.picked()
-        if picked:
-            head += " · %d picked (%s)" % (len(picked), human_size(sum(i["size"] for i in picked)))
-        text(c, self.f.h3, head, (56, 86), theme.TEXT)
-        if self.progress:
-            text(c, self.f.small, self.progress, (W - 56, 90), theme.AMBER, "topright")
-        for i, r, on in self.row_rects(124):
+        note = "%d picked, %s" % (len(picked), human_size(sum(i["size"] for i in picked))) if picked else \
+            "in %s" % plural(n_sys, "system")
+        list_head(c, self.f, lst, "%s ES can't see" % plural(len(self.items), "file"), self.progress or note,
+                  theme.AMBER if self.progress else None)
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             it = self.items[i]
-            if on:
-                focus_box(c, r)
             col = theme.FAINT if it["kind"] == "unknown" else theme.AMBER
-            if not self.draw_pick(c, it, (r.left + 18, r.top + 18)):
-                circle(c, col, (r.left + 18, r.top + 18), 5)
-            rel = os.path.relpath(it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))
-            marquee(c, self.f.row, rel, (r.left + 34, r.top + 6), theme.TEXT if on else theme.DIM,
-                    maxw=r.width - 260, focused=on, slot="unseen-path")
-            why = it["why"][:1].upper() + it["why"][1:]
-            marquee(c, self.f.small, why, (r.left + 34, r.top + 32), col, maxw=r.width - 260, focused=on,
-                    slot="unseen-why")
-            tag = it["system"]
-            tw = int(measure(self.f.tiny, tag)) + 14
-            tr = pygame.Rect(r.right - 20 - tw, r.top + 8, tw, 20)
-            rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
-            text(c, self.f.small, human_size(it["size"]), (r.right - 20, r.top + 40), theme.DIM, "midright")
+
+            def mark(ctr, it=it, col=col):
+                if not self.draw_pick(c, it, ctr):
+                    circle(c, col, ctr, 5)
+                return True
+            list_row(c, self.f, r, on, *row(it), sub_color=col, mark=mark, slot="unseen")
+        it = self.items[self.sel]
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="unseen-panel")
+        p.actions(hint_actions(self))
+        p.title(os.path.basename(it["path"]), "%s · roms/%s" % (human_size(it["size"]), it["system"]))
+        p.prose(row(it)[1] + ".", label="Why ES can't see it", color=theme.AMBER if it["kind"] != "unknown" else None,
+                lines=3)
+        p.prose(self.FIX.get(it["kind"], ""), label="What you can do", lines=4)
+        if it["kind"] == "wrong" and it.get("to"):
+            p.fact("Systems that take it", ", ".join(it["to"][:self.MOVE_CHOICES]))
+
+    FIX = {"archive": "Unpack it here, as after a download: ES then lists the game. Or delete it.",
+           "wrong": "Move it to a system folder that takes it, or delete it.",
+           "unknown": "Leave it (it does no harm) or delete it."}

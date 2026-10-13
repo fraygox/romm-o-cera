@@ -954,6 +954,56 @@ def conversions_state(recent=60):
     return {"current": cur, "queue": queue, "results": results}
 
 
+# Compress's "after" estimate, for a converter this box hasn't run yet: what its outputs
+# usually weigh against their sources (CD images ~60%, GameCube/Wii junk dropped, a .cso
+# already compressed, a PS3 folder the same game unpacked).
+TYPICAL_RATIO = {"createcd": 0.6, "createdvd": 0.7, "cso": 0.95, "rvz": 0.45, "squashfs": 0.7, "z3ds": 0.6,
+                 "zar": 0.7, "wua": 0.4, "wux": 0.4, "ps3": 1.0}
+_UNITS = {"B": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30, "TB": 1 << 40}
+_OK_SIZES = re.compile(r"\(([\d.]+) (B|KB|MB|GB|TB) -> ([\d.]+) (B|KB|MB|GB|TB)\)\s*$")
+
+
+def result_sizes(d):
+    """(source bytes, output bytes) of a finished conversion (a chd-results.jsonl line): its
+    in_size/out_size, or read back from an older line's "OK a -> b  (700.0 MB -> 350.0 MB)";
+    None when it didn't finish or doesn't say."""
+    if d.get("result") != "ok":
+        return None
+    if d.get("in_size") and d.get("out_size"):
+        return int(d["in_size"]), int(d["out_size"])
+    m = _OK_SIZES.search(d.get("message") or "")
+    if not m:
+        return None
+    a, b = float(m.group(1)) * _UNITS[m.group(2)], float(m.group(3)) * _UNITS[m.group(4)]
+    return (int(a), int(b)) if a > 0 and b > 0 else None
+
+
+def conversion_ratios(results):
+    """{mode: output bytes / source bytes} over the conversions this box finished."""
+    tot = {}
+    for d in results:
+        sz = result_sizes(d)
+        if sz and d.get("mode"):
+            t = tot.setdefault(d["mode"], [0, 0])
+            t[0] += sz[0]
+            t[1] += sz[1]
+    return {m: b / a for m, (a, b) in tot.items() if a}
+
+
+def estimate_after(cands, ratios):
+    """(bytes after converting cands, measured): each candidate at its converter's ratio on
+    this box (ratios: conversion_ratios), else TYPICAL_RATIO; measured is True when every
+    candidate's ratio came from this box."""
+    after, measured = 0.0, bool(cands)
+    for c in cands:
+        r = ratios.get(c.get("mode"))
+        if r is None:
+            measured = False
+            r = TYPICAL_RATIO.get(c.get("mode"), 0.7)
+        after += c.get("size", 0) * r
+    return int(after), measured
+
+
 def start_conversions(python=None):
     """Start the conversion worker when the queue holds a task."""
     return conversions_pending() and _core.spawn_detached("rb_chd.py", python)

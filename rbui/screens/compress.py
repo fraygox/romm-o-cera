@@ -5,10 +5,53 @@ import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, marquee, scroll_text, text
+from rbui.draw import scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.box_data import plural
 from rbui.modals import Confirm
+from rbui.widgets.layout import (Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width,
+                                 split)
+
+
+# what each converter does to the files, for Compress's panel (by its label)
+CONVERTER_NOTE = {
+    "CHD": "Each disc image becomes a CHD: the same game byte for byte, read directly by the emulator. "
+           "The original goes only after the CHD checks out.",
+    "RVZ": "Each disc becomes an RVZ, Dolphin's own format: lossless, with the disc's padding dropped. "
+           "The original goes only after the RVZ checks out.",
+    "squashfs": "Each Xbox image becomes a compressed squashfs the emulator reads as it is. "
+                "The original goes only after it checks out.",
+    "ZCCI": "Each 3DS game becomes a .zcci, compressed and read directly by Azahar. "
+            "The original goes only after it checks out.",
+    "ZAR": "Each Xbox 360 disc becomes a .zar archive the emulator reads directly. "
+           "The original goes only after it checks out.",
+    "WUA": "Each Wii U disc's game is decrypted into a .wua, which Cemu opens directly. "
+           "The original goes only after it checks out.",
+    "WUX": "Each Wii U disc becomes a .wux: the same disc, compressed, no keys needed. "
+           "The original goes only after it checks out.",
+    "PS3 folder": "Each disc image becomes a .ps3 game folder that EmulationStation lists right away. "
+                  "It's the game unpacked, so about the same size.",
+}
+
+
+def conversion_ratios():
+    """{mode: output / source} over the conversions this box has finished."""
+    return rommlib.conversion_ratios(rommlib.conversions_state()["results"])
+
+
+def panel_estimate(p, cands, ratios):
+    """Now and after, as two bars: after from this box's own conversions, else "about"."""
+    now = sum(c["size"] for c in cands)
+    after, measured = rommlib.estimate_after(cands, ratios)
+    p.pair("Now", human_size(now))
+    p.bar(1.0, theme.FAINT)
+    p.space(4)
+    saved = now - after
+    p.pair("After" if measured else "After, about",
+           "%s, saves %s" % (human_size(after), human_size(saved)) if saved > 0 else human_size(after),
+           theme.GREEN if saved > 0 else theme.DIM)
+    p.bar(after / now if now else 0)
+    p.space(6)
 
 
 def compress_scan(skipped=None):
@@ -117,11 +160,14 @@ class CompressScreen(ListScreen):
 
         def scan():
             skipped = []
-            return compress_scan(skipped), skipped
+            return compress_scan(skipped), skipped, conversion_ratios()
         self.app.bg(scan, lambda r: self._loaded(*r), lambda e: (setattr(self, "rows", []), failed(e)))
 
-    def _loaded(self, cands, skipped=()):
+    ratios = {}
+
+    def _loaded(self, cands, skipped=(), ratios=None):
         self.cands = cands
+        self.ratios = ratios or {}
         self.rows = compress_by_system(cands) + cant_convert_rows(skipped)    # those it can't: last, never queued
         self.clamp()
 
@@ -161,42 +207,70 @@ class CompressScreen(ListScreen):
         else:
             super().action(a)
 
+    def status(self, r):
+        """A row's status: what it becomes, or what it waits for."""
+        if r.get("cant"):
+            return "can't convert", theme.AMBER
+        if r["enabled"]:
+            return "to " + r["label"], theme.ACCENT_HI
+        return ("needs a setting" if needs_text(self.app, r).startswith("turn on") else "needs its tool"), theme.FAINT
+
     def draw(self, c):
         if self.cands is None:
             text(c, self.f.h2, "Looking through every system…", (W // 2, H // 2), theme.DIM, "center")
             return
         if self.draw_load_error(c):
             return
-        if not self.cands:
+        if not self.rows:
             text(c, self.f.h3, "Nothing left to compress.", (56, 86), theme.GREEN)
             scroll_text(c, self.f.body, "Everything a converter supports is compressed or queued. Formats with a "
-                        "Settings switch show up once it's on.", (56, 122, W - 112, 30), theme.DIM, bg=theme.BG,
+                        "Settings switch show up once it's on.", (56, 122, W - 112, 3 * 26), theme.DIM, bg=theme.BG,
                         line_h=26, slot="compress-empty")
-            if not self.rows:
-                return
+            return
+        subs = ["%s, %s" % (plural(r["n"], "game"), human_size(r["size"])) for r in self.rows]
+        lst, pan = split(need_width(self.f, [(r["system"], sub, self.status(r)[0]) for r, sub in zip(self.rows, subs)]))
+        ok = [r for r in self.rows if r["enabled"]]
+        if ok:
+            list_head(c, self.f, lst, "%s could be smaller" % plural(sum(r["n"] for r in ok), "game"),
+                      "%s to work through" % human_size(sum(r["size"] for r in ok)))
         else:
-            ok = [r for r in self.rows if r["enabled"]]
-            text(c, self.f.h3, "%s could be smaller, %s to work through" % (
-                plural(sum(r["n"] for r in ok), "game"), human_size(sum(r["size"] for r in ok))), (56, 86), theme.TEXT)
-        for i, r, on in self.row_rects(164 if not self.cands else 124):
-            r_ = self.rows[i]
-            if on:
-                focus_box(c, r)
-            if r_.get("cant"):
-                text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), theme.TEXT if on else theme.DIM)
-                marquee(c, self.f.small, "%s, %s · left as they are" % (plural(r_["n"], "game"),
-                        human_size(r_["size"])), (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200,
-                        focused=on, slot="compress-sub")
-                text(c, self.f.small, "can't convert", (r.right - 20, r.centery), theme.AMBER, "midright")
-                continue
-            col = (theme.TEXT if on else theme.DIM) if r_["enabled"] else theme.FAINT
-            text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), col)
-            sub = "%s, %s" % (plural(r_["n"], "game"), human_size(r_["size"]))
-            marquee(c, self.f.small, sub if r_["enabled"] else sub + " · " + needs_text(self.app, r_),
-                    (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200, focused=on, slot="compress-sub")
-            text(c, self.f.small, ("to " + r_["label"]) if r_["enabled"] else
-                 "needs a setting" if needs_text(self.app, r_).startswith("turn on") else "needs its tool",
-                 (r.right - 20, r.centery), theme.ACCENT_HI if r_["enabled"] else theme.FAINT, "midright")
+            list_head(c, self.f, lst, "Nothing left to compress", color=theme.GREEN)
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
+            row = self.rows[i]
+            st, col = self.status(row)
+            list_row(c, self.f, r, on, row["system"], subs[i], st, col,
+                     label_color=None if row["enabled"] or row.get("cant") else theme.FAINT, slot="compress")
+        self.draw_panel(c, pan, self.rows[self.sel])
+
+    def draw_panel(self, c, pan, row):
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="compress-panel")
+        p.actions(hint_actions(self))
+        p.title(row["system"], "%s, %s" % (plural(row["n"], "game"), human_size(row["size"])))
+        if row.get("cant"):
+            p.prose("A converter takes these, but they can't be converted as they are, so they're left alone.",
+                    lines=3)
+            for f, why in row["skipped"][:4]:
+                p.prose(why[:1].upper() + why[1:], label=os.path.basename(f), lines=2)
+            return
+        games = [cd for cd in self.cands if cd["system"] == row["system"]]
+        if not row["enabled"]:
+            p.prose("First %s. Then these compress like the others." % needs_text(self.app, row), lines=4)
+        panel_estimate(p, games, self.ratios)
+        p.prose(CONVERTER_NOTE.get(row["labels"][0], "Converted to %s in the background." % row["label"]), lines=4)
+        p.rule()
+        if p.room() >= 48:
+            text(c, self.f.small, "Biggest", (p.x, p.y), theme.FAINT)
+            p.space(24)
+        games.sort(key=lambda cd: -cd["size"])
+        shown = 0
+        for cd in games:
+            if p.room() < (24 if shown == len(games) - 1 else 48):      # room for "and N more" under it
+                break
+            p.pair(cd["name"] or os.path.splitext(os.path.basename(cd["root"]))[0], human_size(cd["size"]),
+                   theme.FAINT, theme.DIM)
+            shown += 1
+        if shown < len(games):
+            text(c, self.f.small, "and %d more" % (len(games) - shown), (p.x, p.y), theme.FAINT)
 
 
 class CantConvertScreen(ListScreen):
@@ -209,6 +283,7 @@ class CantConvertScreen(ListScreen):
         super().__init__(app)
         self.system, self.items = system, list(skipped)
         self.sel = self.scroll = 0
+        self.rows = [(os.path.basename(f), why[:1].upper() + why[1:], self.size(f)) for f, why in self.items]
 
     def crumbs(self):
         return self.trail("%s: can't convert" % self.system)
@@ -221,25 +296,31 @@ class CantConvertScreen(ListScreen):
         if not self.nav(a):
             super().action(a)
 
+    @staticmethod
+    def size(f):
+        try:
+            return human_size(os.path.getsize(f))
+        except OSError:
+            return ""
+
     def draw(self, c):
-        text(c, self.f.h3, "%s in roms/%s can't be converted" % (plural(len(self.items), "game"), self.system),
-             (56, 86), theme.TEXT)
+        rows = self.rows
+        lst, pan = split(need_width(self.f, rows))
+        list_head(c, self.f, lst, "%s can't be converted" % plural(len(self.items), "game"))
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
+            name, why, size = rows[i]
+            list_row(c, self.f, r, on, name, why, size, sub_color=theme.AMBER, slot="cant")
+        if not rows:
+            return
+        name, why, size = rows[self.sel]
         fix = {"3ds": "a decrypted dump", "ps3": "the disc's key in bios/ps3keys"}.get(self.system, "a good copy")
-        text(c, self.f.small, "They're left as they are. Fix or replace the file (%s) and it shows up in "
-             "Compress." % fix, (56, 120), theme.DIM, maxw=W - 112)
-        for i, r, on in self.row_rects(156):
-            f, why = self.items[i]
-            if on:
-                focus_box(c, r)
-            marquee(c, self.f.row, os.path.basename(f), (r.left + 22, r.top + 5), theme.TEXT if on else theme.DIM,
-                    maxw=r.width - 200, focused=on, slot="cant-name")
-            marquee(c, self.f.small, why[:1].upper() + why[1:], (r.left + 22, r.top + 30), theme.AMBER,
-                    maxw=r.width - 200, focused=on, slot="cant-why")
-            try:
-                size = human_size(os.path.getsize(f))
-            except OSError:
-                size = ""
-            text(c, self.f.small, size, (r.right - 20, r.centery), theme.DIM, "midright")
+        p = Panel(c, self.f, pan, key=self.sel, slot="cant-panel")
+        p.title(name, size)
+        p.prose(why + ".", label="Why", color=theme.AMBER, lines=4)
+        p.prose("It's left as it is. Replace it with %s and it shows up in Compress." % fix, label="What to do",
+                lines=4)
+        p.fact("Where", "roms/%s/%s" % (self.system, os.path.relpath(self.items[self.sel][0], os.path.join(
+            rommlib.ROMS_ROOT, self.system))))
 
 
 class CompressSystemScreen(ListScreen):
@@ -257,10 +338,14 @@ class CompressSystemScreen(ListScreen):
     def enter(self):
         import rb_chd_plan
         self.load_error = None
-        self.app.bg(lambda: rb_chd_plan.candidates([self.system]), self._loaded, self.load_failed("cands"))
+        self.app.bg(lambda: (rb_chd_plan.candidates([self.system]), conversion_ratios()), lambda r: self._loaded(*r),
+                    self.load_failed("cands"))
 
-    def _loaded(self, cands):
+    ratios = {}
+
+    def _loaded(self, cands, ratios=None):
         self.cands = cands
+        self.ratios = ratios or {}
         self.clamp()
 
     def listed(self):
@@ -324,25 +409,37 @@ class CompressSystemScreen(ListScreen):
         if not self.cands:
             text(c, self.f.h3, "Nothing left to compress here.", (56, 86), theme.GREEN)
             return
-        text(c, self.f.h3, "%s, %s · to %s" % (plural(len(self.cands), "game"),
-             human_size(sum(x["size"] for x in self.cands)), self.cands[0]["label"]), (56, 86), theme.TEXT)
-        for i, r, on in self.row_rects(124):
+        row = lambda cand: (self.title_of(cand), self.sub(cand), human_size(cand["size"]))   # noqa: E731
+        lst, pan = split(need_width(self.f, [row(cand) for cand in self.cands[:200]], mark=self.showing_picks()))
+        self.BUBBLE_AT = bubble_at(lst)
+        list_head(c, self.f, lst, "%s to %s" % (plural(len(self.cands), "game"), self.cands[0]["label"]),
+                  human_size(sum(x["size"] for x in self.cands)))
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             cand = self.cands[i]
-            if on:
-                focus_box(c, r)
-            tx = r.left + (48 if self.draw_pick(c, cand, (r.left + 22, r.centery)) else 22)
-            marquee(c, self.f.row, self.title_of(cand), (tx, r.top + 5), theme.TEXT if on else theme.DIM,
-                    maxw=r.width - 200, focused=on, slot="compress-title")
-            discs = len(cand["files"])
-            ext = os.path.splitext(cand["files"][0])[1].lower().lstrip(".")
-            sub = {"cue": "CUE/BIN", "gdi": "GDI"}.get(ext, ext.upper())
-            if discs > 1:
-                sub = "%d discs, %s" % (discs, sub)
-            where = os.path.relpath(cand["root"], os.path.join(rommlib.ROMS_ROOT, self.system))
-            if os.path.splitext(where)[0] != self.title_of(cand):          # only when it says something new
-                sub += " · " + where
-            if cand["cut"]:
-                sub += " · made bootable first"
-            marquee(c, self.f.small, sub, (tx, r.top + 30), theme.FAINT, maxw=r.width - 200, focused=on,
-                    slot="compress-sub")
-            text(c, self.f.small, human_size(cand["size"]), (r.right - 20, r.centery), theme.DIM, "midright")
+            title, sub, size = row(cand)
+            list_row(c, self.f, r, on, title, sub, size, mark=lambda ctr, cand=cand: self.draw_pick(c, cand, ctr),
+                     slot="compress-system")
+        cand = self.cands[self.sel]
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="compress-system-panel")
+        p.actions(hint_actions(self))
+        p.title(self.title_of(cand), self.sub(cand))
+        if not cand["enabled"]:
+            p.prose("First %s." % needs_text(self.app, cand), lines=3)
+        panel_estimate(p, [cand], self.ratios)
+        if cand["cut"]:
+            p.prose("Made bootable first: the image is cut to its game partition (%s less)."
+                    % human_size(cand["cut"]), lines=3)
+        p.prose(CONVERTER_NOTE.get(cand["label"], "Converted to %s in the background." % cand["label"]), lines=4)
+        p.fact("Where", os.path.relpath(cand["root"], os.path.dirname(rommlib.ROMS_ROOT)))
+
+    def sub(self, cand):
+        """Its format, discs, and where it is when the name doesn't say."""
+        discs = len(cand["files"])
+        ext = os.path.splitext(cand["files"][0])[1].lower().lstrip(".")
+        sub = {"cue": "CUE/BIN", "gdi": "GDI"}.get(ext, ext.upper())
+        if discs > 1:
+            sub = "%d discs, %s" % (discs, sub)
+        where = os.path.relpath(cand["root"], os.path.join(rommlib.ROMS_ROOT, self.system))
+        if os.path.splitext(where)[0] != self.title_of(cand):          # only when it says something new
+            sub += " · " + where
+        return sub

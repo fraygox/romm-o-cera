@@ -191,6 +191,9 @@ def record(task_name, task, result):
     entry = {"time": time.time(), "task": task_name, "result": result, "message": _state["last"][:300],
              "system": task.get("system"), "mode": task.get("mode"), "sources": task.get("sources"),
              "retry": task if result == "failed" and task else None}
+    sizes = _state.pop("sizes", None)
+    if result == "ok" and sizes:
+        entry["in_size"], entry["out_size"] = sizes          # Compress's "after" estimate reads these
     try:
         lines = []
         results = rommlib.chd_results_path()
@@ -1028,6 +1031,7 @@ def convert(task):
         else:
             # other games / files stay in it: only the converted files were renamed
             note("chd: kept folder (non-junk leftovers) %s" % folder_root)
+    _state["sizes"] = (in_size, out_size)
     note("chd: OK %s -> %s  (%s -> %s)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),
         rommlib.human_size(in_size), rommlib.human_size(out_size)))
@@ -1122,6 +1126,7 @@ def work(fd, waiting=None):
             with open(path) as f:
                 task = json.load(f)
             _state["last"] = ""
+            _state.pop("sizes", None)
             status(task=tasks[0], since=time.time(), file=os.path.basename((task.get("sources") or [""])[0]),
                    step="Starting", pct=None)
             res = convert(task)
