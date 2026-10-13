@@ -458,10 +458,8 @@ def test_a_key_tapped_after_a_tapped_match_types_instead_of_reopening_it(isolate
     sc.preview = [{"id": i, "name": "Lorem %d" % i, "platform_id": 1, "fs_size_bytes": 1} for i in range(5)]
     sc.preview_total = 5
     monkeypatch.setattr(app, "rom_status", lambda rom: ("remote", None))
-    opened = []
-    rb.patch(monkeypatch, "DownloadConfirm", lambda a, rom: opened.append(rom["id"]) or "dl")
-    sc.tap_pick(1)                                  # a Top match tapped: its prompt opens
-    assert opened == [1] and app.modal == "dl"
-    app.modal = None                                # and is closed
+    sc.tap_pick(1)                                  # a Top match tapped: its page opens
+    assert isinstance(app.stack[-1], rb.GameScreen) and app.stack[-1].rom["id"] == 1
+    app.pop()                                       # and is left
     sc.kb.tap(1, 0)                                 # then the Q key
-    assert opened == [1] and sc.query == "loremq"
+    assert app.stack[-1] is sc and sc.query == "loremq"

@@ -164,6 +164,12 @@ def test_a_failures_reason_reads_short_in_lately(rb):
     assert rb.short_reason("") == ""
 
 
+def test_activity_is_called_activity_everywhere(rb):
+    assert [r[1] for r in rb.HomeScreen.RAIL if r[0] == "downloads"] == ["Activity"]
+    src = open(os.path.join(os.path.dirname(rb.app.__file__), "app.py"), encoding="utf-8").read()
+    assert '("SELECT", "Activity")' in src and '("SELECT", "Downloads")' not in src
+
+
 def test_no_a_or_x_hint_is_called_options_or_menu(rb):
     """Options is PlayStation's Start and Menu is Xbox's: a hint saying "A Options" reads as two
     buttons. Every list's own A is named for what it does (Manage, Fix it, Open…)."""
@@ -172,3 +178,16 @@ def test_no_a_or_x_hint_is_called_options_or_menu(rb):
     bad = [p for p in glob.glob(os.path.join(root, "**", "*.py"), recursive=True)
            if pat.search(open(p, encoding="utf-8").read())]
     assert bad == []
+
+
+def test_game_night_actions_offer_the_page_and_say_where_the_switch_is(rb, app, monkeypatch):
+    app.night_opts = {"players": 0, "here": True}
+    gn = rb.GameNightScreen(app, rb.Scope.library(app))
+    gn.picks, gn.sel, gn.why = [{"id": 1, "name": "Lorem", "platform_id": 7, "fs_size_bytes": 1}], 0, None
+    labels = [e[0] for e in gn.menu_entries() if e]
+    assert labels[:2] == ["Roll again", "Open the game page"]
+    gn.open_page()
+    assert isinstance(app.stack[-1], rb.GameScreen) and app.stack[-1].rom is gn.picks[0]
+    gn.picks, gn.why = [], "empty"
+    assert "Open the game page" not in [e[0] for e in gn.menu_entries() if e]
+    assert gn.nothing()[1] == "Turn off %s in {X} Actions, or download a few first." % rb.gamenight.HERE
