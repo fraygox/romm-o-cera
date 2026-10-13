@@ -60,6 +60,9 @@ def _stop_workers():
     yield
     while rommlib.Downloader.instances:
         rommlib.Downloader.instances.pop().close()
+    from rbui.app import CoverLoader
+    while CoverLoader.instances:                # cover fetches left running log into the next test
+        CoverLoader.instances.pop().settle()
     rommlib._LISTINGS.clear()
 
 

@@ -33,8 +33,10 @@ class CoverLoader:
     for a cover nobody has drawn for STALE seconds is dropped when its turn
     comes; drawing that game again asks again."""
     WORKERS, STALE = 12, 1.5
+    instances = []              # every loader made (tests settle them between tests)
 
     def __init__(self, app):
+        CoverLoader.instances.append(self)
         self.app = app
         self.cv = threading.Condition()
         self.todo = []              # (rid, load, done, failed, dropped), newest last
@@ -55,6 +57,14 @@ class CoverLoader:
         now = self.seen[rid] = time.monotonic()
         if len(self.seen) > 2000:
             self.seen = {r: t for r, t in self.seen.items() if now - t < self.STALE}
+
+    def settle(self, timeout=5):
+        """Drop what's queued and wait for the requests already running."""
+        end = time.monotonic() + timeout
+        with self.cv:
+            self.todo.clear()
+            while self.busy and time.monotonic() < end:
+                self.cv.wait(0.05)
 
     def pending(self):
         """Requests not finished yet (the screenshot harness waits for 0)."""
@@ -88,6 +98,7 @@ class CoverLoader:
         finally:
             with self.cv:
                 self.busy -= 1
+                self.cv.notify_all()
         return True
 
     def _work(self):
