@@ -41,6 +41,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <algorithm>
 
 #ifndef WUATOOL_VERSION
 #define WUATOOL_VERSION "dev"
@@ -295,6 +296,107 @@ static uint64 gameSize(FSTVolume* v, uint32& files)
 	return total;
 }
 
+// ------------------------------------------------------------------ the disc's titles
+//
+// A disc's partition table lists SI (tickets), sometimes UP (console firmware), and
+// one GM partition per title, named "GM" + its title ID: the game (00050000...),
+// and on some discs its update (0005000E...) and DLC (0005000C...). Cemu opens the
+// first GM partition (FST.cpp: "we use the first GM partition we find"). A .wua
+// holds one "<title id>_v<version>" folder per title (Cemu's TitleInfo.cpp
+// ParseWuaTitleFolderName), as Cemu's own "Convert to .wua" writes base, update and
+// DLC into one archive; launching it adds every title in it (TitleList.cpp
+// AddTitleFromPath), so the game runs with the bundled update. patch-cemu.py lets
+// wuatool open each GM partition by index; the update and DLC go in beside the game.
+
+static int g_wantGM = -1;                                    // GM partition to open; -1: the first (Cemu's)
+static std::vector<std::pair<uint32, std::string>> g_gms;    // every GM partition the last open saw
+
+bool wuatool_gm_partition(uint32 index, const uint8* name)
+{
+	std::string n((const char*)name, strnlen((const char*)name, 31));
+	if (std::none_of(g_gms.begin(), g_gms.end(), [&](auto& g) { return g.first == index; }))
+		g_gms.emplace_back(index, n);
+	return g_wantGM < 0 || (uint32)g_wantGM == index;
+}
+
+struct Title
+{
+	FSTVolume* vol;
+	std::string top;          // "<title id>_v<version>"
+};
+
+struct Titles
+{
+	std::vector<Title> list;  // the game first, then its update and DLC
+	~Titles() { for (auto& t : list) delete t.vol; }
+};
+
+// "GM0005000E10ABCD00": the update or DLC of a game (kept in a .wua); the game itself
+// is the partition Cemu picks
+static bool extraTitle(const std::string& name)
+{
+	if (name.size() != 18 || name.compare(0, 2, "GM") != 0)
+		return false;
+	std::string type = name.substr(2, 8);
+	for (char& c : type)
+		c = (char)toupper((unsigned char)c);
+	return type == "0005000E" || type == "0005000C";
+}
+
+// The disc's game and the update and DLC partitions it carries. An extra partition
+// that can't be opened or holds no title is left out (said on stderr): the game
+// itself must open.
+static int openTitles(const char* disc, Titles& out)
+{
+	FSTVolume* v;
+	g_gms.clear();
+	g_wantGM = -1;
+	int rc = openDisc(disc, &v);
+	if (rc)
+		return rc;
+	std::string top;
+	if (!titleFolder(v, top))
+	{
+		fprintf(stderr, "wuatool: no readable code/app.xml: not a game disc\n");
+		delete v;
+		return E_DISC;
+	}
+	out.list.push_back({v, top});
+	std::vector<std::pair<uint32, std::string>> gms = g_gms;
+	for (size_t i = 1; i < gms.size(); i++)             // gms[0] is the game (the first GM partition)
+	{
+		if (!extraTitle(gms[i].second))
+			continue;
+		g_wantGM = (int)gms[i].first;
+		FSTVolume* x = nullptr;
+		FSTVolume::ErrorCode ec;
+		x = FSTVolume::OpenFromDiscImage(fs::path(disc), &ec);
+		g_wantGM = -1;
+		std::string t;
+		if (!x || !titleFolder(x, t) || std::any_of(out.list.begin(), out.list.end(), [&](auto& o) { return o.top == t; }))
+		{
+			fprintf(stderr, "wuatool: left out partition %s (can't be read as a title)\n", gms[i].second.c_str());
+			delete x;
+			continue;
+		}
+		out.list.push_back({x, t});
+	}
+	return E_OK;
+}
+
+static uint64 titlesSize(Titles& ts, uint32& files)
+{
+	uint64 total = 0;
+	files = 0;
+	for (auto& t : ts.list)
+	{
+		uint32 n;
+		total += gameSize(t.vol, n);
+		files += n;
+	}
+	return total;
+}
+
 // ------------------------------------------------------------------ pack
 
 struct Out
@@ -312,75 +414,74 @@ static void cbWrite(const void* d, size_t n, void* ctx)
 
 static int cmdPack(const char* disc, const char* out)
 {
-	FSTVolume* v;
-	int rc = openDisc(disc, &v);
+	Titles ts;
+	int rc = openTitles(disc, ts);
 	if (rc)
 		return rc;
-	std::string top;
-	if (!titleFolder(v, top))
-	{
-		fprintf(stderr, "wuatool: no readable code/app.xml: not a game disc\n");
-		delete v;
-		return E_DISC;
-	}
 	Out o;
 	o.f = fopen(out, "wb");
 	if (!o.f)
 	{
 		fprintf(stderr, "wuatool: can't write %s (%s)\n", out, strerror(errno));
-		delete v;
 		return E_WRITE;
 	}
 	Progress pr;
 	pr.what = "packing";
 	uint32 files = 0, count;
-	pr.total = gameSize(v, count);
+	pr.total = titlesSize(ts, count);
 	ZArchiveWriter zw(cbNewFile, cbWrite, &o);
-	zw.MakeDir(top.c_str(), false);
 	std::vector<uint8> buf(1 << 20);
 	int fail = 0;
-	Walker w{v};
-	w.onDir = [&](const std::string& p) {
-		if (!zw.MakeDir((top + "/" + p).c_str(), false))
-		{
-			fprintf(stderr, "wuatool: duplicate folder on the disc: %s\n", p.c_str());
-			fail = E_DISC;
-			return false;
-		}
-		return true;
-	};
-	w.onFile = [&](const std::string& p, FSTFileHandle& h) {
-		uint32 size = v->GetFileSize(h), off = 0;
-		if (!zw.StartNewFile((top + "/" + p).c_str()))
-		{
-			fprintf(stderr, "wuatool: duplicate file on the disc: %s\n", p.c_str());
-			fail = E_DISC;
-			return false;
-		}
-		while (off < size)
-		{
-			uint32 want = std::min<uint32>((uint32)buf.size(), size - off);
-			uint32 n = v->ReadFile(h, off, want, buf.data());
-			if (n != want || v->HasCorruption())
+	bool ok = true;
+	for (auto& t : ts.list)
+	{
+		FSTVolume* v = t.vol;
+		std::string top = t.top;
+		zw.MakeDir(top.c_str(), false);
+		Walker w{v};
+		w.onDir = [&](const std::string& p) {
+			if (!zw.MakeDir((top + "/" + p).c_str(), false))
 			{
-				fprintf(stderr, "wuatool: read error in %s at %u (damaged or cut-short image)\n", p.c_str(), off);
-				fail = E_READ;
+				fprintf(stderr, "wuatool: duplicate folder on the disc: %s\n", p.c_str());
+				fail = E_DISC;
 				return false;
 			}
-			zw.AppendData(buf.data(), n);
-			off += n;
-			pr.add(n);
-			if (o.failed)
+			return true;
+		};
+		w.onFile = [&](const std::string& p, FSTFileHandle& h) {
+			uint32 size = v->GetFileSize(h), off = 0;
+			if (!zw.StartNewFile((top + "/" + p).c_str()))
 			{
-				fail = E_WRITE;
+				fprintf(stderr, "wuatool: duplicate file on the disc: %s\n", p.c_str());
+				fail = E_DISC;
 				return false;
 			}
-		}
-		files++;
-		return true;
-	};
-	bool ok = w.walk("");
-	delete v;
+			while (off < size)
+			{
+				uint32 want = std::min<uint32>((uint32)buf.size(), size - off);
+				uint32 n = v->ReadFile(h, off, want, buf.data());
+				if (n != want || v->HasCorruption())
+				{
+					fprintf(stderr, "wuatool: read error in %s/%s at %u (damaged or cut-short image)\n", top.c_str(),
+							p.c_str(), off);
+					fail = E_READ;
+					return false;
+				}
+				zw.AppendData(buf.data(), n);
+				off += n;
+				pr.add(n);
+				if (o.failed)
+				{
+					fail = E_WRITE;
+					return false;
+				}
+			}
+			files++;
+			return true;
+		};
+		if (!(ok = w.walk("")) || fail)
+			break;
+	}
 	if (ok && !fail)
 		zw.Finalize();
 	if (fflush(o.f) != 0 || ferror(o.f))
@@ -394,7 +495,10 @@ static int cmdPack(const char* disc, const char* out)
 		remove(out);
 		return fail ? fail : (o.failed ? E_WRITE : E_DISC);
 	}
-	printf("packed %u files, %llu bytes, as %s\n", files, (unsigned long long)pr.done, top.c_str());
+	std::string names;
+	for (auto& t : ts.list)
+		names += (names.empty() ? "" : ", ") + t.top;
+	printf("packed %u files, %llu bytes, as %s\n", files, (unsigned long long)pr.done, names.c_str());
 	return E_OK;
 }
 
@@ -492,67 +596,65 @@ static int cmdVerify(const char* disc, const char* wua)
 	int rc = archiveIntegrity(wua);
 	if (rc)
 		return rc;
-	FSTVolume* v;
-	rc = openDisc(disc, &v);
+	Titles ts;
+	rc = openTitles(disc, ts);
 	if (rc)
 		return rc;
-	std::string top;
-	if (!titleFolder(v, top))
-	{
-		fprintf(stderr, "wuatool: no readable code/app.xml: not a game disc\n");
-		delete v;
-		return E_DISC;
-	}
 	ZArchiveReader* zr = ZArchiveReader::OpenFromFile(wua);
 	if (!zr)
 	{
 		fprintf(stderr, "wuatool: ZArchive can't open %s\n", wua);
-		delete v;
 		return E_ARCHIVE;
 	}
 	Progress pr;
 	pr.what = "verifying";
 	uint32 count;
-	pr.total = gameSize(v, count);
+	pr.total = titlesSize(ts, count);
 	std::vector<uint8> a(1 << 20), b(1 << 20);
 	uint32 files = 0;
 	int fail = 0;
-	Walker w{v};
-	w.onFile = [&](const std::string& p, FSTFileHandle& h) {
-		ZArchiveNodeHandle zh = zr->LookUp(top + "/" + p, true, false);
-		uint32 size = v->GetFileSize(h);
-		if (zh == ZARCHIVE_INVALID_NODE || zr->GetFileSize(zh) != size)
-		{
-			fprintf(stderr, "wuatool: %s: %s\n", zh == ZARCHIVE_INVALID_NODE ? "missing from the archive" : "size differs",
-					p.c_str());
-			fail = E_DIFFERS;
-			return false;
-		}
-		uint32 off = 0;
-		while (off < size)
-		{
-			uint32 want = std::min<uint32>((uint32)a.size(), size - off);
-			uint32 n = v->ReadFile(h, off, want, a.data());
-			if (n != want || v->HasCorruption())
+	bool ok = true;
+	for (auto& t : ts.list)
+	{
+		FSTVolume* v = t.vol;
+		std::string top = t.top;
+		Walker w{v};
+		w.onFile = [&](const std::string& p, FSTFileHandle& h) {
+			ZArchiveNodeHandle zh = zr->LookUp(top + "/" + p, true, false);
+			uint32 size = v->GetFileSize(h);
+			if (zh == ZARCHIVE_INVALID_NODE || zr->GetFileSize(zh) != size)
 			{
-				fprintf(stderr, "wuatool: read error on the disc in %s at %u\n", p.c_str(), off);
-				fail = E_READ;
-				return false;
-			}
-			if (zr->ReadFromFile(zh, off, n, b.data()) != n || memcmp(a.data(), b.data(), n))
-			{
-				fprintf(stderr, "wuatool: differs from the disc: %s at %u\n", p.c_str(), off);
+				fprintf(stderr, "wuatool: %s: %s/%s\n", zh == ZARCHIVE_INVALID_NODE ? "missing from the archive" :
+						"size differs", top.c_str(), p.c_str());
 				fail = E_DIFFERS;
 				return false;
 			}
-			off += n;
-			pr.add(n);
-		}
-		files++;
-		return true;
-	};
-	bool ok = w.walk("");
-	delete v;
+			uint32 off = 0;
+			while (off < size)
+			{
+				uint32 want = std::min<uint32>((uint32)a.size(), size - off);
+				uint32 n = v->ReadFile(h, off, want, a.data());
+				if (n != want || v->HasCorruption())
+				{
+					fprintf(stderr, "wuatool: read error on the disc in %s/%s at %u\n", top.c_str(), p.c_str(), off);
+					fail = E_READ;
+					return false;
+				}
+				if (zr->ReadFromFile(zh, off, n, b.data()) != n || memcmp(a.data(), b.data(), n))
+				{
+					fprintf(stderr, "wuatool: differs from the disc: %s/%s at %u\n", top.c_str(), p.c_str(), off);
+					fail = E_DIFFERS;
+					return false;
+				}
+				off += n;
+				pr.add(n);
+			}
+			files++;
+			return true;
+		};
+		if (!(ok = w.walk("")) || fail)
+			break;
+	}
 	if (!ok || fail)
 	{
 		delete zr;
@@ -560,13 +662,17 @@ static int cmdVerify(const char* disc, const char* wua)
 	}
 	std::vector<std::pair<std::string, uint64>> inArchive;
 	listArchive(zr, "", inArchive);
+	ZArchiveNodeHandle root = zr->LookUp("", false, true);
+	uint32 tops = root == ZARCHIVE_INVALID_NODE ? 0 : zr->GetDirEntryCount(root);
 	delete zr;
-	if (inArchive.size() != files)
+	if (inArchive.size() != files || tops != ts.list.size())
 	{
-		fprintf(stderr, "wuatool: the archive holds %zu files, the disc %u\n", inArchive.size(), files);
+		fprintf(stderr, "wuatool: the archive holds %zu files in %u titles, the disc %u in %zu\n", inArchive.size(),
+				tops, files, ts.list.size());
 		return E_DIFFERS;
 	}
-	printf("verified %u files, %llu bytes, identical to the disc\n", files, (unsigned long long)pr.done);
+	printf("verified %u files, %llu bytes, %zu title%s, identical to the disc\n", files,
+		   (unsigned long long)pr.done, ts.list.size(), ts.list.size() == 1 ? "" : "s");
 	return E_OK;
 }
 
@@ -653,21 +759,15 @@ static int cmdCat(const char* wua, const char* path)
 
 static int cmdProbe(const char* disc)
 {
-	FSTVolume* v;
-	int rc = openDisc(disc, &v);
+	Titles ts;
+	int rc = openTitles(disc, ts);
 	if (rc)
 		return rc;
-	std::string top;
-	bool ok = titleFolder(v, top);
 	uint32 files;
-	uint64 size = gameSize(v, files);
-	delete v;
-	if (!ok)
-	{
-		fprintf(stderr, "wuatool: no readable code/app.xml: not a game disc\n");
-		return E_DISC;
-	}
-	printf("title %s\nfiles %u\nbytes %llu\n", top.c_str(), files, (unsigned long long)size);
+	uint64 size = titlesSize(ts, files);
+	for (auto& t : ts.list)
+		printf("title %s\n", t.top.c_str());
+	printf("files %u\nbytes %llu\n", files, (unsigned long long)size);
 	return E_OK;
 }
 

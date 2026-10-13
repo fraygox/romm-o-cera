@@ -7,7 +7,8 @@
 # Pins:
 #  - Cemu: its disc code (FST, WUD, ncrypto, AES), MPL-2.0, unmodified but for
 #    one added line (patch-cemu.py) that lets the self-test swap in a made-up
-#    common key. The Wii U common key wuatool uses is Cemu's own, compiled in
+#    common key, and one added condition that lets wuatool open a disc's other
+#    game partitions (update, DLC). The Wii U common key wuatool uses is Cemu's own, compiled in
 #    from this commit's src/Cemu/ncrypto/ncrypto.cpp.
 #  - ZArchive: the commit this Cemu pins as dependencies/ZArchive (build.sh
 #    checks), so .wua files are written by the code Cemu's own "Convert to .wua"

@@ -106,6 +106,33 @@ try:
     print("selftest: pack/verify/check/probe ok (%d-byte .wua, sha256 %s)" % (
         len(outs[".wud"]), hashlib.sha256(outs[".wud"]).hexdigest()))
 
+    # a disc that carries its update and DLC (and a console-firmware partition): all
+    # three titles go into one .wua, each in its own <title id>_v<version> folder
+    multi = os.path.join(d, "multi.wud")
+    titles = {}
+    mkdisc.make_disc(multi, KEYS, extra=[(mkdisc.UPDATE_ID, 48, 3), (mkdisc.DLC_ID, 16, 4)], up=True, titles=titles)
+    mwua = os.path.join(d, "multi.wua")
+    out = expect(0, "pack", "-k", keys, "-T", common, multi, mwua)
+    if "packed %d files" % sum(map(len, titles.values())) not in out:
+        sys.exit("selftest: multi-title pack output unexpected:\n" + out)
+    out = expect(0, "probe", "-k", keys, "-T", common, multi)
+    if [l[6:] for l in out.splitlines() if l.startswith("title ")] != list(titles):
+        sys.exit("selftest: probe didn't list the game, update and DLC in order:\n" + out)
+    out = expect(0, "verify", "-k", keys, "-T", common, multi, mwua)
+    assert "3 titles" in out, out
+    tops = [l[6:] for l in expect(0, "check", mwua).splitlines() if l.startswith("title ")]
+    if sorted(tops) != sorted(titles):
+        sys.exit("selftest: the multi-title .wua holds %s" % tops)
+    for top, files in titles.items():
+        for path, data in files.items():
+            p = subprocess.run(CMD + ["cat", mwua, top + "/" + path], capture_output=True)
+            if p.returncode != 0 or p.stdout != data:
+                sys.exit("selftest: %s/%s in the multi-title .wua isn't the disc's" % (top, path))
+    expect(7, "verify", "-k", keys, "-T", common, multi, wua)          # the game alone: titles missing
+    expect(7, "verify", "-k", keys, "-T", common, disc, mwua)          # titles the disc doesn't have
+    print("selftest: multi-title ok (game, update, DLC; firmware partition left out; sha256 %s)" % (
+        hashlib.sha256(open(mwua, "rb").read()).hexdigest()))
+
     # refusals
     expect(3, "probe", "-k", common, "-T", common, disc)              # no disc key among the keys
     expect(2, "probe", "-k", keys, disc)                              # Cemu's common key: not this made-up disc's

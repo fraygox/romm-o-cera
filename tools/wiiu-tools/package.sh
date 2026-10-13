@@ -50,7 +50,8 @@ download), exactly as built:
   recipe/    the build recipe and wuatool's own source (tools/wiiu-tools/ in
              https://github.com/fraygox/romm-o-cera): wuatool.cpp and
              cemu_stubs.cpp (MPL-2.0), patch-cemu.py (adds one line to
-             Cemu's src/Cemu/ncrypto/ncrypto.cpp before it's compiled),
+             Cemu's src/Cemu/ncrypto/ncrypto.cpp and one condition to
+             src/Cafe/Filesystem/FST/FST.cpp before they're compiled),
              Dockerfile, Dockerfile.aarch64, make.sh, build.sh, package.sh,
              mkdisc.py and selftest.py (the self-test)
 
@@ -81,9 +82,10 @@ needed, and wuatool unwux gives back the exact .wud. wuatool compare reads a
 wuatool pack turns a disc image (.wud, .wux) into .wua, the compressed game
 archive Cemu opens directly. It reads the disc's game partition with Cemu's
 own disc code and writes it with ZArchive, the library Cemu's own "Convert to
-.wua" uses; then it reads both back and compares them. A disc needs its disc
-key (Cemu's keys.txt) for this. The Wii U common key is Cemu's, compiled in
-from Cemu's source. No disc keys are included.
+.wua" uses (with the game's update and DLC when the disc carries them, each
+title in its own folder, as Cemu writes them); then it reads both back and
+compares them. A disc needs its disc key (Cemu's keys.txt) for this. The Wii U
+common key is Cemu's, compiled in from Cemu's source. No disc keys are included.
 
 See SOURCE.txt for exactly what was built and LICENSES/ for the licenses.
 Needs glibc 2.36 or newer (Batocera 43.1 has 2.40).
@@ -100,9 +102,11 @@ wuatool
   compiles: from Cemu (below) src/Cafe/Filesystem/FST/FST.cpp,
             src/Cafe/Filesystem/WUD/wud.cpp, src/Cemu/ncrypto/ncrypto.cpp,
             src/util/crypto/aes128.cpp, src/Common/unix/FileStream_unix.cpp and
-            src/Common/cpu_features.cpp, with their headers. One line is added
-            to ncrypto.cpp before it's compiled (patch-cemu.py): a call that lets
-            wuatool's test option swap in a made-up common key.
+            src/Common/cpu_features.cpp, with their headers. Two small changes
+            are made before they're compiled (patch-cemu.py): one line in
+            ncrypto.cpp, a call that lets wuatool's test option swap in a
+            made-up common key, and one condition in FST.cpp that lets wuatool
+            open a disc's other game partitions (its update and DLC).
 
 Cemu
   upstream: https://github.com/cemu-project/Cemu

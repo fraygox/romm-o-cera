@@ -518,7 +518,9 @@ def convert_wua(src, tmp):
     ZArchive by wuatool. Its pack exits 0 only when every block it read matched
     its hash; then wuatool verify checks the archive's SHA-256 and compares every
     file with the disc again before the caller deletes the image. The .wua holds
-    the game partition, not the whole disc, so it can't become the image again."""
+    the game partition (and the disc's update and DLC partitions, if it carries
+    them, each its own title), not the whole disc, so it can't become the image
+    again."""
     exe = rommlib.wuatool_path()
     if not exe:
         raise ToolMissing("wuatool")
@@ -531,6 +533,9 @@ def convert_wua(src, tmp):
         rc, out = run_tool([exe, "pack", "-k", keys, src, tmp], keep_stdout=True)
         if rc != 0 or not os.path.exists(tmp):
             return rc or 4, WUA_FAIL.get(rc) or "wuatool failed (rc %d): %s" % (rc, out.strip()[-200:])
+        titles = re.search(r"(?m)^packed \d+ files, \d+ bytes, as (.+)$", out)
+        if titles and "," in titles.group(1):          # the disc's own update and DLC went in beside the game
+            note("chd: %s: the .wua holds %s" % (os.path.basename(src), titles.group(1)))
         status(step="Verifying", pct=None)
         rc, out = run_tool([exe, "verify", "-k", keys, src, tmp], keep_stdout=True)
         if rc != 0:

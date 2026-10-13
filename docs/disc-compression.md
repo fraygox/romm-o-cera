@@ -183,6 +183,12 @@ uses: a 1.1 GB `.wux` became 127 MB in 6 seconds, checks included).
 A `.wua` holds the disc's game partition, decrypted (the files Cemu plays, in
 the layout Cemu's own "Convert to .wua" writes), not the whole disc, so it
 can't be turned back into the original image and won't match RomM's checksums.
+Some discs also carry the game's update and DLC as partitions of their own:
+they go into the same `.wua`, each title in its own folder, as Cemu's "Convert
+to .wua" packs a game with its update and DLC, and Cemu starts the game with
+that update when you launch the `.wua`. (From a `.wud` or `.wux`, Cemu reads
+only the disc's first game partition, so a disc's own update goes unused there.)
+The console-firmware partition is left out.
 
 Put the disc keys in Cemu's `keys.txt` (`/userdata/bios/cemu/keys.txt`, one
 32-digit key per line, the file Batocera's Cemu reads) or in

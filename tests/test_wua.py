@@ -158,3 +158,25 @@ def test_check_games_finds_a_damaged_wua(tool, tmp_path):
     open(out, "wb").write(data[:-500])
     problem, severity = rommlib.wua_audit(out, None, False)
     assert severity == "damaged" and ".wua" in problem
+
+
+def test_a_discs_own_update_and_dlc_go_into_its_wua(tool, monkeypatch):
+    """A disc that carries its update and DLC (and a console-firmware partition,
+    left out): one .wua with a folder per title, as Cemu's Convert to .wua writes."""
+    rb_chd = _idle(monkeypatch)
+    _cfg(monkeypatch, wua=True)
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "wiiu")
+    os.makedirs(sysdir)
+    disc = os.path.join(sysdir, "Lorem Party (USA).wud")
+    titles = {}
+    mkdisc.make_disc(disc, KEYS, extra=[(mkdisc.UPDATE_ID, 48, 3), (mkdisc.DLC_ID, 16, 4)], up=True, titles=titles)
+    assert list(titles) == [TOP, "%016x_v48" % mkdisc.UPDATE_ID, "%016x_v16" % mkdisc.DLC_ID]
+    assert rb_chd.convert({"system": "wiiu", "mode": "wua", "sources": [disc], "roots": [disc]}) is True
+    out = os.path.join(sysdir, "Lorem Party (USA).wua")
+    listed = subprocess.run([tool, "check", out], capture_output=True, text=True).stdout
+    assert sorted(l[6:] for l in listed.splitlines() if l.startswith("title ")) == sorted(titles)
+    for top, files in titles.items():
+        for path, data in files.items():
+            assert subprocess.run([tool, "cat", out, top + "/" + path], capture_output=True).stdout == data
+    log = open(rommlib.LOG_PATH).read()
+    assert "the .wua holds %s" % ", ".join(titles) in log

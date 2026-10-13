@@ -169,28 +169,46 @@ def ticket(keys, title_id=TITLE_ID):
     return bytes(t)
 
 
-def make_disc(path, keys, files=None, wux=False, title_id=TITLE_ID, version=TITLE_VERSION, seed=1):
-    """Write the disc image; returns {path in the game partition: bytes} (what a .wua must hold)."""
+UPDATE_ID = TITLE_ID | 0xE00000000         # the game's update (0005000E...), as some discs carry it
+DLC_ID = TITLE_ID | 0xC00000000            # its DLC (0005000C...)
+
+
+def make_disc(path, keys, files=None, wux=False, title_id=TITLE_ID, version=TITLE_VERSION, seed=1,
+              extra=(), up=False, titles=None):
+    """Write the disc image; returns {path in the game partition: bytes} (what a .wua must hold).
+    extra: more game partitions after the base, [(title id, version, seed)] (an update, DLC);
+    up: also a console-firmware partition ("UP", never part of a .wua), before the game's.
+    titles: a dict that gets {"<title id>_v<version>": {path: bytes}} for every game partition."""
     files = files if files is not None else default_files(seed, title_id, version)
-    si, _ = _partition(keys["disc"], [("01/title.tik", ticket(keys, title_id), "raw"),
-                                      ("01/title.tmd", b"\0" * 0x200, "raw"),
-                                      ("01/title.cert", b"\0" * 0x400, "raw")], 0, 1)
-    gm, game = _partition(keys["title"], files, 1, 2)
-    si_sec = 4
-    gm_sec = si_sec + len(si) // SECTOR
+    gms = [(title_id, version, files)] + [(t, v, default_files(sd, t, v)) for t, v, sd in extra]
+    names = [b"SI"] + ([b"UP%016X" % 0x0005001010040100] if up else []) + [b"GM%016X" % t for t, _, _ in gms]
+    first_gm = len(names) - len(gms)
+    tik = [("%02x/title.tik" % (first_gm + i), ticket(keys, t), "raw") for i, (t, _, _) in enumerate(gms)]
+    tmd = [("%02x/title.tmd" % (first_gm + i), b"\0" * 0x200, "raw") for i in range(len(gms))]
+    si, _ = _partition(keys["disc"], sorted(tik + tmd) + [("01/title.cert", b"\0" * 0x400, "raw")], 0, 1)
+    parts = [si] + ([_enc(keys["disc"], b"\0" * 16, bytes(range(256)) * 128)] if up else [])
+    game = None
+    for i, (t, v, fs) in enumerate(gms):
+        gm, got = _partition(keys["title"], fs, 1, 2)
+        parts.append(gm)
+        game = got if game is None else game
+        if titles is not None:
+            titles["%016x_v%d" % (t, v)] = got
     table = bytearray(SECTOR)
     struct.pack_into(">II", table, 0, 0xCCA6E67B, SECTOR)
-    struct.pack_into(">I", table, 0x1C, 2)
-    for i, (name, sec) in enumerate(((b"SI", si_sec), (b"GM%016X" % title_id, gm_sec))):
+    struct.pack_into(">I", table, 0x1C, len(names))
+    sec = 4
+    for i, (name, part) in enumerate(zip(names, parts)):
         e = 0x800 + i * 0x80
         table[e:e + len(name)] = name
         table[e + 0x1F] = 1
         struct.pack_into(">I", table, e + 0x20, sec)
-    disc = bytearray(SECTOR * si_sec)
+        sec += len(part) // SECTOR
+    disc = bytearray(SECTOR * 4)
     disc[0:10] = b"WUP-P-ABCD"
     struct.pack_into(">I", disc, 0x10000, 0xCC549EB9)
     disc[0x18000:0x20000] = _enc(keys["disc"], b"\0" * 16, bytes(table))
-    disc += si + gm
+    disc += b"".join(parts)
     with open(path, "wb") as f:
         f.write(to_wux(bytes(disc)) if wux else disc)
     return game

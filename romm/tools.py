@@ -247,9 +247,9 @@ TOOL_X360 = ToolSpec(
 _WIIU_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/wiiu-tools-2610b/"
 WIIU_TOOLS_ALL = {          # per CPU: the archive RomM-o-Cera downloads, and its pinned SHA-256
     "x86_64": {"url": _WIIU_BASE + "wiiu-tools-2610b-x86_64.tar.gz",
-               "sha256": "e0360310923401ca11fe0d26a5750ee83ba3f9730ea36759f6c80ba4392d1980", "size": 2697613},
+               "sha256": "8ab94774249cf8845430d1ac96d60b57ee9a7bf6a903a0f5d688cf29b7e12c3f", "size": 2702842},
     "aarch64": {"url": _WIIU_BASE + "wiiu-tools-2610b-aarch64.tar.gz",
-                "sha256": "88362363d256a808384b638512c3bd510a9a7b5b67b129cffb8e7e7855a2a58d", "size": 2517248},
+                "sha256": "9e473a291414f1d4daef76d576ef1aaf65d1c6e941ce427e60dc9b9d20611ba9", "size": 2522697},
 }
 WIIU_TOOLS = dict({"version": "2610b", "cemu": "b9b46ecb65e2eb1c15793380048309df73d2084e",
                    "zarchive": "d2c717730092c7bf8cbb033b12fd4001b7c4d932"},
