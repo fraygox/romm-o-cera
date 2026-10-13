@@ -68,6 +68,11 @@ Xbox or Kyoto theme for the controller you're holding instead, and the Theme
 row then says what's on screen ("Default (now PlayStation)"). Both are
 described in [Themes](themes.md).
 
+**Collections tile size** (in This app) is Small, Medium or Large: how big
+the cover mosaics on the [Collections](browsing-and-downloading.md#collections)
+screen are, so a shelf shows six, five or four of them and a wall row
+seven, six or four. It takes effect at once.
+
 ## `config.json`
 
 | Key | Default | |
@@ -106,6 +111,7 @@ described in [Themes](themes.md).
 | `theme_custom_strength` | `30` | how far they lean: `0` (neutral grey) to `100` |
 | `theme_custom_mode` | `dark` | the Custom theme's mode: `dark`, `oled` (pure black) or `light` |
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
+| `collection_tiles` | `medium` | the Collections screen's mosaic size: `small` (six a shelf, seven a wall row), `medium` (five and six) or `large` (four and four) |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
 | `notes_seen` | — | written by the app: the version whose notes What's new last showed, so they show once per update |

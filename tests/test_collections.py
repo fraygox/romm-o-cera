@@ -146,7 +146,7 @@ def test_opening_a_collection_lists_all_of_it_with_the_box_pills(app, rb, monkey
     gl = scr.list_of(it)
     assert isinstance(gl, rb.GameListScreen) and gl.whole and gl.pills and gl.static is roms
     assert gl.counts == {"all": 3, "here": 1, "away": 2} and gl.crumbs() == ["Collections", "Top lists"]
-    assert gl.ROWS == 10 and gl.lst.top == 134                            # under the pills: fewer rows
+    assert gl.ROWS == 11 and gl.lst.top == 130                            # under the pills: 11 rows, to the foot
     assert ("Y", "Filter") in gl.hints()
     gl.action("y")
     assert gl.box_filter == "here" and [r["id"] for r in gl.items] == [1]
@@ -213,3 +213,74 @@ def test_a_on_a_game_opens_its_page_from_backlog_and_game_night(app, rb, monkeyp
     assert ("A", "Open") in gn.hints()
     gn.action("ok")
     assert isinstance(app.stack[-1], rb.GameScreen) and app.stack[-1].rom is rom
+
+
+def test_back_from_a_wall_returns_to_the_shelves_not_home(app, rb, monkeypatch):
+    scr = _screen(app, rb)
+    scr.row, scr.col = 1, 1                                              # Themes, the second one
+    popped = []
+    monkeypatch.setattr(app, "pop", lambda: popped.append(1))
+    scr.action("y")                                                      # All themes
+    assert scr.wall and ("B", "Shelves") in scr.hints()
+    scr.action("back")
+    assert not scr.wall and (scr.row, scr.col) == (1, 1) and popped == []   # the shelves, the same tile focused
+    assert ("B", "Back") in scr.hints()
+    scr.action("back")
+    assert popped == [1]                                                 # from the shelves, B leaves as before
+    scr.row, scr.col = len(scr.kinds) - 1, 2                             # the Series door
+    pushed = []
+    monkeypatch.setattr(app, "push", lambda s: pushed.append(s) or app.stack.append(s))
+    scr.action("ok")
+    door = pushed[-1]
+    assert isinstance(door, rb.CollectionScreen) and door.vtype == "collection" and door.wall
+    assert ("B", "Back") in door.hints() and ("Y", "Shelves") not in door.hints()
+    door.action("back")                                                  # its own screen: pops to the shelves
+    assert popped == [1, 1] and (scr.row, scr.col) == (len(scr.kinds) - 1, 2) and not scr.wall
+
+
+def _tiles(app, scr):
+    """The tile rects drawn, top to bottom (the panel's targets left out)."""
+    app.targets = []
+    scr.draw(app.canvas)
+    return sorted((r for r, _ in app.targets if r.width < 300 and r.left < rb_column(scr).right + 1),
+                  key=lambda r: (r.top, r.left))
+
+
+def rb_column(scr):
+    import importlib
+    return importlib.import_module(type(scr).__module__).COLUMN
+
+
+@pytest.mark.parametrize("size,per,wall,rows", [("small", 6, 7, 3), ("medium", 5, 6, 3), ("large", 4, 4, 2)])
+def test_the_tile_size_setting_sets_how_many_a_shelf_and_a_wall_row_show(app, rb, size, per, wall, rows):
+    app.cfg["collection_tiles"] = size
+    scr = _screen(app, rb)
+    scr.kinds[0]["items"] = [dict(scr.kinds[0]["items"][0], id=100 + i, name="Lorem %d" % i) for i in range(30)]
+    assert scr.sizes() == (per, wall)
+    tiles = _tiles(app, scr)
+    first = [r for r in tiles if r.top == tiles[0].top]
+    assert len(first) == per and first[0].left == rb.CONTENT.left + 16 and first[-1].right == rb_column(scr).right
+    scr.wall = True
+    tiles = _tiles(app, scr)
+    tops = sorted({r.top for r in tiles})
+    assert len([r for r in tiles if r.top == tops[0]]) == wall and len(tops) == rows
+    assert tiles[-1].bottom <= rb_column(scr).bottom                     # the last row inside the column…
+    assert rb_column(scr).bottom - tiles[-1].bottom < 8                 # …and at its foot: no dead band
+
+
+def test_the_last_shelf_and_the_last_wall_row_reach_the_foot_of_the_column(app, rb):
+    scr = _screen(app, rb)
+    col = rb_column(scr)
+    scr.row = len(scr.kinds) - 1                                         # Browse by, the last shelf
+    tiles = _tiles(app, scr)
+    assert col.bottom - max(r.bottom for r in tiles) < 8                 # flush at the foot, nothing empty below
+    assert scr.off == len(scr.kinds) * scr.shelf_metrics()[3] - 12 - col.height
+    scr.row = 0
+    _tiles(app, scr)
+    assert scr.off == 0                                                  # back at the top: the first shelf whole
+    scr.kinds[0]["items"] = [dict(scr.kinds[0]["items"][0], id=100 + i, name="Lorem %d" % i) for i in range(23)]
+    scr.wall = True
+    scr.col = 22                                                         # the last tile: the last row in view
+    tiles = _tiles(app, scr)
+    assert scr.wall_top == 1 and col.bottom - max(r.bottom for r in tiles) < 8
+    assert any(r.collidepoint(r.centerx, r.centery) for r in tiles if r.top >= col.top)

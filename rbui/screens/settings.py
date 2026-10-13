@@ -115,6 +115,7 @@ class SettingsScreen(Screen):
             sec("This app"),
             row("theme", self._theme_value()),
             table("themeauto"),
+            table("colltiles"),
             table("sounds"),
             table("cachelimit"),
             ("cache", "Clear cover cache",
@@ -160,6 +161,8 @@ class SettingsScreen(Screen):
         "keepfree": lambda cfg: "%d GB" % float(cfg["keep_free_gb"]) if cfg["keep_free_gb"] else "Nothing (fill the disk)",
         "speed": lambda cfg: "%g MB/s" % float(cfg["speed_while_playing"]) if cfg["speed_while_playing"] else "No limit",
         "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(cfg["sounds"], "On"),
+        "colltiles": lambda cfg: {"small": "Small", "medium": "Medium", "large": "Large"}.get(
+            cfg["collection_tiles"], "Medium"),
         "channel": lambda cfg: {"stable": "Stable", "nightly": "Nightly"}.get(cfg["update_channel"], "Stable"),
         "cachelimit": lambda cfg: (rommlib.human_size(rommlib.cache_limit_bytes(cfg))
                                    if rommlib.cache_limit_bytes(cfg) else "No limit"),

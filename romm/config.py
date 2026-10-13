@@ -174,6 +174,12 @@ SETTINGS = (
             kind="choice", choices=("normal", "quiet", "off"), effects=("sounds",),
             valid=lambda v: v in ("normal", "quiet", "off"),
             help="Clicks and chimes while you browse."),
+    Setting("collection_tiles", "medium",   # Collections' mosaics: small (six a shelf) | medium (five) | large (four)
+            row="colltiles", label="Collections tile size", sub="How many mosaics a shelf shows",
+            kind="choice", choices=("small", "medium", "large"),
+            valid=lambda v: v in ("small", "medium", "large"),
+            help="The size of the collection mosaics on the Collections screen: Small shows six a shelf, Medium "
+                 "five, Large four; the wall follows with seven, six or four a row."),
     Setting("theme", "default",         # colours: a THEMES key (rbui/theme.py), e.g. default, xbox_oled, synthwave
             row="theme", label="Theme", sub="Colours for the whole app, previewed live",
             help="Colours for the whole app. {A} shows every theme, previewed live: {A} keeps one, {B} goes back, "

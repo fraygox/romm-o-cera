@@ -30,8 +30,10 @@ VIRTUAL_TYPES = [("genre", "Genre", "genre"), ("franchise", "Franchise", "franch
 COLUMN, SIDE = split(702, pygame.Rect(48, 84, W - 96, 572), 24)    # the shelves (or the wall), the focused one
 TILE_GAP = 14
 SHELF_HEAD = 30                     # a shelf's heading over its tiles
-WALL_HEAD = 36                      # the wall's heading
-WALL_GAP = 10                       # between wall rows: the focus ring stays clear of the row above
+SHELF_GAP = 12                      # under a shelf's tiles
+WALL_HEAD = 32                      # the wall's heading
+WALL_GAP = 4                        # the least between wall rows; the rows share the height's slack evenly
+TILE_SIZES = {"small": (6, 7), "medium": (5, 6), "large": (4, 4)}   # Settings: tiles a shelf and a wall row show
 FOCUS_WAIT = 0.4                    # seconds a tile keeps the focus before its games are fetched
 ROMS_KEPT = 12                      # collections whose games stay in memory (the focused ones, latest last)
 
@@ -172,7 +174,7 @@ class CollectionScreen(Screen):
         self.vtype, self.vlabel = vtype, vlabel
         self.kinds = None               # [{key, label, items}]
         self.row = self.col = 0         # the focused shelf and the tile in it
-        self.top = 0                    # the first shelf shown
+        self.off = 0                    # the shelves' scroll, in px
         self.wall = bool(vtype)         # the focused kind alone, many a row
         self.wall_top = 0               # the wall's first row shown
         self.shelf_of = {}              # shelf key -> its Shelf (keeps its scroll)
@@ -225,7 +227,7 @@ class CollectionScreen(Screen):
         if self.gen != self.app.conn_gen:
             self.gen = self.app.conn_gen
             self.box, self.shelf_of = {}, {}
-            self.row = self.col = self.top = self.wall_top = 0
+            self.row = self.col = self.off = self.wall_top = 0
             self.load()
             return
         self.snapshot()
@@ -339,7 +341,7 @@ class CollectionScreen(Screen):
             h.append(("Y", "Shelves" if self.wall else "All " + k["label"].lower()))
         if self.wall and len(k["items"]) > self.per_wall() * self.wall_rows():
             h += [("L", "Page up"), ("R", "Page down")]
-        return h + [("B", "Back")]
+        return h + [("B", "Shelves" if self.wall and not self.vtype else "Back")]
 
     def action(self, a):
         k, it = self.current()
@@ -367,6 +369,8 @@ class CollectionScreen(Screen):
             self.menu(it)
         elif a == "y" and not self.vtype and k["key"] != "browse":
             self.wall = not self.wall
+        elif a == "back" and self.wall and not self.vtype:     # the wall came from the shelves: back to them
+            self.wall = False
         else:
             super().action(a)
 
@@ -427,16 +431,40 @@ class CollectionScreen(Screen):
 
     # ---------------------------------------------------------------- drawing
 
+    def sizes(self):
+        """(tiles a shelf shows, tiles a wall row shows): Settings' Collections tile size, one fewer
+        each in a narrower column (4:3)."""
+        per, wall = TILE_SIZES.get(self.app.cfg.get("collection_tiles"), TILE_SIZES["medium"])
+        narrow = COLUMN.width < 640
+        return max(3, per - narrow), max(4, wall - narrow)
+
     def per_shelf(self):
-        """Tiles a shelf shows at once: five at 16:9 (129 px mosaics), fewer in a narrower column."""
-        return max(3, min(5, (COLUMN.width + TILE_GAP) // (129 + TILE_GAP)))
+        return self.sizes()[0]
 
     def per_wall(self):
-        return max(4, min(6, (COLUMN.width + TILE_GAP) // (105 + TILE_GAP)))
+        return self.sizes()[1]
+
+    def shelf_metrics(self):
+        """(tiles a shelf, a tile's side, its height, a shelf's pitch)."""
+        per = self.per_shelf()
+        side = (COLUMN.width - TILE_GAP * (per - 1)) // per
+        th = collection_tile_h(side)
+        return per, side, th, SHELF_HEAD + th + SHELF_GAP
+
+    def wall_metrics(self):
+        """(tiles a row, a tile's side, its height, rows in view, the rows' pitch): as many rows as
+        fit under the heading, the height's slack shared evenly between them so the last row ends
+        at the foot of the column."""
+        per = self.per_wall()
+        side = (COLUMN.width - TILE_GAP * (per - 1)) // per
+        th = collection_tile_h(side)
+        avail = COLUMN.height - WALL_HEAD
+        rows = max(1, (avail + WALL_GAP) // (th + WALL_GAP))
+        pitch = th + ((avail - rows * th) // (rows - 1) if rows > 1 else 0)
+        return per, side, th, rows, pitch
 
     def wall_rows(self):
-        side = (COLUMN.width - TILE_GAP * (self.per_wall() - 1)) // self.per_wall()
-        return max(1, (COLUMN.height - WALL_HEAD + WALL_GAP) // (collection_tile_h(side) + WALL_GAP))
+        return self.wall_metrics()[3]
 
     def draw(self, c):
         if self.kinds is None:
@@ -485,20 +513,21 @@ class CollectionScreen(Screen):
                                slot=slot)
 
     def draw_shelves(self, c):
-        per = self.per_shelf()
-        side = (COLUMN.width - TILE_GAP * (per - 1)) // per
-        th = collection_tile_h(side)
-        pitch = SHELF_HEAD + th + 12
-        vis = max(1, COLUMN.height // pitch)
-        self.top = max(self.row - vis + 1, min(self.top, self.row))
+        """The shelves, scrolled by the pixel: the least that brings the focused one whole into
+        view, so the last shelf ends at the foot of the column with the one above it cut (and
+        faded) at the top; the next one peeks under the fade at the bottom."""
+        per, side, th, pitch = self.shelf_metrics()
+        total = len(self.kinds) * pitch - SHELF_GAP
+        y0, y1 = self.row * pitch, self.row * pitch + pitch - SHELF_GAP
+        self.off = max(y1 - COLUMN.height, min(self.off, y0))
+        self.off = max(0, min(self.off, total - COLUMN.height))
         area = pygame.Rect(COLUMN.left - 8, COLUMN.top, COLUMN.width + 16, COLUMN.height)
         old = c.get_clip()
         c.set_clip(SR(area).clip(old))
-        y = COLUMN.top
-        for r_i in range(self.top, len(self.kinds)):
-            if y >= COLUMN.bottom:
-                break
-            k = self.kinds[r_i]
+        for r_i, k in enumerate(self.kinds):
+            y = COLUMN.top + r_i * pitch - self.off
+            if y + pitch <= COLUMN.top or y >= COLUMN.bottom:
+                continue
             on = r_i == self.row
             n = len(k["items"])
             note = "{:,} of {:,}".format(self.col + 1, n) if on and n > per else "{:,}".format(n)
@@ -509,17 +538,15 @@ class CollectionScreen(Screen):
             sh.draw(c, self.app, k["items"], COLUMN.left, COLUMN.right, y + SHELF_HEAD, self.col if on else None,
                     tile=lambda c_, it, r, o, key=k["key"]: self.tile(c_, it, r, o, ("coll-tile", key)),
                     on_tap=lambda i, r_i=r_i: self.tap(r_i, i), clip=area)
-            y += pitch
         c.set_clip(old)
-        if y > COLUMN.bottom:               # the next shelf peeks: fade it out
+        if total - self.off > COLUMN.height:          # the next shelf peeks: fade it out
             _fade(c, theme.BG, SR(pygame.Rect(area.left, COLUMN.bottom - 44, area.width, 44)), "bottom")
+        if self.off > 0:                              # the one above is cut: fade it in
+            _fade(c, theme.BG, SR(pygame.Rect(area.left, COLUMN.top, area.width, 32)), "top")
 
     def draw_wall(self, c, k):
-        per = self.per_wall()
-        side = (COLUMN.width - TILE_GAP * (per - 1)) // per
-        th = collection_tile_h(side)
-        pitch = th + WALL_GAP
-        items, vis = k["items"], self.wall_rows()
+        per, side, th, vis, pitch = self.wall_metrics()
+        items = k["items"]
         rows = (len(items) + per - 1) // per
         row = self.col // per
         self.wall_top = max(row - vis + 1, min(self.wall_top, row))
@@ -536,7 +563,7 @@ class CollectionScreen(Screen):
             self.app.hit(r, lambda i=i: self.tap(self.row, i))
             self.tile(c, it, r, i == self.col, ("wall-tile", i))
         if rows > vis:
-            scrollbar(c, (COLUMN.right + 8, y0, 4, vis * pitch - WALL_GAP), vis / rows, self.wall_top / (rows - vis))
+            scrollbar(c, (COLUMN.right + 8, y0, 4, (vis - 1) * pitch + th), vis / rows, self.wall_top / (rows - vis))
 
     def draw_panel(self, c, k, it):
         app = self.app

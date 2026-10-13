@@ -607,6 +607,69 @@
    ],
    "wake": 0
   },
+  "bare/defaults/colltiles/left": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "small"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/colltiles/ok": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/colltiles/right": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
   "bare/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -2847,6 +2910,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/colltiles/left": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "small"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/colltiles/ok": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/colltiles/right": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -4789,6 +4900,54 @@
    "bg": 0,
    "cfg": {
     "check_updates": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/colltiles/left": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "small"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/colltiles/ok": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/colltiles/right": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
    },
    "gone": [],
    "modal": null,
@@ -6753,6 +6912,51 @@
    "toasts": [],
    "wake": 0
   },
+  "full/odd/colltiles/left": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "small"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/colltiles/ok": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/colltiles/right": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/odd/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -8629,6 +8833,54 @@
    "bg": 1,
    "cfg": {
     "check_updates": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/colltiles/left": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "small"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/colltiles/ok": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/colltiles/right": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
    },
    "gone": [],
    "modal": null,
@@ -10619,6 +10871,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/colltiles/left": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "small"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/colltiles/ok": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/colltiles/right": {
+   "bg": 0,
+   "cfg": {
+    "collection_tiles": "large"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/credits/left": {
    "bg": 0,
    "cfg": {},
@@ -12150,6 +12450,7 @@
   "chdlowmem": "Skips chdman's FLAC codec, which leaks memory on some builds: CD audio comes out a bit bigger, still lossless. Auto turns it on under 4 GB of RAM.",
   "chdthreads": "CPU threads conversions may use while nothing else runs. Auto leaves some for the menus.",
   "checkupdates": "Once a day, asks GitHub whether a newer version is out; the request says nothing about you. Off, Updates still checks when you select it.",
+  "colltiles": "The size of the collection mosaics on the Collections screen: Small shows six a shelf, Medium five, Large four; the wall follows with seven, six or four a row.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
   "docs": "Point your phone's camera at the code to open the documentation. {A} shows it bigger.",
   "hours": "Downloads only start inside this window, e.g. overnight; one still running pauses when it closes. Download now in Downloads skips the wait.",
@@ -12374,6 +12675,28 @@
    ]
   ],
   "checkupdates": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L",
+    "Page up"
+   ],
+   [
+    "R",
+    "Page down"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "colltiles": [
    [
     "A",
     "Change"
@@ -13227,6 +13550,12 @@
     "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
+   ],
+   [
     "sounds",
     "Sounds",
     "Quiet",
@@ -13509,6 +13838,12 @@
     "Match theme to controller",
     "Off",
     "Follows a PlayStation, Xbox or Nintendo pad"
+   ],
+   [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
    ],
    [
     "sounds",
@@ -13795,6 +14130,12 @@
     "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
+   ],
+   [
     "sounds",
     "Sounds",
     "On",
@@ -14079,6 +14420,12 @@
     "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
+   ],
+   [
     "sounds",
     "Sounds",
     "Quiet",
@@ -14355,6 +14702,12 @@
     "Match theme to controller",
     "Off",
     "Follows a PlayStation, Xbox or Nintendo pad"
+   ],
+   [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
    ],
    [
     "sounds",
@@ -14635,6 +14988,12 @@
     "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
+   ],
+   [
     "sounds",
     "Sounds",
     "On",
@@ -14913,6 +15272,12 @@
     "Follows a PlayStation, Xbox or Nintendo pad"
    ],
    [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
+   ],
+   [
     "sounds",
     "Sounds",
     "Quiet",
@@ -15189,6 +15554,12 @@
     "Match theme to controller",
     "Off",
     "Follows a PlayStation, Xbox or Nintendo pad"
+   ],
+   [
+    "colltiles",
+    "Collections tile size",
+    "Medium",
+    "How many mosaics a shelf shows"
    ],
    [
     "sounds",

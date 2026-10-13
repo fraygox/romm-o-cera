@@ -527,10 +527,12 @@ def collections_box():
             lib.mark(r, sy, [p])
 
 
-def collections_at(row, col, wall=False, menu=False, inside=None):
+def collections_at(row, col, wall=False, menu=False, inside=None, size="medium", door=False):
     """Collections with a shelf (row; -1: the last, Browse by) and tile focused; wall: that kind as
-    a wall; menu: its Actions; inside: its games ("away": the Not here pills)."""
+    a wall; menu: its Actions; inside: its games ("away": the Not here pills); size: Settings'
+    Collections tile size; door: open the focused Browse-by door (its wall)."""
     collections_box()
+    app.cfg["collection_tiles"] = size
     scr = rb.CollectionScreen(app)
     app.push(scr)
 
@@ -538,6 +540,8 @@ def collections_at(row, col, wall=False, menu=False, inside=None):
         scr.row = row if row >= 0 else len(scr.kinds) - 1
         scr.col, scr.wall = col, wall
         it = scr.current()[1]
+        if door:
+            return scr.open(it)
         if not rb.door(it):
             scr.fetch_roms(it)                 # at once, not after the focus has rested
         if menu:
@@ -556,6 +560,12 @@ SCENES = [
     ("home", lambda: None),
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
     ("collections", lambda: collections_at(1, 4)),
+    ("collections-small", lambda: collections_at(1, 4, size="small")),
+    ("collections-small-wall", lambda: collections_at(1, 9, wall=True, size="small")),
+    ("collections-large", lambda: collections_at(1, 3, size="large")),
+    ("collections-large-wall", lambda: collections_at(1, 9, wall=True, size="large")),
+    ("collections-genres", lambda: collections_at(-1, 0, door=True)),
+    ("settings-colltiles", lambda: app.push(settings_at("colltiles"))),
     ("collections-top", lambda: collections_at(0, 0)),
     ("collections-wall", lambda: collections_at(1, 9, wall=True)),
     ("collections-browse", lambda: collections_at(-1, 0)),
@@ -713,6 +723,7 @@ def reset():
     app._after = None
     app.downloader.hold = True
     app.cfg["keep_free_gb"] = KEEP_FREE
+    app.cfg["collection_tiles"] = "medium"
 
 
 KEEP_FREE = app.cfg.get("keep_free_gb", 20)

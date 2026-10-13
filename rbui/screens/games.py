@@ -29,7 +29,7 @@ REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Au
 
 GAME_LIST, GAME_PANEL = split(676)      # the rows (name, regions, size, platform tag) and RomM's record beside them
 PILLS_Y = 84                            # a collection's box filter pills; its rows start under them
-PILLS_AREA = pygame.Rect(CONTENT.left, 134, CONTENT.width, CONTENT.bottom - 134)
+PILLS_AREA = pygame.Rect(CONTENT.left, 130, CONTENT.width, CONTENT.bottom - 130)   # 11 rows fit under its head
 BOX_FILTERS = [("all", "All"), ("here", "On this box"), ("away", "Not here")]
 
 JUNK_MARKERS = ("~hack~", "~unlicensed~", "~prototype~", "~demo~", "~homebrew~", "(proto",
