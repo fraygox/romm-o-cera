@@ -11,7 +11,7 @@ across the whole screen.
 """
 import pygame
 from rbui import theme
-from rbui.theme import H, W
+from rbui.theme import H, mix, W
 from rbui.draw import (card, chevron as draw_chevron, focus_box, hline, marquee, measure, meter, progress_bar,
                        rich_text, rrect, scroll_text, text)
 from rbui.widgets.chips import button_chip, button_chip_width, tag as draw_tag
@@ -60,15 +60,15 @@ def list_head(c, f, lst, title, note="", note_color=None, color=None):
 
 
 def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_color=None, sub_color=None,
-             mark=None, slot="row", tag=None, tag_color=None, box=None, mark_w=48, aside=None):
+             mark=None, slot="row", tag=None, tag_color=None, chevron=False, box=None, mark_w=48, aside=None):
     """One row: the focus box, a mark at the left (mark(center) draws a tick box, dot or cover
     thumb and returns True when it did; mark_w is the room it takes), the label with a grey line
     under it (the focused row's slide when too long), a short status right-aligned in the row
-    and, left of it, a tag (chips.tag: a system, "queued"). box: None, the focus box when on; a
-    colour, draw.card filled with it (the focus box when on); False, none (the caller drew it).
-    aside: a right column of two lines: the status moves up to the label's line and under it
-    (frac, colour) draws a progress bar, a callable(rect) anything else, "" nothing. Returns the
-    text's x."""
+    and, left of it, a tag (chips.tag: a system, "queued"); chevron: a › at the right end (the
+    row opens something). box: None, the focus box when on; a colour, draw.card filled with it
+    (the focus box when on); False, none (the caller drew it). aside: a right column of two
+    lines: the status moves up to the label's line and under it (frac, colour) draws a progress
+    bar, a callable(rect) anything else, "" nothing. Returns the text's x."""
     if box is None:
         if on:
             focus_box(c, r)
@@ -76,6 +76,9 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         card(c, r, on, bg=box)
     tx = r.left + (mark_w if mark and mark((r.left + (mark_w - 4) // 2, r.centery)) else ROW_PAD)
     right = r.right - 20
+    if chevron:
+        draw_chevron(c, theme.DIM if on else theme.FAINT, (right - 4, r.centery), "right")
+        right -= 28
     lh, sh = f.row.get_height() / theme.K, f.small.get_height() / theme.K
     top = r.centery - ((lh + sh) / 2 if sub else lh / 2)
     if aside is not None:
@@ -100,6 +103,20 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         marquee(c, f.small, sub, (tx, top + lh), sub_color or theme.FAINT, maxw=right - tx, focused=on,
                 slot=slot + "-sub")
     return tx
+
+
+def notice(c, f, rect, title, body, color=None, slot="notice"):
+    """A boxed message in a state colour (default RED): the title in that colour over a tint of
+    it, the explanation under it (scrolling when longer than the box). Returns the rect."""
+    color = theme.RED if color is None else color
+    rect = pygame.Rect(rect)
+    bg = mix(theme.BG2, color, 0.12)
+    rrect(c, bg, rect, 14)
+    rrect(c, color, rect, 14, 2)
+    text(c, f.h3, title, (rect.left + 20, rect.top + 16), color, maxw=rect.width - 40)
+    scroll_text(c, f.small, body, (rect.left + 20, rect.top + 46, rect.width - 40, rect.height - 60), theme.DIM,
+                line_h=21, bg=bg, slot=slot)
+    return rect
 
 
 class Panel:
@@ -161,10 +178,8 @@ class Panel:
         if tap and self.app:
             self.app.hit(r, tap)
         card(self.c, r, on, bg=theme.BG2)
-        list_row(self.c, self.f, pygame.Rect(r.left, r.top, r.width - (28 if chevron else 0), h), on, label, sub,
-                 status, box=False, slot=self._slot(), **row)
-        if chevron:
-            draw_chevron(self.c, theme.TEXT if on else theme.FAINT, (r.right - 24, r.top + h // 2), "right")
+        list_row(self.c, self.f, pygame.Rect(r.left, r.top, r.width, h), on, label, sub, status, box=False,
+                 slot=self._slot(), chevron=chevron, **row)
         return r, pygame.Rect(r.left + ROW_PAD, r.top + h, r.width - 2 * ROW_PAD, more)
 
     def fact(self, label, value, color=None):

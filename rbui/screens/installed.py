@@ -8,6 +8,7 @@ from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import progress_bar, text
 from rbui.screens.base import letter_of, ListScreen
+from rbui.screens.game import GameScreen
 from rbui.screens.games import GAME_LIST, GAME_PANEL, GameListScreen
 from rbui.screens.box_data import conversion_rows, conversion_status, installed_games, plural
 from rbui.modals import ActionMenu, Confirm, ManageMenu
@@ -69,7 +70,7 @@ class InstalledScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return self.list_hints(("A", "Options"), ("X", pads.ACTIONS), ("Y", dict(self.SORTS)[self.sort]))
+        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", dict(self.SORTS)[self.sort]))
 
     def pick_key(self, it):
         return it["id"]
@@ -79,6 +80,14 @@ class InstalledScreen(ListScreen):
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)
+
+    def panel_verb(self, rom):
+        self.menu(self.items[self.sel])
+
+    def page_rom(self, i):
+        """Row i's RomM record for the game page's previous/next (None while it's asked for)."""
+        d = self.record(self.items[i])
+        return d if d and d.get("id") is not None and self.app.system_for(d) else None
 
     def record(self, it):
         """RomM's record of a row's game: a dict, {} when RomM hasn't got it
@@ -155,7 +164,12 @@ class InstalledScreen(ListScreen):
         if self.nav(a) or self.pick_action(a):
             return
         if a == "ok":
-            self.menu(self.items[self.sel])
+            it = self.items[self.sel]
+            d = self.record(it)
+            if d and d.get("id") is not None and self.app.system_for(d):
+                self.app.push(GameScreen(self.app, d, source=self, then=self.load))
+            else:
+                self.menu(it)
         elif a == "y":
             self.cycle_sort()
         else:

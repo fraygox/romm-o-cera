@@ -1,5 +1,28 @@
 # Connecting to RomM
 
+## The first start: Welcome
+
+A box without a server address or a token opens on **Welcome**: three steps on
+the left (Server address, Pair with RomM, Pick a platform), the current one on
+the right.
+
+1. **Server address**: type your RomM's address (`https://` is already there)
+   and press Start (**Connect**). The app checks the server right away. **Y,
+   Advanced** sets *Verify TLS certificate* (On, Off, or the CA bundle named in
+   `config.json`, the same setting as in Settings) and has *Type an API token
+   instead* for a RomM that can't pair. If the certificate doesn't verify,
+   Welcome says which host, why, and offers Advanced, Try again or Edit the
+   address.
+2. **Pair with RomM**: type the 8-character code from RomM's **Pair** button.
+   It checks itself as soon as the eighth character is in.
+3. **Pick a platform**: the platform list opens once your library has loaded.
+
+**B, Later** goes to Home and Welcome doesn't open by itself again
+(`welcome_seen` in `config.json`); everything is in Settings too. Welcome also
+opens when RomM turns the saved token away on the first platform fetch (a
+revoked token), at the pairing step. A box whose `ROMM_URL` and `ROMM_TOKEN`
+come from the environment never sees it.
+
 ## Signing in: pair with a code
 
 Typing a 68-character token on a controller is no fun, so RomM 5 can hand it

@@ -180,7 +180,8 @@ class DownloadsScreen(ListScreen):
         h = [("A", "Options"), ("X", pads.ACTIONS)] if d.jobs else []
         if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
             h.append(("Y", "Clear finished"))
-        return self.list_hints(*h + [("LEFT RIGHT", "Compressing"), ("L2 R2", "Conversions")])
+        h += [] if self.picking else [("LEFT RIGHT", "Compressing")]
+        return self.list_hints(*h + [("L2 R2", "Conversions")])
 
     def pick_key(self, j):
         return (j.rom.get("id"), j.system)
