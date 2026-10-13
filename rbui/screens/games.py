@@ -7,7 +7,6 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
-
 from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, installed_mark, marquee, measure, rich_text,
                        rom_title, rrect, scroll_text, text, wrap)
 from rbui.screens.base import letter_of, ListScreen
