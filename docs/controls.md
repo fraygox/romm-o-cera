@@ -70,7 +70,7 @@ picking, so there A picks from the start and B goes back.
 
 | Screen | A | X | Y | L2/R2 |
 |---|---|---|---|---|
-| Game lists | Download (a game on the box: its menu) | Menu: more like this, download all, filters, sort, pick several | Search | Letter |
+| Game lists | Download (a game on the box: its menu) | Menu: more like this, download all, filters (region, players), sort, pick several | Search | Letter |
 | Platforms | Open | | Search this platform | |
 | Collections | Open | Download every game | | Letter (one list) |
 | Downloads | That download's options (a finished game: Play now) | Menu: pause or resume all, clear finished, pick several | Clear finished | Conversions |

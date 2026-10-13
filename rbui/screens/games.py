@@ -56,6 +56,7 @@ class GameListScreen(ListScreen):
 
     REGION_CHOICES = [(None, "All regions"), (["USA", "World"], "USA + World"),
                       (["Europe", "World"], "Europe + World"), (["Japan"], "Japan")]
+    PLAYER_CHOICES = [(0, "Any"), (2, "2+"), (3, "3+"), (4, "4+")]     # the party filter: n or more players
     BULK_MAX = 1000
     PICKS, PICK_ALL, PICK_WHAT = True, False, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works in full lists sorted by name"
@@ -73,6 +74,7 @@ class GameListScreen(ListScreen):
         self.search = search
         self.order_by = order_by
         self.region_i = 0
+        self.players = 0              # the party filter: only games for this many players or more (0: any)
         self.hide_installed = False
         self.bios = None              # [(missing, firmware)] RomM can supply
         self.reset()
@@ -105,7 +107,8 @@ class GameListScreen(ListScreen):
         self.bubble, self.bubble_until = None, 0.0
         self.server_off, self.server_total, self.exhausted = 0, None, False
         if self.static is not None:
-            self.items = [r for r in self.static if not (self.hide_installed and self.installed(r))]
+            self.items = [r for r in self.static if not (self.hide_installed and self.installed(r))
+                          and self.party_ok(r)]
             self.total = self.server_total = len(self.items)
             self.exhausted = True
             return
@@ -142,6 +145,9 @@ class GameListScreen(ListScreen):
     def _query(self, offset, limit, char_index=False):
         """One page from RomM with this list's filters (blocking)."""
         app, pids = self.app, self._pids()
+        counts = rommlib.party_values(app.player_counts, self.players) if self.players else None
+        if self.players and not counts:
+            return {"items": [], "total": 0}           # no game in the library is for that many players
         if self.order_by == "id_desc":
             p = {"offset": offset, "limit": limit, "with_char_index": "false",
                  "with_filter_values": "false", "with_rom_id_index": "false",
@@ -152,13 +158,20 @@ class GameListScreen(ListScreen):
                 p["verified"] = "true"
             if self.hide_junk and app.junk:
                 p["tags"], p["tags_logic"] = app.junk, "none"
+            if counts:
+                p["player_counts"], p["player_counts_logic"] = counts, "any"
             return app.api.get("/api/roms", p)
         return app.api.roms(platform_ids=pids, search=self.search, offset=offset, limit=limit,
                             order_by=self.order_by, char_index=char_index, regions=self.regions,
                             verified=self.only_verified,
-                            exclude_tags=app.junk if self.hide_junk else None,
+                            exclude_tags=app.junk if self.hide_junk else None, player_counts=counts,
                             collection=(self.collection["param"], self.collection["id"])
                             if self.collection else None)
+
+    def party_ok(self, rom):
+        """A game the party filter keeps (a fixed list filters here; RomM filters the rest)."""
+        return not self.players or \
+            rommlib.max_players((rom.get("metadatum") or {}).get("player_count")) >= self.players
 
     def installed(self, rom):
         system = self.app.system_for(rom)
@@ -362,6 +375,7 @@ class GameListScreen(ListScreen):
                       "Newest first" if self.order_by == "id_desc" else "A to Z", "choice"))
         if self.static is None:
             e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1], "choice"))
+        e.append(("Players", "", self._cycle_players, self.player_label(), "choice"))
         e.append(("Hide games on this box", "", self._toggle_hide, self.hide_installed, "switch"))
         if self.static is None:
             e.append(("Hide prototypes, demos and hacks", "", self._toggle_junk, self.hide_junk, "switch"))
@@ -408,6 +422,36 @@ class GameListScreen(ListScreen):
 
     def _toggle_hide(self):
         self.hide_installed = not self.hide_installed
+        self.reset()
+
+    def player_label(self):
+        return next(lab for n, lab in self.PLAYER_CHOICES if n == self.players)
+
+    def _cycle_players(self, step=1):
+        """The party filter's next (or previous) size. RomM filters by its own
+        player count values, so the first use asks it for them."""
+        app = self.app
+        ns = [n for n, _ in self.PLAYER_CHOICES]
+        want = ns[(ns.index(self.players) + step) % len(ns)]
+        if want and app.player_counts is None and self.static is None:
+            if getattr(self, "_asking_players", False):
+                return
+            self._asking_players = True
+
+            def done(f):
+                self._asking_players = False
+                app.player_counts = [c for c in f.get("player_counts") or [] if isinstance(c, str)]
+                self.players = want
+                self.reset()
+                if app.stack[-1] is self:
+                    self.refresh_menu()
+
+            def failed(e):
+                self._asking_players = False
+                app.toast(str(e), theme.RED)
+            app.bg(app.api.rom_filters, done, failed)
+            return
+        self.players = want
         self.reset()
 
     def _cycle_region(self, step=1):
@@ -471,18 +515,24 @@ class GameListScreen(ListScreen):
             cnt = "{:,} games".format(self.total) if self.total else \
                 "Couldn't load: %s" % self.load_error if self.load_error else "No games found"
         flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
+                                   (self.players, "%d+ players" % self.players),
                                    (self.picks, "%d picked" % len(self.picks))) if on]
         if flt:
             cnt = ", ".join(flt + [cnt])
         title = self.title if not self.search else 'Results for "%s"' % self.search
-        if measure(self.f.h3, title) <= 520:
+        failed = not self.total and self.load_error
+        # the title and the filters/count share the header: the title keeps at least 260
+        room = max(260, min(520, lw - 40 - int(measure(self.f.small, cnt))))
+        if measure(self.f.h3, title) <= room:
+            tw = measure(self.f.h3, title)
             text(c, self.f.h3, title, (lx + 8, ly + 4), theme.TEXT)
         else:
-            for k, ln in enumerate(wrap(self.f.small, title, 520)[:2]):
+            lines = wrap(self.f.small, title, room)[:2]
+            tw = max(measure(self.f.small, ln) for ln in lines)
+            for k, ln in enumerate(lines):
                 text(c, self.f.small, ln, (lx + 8, ly - 2 + k * 18), theme.TEXT)
-        failed = not self.total and self.load_error
         text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), theme.RED if failed else theme.FAINT, "topright",
-             maxw=300 if failed else None)
+             maxw=300 if failed else lw - 40 - int(tw))
         ly += 40
         multi_plat = self.platform is None
         for i, r, on in self.row_rects(ly, x=lx, w=lw):

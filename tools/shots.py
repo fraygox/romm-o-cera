@@ -270,6 +270,20 @@ def a_rom():
     return app.api.roms(platform_ids=[first_platform()["id"]], limit=5)["items"][0]
 
 
+def party_list(players=2, menu=False):
+    """A game list with the party filter on (the menu open on it, with menu)."""
+    app.player_counts = app.api.rom_filters().get("player_counts")
+    gl = rb.GameListScreen(app, "PlayStation", platform=first_platform())
+    gl.players = players
+    gl.reset()
+    app.push(gl)
+    if menu:
+        def opened():
+            gl.action("x")
+            app.modal.sel = next(i for i, e in enumerate(app.modal.entries) if e and e[0] == "Players")
+        app._after = opened
+
+
 def settings_at(key):
     s = rb.SettingsScreen(app)
     s.sel = next(i for i, it in enumerate(s.items()) if it[0] == key)
@@ -310,6 +324,8 @@ SCENES = [
     ("list-picking", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                               setattr(app, "_after", lambda: (setattr(app.stack[-1], "picking", True),
                                                               [app.dispatch(k) for k in ("r1", "ok", "down", "ok")])))),
+    ("game-list-party", lambda: party_list(2)),
+    ("list-menu-party", lambda: party_list(4, menu=True)),
     ("search", search_ready),
     ("download-confirm", lambda: setattr(app, "modal", rb.DownloadConfirm(app, a_rom()))),
     ("downloads", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),

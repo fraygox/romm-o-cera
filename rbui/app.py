@@ -120,6 +120,7 @@ class App:
         self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
         self.loaded = False
         self.junk = None              # filename tags hidden by "Hide prototypes, demos & hacks"
+        self.player_counts = None     # RomM's player count values (the Players filter), asked for on first use
         self.update_tag = None
         self.library = rommlib.Library()
         self.downloader = rommlib.Downloader(self.api, self.library, self.cfg)
@@ -388,6 +389,7 @@ class App:
             self.downloader.api = self.api
             self.forget_covers()
             self.details.clear()
+            self.player_counts = None
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
             self.status, self.error = "Connecting…", None
             self.load_platforms()

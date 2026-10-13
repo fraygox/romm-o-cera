@@ -28,6 +28,11 @@ another region or revision of the game is already on the box.
 - **More like this**: games similar to the selected one.
 - **Filters**: hide games already on the box, pick a region, hide
   prototypes/demos/hacks, show only checksum-verified dumps; sort.
+- **Players** (the party filter): only games for 2+, 3+ or 4+ players, going
+  by the player counts in RomM's game info (games without one are left out).
+  The list's header shows it while it's on ("2+ players, 312 games"), next
+  to the region. Like the other filters it applies to that list until you
+  leave it.
 - **Pick several games**: **A** then picks games, and **Download … picked**
   in this menu downloads them together (see
   [Controls](controls.md#picking-several)).

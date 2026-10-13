@@ -5,8 +5,8 @@ without a real server — or a real library.
   python tools/mock_romm.py [--port 8765] [--rate-mb 12]
 
 Then point the app at it: ROMM_URL=http://127.0.0.1:8765 ROMM_TOKEN=demo.
-Implements only what the app uses (platforms, collections, roms list/detail,
-content downloads with Range, covers, pairing). Any bearer token is accepted;
+Implements only what the app uses (platforms, collections, roms list/detail
+and filters, content downloads with Range, covers, pairing). Any bearer token is accepted;
 the pairing code ABCD2345 works once.
 
 The library is made of freely distributed homebrew / open-source games (with
@@ -416,6 +416,18 @@ class Handler(BaseHTTPRequestHandler):
                                "raw_token": "rmm_" + hashlib.sha256(code.encode()).hexdigest()})
         return self._json({"detail": "Not Found"}, 404)
 
+    @classmethod
+    def filter_values(cls):
+        """Like RomM's RomFiltersDict: sorted distinct values (player counts are strings)."""
+        md = [r["metadatum"] for r in cls.roms]
+        return {"genres": sorted({g for m in md for g in m["genres"]}), "franchises": [], "collections": [],
+                "companies": sorted({d for m in md for d in m["developers"]}), "publishers": [],
+                "developers": sorted({d for m in md for d in m["developers"]}), "game_modes": [],
+                "age_ratings": [], "player_counts": sorted({m["player_count"] for m in md if m["player_count"]}),
+                "regions": sorted({x for r in cls.roms for x in r["regions"]}),
+                "languages": [], "tags": sorted({t for r in cls.roms for t in r["tags"]}),
+                "platforms": sorted({r["platform_id"] for r in cls.roms})}
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
@@ -444,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
             vt = (q.get("type") or [""])[0]
             return self._json([{k: v for k, v in c.items() if k != "rom_ids"}
                                for c in build_virtual(self.roms, vt)])
+        if path == "/api/roms/filters":            # every filter's values across the library
+            return self._json(self.filter_values())
         if path == "/api/roms":
             items = self.roms
             if q.get("smart_collection_id"):
@@ -471,6 +485,10 @@ class Handler(BaseHTTPRequestHandler):
             if q.get("tags") and (q.get("tags_logic") or ["any"])[0] == "none":
                 bad = set(q["tags"])
                 items = [r for r in items if not bad & set(r["tags"])]
+            if q.get("player_counts"):              # RomM: the rom's player count is one of these
+                want = set(q["player_counts"])
+                keep = (q.get("player_counts_logic") or ["any"])[0] != "none"
+                items = [r for r in items if (r["metadatum"]["player_count"] in want) == keep]
             term = (q.get("search_term") or [""])[0].lower()
             if term:
                 items = [r for r in items if all(t in r["name"].lower() for t in term.split())]

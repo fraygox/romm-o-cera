@@ -109,7 +109,7 @@ STEPS = ("wait:3,act:down,act:ok,wait:2,act:right,act:down,act:ok,wait:2,act:r2,
          "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:ok,wait:0.3,act:back,"
          # list menu: more like this, junk + verified filters
          "act:start,act:down,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:2,act:back,"
-         "act:x,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,"
+         "act:x,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,"
          "shot:end")
 
 

@@ -62,9 +62,10 @@ class Api:
 
     def roms(self, platform_ids=None, search=None, collection=None,
              offset=0, limit=60, order_by="name", char_index=False, regions=None,
-             verified=None, exclude_tags=None):
+             verified=None, exclude_tags=None, player_counts=None):
         """collection: (param, id) with param one of collection_id,
-        smart_collection_id, virtual_collection_id."""
+        smart_collection_id, virtual_collection_id. player_counts: RomM's own
+        player count values to keep (party_values() picks them)."""
         params = {"offset": offset, "limit": limit,
                   "with_char_index": "true" if char_index else "false",
                   "with_filter_values": "false", "with_rom_id_index": "false",
@@ -84,7 +85,25 @@ class Api:
         if exclude_tags:
             params["tags"] = list(exclude_tags)
             params["tags_logic"] = "none"
+        if player_counts:
+            params["player_counts"] = list(player_counts)
+            params["player_counts_logic"] = "any"
         return self.get("/api/roms", params)
+
+    def rom_filters(self):
+        """The values RomM's filters take across the library, e.g.
+        {"player_counts": ["1", "1-2", "1-4", "2"], "genres": [...], ...}.
+        A RomM without /api/roms/filters: the same lists from a one-game
+        listing's filter_values."""
+        try:
+            got = self.get("/api/roms/filters")
+        except _core.RommError as e:
+            if "HTTP 404" not in str(e) and "HTTP 422" not in str(e):   # 422: an older RomM read it as a rom id
+                raise
+            got = self.get("/api/roms", {"limit": 1, "with_filter_values": "true",
+                                         "with_char_index": "false", "with_rom_id_index": "false"})
+            got = got.get("filter_values") if isinstance(got, dict) else None
+        return got if isinstance(got, dict) else {}
 
     def by_hash(self, **hashes):
         """RomM's game with this hash (crc_hash / md5_hash / sha1_hash / ra_hash), or None."""
@@ -247,6 +266,20 @@ class Api:
 
     def exchange_pair_code(self, code):
         return exchange_pair_code(self.base, code, self.s.verify)
+
+
+# ------------------------------------------------------------- players
+
+def max_players(count):
+    """The most players one of RomM's player counts names: "1-4" is 4, "2" is 2,
+    "Up to 8" is 8; 0 when it names no number."""
+    nums = [int(n) for n in re.findall(r"\d+", str(count or ""))[:4] if len(n) <= 3]
+    return max(nums) if nums else 0
+
+
+def party_values(counts, n):
+    """Of RomM's player count values (GET /api/roms/filters), those meaning n or more players."""
+    return [c for c in counts or [] if isinstance(c, str) and max_players(c) >= n]
 
 
 # ----------------------------------------------------------------- pairing
