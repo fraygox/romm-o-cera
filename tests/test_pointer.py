@@ -52,10 +52,11 @@ def click(rb, app, pt, between=(), touch=False):
 
 
 def settings_at_bottom(rb, app):
+    """Settings' longest section (Disc compression), scrolled to its last row."""
     app.push(rb.HomeScreen(app))
     s = rb.SettingsScreen(app)
     app.push(s)
-    s.sel = s.selectable()[-1]
+    s.sel = [it[0] for it in s.items()].index("chdlowmem")
     app.draw()
     return s
 
@@ -72,24 +73,24 @@ def row_rects(rb, app, s):
 
 @pytest.mark.parametrize("size", [(3840, 2160), (3840, 2400), (1280, 720)])
 def test_a_click_on_a_scrolled_settings_list_acts_on_the_row_under_it(make_app, rb, size):
-    """Seen on a 4K VM: with Settings scrolled to its end, a click on Update
-    channel selected a row three above it instead (and a second click
-    scrolled further up). A stray pointer motion while the button is held
-    (here: to the bottom edge) turned the click into a drag."""
+    """Seen on a 4K VM: with Settings scrolled to its end, a click on a row
+    selected one three above it instead (and a second click scrolled further
+    up). A stray pointer motion while the button is held (here: to the
+    bottom edge) turned the click into a drag."""
     app = make_app(size)
     s = settings_at_bottom(rb, app)
     assert s.scroll > 0
     rects = row_rects(rb, app, s)
-    ch = rects["channel"]
-    before, scroll = app.cfg["update_channel"], s.scroll
+    ch = rects["ps3folders"]
+    before, scroll = app.cfg["ps3_folders"], s.scroll
     acts = click(rb, app, ch.center, between=[(ch.centerx, rb.H - 1)])
     assert acts == []                                     # no scrolling
     items = s.items()
-    assert items[s.sel][0] == "channel" and app.cfg["update_channel"] != before
+    assert items[s.sel][0] == "ps3folders" and app.cfg["ps3_folders"] != before
     app.draw()
-    assert s.scroll == scroll and row_rects(rb, app, s)["channel"] == ch
+    assert s.scroll == scroll and row_rects(rb, app, s)["ps3folders"] == ch
     click(rb, app, ch.center, between=[(ch.centerx, rb.H - 1)])     # the same spot again: the same row
-    assert items[s.sel][0] == "channel" and app.cfg["update_channel"] == before
+    assert items[s.sel][0] == "ps3folders" and app.cfg["ps3_folders"] == before
     # every row on screen, by its physical position
     seen = []
     s.tap_now = lambda i, a="ok": seen.append((i, a))
@@ -109,15 +110,14 @@ def test_a_tapped_settings_row_stays_under_the_finger(make_app, rb):
     s = rb.SettingsScreen(app)
     app.push(s)
     s.action = lambda a: None
-    for _ in range(40):
+    for i, it in enumerate(s.items()):                    # the hub, then every row of every section
+        s.sel, s.tapped = i, None
         app.draw()
         scroll = s.scroll
         for key, r in row_rects(rb, app, s).items():
             click(rb, app, (r.left + 30, r.centery))
             app.draw()
             assert s.scroll == scroll, key
-        s.tapped = None
-        s.sel = s.selectable()[min(len(s.selectable()) - 1, s.selectable().index(s.sel) + 1)]
 
 
 def test_settings_choice_rows_step_back_from_the_left_of_their_value(make_app, rb):

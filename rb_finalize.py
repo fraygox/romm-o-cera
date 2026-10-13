@@ -47,6 +47,9 @@ MEDIA_TAGS = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "be
               "titleshot", "wheel", "boxart", "cartridge", "magazine")
 IMAGE_MAX = 20 << 20     # an image from RomM bigger than this isn't one
 VIDEO_MAX = 50 << 20     # a game's video clip: a bigger one is skipped (and logged)
+# Settings → Metadata (v0.11): a rommlib still in memory from before an update lacks this
+# (tests/test_package.py): then the cap stays VIDEO_MAX
+_video_max = getattr(rommlib, "es_video_max", None)
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
           ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
@@ -208,16 +211,18 @@ def image_kind(data):
     return None
 
 
-def fetch_media(api, tag, path):
+def fetch_media(api, tag, path, video_max=None, info=None):
     """(bytes, content type) of one of RomM's media files as ES takes it, or None:
     images as PNG/JPEG/GIF (anything else converted to PNG), video as MP4 up to
-    VIDEO_MAX (a bigger one is logged and skipped), the manual a PDF."""
+    video_max (VIDEO_MAX by default; a bigger one is logged and skipped, its size
+    in info["too_big"]), the manual a PDF."""
     if tag == "video":
-        info = {}
-        data = fetch_bytes(api, path, VIDEO_MAX, info)
+        info = {} if info is None else info
+        cap = VIDEO_MAX if video_max is None else video_max
+        data = fetch_bytes(api, path, cap, info)
         if info.get("too_big"):
             rommlib.log("finalize: video skipped, %d MB is over %d MB: %s" % (
-                info["too_big"] >> 20, VIDEO_MAX >> 20, path))
+                info["too_big"] >> 20, cap >> 20, path))
         return (data, "video/mp4") if data and data[4:8] == b"ftyp" else None
     if tag == "manual":
         data = fetch_bytes(api, path)
@@ -232,9 +237,10 @@ def fetch_media(api, tag, path):
     return (png, "image/png") if png else None
 
 
-def upload_media(api, esapi, system, g, e):
+def upload_media(api, esapi, system, g, e, cfg=None):
     """Every media file the entry offers that the game has none of in ES yet
-    (what's there is never replaced): the first of its RomM paths that comes."""
+    (what's there is never replaced): the first of its RomM paths that comes;
+    videos follow today's cap (cfg)."""
     media = entry_media(e)
     if e.get("image_local") and os.path.isfile(e["image_local"]):
         media.pop("image", None)
@@ -243,11 +249,14 @@ def upload_media(api, esapi, system, g, e):
                 esapi.set_media(system, g["id"], "image", f.read(), "image/png")
     if e.get("manual"):
         media["manual"] = [e["manual"]]
+    video_max = _video_max(cfg) if cfg is not None and _video_max else None
+    if video_max == 0:
+        media.pop("video", None)
     for tag, paths in media.items():
         if tag not in MEDIA_TAGS or g.get(tag):
             continue
         for p in paths:
-            got = fetch_media(api, tag, p)
+            got = fetch_media(api, tag, p, video_max)
             if got and esapi.set_media(system, g["id"], tag, got[0], got[1]):
                 break
 
@@ -433,7 +442,7 @@ def upload_file(esapi, system, gid, tag, path):
 
 # ------------------------------------------------------------------ apply
 
-def apply(entries, api, es, esapi, carry):
+def apply(entries, api, es, esapi, carry, cfg=None):
     """Hand entries to ES. Returns the entries ES couldn't take yet."""
     left = []
     games_of = {}
@@ -499,7 +508,7 @@ def apply(entries, api, es, esapi, carry):
             if not esapi.set_meta(system, g["id"], want):
                 left.append(e)
                 continue
-            upload_media(api, esapi, system, g, e)
+            upload_media(api, esapi, system, g, e, cfg)
         except Exception as ex:                    # one bad entry never sinks the batch
             rommlib.log("finalize: entry for %s failed (%r)" % (system, ex))
             left.append(e)
@@ -653,7 +662,7 @@ def route_renames(entries):
     return entries
 
 
-def process(entries, api=None, es=None, esapi=None):
+def process(entries, api=None, es=None, esapi=None, cfg=None):
     """One batch: route renames, snapshot old info, let ES list the new
     files (/addgames, else a full reload), apply. Returns the entries ES
     couldn't take yet."""
@@ -664,7 +673,7 @@ def process(entries, api=None, es=None, esapi=None):
     if not add_games(esapi, entries, es):
         esapi.reload()
         wait_listed(esapi, entries, es)
-    left = apply(entries, api, es, esapi, carry)
+    left = apply(entries, api, es, esapi, carry, cfg)
     for e in left:                           # keep what we knew about renamed games
         if "rename" in e:
             e["_carry"] = {new: carry[new] for new in e["rename"].values() if new in carry}
@@ -719,7 +728,7 @@ def drain():
         try:
             if game_running():      # re-check right before reloading ES
                 raise RuntimeError("game started")
-            left = process(entries, api)
+            left = process(entries, api, cfg=cfg)
             keep = []
             for e in left:
                 e["_tries"] = e.get("_tries", 0) + 1

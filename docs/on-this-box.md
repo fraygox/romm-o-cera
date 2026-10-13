@@ -188,9 +188,10 @@ name: descriptions and details, region, language, screenshot, box art, logo,
 title screen, video, manual… ([what goes where](browsing-and-downloading.md#game-info-in-emulationstation)).
 Only what's empty is filled — your own scrapes and edits are never replaced,
 and a game's existing image stays. A game counts as complete when it has
-everything RomM has for it: one RomM has no video or logo for isn't listed
-for lacking them. This does every system; to do just one, use that
-platform's list menu.
+everything RomM has for it that [Settings → Metadata](settings.md) asks for:
+one RomM has no video or logo for isn't listed for lacking them. This does
+every system; to do just one, use that platform's list menu, or Settings →
+Metadata → Fill in game info.
 
 ## Game info lost after CHD conversion (v0.6.3 and earlier)
 

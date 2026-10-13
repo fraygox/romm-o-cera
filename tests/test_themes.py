@@ -114,7 +114,7 @@ def _picker(app, rb):
     st.sel = [r[0] for r in st.items()].index("theme")
     st.action("ok")
     pk = app.stack[-1]
-    assert isinstance(pk, rb.ThemePickerScreen) and pk.crumbs() == ["Settings", "Theme"]
+    assert isinstance(pk, rb.ThemePickerScreen) and pk.crumbs() == ["Settings", "This app", "Theme"]
     return st, pk
 
 
@@ -289,7 +289,7 @@ def _custom(app, rb):
     assert pk.hints()[0] == ("A", "Edit")
     pk.action("ok")
     cs = app.stack[-1]
-    assert isinstance(cs, rb.CustomThemeScreen) and cs.crumbs() == ["Settings", "Theme", "Custom"]
+    assert isinstance(cs, rb.CustomThemeScreen) and cs.crumbs() == ["Settings", "This app", "Theme", "Custom"]
     return pk, cs
 
 

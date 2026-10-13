@@ -1435,7 +1435,7 @@ class Downloader:
     def _queue_gamelist(self, rom, system, paths):
         """Hand gamelist metadata to the launcher's post-exit merge step
         (ES must not be written to while it runs — see rb_finalize.py)."""
-        entry = _library.gamelist_entry(rom, system, paths, manual=_config.config_value(self.cfg, "manuals"))
+        entry = _library.gamelist_entry(rom, system, paths, cfg=self.cfg)
         os.makedirs(_core.DATA_DIR, exist_ok=True)
         _core.append_gamelist(entry)
         return entry

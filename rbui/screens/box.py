@@ -78,11 +78,7 @@ class OnThisBoxScreen(Screen):
             elif key == "conv":
                 app.push(ConversionsScreen(app))
             elif key == "info":
-                if not app.platforms:
-                    app.load_platforms()
-                    app.toast(app.error or "Still loading platforms…", theme.AMBER)
-                else:
-                    InfoDialog.start(app, InfoDialog.all_systems(app))
+                InfoDialog.start_all(app)
         else:
             super().action(a)
 

@@ -39,6 +39,7 @@ CHANGED = {
     "extract_parallel": False, "rvz": True, "xbox_bootable": False, "squashfs": True, "z3ds": False,
     "zar": True, "ps3_folders": False, "ps3_decrypt": True, "cache_limit_mb": 4096, "download_hours": "22-6",
     "background_downloads": False, "speed_while_playing": 10, "notify": False, "manuals": False,
+    "es_image": "boxart", "es_video_mb": 0, "es_extra_art": False, "es_tags": False,
     "sounds": "quiet", "theme": "xbox_oled", "platform_map": {"arcade": "mame"},
 }
 
@@ -46,7 +47,7 @@ CHANGED = {
 ODD = {
     "chd_threads": "junk", "chd_low_memory": "maybe", "download_hours": "99-1", "sounds": "loud",
     "theme": "nope", "button_style": "", "speed_while_playing": None, "keep_free_gb": 2.5,
-    "cache_limit_mb": "junk",
+    "cache_limit_mb": "junk", "es_image": "huge", "es_video_mb": "lots",
 }
 
 STATES = {"defaults": {}, "changed": CHANGED, "odd": ODD}
@@ -168,12 +169,13 @@ def _items(rb, make):
 
 
 def _hints(rb, make):
+    """Every row's hints (sel on a row shows its section), and the hub's under "§"."""
     app, st, rec = make("full")
     _reset(rb, app, st, rec, "full", "defaults")
     out = {}
-    for i in st.selectable():
+    for i, it in enumerate(st.items()):
         st.sel = i
-        out[st.items()[i][0]] = _jsonable(st.hints())
+        out.setdefault(it[0], _jsonable(st.hints()))
     return out
 
 
@@ -245,7 +247,8 @@ DEFAULTS_LITERAL = [
     ("chd_low_memory", "auto"), ("keep_free_gb", 20), ("extract_parallel", True), ("rvz", False),
     ("xbox_bootable", True), ("squashfs", False), ("z3ds", True), ("zar", False), ("wux", True), ("wua", False), ("ps3_folders", True),
     ("ps3_decrypt", False), ("cache_limit_mb", 1024), ("download_hours", "any"), ("background_downloads", True),
-    ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("sounds", "normal"),
+    ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("es_image", "screenshot"),
+    ("es_video_mb", 50), ("es_extra_art", True), ("es_tags", True), ("sounds", "normal"),
     ("collection_tiles", "medium"), ("theme", "default"), ("update_channel", "stable"),
     ("theme_auto", False),
     ("theme_custom_accent", 195), ("theme_custom_tint", 225), ("theme_custom_strength", 30),
@@ -281,7 +284,7 @@ FRESH = {
     "conv_createcd": True, "conv_createdvd": True, "conv_cso": True, "conv_rvz": False, "conv_squashfs": False,
     "conv_z3ds": True, "conv_zar": False, "conv_wua": False, "conv_wux": False, "conv_ps3": True, "on_swap_ab": False, "on_check_updates": True,
     "on_extract_parallel": True, "on_background_downloads": True, "on_notify": True, "on_manuals": True,
-    "sfx": 1.0, "speed": 0.0, "platform_map": {},
+    "sfx": 1.0, "speed": 0.0, "platform_map": {}, "video_max": 50 << 20, "es_image": "screenshot",
 }
 LOADS = [
     ({}, {}),
@@ -307,6 +310,9 @@ LOADS = [
     ({"keep_free_gb": 2.5, "cache_limit_mb": -5, "chd_threads": "0", "chd_low_memory": False,
       "download_hours": "any", "sounds": "off", "speed_while_playing": "2"},
      {"keep_free": int(2.5 * (1 << 30)), "cache_limit": 0, "chd_threads": 1, "sfx": 0.0, "speed": 2.0}),
+    ({"es_video_mb": "25", "es_image": "boxart"}, {"video_max": 25 << 20, "es_image": "boxart"}),
+    ({"es_video_mb": "lots", "es_image": "huge", "es_extra_art": 0, "es_tags": None}, {}),
+    ({"es_video_mb": 0, "es_video_mb": -3}, {"video_max": 0}),
 ]
 
 
@@ -326,6 +332,7 @@ def _effective(cfg):
     out["sfx"] = {"normal": 1.0, "quiet": 0.4, "off": 0.0}.get(cfg["sounds"], 1.0)     # Sfx.LEVEL
     out["speed"] = float(cfg["speed_while_playing"] or 0)                             # rb_dl's cap
     out["platform_map"] = dict(cfg["platform_map"] or {})
+    out["video_max"], out["es_image"] = rommlib.es_video_max(cfg), cfg["es_image"]
     return out
 
 

@@ -18,13 +18,28 @@ from rbui.screens.whatsnew import WhatsNewScreen
 from rbui.screens.box_data import UPDATE_WAITS
 from rbui.screens.bios import BiosScreen
 from rbui.screens.themes import ThemePickerScreen
-from rbui.modals import Confirm
+from rbui.modals import Confirm, InfoDialog
 
 
 class SettingsScreen(Screen):
-    """Everything in config.json, editable with the pad. Saved immediately."""
+    """Everything in config.json, editable with the pad. Saved immediately.
+    A hub (a row a section, the panel showing its values) opens each section
+    on its own screen with that section's rows; L/R there go to the previous
+    or next section. sel indexes items(), every section's rows under their
+    "§" headers: on a header it's the hub, on a row it's that row's section."""
 
     VISIBLE = 10
+    # the hub's rows, by section header: the grey line, and the row whose value the hub shows
+    # (None: how many of its switches are on)
+    SECTIONS = {
+        "RomM server": ("Address, token and pairing", "url"),
+        "Controller": ("Button labels and the confirm button", "style"),
+        "Downloads": ("When, how fast and how much room", "hours"),
+        "Metadata": ("What EmulationStation gets for a game", "esimage"),
+        "Disc compression": ("CHD, RVZ, 3DS, Xbox, Wii U and PS3", None),
+        "This app": ("Theme, sounds, covers, BIOS, docs", "theme"),
+        "Updates": ("Channel, daily check, what's new", "update"),
+    }
 
     def __init__(self, app):
         super().__init__(app)
@@ -93,8 +108,14 @@ class SettingsScreen(Screen):
             table("bgdl"),
             table("speed"),
             table("notify"),
-            table("manuals"),
             ("arcade", "Arcade games go to", "roms/" + arcade, "fbneo (forgiving) or mame (exact sets)"),
+            sec("Metadata"),
+            table("esimage"),
+            table("esvideo"),
+            table("esextra"),
+            table("estags"),
+            table("manuals"),
+            ("fillinfo", "Fill in game info", "Open", "Add what RomM has to games already here"),
             sec("Disc compression"),
             table("chd"),
             row("rvz", rvz["label"], rvz["help"]),
@@ -166,6 +187,9 @@ class SettingsScreen(Screen):
         "channel": lambda cfg: {"stable": "Stable", "nightly": "Nightly"}.get(cfg["update_channel"], "Stable"),
         "cachelimit": lambda cfg: (rommlib.human_size(rommlib.cache_limit_bytes(cfg))
                                    if rommlib.cache_limit_bytes(cfg) else "No limit"),
+        "esimage": lambda cfg: {"screenshot": "Screenshot", "boxart": "Box art"}.get(cfg["es_image"], "Screenshot"),
+        "esvideo": lambda cfg: ("Up to %d MB" % (rommlib.es_video_max(cfg) >> 20)) if rommlib.es_video_max(cfg)
+        else "Off",
     }
 
     def _wake(self, app):
@@ -241,24 +265,57 @@ class SettingsScreen(Screen):
             return "Auto (%s)" % STYLE_NAMES[style_from_names(self.app.input.names())]
         return STYLE_NAMES.get(want, want)
 
-    def crumbs(self):
-        return ["Settings"]
+    def sections(self):
+        """[(header index, title, [row indexes])] of items()."""
+        out = []
+        for i, it in enumerate(self.items()):
+            if it[0] == "§":
+                out.append((i, it[1], []))
+            else:
+                out[-1][2].append(i)
+        return out
 
-    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits", "docs", "whatsnew")
+    def current(self):
+        """The open section (header index, title, row indexes), or None on the hub."""
+        items = self.items()
+        self.sel = max(0, min(self.sel, len(items) - 1))
+        if items[self.sel][0] == "§":
+            return None
+        return next(sec for sec in self.sections() if self.sel in sec[2])
+
+    def crumbs(self):
+        sec = self.current()
+        return ["Settings"] + ([sec[1]] if sec else [])
+
+    def nav_key(self):
+        sec = self.current()
+        return sec and sec[0]
+
+    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits", "docs", "whatsnew",
+               "fillinfo")
     STEPLESS = ACTIONS + ("resetcfg",)        # rows left/right don't step through
+    OPENS = ("bios", "credits", "docs", "whatsnew", "fillinfo")
 
     def hints(self):
-        items = self.items()
-        key = items[min(self.sel, len(items) - 1)][0]
-        jump = [("L", "Page up"), ("R", "Page down")]      # L/R move six rows
+        if self.current() is None:
+            return [("A", "Open"), ("B", "Back")]
+        key = self.items()[self.sel][0]
+        jump = [("L R", "Section")]
         if key in self.STEPLESS:
-            return [("A", "Open" if key in ("bios", "credits", "docs", "whatsnew") else "Select")] + jump + [("B", "Back")]
+            return [("A", "Open" if key in self.OPENS else "Select")] + jump + [("B", "Back")]
         if key == "theme":
             return [("A", "All themes"), ("LEFT RIGHT", "Choose")] + jump + [("B", "Back")]
         return [("A", "Change"), ("LEFT RIGHT", "Choose")] + jump + [("B", "Back")]
 
     def selectable(self):
-        return [i for i, it in enumerate(self.items()) if it[0] != "§"]
+        """The rows the cursor moves over: the sections on the hub, the open section's rows."""
+        sec = self.current()
+        return [h for h, _, _ in self.sections()] if sec is None else sec[2]
+
+    def open_section(self, header):
+        """Onto a section's first row (its own screen); None: back to the hub."""
+        self.sel = self.current()[0] if header is None else sec_rows(self.sections(), header)[0]
+        self.scroll, self.tapped = 0, None
 
     tapped = None                  # the row a tap picked: drawing doesn't scroll it away
 
@@ -269,18 +326,26 @@ class SettingsScreen(Screen):
 
     def action(self, a):
         idx = self.selectable()
-        if self.sel not in idx:
-            self.sel = idx[0]
-        if a in ("up", "down", "l1", "r1"):
+        sec = self.current()
+        if a in ("up", "down"):
             self.tapped = None
-            k = idx.index(self.sel)
-            step = {"up": -1, "down": 1, "l1": -6, "r1": 6}[a]
-            k = (k + step) % len(idx) if a in ("up", "down") else max(0, min(len(idx) - 1, k + step))
-            self.sel = idx[k]
+            self.sel = idx[(idx.index(self.sel) + (1 if a == "down" else -1)) % len(idx)]
+        elif a in ("l1", "r1"):
+            if sec:                               # the previous or next section, round the ring
+                heads = [h for h, _, _ in self.sections()]
+                self.open_section(heads[(heads.index(sec[0]) + (1 if a == "r1" else -1)) % len(heads)])
+        elif a == "back":
+            if sec:
+                self.open_section(None)
+            else:
+                self.app.pop()
         elif a in ("ok", "left", "right"):
             key = self.items()[self.sel][0]
             app, cfg = self.app, self.app.cfg
-            if key == "url" and a == "ok":
+            if key == "§":
+                if a == "ok":
+                    self.open_section(self.sel)
+            elif key == "url" and a == "ok":
                 cur = cfg["url"] or "https://"
                 if rommlib.url_has_userinfo(cur):
                     cur = "https://"          # never pre-fill an embedded password
@@ -393,6 +458,8 @@ class SettingsScreen(Screen):
                                     "Go back and restart", lambda: self._swap(None, rommlib.rollback), danger=True)
             elif key == "bios" and a == "ok":
                 app.push(BiosScreen(app))
+            elif key == "fillinfo" and a == "ok":
+                InfoDialog.start_all(app)
             elif key == "cache" and a == "ok":
                 shutil.rmtree(rommlib.COVER_CACHE, ignore_errors=True)
                 app.forget_covers()
@@ -591,36 +658,52 @@ class SettingsScreen(Screen):
             close()
 
     ROW_H, HEAD_H, TOP, BOTTOM = 57, 40, 84, 638
+    PANEL = pygame.Rect(776, 84, 472, 554)
+
+    def headline(self, title, rows):
+        """What the hub says beside a section: its key row's value, or how many switches are on."""
+        items = self.items()
+        row = self.SECTIONS[title][1]
+        if row == "update" and self.app.update_tag:      # a nightly's tag is long: just that there is one
+            return "Update available"
+        if row:
+            return next((it[2] for it in items if it[0] == row), "")
+        states = [items[i][2] for i in rows if items[i][2] in ("On", "Off", "Not available")]
+        return "%d of %d on" % (states.count("On"), len(states))
 
     def draw(self, c):
         items = self.items()
-        if items[min(self.sel, len(items) - 1)][0] == "§":
-            self.sel = self.selectable()[0]
-        ys, y = [], 0                      # layout in list space
-        for key, *_ in items:
-            ys.append(y)
-            y += self.HEAD_H if key == "§" else self.ROW_H
+        sec = self.current()
+        hub = sec is None
+        shown = [h for h, _, _ in self.sections()] if hub else [sec[0]] + sec[2]
+        ys, y = {}, 0                      # layout in list space
+        for i in shown:
+            ys[i] = y
+            y += self.HEAD_H if items[i][0] == "§" and not hub else self.ROW_H
         total, view = y, self.BOTTOM - self.TOP
-        top_of = ys[self.sel] - (self.HEAD_H if self.sel and items[self.sel - 1][0] == "§" else 0)
+        top_of = ys[self.sel] - (self.HEAD_H if not hub and self.sel == sec[2][0] else 0)   # the header stays with its first row
         if self.tapped == self.sel and -2 <= ys[self.sel] - self.scroll <= view - 52:
             pass                               # a tapped row stays under the finger
         elif top_of < self.scroll:
             self.scroll = top_of
         elif ys[self.sel] + self.ROW_H > self.scroll + view:
             need = ys[self.sel] + self.ROW_H - view
-            self.scroll = min(y for y in ys if y >= need)     # start on a whole row
+            self.scroll = min(y for y in ys.values() if y >= need)     # start on a whole row
         self.scroll = max(0, min(self.scroll, max(0, total - view)))
         clip = c.get_clip()
         c.set_clip(pygame.Rect(S(40), S(self.TOP - 4), S(730), S(view + 4)))
-        for i, (key, label, value, sub) in enumerate(items):
+        for i in shown:
+            key, label, value, sub = items[i]
             y = self.TOP + ys[i] - self.scroll
-            h = self.HEAD_H if key == "§" else 52
+            h = self.HEAD_H if key == "§" and not hub else 52
             if y < self.TOP - 2 or y + h > self.BOTTOM:
                 continue                              # whole rows only
-            if key == "§":
+            if key == "§" and not hub:
                 text(c, self.f.small, label.upper(), (52, y + 16), theme.ACCENT_HI)
                 hline(c, theme.LINE, (60 + measure(self.f.small, label.upper()), y + 26), (748, y + 26))
                 continue
+            if hub:
+                sub, value = self.SECTIONS[label][0], self.headline(label, sec_rows(self.sections(), i))
             r = pygame.Rect(48, y, 700, 52)
             self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
@@ -629,6 +712,11 @@ class SettingsScreen(Screen):
             warn = sub.startswith("Plain HTTP")
             marquee(c, self.f.small, sub, (r.left + 22, r.top + 28), theme.AMBER if warn else theme.FAINT, maxw=420,
                     focused=on, slot="settings-sub")
+            if hub:                                   # the section's state, and › : it opens
+                chevron(c, theme.DIM if on else theme.FAINT, (r.right - 18, r.centery), "right")
+                text(c, self.f.body, value, (r.right - 40, r.centery), theme.TEXT if on else theme.DIM, "midright",
+                     maxw=240)
+                continue
             vcol = theme.ACCENT_HI if key in self.ACTIONS else (theme.TEXT if on else theme.DIM)
             vr = text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
             if key not in self.STEPLESS:          # a tap left of the value's middle steps back
@@ -640,23 +728,14 @@ class SettingsScreen(Screen):
         c.set_clip(clip)
         if total > view:
             scrollbar(c, (756, self.TOP, 4, view - 5), view / total, self.scroll / max(1, total - view))
-        # right panel: what the selected setting does, then About
-        p = pygame.Rect(776, 84, 472, 554)
+        # right panel: the section's values (hub), or what the selected setting does; then About
+        p = self.PANEL
         rrect(c, theme.PANEL, p, 16)
-        key, label, value, sub = items[self.sel]
-        sec = next((it[1] for it in reversed(items[:self.sel]) if it[0] == "§"), "")
-        text(c, self.f.small, sec.upper(), (p.left + 28, p.top + 24), theme.ACCENT_HI)
-        text(c, self.f.h2, label, (p.left + 28, p.top + 46), theme.TEXT, maxw=p.width - 56)
-        yy = p.top + 92
         a = p.bottom - 150
-        room = 4 * 26 if key == "docs" else a - 40 - yy            # the QR code needs the room; else up to "Now:"
-        yy = scroll_text(c, self.f.body, SETTING_HELP.get(key, sub), (p.left + 28, yy, p.width - 56, room),
-                         theme.DIM, key=key, line_h=26, slot="settings-help").bottom
-        if key == "docs":
-            draw_qr(c, docs_qr(), pygame.Rect(p.left + 28, yy + 10, p.width - 56, a - yy - 22))
-        elif value:
-            yy += 8
-            text(c, self.f.small, "Now: " + value, (p.left + 28, yy), theme.ACCENT_HI, maxw=p.width - 56)
+        if hub:
+            self.draw_hub_panel(c, p, a)
+        else:
+            self.draw_help_panel(c, p, a)
         hline(c, theme.LINE, (p.left + 28, a), (p.right - 28, a))
         text(c, self.f.h3, APP_NAME, (p.left + 28, a + 14), theme.TEXT)
         text(c, self.f.small, "v%s · %s · by %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE, rommlib.AUTHOR),
@@ -668,6 +747,45 @@ class SettingsScreen(Screen):
         text(c, self.f.small, "%s · %d platforms" % (self.app.error or self.app.status_label(), len(self.app.platforms)),
              (p.left + 28, a + 92), theme.FAINT, maxw=p.width - 56)
         rich_text(c, self.f, self.f.small, "Hotkey + {START} exits", (p.left + 28, a + 116), theme.FAINT)
+
+    def draw_help_panel(self, c, p, a):
+        """A row's section, name, help and current value."""
+        items = self.items()
+        key, label, value, sub = items[self.sel]
+        text(c, self.f.small, self.current()[1].upper(), (p.left + 28, p.top + 24), theme.ACCENT_HI)
+        text(c, self.f.h2, label, (p.left + 28, p.top + 46), theme.TEXT, maxw=p.width - 56)
+        yy = p.top + 92
+        room = 4 * 26 if key == "docs" else a - 40 - yy            # the QR code needs the room; else up to "Now:"
+        yy = scroll_text(c, self.f.body, SETTING_HELP.get(key, sub), (p.left + 28, yy, p.width - 56, room),
+                         theme.DIM, key=key, line_h=26, slot="settings-help").bottom
+        if key == "docs":
+            draw_qr(c, docs_qr(), pygame.Rect(p.left + 28, yy + 10, p.width - 56, a - yy - 22))
+        elif value:
+            yy += 8
+            text(c, self.f.small, "Now: " + value, (p.left + 28, yy), theme.ACCENT_HI, maxw=p.width - 56)
+
+    PAIR_H = 26
+
+    def draw_hub_panel(self, c, p, a):
+        """The selected section: its name and each of its rows' current value."""
+        items = self.items()
+        head, title, rows = next(sec for sec in self.sections() if sec[0] == self.sel)
+        text(c, self.f.small, "SETTINGS", (p.left + 28, p.top + 24), theme.ACCENT_HI)
+        text(c, self.f.h2, title, (p.left + 28, p.top + 46), theme.TEXT, maxw=p.width - 56)
+        x0, x1, yy = p.left + 28, p.right - 28, p.top + 92
+        fit = (a - 24 - yy) // self.PAIR_H
+        more = len(rows) - fit if len(rows) > fit else 0
+        for i in rows[:len(rows) - more - (1 if more else 0)]:
+            key, label, value, sub = items[i]
+            vr = text(c, self.f.small, value, (x1, yy), theme.DIM, "topright", maxw=(x1 - x0) // 2)
+            text(c, self.f.small, label, (x0, yy), theme.FAINT, maxw=vr.left - 16 - x0)
+            yy += self.PAIR_H
+        if more:
+            text(c, self.f.small, "and %d more…" % (more + 1), (x0, yy), theme.FAINT)
+
+
+def sec_rows(sections, header):
+    return next(rows for h, _, rows in sections if h == header)
 
 
 def field_help(key):

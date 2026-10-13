@@ -404,9 +404,10 @@ def game_page(here=False, plain=False):
     app.push(rb.GameScreen(app, rom, source=gl))
 
 
-def settings_at(key):
+def settings_at(key, nth=0):
+    """Settings with the cursor on a row (its section open), or on the nth "§" (the hub)."""
     s = rb.SettingsScreen(app)
-    s.sel = next(i for i, it in enumerate(s.items()) if it[0] == key)
+    s.sel = [i for i, it in enumerate(s.items()) if it[0] == key][nth]
     return s
 
 
@@ -618,6 +619,8 @@ SCENES = [
     ("pair-code", lambda: (app.push(settings_at("pair")), app.stack[-1].pair(),
                            app.stack[-1].type_text("abcd-23"))),
     ("settings-downloads", lambda: app.push(settings_at("overlap"))),
+    ("settings-metadata", lambda: app.push(settings_at("esvideo"))),
+    ("settings-hub-metadata", lambda: app.push(settings_at("§", 3))),
     ("settings-compression", lambda: app.push(settings_at("rvz"))),
     ("settings-app", lambda: app.push(settings_at("credits"))),
     ("rvz-confirm", lambda: (app.push(settings_at("rvz")), app.stack[-1]._toggle_tool("rvz"))),

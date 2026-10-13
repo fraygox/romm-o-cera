@@ -350,14 +350,14 @@ game (your own scrapes, an image) is never replaced.
 | region | its first region with a code ES knows: `us`, `eu`, `jp`, `wr` (World)… — ES shows its flag |
 | language | its languages as `en`, `fr`, `jp`…, several joined: `en,it` |
 | game family | its first franchise |
-| image | its first screenshot; the cover when it has none |
+| image | its first screenshot; the cover when it has none (or the box art: Settings → Metadata → Game image in ES) |
 | thumbnail (Box) | the cover (the box art), else ScreenScraper's 2D box |
-| marquee (Logo) | the logo (wheel), else the marquee |
-| title shot | the title screen |
-| alt box art | the 3D box |
-| box back, fan art, cartridge | the box back, fan art, physical media |
-| video | the video clip (MP4 up to 50 MB; a bigger one is skipped) |
-| manual | the PDF manual (Settings → Download manuals) |
+| marquee (Logo) | the logo (wheel), else the marquee (Extra art) |
+| title shot | the title screen (Extra art) |
+| alt box art | the 3D box (Extra art) |
+| box back, fan art, cartridge | the box back, fan art, physical media (Extra art) |
+| video | the video clip (MP4 up to 50 MB by default; Settings → Metadata → Videos sets the size, or turns them off) |
+| manual | the PDF manual (Settings → Metadata → Download manuals) |
 
 Only files RomM keeps itself are used, through your RomM login like covers —
 never the upstream links in RomM's records. Which of these RomM has depends on
@@ -366,7 +366,8 @@ title screen, 3D box, fan art and video when RomM's `config.yml` lists them
 under `scan: media:` (`logo`, `title_screen`, `box3d`, `fanart`, `video`…)
 and the game was scanned since. A game RomM has nothing more for gets what it
 has, and [Fill in game info](on-this-box.md#fill-in-game-info) brings the rest
-to games already here once RomM has it.
+to games already here once RomM has it. Region, language and game family can
+be turned off in [Settings → Metadata](settings.md).
 New downloads are added to EmulationStation's lists on their own, so it
 doesn't reload every system for them. Batocera 43.1's EmulationStation can't
 add games this way (a bug fixed after it), so there it reloads its lists as

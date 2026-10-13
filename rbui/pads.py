@@ -20,24 +20,24 @@ FACE = {
                     "west": ("square", (226, 140, 205)), "north": ("triangle", (95, 205, 160))},
 }
 OTHER = {
-    "xbox": {"L": "LB", "R": "RB", "L2 R2": "LT RT", "START": "Menu", "SELECT": "View"},
-    "playstation": {"L": "L1", "R": "R1", "L2 R2": "L2 R2", "START": "Options", "SELECT": "Create"},
-    "nintendo": {"L": "L", "R": "R", "L2 R2": "ZL ZR", "START": "+", "SELECT": "−"},
+    "xbox": {"L": "LB", "R": "RB", "L R": "LB RB", "L2 R2": "LT RT", "START": "Menu", "SELECT": "View"},
+    "playstation": {"L": "L1", "R": "R1", "L R": "L1 R1", "L2 R2": "L2 R2", "START": "Options", "SELECT": "Create"},
+    "nintendo": {"L": "L", "R": "R", "L R": "L R", "L2 R2": "ZL ZR", "START": "+", "SELECT": "−"},
 }
 STYLE_NAMES = {"xbox": "Xbox", "playstation": "PlayStation", "nintendo": "Nintendo"}
 # While the keyboard is the last thing used, hints show key names instead.
 INPUT_MODE = {"kb": False}
-KEY_LABELS = {"A": "Enter", "B": "Esc", "X": "X", "Y": "Y", "L": "PgUp", "R": "PgDn",
+KEY_LABELS = {"A": "Enter", "B": "Esc", "X": "X", "Y": "Y", "L": "PgUp", "R": "PgDn", "L R": "PgUp PgDn",
               "L2 R2": "[ ]", "START": "Home", "SELECT": "Tab"}
-TOKEN_ACTION = {"A": "ok", "B": "back", "X": "x", "Y": "y", "L": "l1", "R": "r1", "L2 R2": "r2",
+TOKEN_ACTION = {"A": "ok", "B": "back", "X": "x", "Y": "y", "L": "l1", "R": "r1", "L R": "r1", "L2 R2": "r2",
                 "START": "start", "SELECT": "select", "LEFT RIGHT": "right", "BKSP": "x"}
-TOKEN_BACK = {"LEFT RIGHT": "left", "L2 R2": "l2"}      # a tap on the left half of these glyphs
+TOKEN_BACK = {"LEFT RIGHT": "left", "L R": "l1", "L2 R2": "l2"}      # a tap on the left half of these glyphs
 # What X is called wherever it opens a list or game menu (Xbox's Menu and PlayStation's
 # Options are Start's names, so X never reuses them).
 ACTIONS = "Actions"
 # Every control shown on screen is one of these tokens, drawn by button_glyph():
 # in hints as (token, label), in prose as "{token}" through rich_text/rich_lines.
-TOKENS = ("A", "B", "X", "Y", "L", "R", "L2 R2", "START", "SELECT", "LEFT RIGHT", "TYPE", "BKSP")
+TOKENS = ("A", "B", "X", "Y", "L", "R", "L R", "L2 R2", "START", "SELECT", "LEFT RIGHT", "TYPE", "BKSP")
 # keyboard-only: typing letters and Backspace in text fields
 KEY_ONLY = {"TYPE": "a–z", "BKSP": "Bksp"}
 

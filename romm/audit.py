@@ -570,12 +570,12 @@ def _gamelist_info(sysdir):
     return out
 
 
-def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
+def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
     """Gamelist entries for games already in roms/<system> that RomM knows
     (matched by file name, like "already on this box") and whose ES entry
-    lacks something RomM has for it: text, images, video, manual (offered()).
-    Entries carry "fill": the merge only sets what's missing. Returns
-    (entries, stats)."""
+    lacks something RomM has for it: text, images, video, manual (offered(),
+    as Settings' Metadata section asks: cfg). Entries carry "fill": the merge
+    only sets what's missing. Returns (entries, stats)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
     if not os.path.isdir(sysdir):
@@ -638,7 +638,7 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
         if not prim:
             continue
         got = have.get("./" + os.path.relpath(prim, sysdir), set())
-        e = _library.gamelist_entry(rom, system, [prim], manual=manuals)
+        e = _library.gamelist_entry(rom, system, [prim], cfg=cfg)
         e["fill"] = True
         if title:
             e["name"] = title

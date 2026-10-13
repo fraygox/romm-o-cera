@@ -169,6 +169,30 @@ SETTINGS = (
             row="manuals", label="Download manuals", sub="PDFs from RomM, in the game's menu in ES",
             kind="onoff", effects=("downloader",),
             help="Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation."),
+    # Settings → Metadata: what EmulationStation gets for a game (library.gamelist_entry)
+    Setting("es_image", "screenshot",   # ES's big picture (<image>): the screenshot, or the box art
+            row="esimage", label="Game image in ES", sub="The big picture: screenshot or box art",
+            kind="choice", choices=("screenshot", "boxart"), effects=("downloader",),
+            valid=lambda v: v in ("screenshot", "boxart"),
+            help="The big picture EmulationStation shows for a game: RomM's screenshot, or its box art. The "
+                 "small one stays the box art. RomM has a screenshot only when its config.yml scan: media: "
+                 "stores them."),
+    Setting("es_video_mb", 50,          # a game's video clip from RomM, up to this many MB (0: none)
+            row="esvideo", label="Videos", sub="Game clips from RomM, up to a size",
+            kind="choice", choices=(0, 25, 50, 100), effects=("downloader",),
+            valid=_parses(int),
+            help="Brings each game's video clip from RomM, up to this size; a bigger one is left out. RomM "
+                 "stores videos only when its config.yml scan: media: lists video."),
+    Setting("es_extra_art", True,       # the logo, title screen, 3D box, box back, fan art and cartridge too
+            row="esextra", label="Extra art", sub="Logo, title screen, 3D box, fan art…",
+            kind="onoff", effects=("downloader",),
+            help="The game's logo, title screen, 3D box, box back, fan art and cartridge, for themes that show "
+                 "them. RomM has them only when its config.yml scan: media: stores them."),
+    Setting("es_tags", True,            # region, languages and series (family) in the gamelist
+            row="estags", label="Region, language and series", sub="Flags and the game's family in ES",
+            kind="onoff", effects=("downloader",),
+            help="Tells EmulationStation the game's region (its flag), languages and series, from RomM's "
+                 "file-name tags and metadata."),
     Setting("sounds", "normal",         # UI sounds: normal | quiet | off
             row="sounds", label="Sounds", sub="Clicks and chimes in this app",
             kind="choice", choices=("normal", "quiet", "off"), effects=("sounds",),

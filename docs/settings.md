@@ -1,11 +1,15 @@
 # Settings
 
-**Settings** is on the home screen. Its rows are grouped (RomM server,
-Controller, Downloads, Disc compression, This app, Updates), and the panel
-beside the list explains the selected one. **A** changes a setting (or opens
-it), **left/right** step through its choices, and **L/R** jump six rows.
-Everything is saved to `/userdata/system/romm-browser/config.json` straight
-away.
+**Settings** is on the home screen. It opens on a hub: one row a section
+(RomM server, Controller, Downloads, Metadata, Disc compression, This app,
+Updates), each with its state beside it (the server address, the download
+hours, how many converters are on…), and the panel on the right lists every
+setting in the selected section with its current value. **A** opens a section
+on its own screen: its rows, with the panel explaining the selected one.
+There **A** changes a setting (or opens it), **left/right** step through its
+choices, **L/R** go to the previous or next section, and **B** goes back to
+the hub (Start goes Home from anywhere). Everything is saved to
+`/userdata/system/romm-browser/config.json` straight away.
 
 The rows that aren't a setting do something when you press A:
 
@@ -17,6 +21,29 @@ The rows that aren't a setting do something when you press A:
   in `token`.
 - **Test connection** asks RomM for its platform list right now and says how
   many platforms it found, or why it couldn't.
+
+**Metadata**
+
+What the app tells EmulationStation about a game, when it downloads one and
+with **Fill in game info** ([what goes where](browsing-and-downloading.md#game-info-in-emulationstation)).
+RomM has a piece of media only when its `config.yml` lists it under
+`scan: media:` and the game was scanned since; what it doesn't have is left out.
+
+- **Game image in ES**: the big picture EmulationStation shows for a game is
+  RomM's screenshot (the default; the cover when it has none) or its box
+  art. The small picture (the Box view) stays the box art either way.
+- **Videos**: the game's video clip, up to 25, 50 (the default) or 100 MB, or
+  Off. A clip over the size is left out.
+- **Extra art**: the logo, title screen, 3D box, box back, fan art and
+  cartridge picture, for themes that show them. On by default.
+- **Region, language and series**: the game's region (EmulationStation shows
+  its flag), languages and series (its "family"), from RomM's file-name tags
+  and metadata. On by default.
+- **Download manuals**: the game's PDF manual, in its menu in EmulationStation.
+- **Fill in game info** opens the same dialog as On this box: what RomM has
+  for games already here, on every system ([On this box](on-this-box.md#fill-in-game-info)).
+
+Turning something off here doesn't remove what EmulationStation already has.
 
 **This app**
 
@@ -92,6 +119,10 @@ seven, six or four. It takes effect at once.
 | `extract_parallel` | `true` | start the next download while the last one is extracted (`false` for slow storage) |
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail (a full drive or a refused token gets a message box either way) |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
+| `es_image` | `screenshot` | EmulationStation's big picture for a game: `screenshot` (RomM's screenshot, the cover when it has none) or `boxart` (the cover); the small one is the box art either way |
+| `es_video_mb` | `50` | the game's video clip from RomM, up to this many MB (`0`: no videos); a bigger one is left out |
+| `es_extra_art` | `true` | the logo, title screen, 3D box, box back, fan art and cartridge picture too |
+| `es_tags` | `true` | region, languages and series (family) in the gamelist |
 | `chd` | `true` | background CHD compression of extracted disc games |
 | `chd_threads` | `auto` | conversion threads: `auto` (N−2 with 6+ threads, N−1 with 3–5) or a number |
 | `chd_low_memory` | `auto` | compress CDs without chdman's FLAC codec, which leaks up to ~1.3 GB per CD in some chdman builds: `auto` (on with less than 4 GB RAM), `true`, `false`. CD audio tracks come out a bit bigger. DVDs never use FLAC |

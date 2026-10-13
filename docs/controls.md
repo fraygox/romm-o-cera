@@ -149,8 +149,9 @@ A few screens use more buttons:
   download again), and B or left/right go back to the keyboard.
 - **Text fields** (server address, API token, pairing code): Y is Shift,
   **Start** saves and B cancels.
-- **Settings**: left/right step through a setting's choices, L/R jump six
-  rows.
+- **Settings**: A opens a section from the hub, B goes back to it;
+  left/right step through a setting's choices, L/R go to the previous or
+  next section.
 - **Theme picker**: the D-pad moves round the cards, L/R go to the previous
   or next group. See [Themes](themes.md#the-theme-picker).
 - **Custom theme**: up/down pick a choice, left/right change it, L/R take

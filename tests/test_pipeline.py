@@ -215,7 +215,7 @@ MULTIDISC_STEPS = (
     "act:select,wait:0.5,act:ok,wait:0.3,act:back,act:x,wait:0.3,act:x,wait:4,act:y,act:back,"
     "act:start," + RAIL + "act:right,act:right,act:right,act:right,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
     "act:back,act:back,act:right,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
-    "act:down,act:ok,wait:0.3,act:back,"
+    "act:down,act:ok,wait:0.3,act:back,act:back,"
     # Home (Settings focused; one more Back would quit) -> left to On this box: every section in
     # turn (games, space + a system, compress, BIOS, check + quick check, conversions, game info), then out
     "act:left,act:ok,wait:1,shot:hub,act:ok,wait:1,shot:games,act:back,act:down,act:ok,wait:2,act:right,act:down,act:down,"

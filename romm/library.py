@@ -6,7 +6,7 @@ import shutil
 import threading
 import time
 
-from . import core as _core, es as _es, convert as _convert
+from . import core as _core, config as _config, es as _es, convert as _convert
 
 
 # Filename tags that mark something other than a finished release. Matched as
@@ -490,6 +490,33 @@ def es_media(rom):
     return {k: v for k, v in out.items() if v}
 
 
+EXTRA_ART = tuple(tag for tag, _ in ES_MEDIA_SOURCES)       # Settings, Metadata: Extra art
+
+
+def es_video_max(cfg):
+    """Bytes a game's video clip may take (Settings, Metadata, Videos); 0: no videos."""
+    try:
+        mb = int(_config.config_value(cfg, "es_video_mb"))
+    except (TypeError, ValueError):
+        mb = _config.DEFAULT_CONFIG["es_video_mb"]
+    return max(0, mb) << 20
+
+
+def es_pick(media, cfg):
+    """es_media's tags as Settings' Metadata section asks for them: the box art as the
+    image when asked (the thumbnail stays the box art), no video when they're off, no
+    extra art when that is."""
+    out = dict(media)
+    if _config.config_value(cfg, "es_image") == "boxart" and out.get("thumbnail"):
+        out["image"] = out["thumbnail"]
+    if not es_video_max(cfg):
+        out.pop("video", None)
+    if not _config.config_value(cfg, "es_extra_art"):
+        for tag in EXTRA_ART:
+            out.pop(tag, None)
+    return out
+
+
 # RomM's region and language names (its filename tags and providers) as the codes
 # EmulationStation keeps. Regions: Batocera's ES shows a region's flag by its code
 # (resources/flags/<code>.png: "us", "eu", "jp", "wr" for World, "es" Spain, "sw" Sweden...),
@@ -544,9 +571,14 @@ def ra_summary(rom):
     return len(ach), sum(int(a.get("points") or 0) for a in ach)
 
 
-def gamelist_entry(rom, system, paths, manual=True):
+def gamelist_entry(rom, system, paths, manual=None, cfg=None):
+    """What ES gets for the game, as Settings' Metadata section asks (cfg; its defaults
+    without one). manual: given, overrides the Download manuals setting."""
     md = rom.get("metadatum") or {}
     fam = [f for f in (md.get("franchises") or []) if isinstance(f, str) and f.strip()]
+    if manual is None:
+        manual = bool(_config.config_value(cfg, "manuals"))
+    tags = bool(_config.config_value(cfg, "es_tags"))
     return {
         "manual": manual_path(rom) if manual else None,
         "system": system, "paths": paths, "rom_id": rom["id"],
@@ -557,9 +589,10 @@ def gamelist_entry(rom, system, paths, manual=True):
         "publisher": ", ".join(md.get("publishers") or []),
         "players": md.get("player_count"),
         "rating": md.get("average_rating"),
-        "region": es_region(rom), "lang": es_lang(rom), "family": fam[0] if fam else None,
+        "region": es_region(rom) if tags else None, "lang": es_lang(rom) if tags else None,
+        "family": fam[0] if fam and tags else None,
         "cover": rom.get("path_cover_large") or rom.get("path_cover_small"),
-        "media": es_media(rom),
+        "media": es_pick(es_media(rom), cfg),
     }
 
 

@@ -758,6 +758,305 @@
    "toasts": [],
    "wake": 0
   },
+  "bare/defaults/esextra/left": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esextra/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esextra/right": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esimage/left": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esimage/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esimage/right": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/estags/left": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/estags/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/estags/right": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esvideo/left": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esvideo/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/esvideo/right": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/fillinfo/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/fillinfo/ok": {
+   "bg": 2,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "Still loading platforms…",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/fillinfo/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "bare/defaults/hours/left": {
    "bg": 0,
    "cfg": {
@@ -3046,6 +3345,245 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/esextra/left": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esextra/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esextra/right": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esimage/left": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "screenshot"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esimage/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "screenshot"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esimage/right": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "screenshot"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/estags/left": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/estags/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/estags/right": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esvideo/left": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esvideo/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/esvideo/right": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/fillinfo/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/fillinfo/ok": {
+   "bg": 2,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "Still loading platforms…",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "full/changed/fillinfo/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/hours/left": {
    "bg": 0,
    "cfg": {
@@ -5035,6 +5573,245 @@
    "wake": 0
   },
   "full/defaults/docs/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esextra/left": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esextra/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esextra/right": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esimage/left": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esimage/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esimage/right": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/estags/left": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/estags/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/estags/right": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esvideo/left": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esvideo/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/esvideo/right": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/fillinfo/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/fillinfo/ok": {
+   "bg": 2,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "Still loading platforms…",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "full/defaults/fillinfo/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -7039,6 +7816,230 @@
    "toasts": [],
    "wake": 0
   },
+  "full/odd/esextra/left": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esextra/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esextra/right": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esimage/left": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esimage/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esimage/right": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/estags/left": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/estags/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/estags/right": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esvideo/left": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esvideo/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/esvideo/right": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/fillinfo/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/fillinfo/ok": {
+   "bg": 2,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "Still loading platforms…",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "full/odd/fillinfo/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/odd/hours/left": {
    "bg": 0,
    "cfg": {
@@ -8968,6 +9969,245 @@
    "wake": 0
   },
   "tools/changed/docs/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esextra/left": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esextra/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esextra/right": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esimage/left": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "screenshot"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esimage/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "screenshot"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esimage/right": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "screenshot"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/estags/left": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/estags/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/estags/right": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esvideo/left": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esvideo/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/esvideo/right": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/fillinfo/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/fillinfo/ok": {
+   "bg": 2,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "Still loading platforms…",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "tools/changed/fillinfo/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -11007,6 +12247,245 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/esextra/left": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esextra/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esextra/right": {
+   "bg": 0,
+   "cfg": {
+    "es_extra_art": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esimage/left": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esimage/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esimage/right": {
+   "bg": 0,
+   "cfg": {
+    "es_image": "boxart"
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/estags/left": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/estags/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/estags/right": {
+   "bg": 0,
+   "cfg": {
+    "es_tags": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esvideo/left": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 25
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esvideo/ok": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/esvideo/right": {
+   "bg": 0,
+   "cfg": {
+    "es_video_mb": 100
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/fillinfo/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/fillinfo/ok": {
+   "bg": 2,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "Still loading platforms…",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "tools/defaults/fillinfo/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/hours/left": {
    "bg": 0,
    "cfg": {
@@ -12453,6 +13932,10 @@
   "colltiles": "The size of the collection mosaics on the Collections screen: Small shows six a shelf, Medium five, Large four; the wall follows with seven, six or four a row.",
   "credits": "The people and projects RomM-o-Cera is built on or downloads, and their licenses.",
   "docs": "Point your phone's camera at the code to open the documentation. {A} shows it bigger.",
+  "esextra": "The game's logo, title screen, 3D box, box back, fan art and cartridge, for themes that show them. RomM has them only when its config.yml scan: media: stores them.",
+  "esimage": "The big picture EmulationStation shows for a game: RomM's screenshot, or its box art. The small one stays the box art. RomM has a screenshot only when its config.yml scan: media: stores them.",
+  "estags": "Tells EmulationStation the game's region (its flag), languages and series, from RomM's file-name tags and metadata.",
+  "esvideo": "Brings each game's video clip from RomM, up to this size; a bigger one is left out. RomM stores videos only when its config.yml scan: media: lists video.",
   "hours": "Downloads only start inside this window, e.g. overnight; one still running pauses when it closes. Download now in Downloads skips the wait.",
   "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits for room; smaller ones keep going.",
   "manuals": "Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation.",
@@ -12494,12 +13977,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12516,12 +13995,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12534,12 +14009,8 @@
     "Open"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12552,12 +14023,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12574,12 +14041,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12596,12 +14059,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12618,12 +14077,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12640,12 +14095,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12662,12 +14113,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12684,12 +14131,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12706,12 +14149,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12724,12 +14163,8 @@
     "Open"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12742,12 +14177,94 @@
     "Open"
    ],
    [
-    "L",
-    "Page up"
+    "L R",
+    "Section"
    ],
    [
-    "R",
-    "Page down"
+    "B",
+    "Back"
+   ]
+  ],
+  "esextra": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L R",
+    "Section"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "esimage": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L R",
+    "Section"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "estags": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L R",
+    "Section"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "esvideo": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L R",
+    "Section"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "fillinfo": [
+   [
+    "A",
+    "Open"
+   ],
+   [
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12764,12 +14281,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12786,12 +14299,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12808,12 +14317,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12830,12 +14335,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12852,12 +14353,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12870,12 +14367,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12892,12 +14385,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12914,12 +14403,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12932,12 +14417,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12954,12 +14435,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12976,12 +14453,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -12998,12 +14471,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13020,12 +14489,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13042,12 +14507,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13064,12 +14525,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13082,12 +14539,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13104,12 +14557,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13126,12 +14575,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13148,12 +14593,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13166,12 +14607,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13184,12 +14621,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13202,12 +14635,8 @@
     "Select"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13220,12 +14649,8 @@
     "Open"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13242,12 +14667,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13264,12 +14685,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13286,12 +14703,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13308,12 +14721,8 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
-   ],
-   [
-    "R",
-    "Page down"
+    "L R",
+    "Section"
    ],
    [
     "B",
@@ -13330,12 +14739,18 @@
     "Choose"
    ],
    [
-    "L",
-    "Page up"
+    "L R",
+    "Section"
    ],
    [
-    "R",
-    "Page down"
+    "B",
+    "Back"
+   ]
+  ],
+  "§": [
+   [
+    "A",
+    "Open"
    ],
    [
     "B",
@@ -13442,16 +14857,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/mame",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Box art",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Off",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "Off",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "Off",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "Off",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/mame",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -13732,16 +15183,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/fbneo",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Screenshot",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Up to 50 MB",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "On",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "On",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "On",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/fbneo",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -14022,16 +15509,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/fbneo",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Screenshot",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Up to 50 MB",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "On",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "On",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "On",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/fbneo",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -14312,16 +15835,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/mame",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Box art",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Off",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "Off",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "Off",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "Off",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/mame",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -14596,16 +16155,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/fbneo",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Screenshot",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Up to 50 MB",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "On",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "On",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "On",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/fbneo",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -14880,16 +16475,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/fbneo",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Screenshot",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Up to 50 MB",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "On",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "On",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "On",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/fbneo",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -15164,16 +16795,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/mame",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Box art",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Off",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "Off",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "Off",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "Off",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/mame",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",
@@ -15448,16 +17115,52 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "arcade",
+    "Arcade games go to",
+    "roms/fbneo",
+    "fbneo (forgiving) or mame (exact sets)"
+   ],
+   [
+    "§",
+    "Metadata",
+    "",
+    ""
+   ],
+   [
+    "esimage",
+    "Game image in ES",
+    "Screenshot",
+    "The big picture: screenshot or box art"
+   ],
+   [
+    "esvideo",
+    "Videos",
+    "Up to 50 MB",
+    "Game clips from RomM, up to a size"
+   ],
+   [
+    "esextra",
+    "Extra art",
+    "On",
+    "Logo, title screen, 3D box, fan art…"
+   ],
+   [
+    "estags",
+    "Region, language and series",
+    "On",
+    "Flags and the game's family in ES"
+   ],
+   [
     "manuals",
     "Download manuals",
     "On",
     "PDFs from RomM, in the game's menu in ES"
    ],
    [
-    "arcade",
-    "Arcade games go to",
-    "roms/fbneo",
-    "fbneo (forgiving) or mame (exact sets)"
+    "fillinfo",
+    "Fill in game info",
+    "Open",
+    "Add what RomM has to games already here"
    ],
    [
     "§",

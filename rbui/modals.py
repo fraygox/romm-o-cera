@@ -243,13 +243,22 @@ class InfoDialog(Confirm):
     def start(cls, app, systems):
         app.modal = cls(app, systems)
 
+    @classmethod
+    def start_all(cls, app):
+        """Every system, once the platform list is here (asked for otherwise)."""
+        if not app.platforms:
+            app.load_platforms()
+            app.toast(app.error or "Still loading platforms…", theme.AMBER)
+        else:
+            cls.start(app, cls.all_systems(app))
+
     def __init__(self, app, systems):
         super().__init__(app, "Fill in game info", "Matching the games on this box with RomM…",
                          "Fill in", lambda: None)
         self.pending, self.plan = True, []
         self.cancel = threading.Event()
         es = app.downloader.es
-        manuals = app.cfg["manuals"]
+        cfg = dict(app.cfg)
 
         def run():
             tot = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
@@ -258,7 +267,7 @@ class InfoDialog(Confirm):
                 if self.cancel.is_set():
                     break
                 self.body = "Matching roms/%s with RomM…" % system
-                ents, st = rommlib.plan_info(app.api, system, pids, es, manuals, self.cancel)
+                ents, st = rommlib.plan_info(app.api, system, pids, es, cfg, self.cancel)
                 out += ents
                 for k in tot:
                     tot[k] += st[k]
