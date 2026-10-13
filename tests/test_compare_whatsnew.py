@@ -137,13 +137,55 @@ def test_get_the_newer_one_only_on_newer_rows_through_the_download_again_dialog(
     assert fetched == [] and app.modal is None
     scr.set_filter(2)
     assert ("A", "Get the newer one") in scr.hints()
-    scr.action("ok")                                     # same name: replaced in place by the download
+    scr.action("ok")
     assert fetched[:1] == [3] and isinstance(app.modal, rb.DownloadConfirm)
     queued = []
     monkeypatch.setattr(app.downloader, "enqueue", lambda rom, system, replace=None, **k: queued.append(
         (rom["id"], system, replace)))
     app.modal.action("ok")
-    assert queued == [(3, "psx", None)]
+    gamma = next(it for it in scr.listed() if it["rom_ids"] == [3])
+    assert queued == [(3, "psx", gamma["paths"])]        # the .chd here goes once RomM's files are in
+
+
+def test_get_the_newer_one_of_a_compressed_game_replaces_the_chd(rb, app, monkeypatch):
+    """Gamma.chd made from RomM's old zip; the new zip unpacks to Gamma.cue/bin: the stale
+    .chd is deleted (not left untracked beside them, a second entry in ES), the new files stay."""
+    import types
+    scr, _ = _platform_screen(rb, app, monkeypatch)
+    gamma = next(it for it in scr.result["items"] if it["rom_ids"] == [3])
+    monkeypatch.setattr(app.api, "rom", lambda rid: dict(gamma["rom"], platform_id=7))
+    scr.set_filter(2)
+    scr.sel = next(i for i, it in enumerate(scr.listed()) if it is gamma)
+    scr.action("ok")
+    queued = []
+    monkeypatch.setattr(app.downloader, "enqueue", lambda rom, system, replace=None, **k: queued.append(replace))
+    app.modal.action("ok")
+    assert queued == [[gamma["path"]]]
+    sysdir = os.path.dirname(gamma["path"])
+    os.makedirs(sysdir, exist_ok=True)
+    open(gamma["path"], "w").write("old chd")
+    cue = os.path.join(sysdir, "Gamma.cue")
+    open(cue, "w").write('FILE "Gamma.bin" BINARY\n')
+    open(os.path.join(sysdir, "Gamma.bin"), "w").write("new")
+    d = object.__new__(rommlib.Downloader)
+    d.es, d.library = {"psx": {".cue", ".chd", ".m3u"}}, rommlib.Library()
+    d._replace_old(types.SimpleNamespace(system="psx", replace=queued[0]), [cue])
+    assert sorted(os.listdir(sysdir)) == ["Gamma.bin", "Gamma.cue"]
+
+
+def test_download_again_of_a_converted_game_replaces_its_current_files(rb, app, monkeypatch):
+    rom = {"id": 9, "name": "Zeta", "fs_name": "Zeta.zip", "fs_name_no_ext": "Zeta", "platform_id": 7}
+    chd = os.path.join(rommlib.ROMS_ROOT, "psx", "Zeta.chd")
+    monkeypatch.setattr(app.library, "paths_for", lambda r, system: [chd])
+    monkeypatch.setattr(app.library, "group_for", lambda rid: None)
+    monkeypatch.setattr(rommlib, "path_size", lambda p: 10)
+    menu = rb.ManageMenu(app, rom)
+    entry = next(e for e in menu.entries if e and e[0] == "Download again")
+    entry[2]()
+    queued = []
+    monkeypatch.setattr(app.downloader, "enqueue", lambda rom, system, replace=None, **k: queued.append(replace))
+    app.modal.action("ok")
+    assert queued == [[chd]]
 
 
 def test_get_the_newer_one_under_another_name_replaces_the_file_here(rb, app, monkeypatch):

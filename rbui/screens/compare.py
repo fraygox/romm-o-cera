@@ -209,16 +209,14 @@ class CompareScreen(ListScreen):
         return [("Show", "", self.cycle_filter, dict((k, lab) for k, lab, _ in FILTERS)[self.filt], "choice")]
 
     def get_newer(self, it):
-        """RomM's whole record, then the usual download-again dialog; under another name the
-        file here is replaced once the new one is in."""
+        """RomM's whole record, then the usual download-again dialog; the files here are replaced
+        once the new one is in (a .chd made from RomM's old zip too; the new files are kept)."""
         app, rom = self.app, it["rom"]
 
         def got(full):
             if app.stack[-1] is not self or app.modal is not None:
                 return
-            stem = (full.get("fs_name_no_ext") or os.path.splitext(full.get("fs_name") or "")[0]).lower()
-            here = os.path.splitext(os.path.basename(it["path"]))[0].lower()
-            app.modal = DownloadConfirm(app, full, replace=list(it["paths"]) if stem and stem != here else None)
+            app.modal = DownloadConfirm(app, full, replace=list(it["paths"]))
         app.toast("Asking RomM for %s…" % display_name(it))
         app.bg(lambda: app.api.rom(rom["id"]), got, lambda e: app.toast(str(e), theme.RED))
 

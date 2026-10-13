@@ -187,7 +187,7 @@ class ManageMenu(ActionMenu):
                                                          "" if len(paths) == 1 else "s"),
              delete if paths else None),
             ("Download again", "Replaces what's on the box", lambda: setattr(
-                app, "modal", DownloadConfirm(app, rom))),
+                app, "modal", DownloadConfirm(app, rom, replace=list(paths) or None))),
         ])
 
 
