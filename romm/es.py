@@ -180,16 +180,49 @@ def es_game_list(systems=None):
             for g in games:
                 if g.get("hidden") == "true" or not g.get("path", "").startswith(_core.ROMS_ROOT + "/"):
                     continue
-                lp = g.get("lastplayed") or ""
-                out.append({"system": sysname, "path": g["path"], "name": g.get("name") or
-                            os.path.splitext(os.path.basename(g["path"]))[0],
-                            "playcount": int(float(g.get("playcount") or 0)),
-                            "lastplayed": lp if lp[:1].isdigit() and lp != "0" else ""})
+                out.append(dict(_played(g), system=sysname, path=g["path"], name=g.get("name") or
+                                os.path.splitext(os.path.basename(g["path"]))[0]))
         return out
     except _core.RommError:
         raise
     except Exception as e:
         raise _core.RommError("EmulationStation didn't answer (%s)" % e.__class__.__name__)
+
+
+def _num(v):
+    try:
+        return max(0, int(float(v or 0)))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _played(g):
+    """ES's play record of one game: {"playcount", "lastplayed" ("YYYYmmddTHHMMSS"
+    or ""), "gametime" (seconds)}."""
+    lp = g.get("lastplayed") or ""
+    lp = lp if isinstance(lp, str) else ""
+    return {"playcount": _num(g.get("playcount")), "lastplayed": lp if lp[:1].isdigit() and lp != "0" else "",
+            "gametime": _num(g.get("gametime"))}
+
+
+def es_play_stats(system, timeout=5):
+    """{path: _played record} for every game ES has for a system (hidden
+    discs too), {} when ES lists none for it, None when ES can't be asked."""
+    try:
+        games = EsClient(timeout=timeout).json("/systems/%s/games" % urllib.parse.quote(system))
+    except EsError as e:
+        return {} if e.status == 404 else None
+    return {os.path.normpath(g["path"]): _played(g) for g in games or []
+            if isinstance(g, dict) and isinstance(g.get("path"), str)}
+
+
+def lastplayed_seconds(lp):
+    """Epoch seconds of ES's "YYYYmmddTHHMMSS" (local time), None for ""."""
+    import time
+    try:
+        return int(time.mktime(time.strptime(lp, "%Y%m%dT%H%M%S")))
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def m3u_entry(line):

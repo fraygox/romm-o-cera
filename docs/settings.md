@@ -106,6 +106,7 @@ described in [Themes](themes.md).
 | `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |
+| `notes_seen` | — | written by the app: the version whose notes What's new last showed, so they show once per update |
 | `config_version` | `2` | written by the app, last; leave it alone |
 
 A value the app can't use, such as text where a number belongs

@@ -249,7 +249,7 @@ DEFAULTS_LITERAL = [
     ("theme_auto", False),
     ("theme_custom_accent", 195), ("theme_custom_tint", 225), ("theme_custom_strength", 30),
     ("theme_custom_mode", "dark"),
-    ("platform_map", {}),
+    ("platform_map", {}), ("notes_seen", ""),
 ]
 
 

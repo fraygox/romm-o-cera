@@ -7,7 +7,9 @@ without a real server — or a real library.
 Then point the app at it: ROMM_URL=http://127.0.0.1:8765 ROMM_TOKEN=demo.
 Implements only what the app uses (platforms, collections, roms list/detail,
 filters, random picks and recommendations, content downloads with Range,
-covers, pairing).
+covers, screenshots, your statuses/notes/RA progress (users/me), pairing),
+plus GitHub's release-notes route for What's new
+(ROMM_BROWSER_GITHUB_API=<this url>).
 Any bearer token is accepted; the pairing code ABCD2345 works once.
 
 The library is made of freely distributed homebrew / open-source games (with
@@ -264,6 +266,92 @@ def add_special(roms):
     return made
 
 
+# Your RomM side, like 5.4's rom_user: a few homebrew games and lorem picks
+# playing, backlogged, finished...; everything else RomM's stand-in (id -1).
+USER_ID = 1
+BLANK_USER = {"id": -1, "user_id": -1, "rom_id": -1, "created_at": "2026-01-01T00:00:00Z",
+              "updated_at": "2026-01-01T00:00:00Z", "last_played": None, "is_main_sibling": False,
+              "backlogged": False, "now_playing": False, "hidden": False, "rating": 0, "difficulty": 0,
+              "completion": 0, "status": None, "pinned_media": None}
+USER_REAL = {   # homebrew name -> rom_user fields
+    "Alter Ego": dict(status="finished", rating=9, completion=100, last_played="2026-09-28T20:15:00Z"),
+    "Anguna": dict(now_playing=True, status="incomplete", rating=8, completion=40,
+                   last_played="2026-10-12T19:02:00Z"),
+    "Tobu Tobu Girl": dict(now_playing=True, completion=15, last_played="2026-10-10T18:30:00Z"),
+    "Thwaite": dict(backlogged=True),
+    "Libbet and the Magic Floor": dict(backlogged=True),
+    "Butano Fighter": dict(status="completed_100", rating=7, completion=100, last_played="2026-08-03T21:40:00Z"),
+    "uCity": dict(status="retired", rating=6, last_played="2026-07-14T10:00:00Z"),
+    "Lan Master": dict(status="never_playing"),
+}
+SHOT_NAMES = set(USER_REAL) | {"Sir Ababol", "Varooom 3D"}
+
+
+def add_user_data(roms, seed=13):
+    """rom_user, notes and screenshots (its own random stream: the library stays the same)."""
+    rng = random.Random(seed)
+    lorem = [r for r in roms if r["metadatum"]["developers"][0] == "Lorem Ipsum Soft"
+             and r["platform_id"] in (1, 3, 4, 6, 8)]
+    picks = {}
+    for k, r in enumerate(rng.sample(lorem, 30)):
+        picks[r["id"]] = dict(backlogged=True) if k < 18 else \
+            dict(status=("finished", "completed_100", "incomplete", "retired")[k % 4], rating=rng.randint(4, 10),
+                 last_played="2026-%02d-%02dT20:00:00Z" % (rng.randint(3, 9), rng.randint(1, 28)))
+    odyssey = next(r for r in roms if r["fs_name_no_ext"] == "Lorem Odyssey (USA) (Disc 1)")
+    picks[odyssey["id"]] = dict(now_playing=True, status="incomplete", completion=55,
+                                last_played="2026-10-11T22:10:00Z")
+    for r in roms:
+        fields = USER_REAL.get(r["name"]) if r["metadatum"]["developers"][0] != "Lorem Ipsum Soft" \
+            else picks.get(r["id"])
+        r["rom_user"] = dict(BLANK_USER, id=r["id"], user_id=USER_ID, rom_id=r["id"], **fields) \
+            if fields else dict(BLANK_USER)
+        shots = 3 if r["name"] in SHOT_NAMES or r["id"] == odyssey["id"] else 0
+        r["merged_screenshots"] = ["/assets/romm/resources/roms/%d/%d/screenshots/%d.png" % (
+            r["platform_id"], r["id"], i) for i in range(shots)]
+        notes = []
+        if r["name"] in ("Anguna", "Alter Ego") or r["id"] == odyssey["id"]:
+            notes = [{"id": r["id"], "title": "Where I am", "is_public": False, "tags": None,
+                      "content": "Lorem ipsum: **third** dungeon, key behind the waterfall.",
+                      "created_at": "2026-10-01T10:00:00Z", "updated_at": "2026-10-11T22:12:00Z",
+                      "user_id": USER_ID, "username": "demo"},
+                     {"id": 10000 + r["id"], "title": "Tip", "is_public": True, "tags": None,
+                      "content": "Dolor sit amet: save before the boss.", "created_at": "2026-09-01T10:00:00Z",
+                      "updated_at": "2026-09-01T10:00:00Z", "user_id": 2, "username": "friend"}]
+        r["has_notes"] = bool(notes)
+        r["_notes"] = notes
+
+
+def users_me(roms):
+    """GET /api/users/me: you, with RetroAchievements progress for the RA games you played."""
+    results = []
+    for r in roms:
+        if r.get("ra_id") and (r.get("rom_user") or BLANK_USER)["id"] != -1:
+            got = [{"id": str(i), "date": "2026-10-0%d 20:00:00" % (i + 1)} for i in range(2)]
+            results.append({"rom_ra_id": r["ra_id"], "max_possible": 3, "num_awarded": 2,
+                            "num_awarded_hardcore": 1, "most_recent_awarded_date": "2026-10-11T22:00:00Z",
+                            "highest_award_kind": None, "earned_achievements": got})
+    return {"id": USER_ID, "username": "demo", "email": None, "enabled": True, "role": "viewer",
+            "oauth_scopes": ["roms.read", "platforms.read"], "avatar_path": "", "last_login": None,
+            "last_active": None, "ra_username": "demo",
+            "ra_progression": {"total": len(results), "results": results},
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}
+
+
+def on_status(r, statuses):
+    """RomM's statuses filter (any): now_playing / backlogged / hidden flags, else
+    the status itself; hidden games only when asked for."""
+    ru = r.get("rom_user") or BLANK_USER
+    if ru["hidden"] and "hidden" not in statuses:
+        return False
+    return any(ru.get(s) is True if s in ("now_playing", "backlogged", "hidden") else ru["status"] == s
+               for s in statuses)
+
+
+RELEASE_NOTES = ("## Features\n\n- Lorem ipsum: **your RomM lists** on the box.\n"
+                 "- Dolor sit amet: compare a platform with RomM.\n\n## Fixes\n\n"
+                 "- Consectetur adipiscing: long names [scroll](https://example.com) instead of being cut off.\n")
+
+
 def build_collections(roms, seed=11):
     rng = random.Random(seed)
     real = [r["id"] for r in roms if r["metadatum"]["developers"][0] != "Lorem Ipsum Soft"]
@@ -362,6 +450,27 @@ def make_cover(rom, scale):
     return buf.getvalue()
 
 
+def make_shot(rom, n):
+    """A generated 16:9 "screenshot": stripes, blocks and the game's name. PNG bytes."""
+    from PIL import Image, ImageDraw
+    w, h = 640, 360
+    rng = random.Random("%s#%d" % (rom["name"], n))
+    base = [rng.randint(30, 200) for _ in range(3)]
+    img = Image.new("RGB", (w, h), tuple(base))
+    d = ImageDraw.Draw(img)
+    for y in range(0, h, 24):
+        d.rectangle([0, y, w, y + 11], fill=tuple(min(255, c + 25) for c in base))
+    for _ in range(12):
+        x, y = rng.randint(0, w - 40), rng.randint(0, h - 40)
+        d.rectangle([x, y, x + rng.randint(16, 80), y + rng.randint(16, 60)],
+                    fill=tuple(rng.randint(0, 255) for _ in range(3)))
+    d.rectangle([0, h - 40, w, h], fill=(10, 10, 16))
+    d.text((12, h - 32), "%s  %d" % (rom["name"], n + 1), fill=(240, 240, 250), font=_font(20))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
 # Stand-in BIOS files (not real firmware): PlayStation gets one, matched by MD5.
 FIRMWARE = []
 for _i, (_pid, _name) in enumerate([(6, "scph5501.bin"), (6, "scph1001.bin")]):
@@ -369,6 +478,9 @@ for _i, (_pid, _name) in enumerate([(6, "scph5501.bin"), (6, "scph1001.bin")]):
     FIRMWARE.append({"id": _i + 1, "platform_id": _pid, "file_name": _name,
                      "file_size_bytes": len(_data), "md5_hash": hashlib.md5(_data).hexdigest(),
                      "data": _data})
+
+
+HIDDEN = ("files", "_data", "sibling_roms", "_notes")      # never in list records
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -452,7 +564,7 @@ class Handler(BaseHTTPRequestHandler):
                     why = [{"facet": "igdb", "value": ""}] + why[:1]
                 elif k % 4 == 1:
                     why.insert(0, {"facet": "franchise", "value": "Dolor Sit"})
-            rom = {x: v for x, v in r.items() if x not in ("files", "_data", "sibling_roms")}
+            rom = {x: v for x, v in r.items() if x not in HIDDEN}
             out.append({"rom": rom, "score": round(0.95 - k * 0.03, 3), "reasons": why,
                         "seed_rom_id": None if seed is None else next(
                             x["id"] for x in cls.roms if x["name"] == seed), "seed_rom_name": seed})
@@ -486,6 +598,13 @@ class Handler(BaseHTTPRequestHandler):
             vt = (q.get("type") or [""])[0]
             return self._json([{k: v for k, v in c.items() if k != "rom_ids"}
                                for c in build_virtual(self.roms, vt)])
+        if path == "/api/users/me":
+            return self._json(users_me(self.roms))
+        m = re.match(r"^/repos/[^/]+/[^/]+/releases/(?:tags/([^/]+)|latest)$", path)
+        if m:                                      # GitHub, for What's new (ROMM_BROWSER_GITHUB_API)
+            tag = m.group(1) or "v0.9.0"
+            return self._json({"tag_name": tag, "name": tag, "body": RELEASE_NOTES,
+                               "html_url": "https://example.com/releases/" + tag, "assets": []})
         if path == "/api/roms/filters":            # every filter's values across the library
             return self._json(self.filter_values())
         if path == "/api/recommendations":
@@ -508,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
             if not items:
                 return self._json(None)
             r = random.Random("%s#%d" % (u.query, Handler.random_n)).choice(items)
-            return self._json({k: v for k, v in r.items() if k not in ("files", "_data", "sibling_roms")})
+            return self._json({k: v for k, v in r.items() if k not in HIDDEN})
         if path == "/api/roms":
             items = self.roms
             if q.get("smart_collection_id"):
@@ -540,6 +659,12 @@ class Handler(BaseHTTPRequestHandler):
                 want = set(q["player_counts"])
                 keep = (q.get("player_counts_logic") or ["any"])[0] != "none"
                 items = [r for r in items if (r["metadatum"]["player_count"] in want) == keep]
+            if q.get("statuses"):
+                want = set(q["statuses"])
+                keep = (q.get("statuses_logic") or ["any"])[0] != "none"
+                items = [r for r in items if on_status(r, want) == keep]
+            else:
+                items = [r for r in items if not (r.get("rom_user") or BLANK_USER)["hidden"]]
             term = (q.get("search_term") or [""])[0].lower()
             if term:
                 items = [r for r in items if all(t in r["name"].lower() for t in term.split())]
@@ -547,11 +672,16 @@ class Handler(BaseHTTPRequestHandler):
             rev = (q.get("order_dir") or ["asc"])[0] == "desc"
             if order == "id":
                 items = sorted(items, key=lambda r: r["id"], reverse=rev)
+            elif order == "last_played":             # RomUser column: never played last either way
+                items = sorted(items, key=lambda r: r["name"].lower())
+                lp = {r["id"]: (r.get("rom_user") or BLANK_USER)["last_played"] for r in items}
+                items = sorted([r for r in items if lp[r["id"]]], key=lambda r: lp[r["id"]], reverse=rev) + \
+                    [r for r in items if not lp[r["id"]]]
             else:
                 items = sorted(items, key=lambda r: r["name"].lower(), reverse=rev)
             off = int((q.get("offset") or [0])[0])
             lim = int((q.get("limit") or [50])[0])
-            page = [{k: v for k, v in r.items() if k not in ("files", "_data", "sibling_roms")}
+            page = [{k: v for k, v in r.items() if k not in HIDDEN}
                     for r in items[off:off + lim]]
             out = {"items": page, "total": len(items), "offset": off, "limit": lim}
             if (q.get("with_filter_values") or ["false"])[0] == "true":
@@ -567,13 +697,14 @@ class Handler(BaseHTTPRequestHandler):
             me = self.by_id[int(m.group(1))]
             same = [r for r in self.roms if r["platform_id"] == me["platform_id"] and r["id"] != me["id"]]
             pick = random.Random(me["id"]).sample(same, min(int((q.get("limit") or [12])[0]), len(same), 12))
-            return self._json([{"rom": {k: v for k, v in r.items() if k not in ("files", "_data", "sibling_roms")},
+            return self._json([{"rom": {k: v for k, v in r.items() if k not in HIDDEN},
                                 "score": 0.9,
                                 "reasons": ["genre"]} for r in pick])
         m = re.match(r"^/api/roms/(\d+)$", path)
         if m and int(m.group(1)) in self.by_id:
             r = self.by_id[int(m.group(1))]
-            out = dict({k: v for k, v in r.items() if k != "_data"}, sibling_roms=r.get("sibling_roms", []))
+            out = dict({k: v for k, v in r.items() if k not in ("_data", "_notes")},
+                       sibling_roms=r.get("sibling_roms", []), all_user_notes=r.get("_notes", []))
             if "files" in r:
                 out["files"] = [{k: v for k, v in f.items() if k != "_data"} for f in r["files"]]
             return self._json(out)
@@ -597,6 +728,20 @@ class Handler(BaseHTTPRequestHandler):
         if m and self.by_id.get(int(m.group(1)), {}).get("has_manual"):
             data = b"%PDF-1.4\n% mock manual for rom " + m.group(1).encode() + b"\n%%EOF\n"
             return self._stream(len(data), data)
+        m = re.match(r"^/assets/romm/resources/roms/\d+/(\d+)/screenshots/(\d+)\.png$", path)
+        if m and int(m.group(1)) in self.by_id:
+            r = self.by_id[int(m.group(1))]
+            if path in r.get("merged_screenshots", []):
+                key = (r["id"], "shot", int(m.group(2)))
+                if key not in self.covers:
+                    self.covers[key] = make_shot(r, int(m.group(2)))
+                data = self.covers[key]
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
         m = re.match(r"^/covers/(\d+)\.png$", path)
         if m and int(m.group(1)) in self.by_id:
             s = int((q.get("s") or ["1"])[0])
@@ -682,6 +827,7 @@ def main():
     a = ap.parse_args()
     Handler.roms = build_library()
     add_special(Handler.roms)
+    add_user_data(Handler.roms)
     Handler.by_id = {r["id"]: r for r in Handler.roms}
     Handler.files = {f["id"]: f for r in Handler.roms for f in r["files"]}
     Handler.collections = build_collections(Handler.roms)

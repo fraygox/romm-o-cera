@@ -201,6 +201,8 @@ SETTINGS = (
             valid=lambda v: v in ("dark", "oled", "light")),
     Setting("platform_map", {},         # per-slug overrides of PLATFORM_MAP (null hides)
             valid=_parses(lambda v: dict(v or {}))),
+    Setting("notes_seen", "",           # the version whose release notes What's new last showed
+            valid=lambda v: isinstance(v, str)),
 )
 SETTING = {s.key: s for s in SETTINGS}
 DEFAULT_CONFIG = {s.key: s.default for s in SETTINGS}     # a plain dict: old workers and tests read it
