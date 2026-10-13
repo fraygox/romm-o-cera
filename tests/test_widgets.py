@@ -415,9 +415,12 @@ def test_panel_figure_legend_and_verb(rb, app, fonts):
     p.legend([(rb.theme.ACCENT, "12 fit now"), (None, "10 GB free")])
     assert p.y == y1 + 2 * 24 + 6
     tapped = []
-    vr = p.verb("Download 14", "go", "13.5 GB", glyph="Y", fn=lambda: tapped.append(1))
+    vr = p.verb("Download 14", "go", "13.5 GB", glyph="Y", fn=lambda: tapped.append(1), foot=False)
     assert vr.width == p.w and vr.height == rb.VERB_H and p.y == vr.bottom + 14
     assert any(t[0] == vr for t in app.targets)
+    fr = p.verb("Continue", fn=lambda: None)
+    assert fr.top > vr.bottom and fr.bottom <= 80 + 560          # foot: pinned to the bottom
+
 # ------------------------------------------------------------------ Welcome's pieces
 
 def test_step_dot_notice_code_slots_and_row_chevron(rb, fonts):
