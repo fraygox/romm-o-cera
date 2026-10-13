@@ -265,3 +265,57 @@ def test_a_small_box_at_4k_shows_fewer_bigger_covers(rb, monkeypatch, k, budget,
     assert h.per_shelf() == per
     tw, th = h.tile()
     assert per * tw + (per - 1) * h.GAP <= rb.HOME_COLUMN.width < per * tw + (per - 1) * h.GAP + per
+
+
+def test_a_reconnect_drops_the_previous_servers_shelves(home, rb, monkeypatch):
+    app = home.app
+    assert home.lists["playing"]["items"][0]["id"] == 0 and home.colls
+    monkeypatch.setattr(app, "load_platforms", lambda: None)
+    monkeypatch.setattr(rb.rommlib.Api, "from_config", classmethod(lambda cls, cfg: FakeApi()))
+    late = []
+    app.bg = lambda fn, done=None, err=None: late.append((fn, done))
+    home.load()                                       # nothing missing: nothing asked
+    app.apply_config(reconnect=True)
+    other = FakeApi()
+    other.lists["playing"] = [_rom(900, rom_user={"now_playing": True})]
+    other.colls = [{"id": 70, "name": "Another user's", "rom_count": 3}]
+    app.api = other
+    app.platforms = [{"id": 1, "name": "Game Boy Advance", "rom_count": 40, "_system": "gba"}]
+    app.platform_by_id = {1: app.platforms[0]}
+    home.load()
+    assert home.lists == {} and home.colls is None and home.recent is None    # the old ones are gone
+    for fn, done in late:
+        done(fn())
+    assert home.lists["playing"]["items"][0]["id"] == 900 and [c["id"] for c in home.colls] == [70]
+
+
+def test_an_answer_from_before_a_reconnect_is_dropped(home):
+    app = home.app
+    home.lists.pop("playing")
+    late = []
+    app.bg = lambda fn, done=None, err=None: late.append((fn, done))
+    home.load()
+    app.conn_gen += 1
+    for fn, done in late:
+        done(fn())
+    home.load()
+    assert "playing" not in home.lists
+
+
+def test_a_failed_shelf_is_asked_again_on_the_next_enter(home):
+    app = home.app
+    home.colls = None
+    real, calls = app.api.collections, []
+
+    def broken():
+        calls.append(1)
+        raise OSError("timed out")
+    app.api.collections = broken
+    home.load()
+    assert home.colls == [] and calls == [1]
+    home.load()
+    assert calls == [1]                               # not hammered every frame
+    app.api.collections = real
+    home.enter()
+    home.load()
+    assert [c["id"] for c in home.colls] == [7, 8]

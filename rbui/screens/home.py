@@ -58,6 +58,8 @@ class HomeScreen(Screen):
         self.played = {}            # rom id -> rommlib.played_here(...) (None: not on the box)
         self.rail_rects = []
         self._busy = set()
+        self._retry = set()         # keys whose fetch failed: asked again on the next enter
+        self.gen = app.conn_gen     # the connection the cached shelves came from
 
     # ---------------------------------------------------------------- data
 
@@ -69,8 +71,11 @@ class HomeScreen(Screen):
         if app.recs is not None or not app.platforms:
             return
         app.recs = []
+        gen = app.conn_gen
 
         def done(items):
+            if gen != app.conn_gen:
+                return
             app.recs = [(x["rom"], rommlib.recommendation_why(x),
                          x["seed_rom_name"].strip() if isinstance(x.get("seed_rom_name"), str) else "")
                         for x in items or [] if app.system_for(x["rom"])]
@@ -84,19 +89,47 @@ class HomeScreen(Screen):
         if key in self._busy:
             return
         self._busy.add(key)
+        busy, gen = self._busy, self.gen
 
         def ok(r):
-            self._busy.discard(key)
-            done(r)
+            busy.discard(key)
+            if gen == self.gen == self.app.conn_gen:
+                done(r)
 
         def err(e):
-            self._busy.discard(key)
-            (failed or (lambda e: None))(e)
+            busy.discard(key)
+            if gen == self.gen == self.app.conn_gen:
+                self._retry.add(key)
+                (failed or (lambda e: None))(e)
         self.app.bg(fn, ok, err)
+
+    def follow_connection(self):
+        """After a reconnect (another server or user), forget the old one's shelves."""
+        if self.gen == self.app.conn_gen:
+            return
+        self.gen = self.app.conn_gen
+        self.lists, self.colls, self.coll_roms, self.recent = {}, None, {}, None
+        self.played, self.cols, self.shelf_of = {}, {}, {}
+        self._busy, self._retry = set(), set()
+        self.focus, self.top = None, 0
+
+    def retry_failed(self):
+        """Fetches that failed are asked again (their empty stand-ins dropped)."""
+        for key in self._retry:
+            if key in ("playing", "backlog"):
+                self.lists.pop(key, None)
+            elif key == "colls":
+                self.colls = None
+            elif key == "recent":
+                self.recent = None
+            elif isinstance(key, tuple) and key[0] == "mosaic":
+                self.coll_roms.pop(key[1], None)
+        self._retry = set()
 
     def load(self):
         """Everything the shelves show, each asked once when the platforms are in."""
         app = self.app
+        self.follow_connection()
         self.load_recs()
         if not app.platforms:
             return
@@ -162,6 +195,8 @@ class HomeScreen(Screen):
         except Exception:                          # noqa: BLE001 — a glance, never an error
             self.on_box = 0
         self.played = {}                           # back from a game list: installs may have changed
+        self.follow_connection()
+        self.retry_failed()
 
     # ---------------------------------------------------------------- shelves
 

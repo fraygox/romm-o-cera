@@ -128,6 +128,7 @@ class App:
         self.junk = None              # filename tags hidden by "Hide prototypes, demos & hacks"
         self.player_counts = None     # RomM's player count values (the Players filter), asked for on first use
         self.recs = None              # Recommended for you: [(rom, why, seed name)], [] when RomM has none (Home asks once)
+        self.conn_gen = 0             # bumped on every reconnect: per-server data from before it is dropped
         self.update_tag = None
         self.library = rommlib.Library()
         self.downloader = rommlib.Downloader(self.api, self.library, self.cfg)
@@ -199,7 +200,11 @@ class App:
 
     # ---- data
     def load_platforms(self):
+        gen = self.conn_gen
+
         def done(plats):
+            if gen != self.conn_gen:
+                return                        # the previous server's answer
             mp = dict(rommlib.PLATFORM_MAP)
             mp.update(self.cfg["platform_map"] or {})
             self.platforms, self.unmapped = [], []
@@ -218,6 +223,8 @@ class App:
         first, self.fetched = not self.fetched, True
 
         def err(e):
+            if gen != self.conn_gen:
+                return
             self.status = "Offline"
             self.error = str(e)
             if first and isinstance(e, rommlib.AuthRejected) and welcome_on_rejected(self):
@@ -415,6 +422,7 @@ class App:
         apply_theme(self.theme_key())
         self.resolve_style()
         if reconnect:
+            self.conn_gen += 1
             self.api = rommlib.Api.from_config(self.cfg)
             self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
             self.downloader.api = self.api
