@@ -284,6 +284,26 @@ def party_list(players=2, menu=False):
         app._after = opened
 
 
+def game_page(here=False, plain=False):
+    """A game's page from the PlayStation list: Lorem Odyssey (your status, note, RA, screenshots);
+    here: its first disc on the box, played 3 days ago; plain: a game RomM knows little about."""
+    gl = rb.GameListScreen(app, "PlayStation", platform=first_platform())
+    app.push(gl)
+    if plain:
+        rom = a_rom()
+    else:
+        rom = next(r for r in app.api.roms(platform_ids=[first_platform()["id"]], search="Lorem Odyssey",
+                                           limit=50)["items"] if r["fs_name_no_ext"] == "Lorem Odyssey (USA) (Disc 1)")
+    if here:
+        p = os.path.join(R, "psx", rom["fs_name_no_ext"] + ".chd")
+        mk(os.path.relpath(p, R), 257 * MB)
+        app.library.mark(rom, "psx", [p])
+        es.mem["psx"][p] = {"playcount": "4", "lastplayed": time.strftime("%Y%m%dT%H%M%S",
+                                                                          time.localtime(time.time() - 3 * 86400))}
+        rommlib._PLAY.clear()
+    app.push(rb.GameScreen(app, rom, source=gl))
+
+
 def settings_at(key):
     s = rb.SettingsScreen(app)
     s.sel = next(i for i, it in enumerate(s.items()) if it[0] == key)
@@ -482,6 +502,10 @@ SCENES = [
     ("leftovers", lambda: app.push(rb.LeftoversScreen(app))),
     ("bios", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.BiosScreen(app)))),
     ("widgets-gallery", lambda: app.push(WidgetsGallery(app))),
+    ("game-page", lambda: game_page()),
+    ("game-page-here", lambda: game_page(here=True)),
+    ("game-page-plain", lambda: game_page(plain=True)),
+    ("game-page-actions", lambda: (game_page(here=True), setattr(app, "_after", lambda: app.dispatch("x")))),
     ("toast", lambda: app.toast("Picked 3 games (4.2 GB) — check the list, then {X} to delete them")),
     ("confirm-danger", lambda: setattr(app, "modal", rb.Confirm(
         app, "Delete 3 games?", "Frees about 4.2 GB. Saves are kept. Press {A} to delete or {B} to keep them.",
