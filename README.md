@@ -5,7 +5,7 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.9.0).** It works on the author's box every day, but it
+**Early software (v0.10.0).** It works on the author's box every day, but it
 has one author and few users so far — expect rough edges, and please file
 issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested
 against **RomM 5.4** (5.3 works too). Draws natively at any resolution, 720p
