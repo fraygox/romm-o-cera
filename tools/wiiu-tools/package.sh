@@ -71,13 +71,19 @@ cat > "pkg/$NAME/README.txt" <<TXT
 wiiu-tools $VER for Batocera $A
 
 wuatool, a command-line tool RomM-o-Cera (https://github.com/fraygox/romm-o-cera)
-downloads when you turn on converting Wii U disc images (.wud, .wux) to .wua,
-the compressed game archive Cemu opens directly. It reads the disc's game
-partition with Cemu's own disc code and writes it with ZArchive, the library
-Cemu's own "Convert to .wua" uses; then it reads both back and compares them.
+downloads when you turn on Wii U to .wux or Decrypt Wii U discs.
 
-A disc needs its disc key (Cemu's keys.txt). The Wii U common key is Cemu's,
-compiled in from Cemu's source. No disc keys are included.
+wuatool wux compresses a Wii U disc image (.wud) into .wux, the lossless
+container Cemu reads (each distinct 32 KB sector stored once); no keys are
+needed, and wuatool unwux gives back the exact .wud. wuatool compare reads a
+.wux through Cemu's own reader and checks it holds the .wud's bytes.
+
+wuatool pack turns a disc image (.wud, .wux) into .wua, the compressed game
+archive Cemu opens directly. It reads the disc's game partition with Cemu's
+own disc code and writes it with ZArchive, the library Cemu's own "Convert to
+.wua" uses; then it reads both back and compares them. A disc needs its disc
+key (Cemu's keys.txt) for this. The Wii U common key is Cemu's, compiled in
+from Cemu's source. No disc keys are included.
 
 See SOURCE.txt for exactly what was built and LICENSES/ for the licenses.
 Needs glibc 2.36 or newer (Batocera 43.1 has 2.40).
@@ -88,7 +94,9 @@ RomM-o-Cera (https://github.com/fraygox/romm-o-cera).
 
 wuatool
   source:   wuatool.cpp and cemu_stubs.cpp (tools/wiiu-tools/ in the RomM-o-Cera
-            repository), MPL-2.0
+            repository), MPL-2.0. Its .wux writer is its own (Exzap's WudCompress,
+            which introduced the format, carries no license), written to the
+            layout Cemu's src/Cafe/Filesystem/WUD/wud.cpp reads.
   compiles: from Cemu (below) src/Cafe/Filesystem/FST/FST.cpp,
             src/Cafe/Filesystem/WUD/wud.cpp, src/Cemu/ncrypto/ncrypto.cpp,
             src/util/crypto/aes128.cpp, src/Common/unix/FileStream_unix.cpp and

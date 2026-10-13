@@ -12,6 +12,10 @@
 //   wuatool probe  [-k keys]... <disc.wud|wux>
 //   wuatool check  <game.wua>
 //   wuatool cat    <game.wua> <path in it>   (one file to stdout)
+//   wuatool wux    <disc.wud> <out.wux>      (the lossless .wux container; no keys)
+//   wuatool unwux  <disc.wux> <out.wud>      (back to the plain image)
+//   wuatool compare <disc.wud|wux> <disc.wud|wux>   (same bytes, as Cemu reads them)
+//   wuatool hash   <disc.wud|wux>            (size, CRC32, MD5, SHA-1 of the image)
 //   wuatool --version
 //
 // -k: disc keys, in Cemu's keys.txt format (one 32-digit hex key per line, '#'
@@ -22,7 +26,7 @@
 // Exit codes: 0 ok, 1 usage, 2 not a readable Wii U game disc, 3 no disc key,
 // 5 the disc can't be read to the end (damaged or cut short), 6 the archive
 // can't be written, 7 the archive doesn't match the disc, 8 the archive is
-// damaged.
+// damaged (a .wua, or a .wux whose layout isn't whole).
 #include "Common/precompiled.h"
 #include "Cafe/Filesystem/FST/FST.h"
 #include "Cafe/Filesystem/WUD/wud.h"
@@ -33,6 +37,10 @@
 #include <openssl/evp.h>
 #include <cstdio>
 #include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <unordered_map>
 
 #ifndef WUATOOL_VERSION
 #define WUATOOL_VERSION "dev"
@@ -663,6 +671,365 @@ static int cmdProbe(const char* disc)
 	return E_OK;
 }
 
+// ------------------------------------------------------------------ .wud <-> .wux
+//
+// .wux: the lossless container Cemu reads .wud images from (Cemu's wud.cpp; the
+// format Exzap's WudCompress introduced). Its reference writer has no license,
+// so this is our own, written to Cemu's reader:
+//   0x00 "WUX0", 0x04 0x1099D02E, 0x08 sector size (0x8000), 0x0C 0,
+//   0x10 the .wud's size (uint64), 0x18 flags (0), 0x1C 0   (little-endian)
+//   0x20 one uint32 per sector of the .wud: its index among the unique sectors
+//   then, from the next multiple of the sector size, each unique sector once,
+//   in order of first appearance (the last, partial sector padded with zeros).
+// A sector is a duplicate only when its bytes equal a stored sector's: a fast
+// 64-bit hash picks candidates and each candidate is compared byte for byte,
+// so a hash collision costs a comparison, never a wrong sector. Memory: the
+// index (4 bytes a sector) and the hash table (one entry per unique sector).
+
+static const uint32 WUX_SECTOR = 0x8000;
+static const uint64 WUX_MAX_SIZE = 1ull << 40;   // far above any disc (25 GB)
+
+static uint64 sectorHash(const uint8* p, size_t n)
+{
+	uint64 h = 0x9E3779B97F4A7C15ull ^ n;
+	for (size_t i = 0; i + 8 <= n; i += 8)
+	{
+		uint64 w;
+		memcpy(&w, p + i, 8);
+		h ^= w * 0xC2B2AE3D27D4EB4Full;
+		h = ((h << 31) | (h >> 33)) * 0x9E3779B97F4A7C15ull;
+	}
+	return h ^ (h >> 29);
+}
+
+static bool readFull(int fd, uint8* p, size_t n, uint64 off)
+{
+	while (n)
+	{
+		ssize_t r = pread(fd, p, n, (off_t)off);
+		if (r <= 0)
+			return false;
+		p += r; n -= (size_t)r; off += (uint64)r;
+	}
+	return true;
+}
+
+static bool writeFull(int fd, const uint8* p, size_t n, uint64 off)
+{
+	while (n)
+	{
+		ssize_t r = pwrite(fd, p, n, (off_t)off);
+		if (r <= 0)
+			return false;
+		p += r; n -= (size_t)r; off += (uint64)r;
+	}
+	return true;
+}
+
+// A .wux's layout must be whole before Cemu's reader (which checks none of it)
+// is trusted with it: a known sector size, a sane size, the whole index, and
+// every index pointing at a sector the file holds. Returns E_OK, or E_ARCHIVE
+// with the reason printed. Not a .wux at all: E_OK with *isWux false.
+static int wuxLayout(const char* path, bool* isWux)
+{
+	*isWux = false;
+	int fd = open(path, O_RDONLY);
+	if (fd < 0)
+	{
+		fprintf(stderr, "wuatool: can't read %s (%s)\n", path, strerror(errno));
+		return E_DISC;
+	}
+	struct stat st;
+	uint8 h[0x20];
+	if (fstat(fd, &st) != 0 || !readFull(fd, h, sizeof(h), 0) || memcmp(h, "WUX0", 4) ||
+		(h[4] | h[5] << 8 | h[6] << 16 | (uint32)h[7] << 24) != 0x1099D02E)
+	{
+		close(fd);
+		return E_OK;
+	}
+	*isWux = true;
+	uint32 sector;
+	uint64 size;
+	memcpy(&sector, h + 8, 4);
+	memcpy(&size, h + 0x10, 8);
+	const char* bad = nullptr;
+	if (sector < 0x100 || sector >= 0x10000000 || (sector & (sector - 1)))
+		bad = "its sector size isn't one Cemu reads";
+	else if (size == 0 || size > WUX_MAX_SIZE)
+		bad = "its disc size is impossible";
+	uint64 count = bad ? 0 : (size + sector - 1) / sector;
+	uint64 data = (0x20 + count * 4 + sector - 1) / sector * sector;
+	if (!bad && (uint64)st.st_size < data)
+		bad = "cut short (its sector index isn't whole)";
+	std::vector<uint32> index;
+	if (!bad)
+	{
+		index.resize(count);
+		if (!readFull(fd, (uint8*)index.data(), count * 4, 0x20))
+			bad = "its sector index can't be read";
+	}
+	close(fd);
+	uint64 held = bad ? 0 : ((uint64)st.st_size - data) / sector;     // whole sectors in the file
+	uint64 tail = bad ? 0 : ((uint64)st.st_size - data) % sector;
+	for (uint64 i = 0; !bad && i < count; i++)
+	{
+		uint64 need = i + 1 < count ? sector : size - i * sector;          // the last one may be partial
+		if (index[i] >= held && !(index[i] == held && tail >= need))
+			bad = "cut short or damaged (a sector index points past the end)";
+	}
+	if (bad)
+	{
+		fprintf(stderr, "wuatool: damaged .wux: %s\n", bad);
+		return E_ARCHIVE;
+	}
+	return E_OK;
+}
+
+static int cmdWux(const char* src, const char* out)
+{
+	bool isWux;
+	int rc = wuxLayout(src, &isWux);
+	if (rc)
+		return rc;
+	if (isWux)
+	{
+		fprintf(stderr, "wuatool: %s is a .wux already\n", src);
+		return E_DISC;
+	}
+	int in = open(src, O_RDONLY);
+	struct stat st;
+	uint8 magic[4]{};
+	if (in < 0 || fstat(in, &st) != 0)
+	{
+		fprintf(stderr, "wuatool: can't read %s (%s)\n", src, strerror(errno));
+		return E_DISC;
+	}
+	uint64 size = (uint64)st.st_size;
+	if (size > WUX_MAX_SIZE || !readFull(in, magic, 4, 0x10000) || be32(magic) != 0xCC549EB9)
+	{
+		close(in);
+		fprintf(stderr, "wuatool: not a Wii U disc image\n");
+		return E_DISC;
+	}
+	int o = open(out, O_RDWR | O_CREAT | O_TRUNC, 0644);    // read back to compare candidates
+	if (o < 0)
+	{
+		close(in);
+		fprintf(stderr, "wuatool: can't write %s (%s)\n", out, strerror(errno));
+		return E_WRITE;
+	}
+	uint64 count = (size + WUX_SECTOR - 1) / WUX_SECTOR;
+	uint64 data = (0x20 + count * 4 + WUX_SECTOR - 1) / WUX_SECTOR * WUX_SECTOR;
+	std::vector<uint32> index(count);
+	std::unordered_multimap<uint64, uint32> seen;
+	std::vector<uint8> buf(64 * WUX_SECTOR), cmp(WUX_SECTOR);
+	uint32 unique = 0;
+	int fail = 0;
+	Progress pr;
+	pr.what = "compressing";
+	pr.total = size;
+	for (uint64 i = 0; i < count && !fail;)
+	{
+		uint64 at = i * WUX_SECTOR, n = std::min<uint64>(buf.size(), size - at);
+		if (!readFull(in, buf.data(), n, at))
+		{
+			fprintf(stderr, "wuatool: read error at %llu (the image changed or is unreadable)\n", (unsigned long long)at);
+			fail = E_READ;
+			break;
+		}
+		if (n % WUX_SECTOR)
+			memset(buf.data() + n, 0, WUX_SECTOR - n % WUX_SECTOR);
+		for (uint64 k = 0; k * WUX_SECTOR < n && !fail; k++, i++)
+		{
+			const uint8* s = buf.data() + k * WUX_SECTOR;
+			uint64 hv = sectorHash(s, WUX_SECTOR);
+			uint32 found = 0xFFFFFFFF;
+			auto range = seen.equal_range(hv);
+			for (auto it = range.first; it != range.second && found == 0xFFFFFFFF; ++it)
+			{
+				if (!readFull(o, cmp.data(), WUX_SECTOR, data + (uint64)it->second * WUX_SECTOR))
+				{
+					fail = E_WRITE;     // our own output can't be read back
+					break;
+				}
+				if (!memcmp(cmp.data(), s, WUX_SECTOR))
+					found = it->second;
+			}
+			if (found == 0xFFFFFFFF && !fail)
+			{
+				if (!writeFull(o, s, WUX_SECTOR, data + (uint64)unique * WUX_SECTOR))
+					fail = E_WRITE;
+				seen.emplace(hv, unique);
+				found = unique++;
+			}
+			index[i] = found;
+		}
+		pr.add(n);
+	}
+	uint8 h[0x20]{};
+	memcpy(h, "WUX0", 4);
+	uint32 m1 = 0x1099D02E, sec = WUX_SECTOR;
+	memcpy(h + 4, &m1, 4);
+	memcpy(h + 8, &sec, 4);
+	memcpy(h + 0x10, &size, 8);
+	std::vector<uint8> head(data, 0);
+	memcpy(head.data(), h, sizeof(h));
+	memcpy(head.data() + 0x20, index.data(), count * 4);
+	struct stat after;
+	if (!fail && (fstat(in, &after) != 0 || (uint64)after.st_size != size))
+	{
+		fprintf(stderr, "wuatool: the image changed size while it was read\n");
+		fail = E_READ;
+	}
+	if (!fail && (!writeFull(o, head.data(), head.size(), 0) || fsync(o) != 0))
+		fail = E_WRITE;
+	close(in);
+	if (close(o) != 0 && !fail)
+		fail = E_WRITE;
+	if (fail)
+	{
+		if (fail == E_WRITE)
+			fprintf(stderr, "wuatool: writing %s failed (disk full?)\n", out);
+		remove(out);
+		return fail;
+	}
+	printf("compressed %llu sectors to %u unique, %llu bytes as %llu\n", (unsigned long long)count, unique,
+		   (unsigned long long)size, (unsigned long long)(data + (uint64)unique * WUX_SECTOR));
+	return E_OK;
+}
+
+// The disc image's bytes as Cemu reads them (a .wux through its index, checked
+// first), with their CRC32, MD5 and SHA-1, the hashes RomM keeps of a .wud.
+struct Image
+{
+	wud_t* wud = nullptr;
+	uint64 size = 0;
+	~Image() { if (wud) wud_close(wud); }
+	int open(const char* path)
+	{
+		bool isWux;
+		int rc = wuxLayout(path, &isWux);
+		if (rc)
+			return rc;
+		wud = wud_open(fs::path(path));
+		if (!wud)
+		{
+			fprintf(stderr, "wuatool: can't open %s\n", path);
+			return E_DISC;
+		}
+		size = (uint64)wud_getWUDSize(wud);
+		return E_OK;
+	}
+	bool read(uint8* p, uint32 n, uint64 off) { return wud_readData(wud, p, n, (long long)off) == n; }
+};
+
+struct Hashes
+{
+	uint32 crc = 0xFFFFFFFF, table[256];
+	EVP_MD_CTX* md5 = EVP_MD_CTX_new();
+	EVP_MD_CTX* sha1 = EVP_MD_CTX_new();
+	Hashes()
+	{
+		for (uint32 i = 0; i < 256; i++)
+		{
+			uint32 c = i;
+			for (int k = 0; k < 8; k++)
+				c = c & 1 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+			table[i] = c;
+		}
+		EVP_DigestInit_ex(md5, EVP_md5(), nullptr);
+		EVP_DigestInit_ex(sha1, EVP_sha1(), nullptr);
+	}
+	~Hashes() { EVP_MD_CTX_free(md5); EVP_MD_CTX_free(sha1); }
+	void add(const uint8* p, size_t n)
+	{
+		for (size_t i = 0; i < n; i++)
+			crc = table[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
+		EVP_DigestUpdate(md5, p, n);
+		EVP_DigestUpdate(sha1, p, n);
+	}
+	void print(uint64 size)
+	{
+		uint8 m[16], s[20];
+		unsigned l;
+		EVP_DigestFinal_ex(md5, m, &l);
+		EVP_DigestFinal_ex(sha1, s, &l);
+		printf("size %llu\ncrc32 %08x\nmd5 ", (unsigned long long)size, crc ^ 0xFFFFFFFF);
+		for (uint8 b : m)
+			printf("%02x", b);
+		printf("\nsha1 ");
+		for (uint8 b : s)
+			printf("%02x", b);
+		printf("\n");
+	}
+};
+
+// hash: the image's size and hashes. compare: two images (any mix of .wud and
+// .wux) must hold the same bytes; prints the first one's hashes. unwux: the
+// image written out as a plain .wud.
+static int cmdImage(const char* cmd, const char* a, const char* b)
+{
+	Image x, y;
+	int rc = x.open(a);
+	if (rc)
+		return rc;
+	bool compare = !strcmp(cmd, "compare"), unwux = !strcmp(cmd, "unwux");
+	if (compare && (rc = y.open(b)))
+		return rc;
+	if (compare && x.size != y.size)
+	{
+		fprintf(stderr, "wuatool: the images differ in size (%llu vs %llu bytes)\n", (unsigned long long)x.size,
+				(unsigned long long)y.size);
+		return E_DIFFERS;
+	}
+	FILE* out = nullptr;
+	if (unwux && !(out = fopen(b, "wb")))
+	{
+		fprintf(stderr, "wuatool: can't write %s (%s)\n", b, strerror(errno));
+		return E_WRITE;
+	}
+	Hashes hs;
+	Progress pr;
+	pr.what = compare ? "comparing" : unwux ? "expanding" : "hashing";
+	pr.total = x.size;
+	std::vector<uint8> p(1 << 20), q(1 << 20);
+	int fail = 0;
+	for (uint64 off = 0; off < x.size && !fail;)
+	{
+		uint32 n = (uint32)std::min<uint64>(p.size(), x.size - off);
+		if (!x.read(p.data(), n, off) || (compare && !y.read(q.data(), n, off)))
+		{
+			fprintf(stderr, "wuatool: read error at %llu (cut short?)\n", (unsigned long long)off);
+			fail = E_READ;
+		}
+		else if (compare && memcmp(p.data(), q.data(), n))
+		{
+			fprintf(stderr, "wuatool: the images differ near byte %llu\n", (unsigned long long)off);
+			fail = E_DIFFERS;
+		}
+		else if (out && fwrite(p.data(), 1, n, out) != n)
+			fail = E_WRITE;
+		else
+		{
+			hs.add(p.data(), n);
+			off += n;
+			pr.add(n);
+		}
+	}
+	if (out && (fclose(out) != 0) && !fail)
+		fail = E_WRITE;
+	if (fail)
+	{
+		if (out)
+			remove(b);
+		if (fail == E_WRITE)
+			fprintf(stderr, "wuatool: writing %s failed (disk full?)\n", b);
+		return fail;
+	}
+	hs.print(x.size);
+	return E_OK;
+}
+
 // ------------------------------------------------------------------ main
 
 static int usage()
@@ -674,6 +1041,10 @@ static int usage()
 			"       wuatool probe  [-k keys]... <disc.wud|wux>\n"
 			"       wuatool check  <game.wua>\n"
 			"       wuatool cat    <game.wua> <path in it>\n"
+			"       wuatool wux    <disc.wud> <out.wux>   (lossless; no keys needed)\n"
+			"       wuatool unwux  <disc.wux> <out.wud>\n"
+			"       wuatool compare <disc.wud|wux> <disc.wud|wux>\n"
+			"       wuatool hash   <disc.wud|wux>\n"
 			"-k: disc keys in Cemu's keys.txt format (or a 16-byte key file).\n",
 			WUATOOL_VERSION);
 	return E_USAGE;
@@ -717,5 +1088,11 @@ int main(int argc, char** argv)
 		return cmdCheck(pos[0]);
 	if (cmd == "cat" && pos.size() == 2)
 		return cmdCat(pos[0], pos[1]);
+	if (cmd == "wux" && pos.size() == 2)
+		return cmdWux(pos[0], pos[1]);
+	if ((cmd == "compare" || cmd == "unwux") && pos.size() == 2)
+		return cmdImage(cmd.c_str(), pos[0], pos[1]);
+	if (cmd == "hash" && pos.size() == 1)
+		return cmdImage("hash", pos[0], nullptr);
 	return usage();
 }

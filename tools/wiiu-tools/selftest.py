@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mkdisc  # noqa: E402
@@ -74,6 +75,34 @@ try:
     if outs[".wud"] != outs[".wux"]:
         sys.exit("selftest: .wud and .wux of the same disc made different archives")
     disc, wua = os.path.join(d, "disc.wud"), os.path.join(d, "disc.wud.wua")
+    # .wud -> .wux (no keys) and back, read through Cemu's own reader
+    raw = open(disc, "rb").read()
+    wux = os.path.join(d, "ours.wux")
+    out = expect(0, "wux", disc, wux)
+    if open(wux, "rb").read() != mkdisc.to_wux(raw):
+        sys.exit("selftest: wuatool's .wux isn't the reference layout (mkdisc.to_wux)")
+    want = "size %d\ncrc32 %08x\nmd5 %s\nsha1 %s\n" % (len(raw), zlib.crc32(raw), hashlib.md5(raw).hexdigest(),
+                                                       hashlib.sha1(raw).hexdigest())
+    for a in (("hash", disc), ("hash", wux), ("compare", disc, wux), ("compare", wux, disc)):
+        if "".join(l + "\n" for l in expect(0, *a).splitlines() if not l.endswith("%")) != want:
+            sys.exit("selftest: %s printed other hashes" % " ".join(a))
+    back = os.path.join(d, "back.wud")
+    expect(0, "unwux", wux, back)
+    if open(back, "rb").read() != raw:
+        sys.exit("selftest: unwux didn't give the image back")
+    expect(0, "pack", "-k", keys, "-T", common, wux, os.path.join(d, "ours.wux.wua"))
+    if open(os.path.join(d, "ours.wux.wua"), "rb").read() != outs[".wud"]:
+        sys.exit("selftest: our .wux packed to another .wua")
+    odd = os.path.join(d, "odd.wud")                                  # a size that isn't whole sectors
+    with open(odd, "wb") as f:
+        f.write(raw + raw[:mkdisc.SECTOR] + b"\xab" * 1000)
+    expect(0, "wux", odd, odd + ".wux")
+    expect(0, "compare", odd, odd + ".wux")
+    expect(0, "unwux", odd + ".wux", odd + ".back")
+    if open(odd + ".back", "rb").read() != open(odd, "rb").read():
+        sys.exit("selftest: an odd-sized image didn't round-trip")
+    print("selftest: wux/unwux/compare/hash ok (%d-byte .wux of a %d-byte image, sha256 %s)" % (
+        os.path.getsize(wux), len(raw), hashlib.sha256(open(wux, "rb").read()).hexdigest()))
     print("selftest: pack/verify/check/probe ok (%d-byte .wua, sha256 %s)" % (
         len(outs[".wud"]), hashlib.sha256(outs[".wud"]).hexdigest()))
 
@@ -111,8 +140,27 @@ try:
         f.write(outs[".wud"])
     mkdisc.flip(tamper, 100)
     expect(8, "check", tamper)
+    expect(2, "wux", wux, os.path.join(d, "again.wux"))              # a .wux already
+    expect(2, "wux", junk, os.path.join(d, "junk.wux"))               # not a Wii U disc
+    expect(7, "compare", other, wux)                                  # another disc
+    cutwux = os.path.join(d, "cut.wux")
+    with open(cutwux, "wb") as f:
+        f.write(open(wux, "rb").read()[:-mkdisc.SECTOR])
+    expect(8, "hash", cutwux)
+    expect(8, "compare", disc, cutwux)
+    badidx = os.path.join(d, "badidx.wux")                            # an index past the stored sectors
+    data = bytearray(open(wux, "rb").read())
+    data[0x20:0x24] = (0x7FFFFFFF).to_bytes(4, "little")
+    open(badidx, "wb").write(bytes(data))
+    expect(8, "unwux", badidx, os.path.join(d, "badidx.wud"))
+    if os.path.exists(os.path.join(d, "badidx.wud")):
+        sys.exit("selftest: unwux left a file from a damaged .wux")
+    flipped = os.path.join(d, "flipped.wux")                          # a stored byte changed
+    open(flipped, "wb").write(open(wux, "rb").read())
+    mkdisc.flip(flipped, os.path.getsize(flipped) - 5)
+    expect(7, "compare", disc, flipped)
     print("selftest: refusals ok (no disc key, wrong common key, junk, damaged, cut short, different disc, "
-          "damaged archive)")
+          "damaged archive, .wux of a .wux or junk, damaged .wux)")
 finally:
     if not keep:
         shutil.rmtree(d, ignore_errors=True)

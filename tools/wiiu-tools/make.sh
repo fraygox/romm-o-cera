@@ -15,7 +15,7 @@
 #  - zstd: latest upstream release, statically linked (as in xbox360-tools).
 set -euo pipefail
 cd "$(dirname "$0")"
-VERSION=2610a
+VERSION=2610b
 CEMU_COMMIT=b9b46ecb65e2eb1c15793380048309df73d2084e
 ZARCHIVE_COMMIT=d2c717730092c7bf8cbb033b12fd4001b7c4d932
 ZSTD_TAG=v1.5.7
