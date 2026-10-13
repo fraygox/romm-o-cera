@@ -195,6 +195,8 @@ class ManageMenu(ActionMenu):
 
 
 class Confirm:
+    alt = None                      # (label, fn): a third button on Y (Surprise me's "Another")
+
     def __init__(self, app, title, body, ok_label, on_ok, danger=False):
         self.app, self.title, self.body = app, title, body
         self.ok_label, self.on_ok, self.danger = ok_label, on_ok, danger
@@ -203,6 +205,9 @@ class Confirm:
         if a == "ok":
             self.app.modal = None
             self.on_ok()
+        elif a == "y" and self.alt:
+            self.app.modal = None
+            self.alt[1]()
         elif a in ("back", "quit"):
             self.app.modal = None
 
@@ -221,12 +226,21 @@ class Confirm:
             rich_text(c, self.app.fonts, f.body, ln, (r.left + 32, r.top + 76 + i * 26), theme.DIM)
         bx = r.left + 32
         by = r.bottom - 58
-        okr = pygame.Rect(bx, by, 260, 40)
+        okw, nw = (220, 150) if self.alt else (260, 180)
+        okr = pygame.Rect(bx, by, okw, 40)
         self.app.hit(okr, lambda: self.action("ok"))
         rrect(c, theme.RED if self.danger else theme.ACCENT, okr, 10)
         g = button_glyph(c, f, "A", okr.left + 12, okr.centery - 11)
         text(c, f.h3, self.ok_label, (okr.left + 22 + g, okr.centery), theme.TEXT, "midleft")
-        nr = pygame.Rect(okr.right + 16, by, 180, 40)
+        nx = okr.right + 16
+        if self.alt:
+            ar = pygame.Rect(nx, by, 170, 40)
+            self.app.hit(ar, lambda: self.action("y"))
+            rrect(c, theme.PANEL_HI, ar, 10)
+            g = button_glyph(c, f, "Y", ar.left + 12, ar.centery - 11)
+            text(c, f.h3, self.alt[0], (ar.left + 22 + g, ar.centery), theme.TEXT, "midleft")
+            nx = ar.right + 16
+        nr = pygame.Rect(nx, by, nw, 40)
         self.app.hit(nr, lambda: self.action("back"))
         rrect(c, theme.PANEL_HI, nr, 10)
         g = button_glyph(c, f, "B", nr.left + 12, nr.centery - 11)

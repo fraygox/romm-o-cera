@@ -389,3 +389,34 @@ def test_no_recommendations_hides_the_row_quietly(isolated, rb, mock_url, recs_m
     assert app.recs == []
     assert "recommended" not in [it[0] for it in app.stack[0].items()]
     assert not [t for t in app.toasts if t[1] == rb.theme.RED]
+
+
+def test_a_surprise_pick_offers_another_on_y(live, rb, opened):
+    """Game night: Y on the surprise prompt rolls again; the prompt says it's a surprise."""
+    app = live
+    gba = next(p for p in app.platforms if p["_system"] == "gba")
+    gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
+    app.push(gl)
+    _pump(app, lambda: gl.server_total)
+    app.dispatch("x")
+    app.modal.sel = _menu_row(app, "Surprise me")
+    app.dispatch("ok")
+    _pump(app, lambda: app.modal is not None)
+    first = app.modal
+    assert first.title.startswith("Surprise: ") and first.alt[0] == "Another"
+    app.targets = []
+    app.draw()                                            # three buttons fit the dialog
+    app.dispatch("y")
+    _pump(app, lambda: app.modal is not None and app.modal is not first)
+    assert isinstance(app.modal, rb.DownloadConfirm) and app.modal.alt and app.modal.rom["platform_id"] == gba["id"]
+
+
+def test_a_plain_download_prompt_has_no_another(live, rb, opened):
+    app = live
+    rom = {"id": 1, "name": "Lorem", "platform_id": next(p for p in app.platforms if p["_system"] == "gba")["id"],
+           "fs_name": "Lorem.gba", "fs_size_bytes": 10}
+    p = rb.DownloadConfirm(app, rom)
+    assert p.alt is None
+    app.modal = p
+    app.dispatch("y")
+    assert app.modal is p                                 # Y does nothing there

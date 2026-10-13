@@ -65,7 +65,16 @@ def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"
         elif app.modal is not None:                # something else opened meanwhile: don't cover it
             app.toast("Surprise: %s" % rom_title(rom))
         else:
-            app.modal = ManageMenu(app, rom) if app.rom_status(rom)[0] == "installed" else DownloadConfirm(app, rom)
+            def again():
+                surprise(app, page, scope, keep, pool, where)
+            if app.rom_status(rom)[0] == "installed":
+                app.modal = ManageMenu(app, rom)
+                app.modal.entries.append(("Another surprise", "Pick again from %s" % where, again))
+            else:
+                app.modal = DownloadConfirm(app, rom)
+                if not app.modal.pending and app.modal.ok_label == "Download":
+                    app.modal.title = "Surprise: " + app.modal.title
+                    app.modal.alt = ("Another", again)
     if pool is not None:
         got = [r for r in pool if r and fits(r)]
         return done((random.choice(got), None) if got else (None, "skipped" if pool else "empty"))
