@@ -4,8 +4,8 @@ import math
 
 import pygame
 from rbui import theme
-from rbui.theme import mix, S
-from rbui.draw import button_glyph, circle, glyph_width, focus_box, marquee, measure, rrect, text
+from rbui.theme import ink_on, mix, S
+from rbui.draw import button_glyph, circle, glyph_width, focus_box, installed_mark, marquee, measure, rrect, text
 
 PILL_H, PILL_GAP, PILL_PAD = 38, 10, 16
 MIN_PAD = 6                 # a tight row still keeps this much padding each side of a label
@@ -117,6 +117,17 @@ def status_chip(c, font, label, pos, color=None, anchor="topleft", h=24):
     rrect(c, mix(theme.BG, color, 0.22), r, h // 2)
     text(c, font, label, r.center, color, "center")
     return r
+
+
+def step_dot(c, f, center, n, state, r=12):
+    """A numbered step's marker: "done" the green tick, "now" the number on a filled accent
+    disc, "next" the number in a quiet ring."""
+    if state == "done":
+        installed_mark(c, center, r)
+        return
+    now = state == "now"
+    circle(c, theme.ACCENT if now else theme.LINE, center, r, 0 if now else 2)
+    text(c, f.btn, str(n), center, ink_on(theme.ACCENT) if now else theme.FAINT, "center")
 
 
 def tag(c, font, label, pos, anchor="topleft", warn=False, color=None):

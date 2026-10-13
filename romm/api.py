@@ -35,14 +35,14 @@ class Api:
             raise _core.RommError("Remove user:password@ from the server URL — the token is the login")
         try:
             r = self.s.get(self.base + path, params=params, timeout=timeout)
-        except requests.exceptions.SSLError:
-            raise _core.RommError("TLS certificate rejected — set verify_tls in Settings") from None
+        except requests.exceptions.SSLError as e:
+            raise _core.TlsRejected("TLS certificate rejected — set verify_tls in Settings", _core.tls_why(e)) from None
         except requests.RequestException as e:
             raise _core.RommError("Can't reach RomM (%s)" % e.__class__.__name__) from None
         except Exception as e:      # e.g. ValueError from a bad header: its text can hold the token
             raise _core.RommError("Request failed (%s)" % e.__class__.__name__) from None
         if r.status_code in (401, 403):
-            raise _core.RommError("RomM rejected the token (HTTP %d)" % r.status_code)
+            raise _core.AuthRejected("RomM rejected the token (HTTP %d)" % r.status_code)
         if r.status_code != 200:
             raise _core.RommError("RomM error HTTP %d on %s" % (r.status_code, path))
         try:
@@ -597,8 +597,8 @@ def exchange_pair_code(url, code, verify_tls=True, timeout=20):
         r = requests.post(base + "/api/client-tokens/exchange", json={"code": c},
                           headers={"User-Agent": _core.UA}, timeout=timeout,
                           verify=_config.norm_verify(verify_tls), allow_redirects=False)
-    except requests.exceptions.SSLError:
-        raise _core.RommError("TLS certificate rejected — set verify_tls in Settings") from None
+    except requests.exceptions.SSLError as e:
+        raise _core.TlsRejected("TLS certificate rejected — set verify_tls in Settings", _core.tls_why(e)) from None
     except requests.RequestException as e:
         raise _core.RommError("Can't reach RomM (%s)" % e.__class__.__name__) from None
     except Exception as e:

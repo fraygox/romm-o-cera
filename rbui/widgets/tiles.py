@@ -1,4 +1,4 @@
-"""Covers: the shared scaled-cover cache, a cover tile (focus ring, on-box tick, "+N" badge,
+"""Covers and screenshots: the shared scaled-cover cache, a cover tile (focus ring, on-box tick, "+N" badge,
 placeholder), a horizontal shelf of tiles, and 2x2 mosaics for collections.
 
 Scaled copies live in app.scaled_covers ({rom id: [the cover, {variant: Surface}]}), so a
@@ -15,10 +15,14 @@ SCALED_SHARE = 0.5          # scaled copies may take this much of draw.COVER_BUD
 def cover_variant(app, rom, key, make):
     """app.cover(rom) made into a variant by make(cover) -> Surface, cached under key until the
     cover changes or leaves memory. None while the cover loads (or there is none)."""
-    img = app.cover(rom)
+    return art_variant(app, rom["id"], app.cover(rom), key, make)
+
+
+def art_variant(app, rid, img, key, make):
+    """cover_variant for any image of app.art's store (img: what it returned for rid, None while
+    it loads): the copies stay under rid, so they leave memory with it."""
     if not img:
         return None
-    rid = rom["id"]
     ent = app.scaled_covers.pop(rid, None)        # re-inserted last: the most recently drawn
     if not ent or ent[0] is not img:
         ent = [img, {}]
@@ -74,6 +78,20 @@ def cover(c, app, rom, rect, fit=False, radius=8, label=True):
                            round(r.width / theme.K), round(r.height / theme.K))
     placeholder(c, app.fonts, (rom.get("name") or "") if label else "", rect, radius)
     return rect
+
+
+def shot(c, app, rom, i, rect, radius=8):
+    """rom's i-th screenshot filling rect (logical), cropped evenly; a quiet box while it loads
+    (or when RomM has none). True when the shot was drawn."""
+    rect = pygame.Rect(rect)
+    pr = SR(rect)
+    key = ("shot", rom["id"], i)
+    img = art_variant(app, key, app.screenshot(rom, i), ("crop", pr.size), lambda im: crop_to(im, pr.size))
+    if img:
+        c.blit(img, pr.topleft)
+        return True
+    placeholder(c, app.fonts, "", rect, radius)
+    return False
 
 
 def placeholder(c, f, name, rect, radius=8):

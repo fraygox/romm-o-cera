@@ -347,6 +347,19 @@ def cover_fit(img):
     return img if size == (iw, ih) else smooth_scale(img, size)
 
 
+SHOT_BOX = (400, 225)           # a screenshot's largest drawn size (logical): the game page crops from it
+
+
+def shot_fit(img):
+    """A decoded screenshot scaled down once to cover SHOT_BOX (never enlarged): a 1080p shot
+    kept whole is ~8 MB."""
+    iw, ih = img.get_size()
+    pw, ph = SR(pygame.Rect((0, 0), SHOT_BOX)).size
+    f = min(1.0, max(pw / iw, ph / ih))
+    size = (max(1, int(iw * f + 0.5)), max(1, int(ih * f + 0.5)))
+    return img if size == (iw, ih) else smooth_scale(img, size)
+
+
 def smooth_scale(img, size):
     try:
         return pygame.transform.smoothscale(img, size)

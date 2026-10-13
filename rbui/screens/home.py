@@ -1,5 +1,4 @@
 """Home and the platform list."""
-import datetime
 import os
 
 import pygame
@@ -16,18 +15,12 @@ from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
 from rbui.widgets.chips import pill_row, tag
-from rbui.widgets.hero import game_meta, game_verb
+from rbui.widgets.hero import game_meta, game_verb, time_ago
 from rbui.widgets.layout import list_head, Panel, split
 from rbui.widgets.tiles import collection_card, cover, cover_capacity, mosaic, Shelf, tile_size
 
 # the rail and shelves, the hero panel beside them
 HOME_COLUMN, HOME_PANEL = split(702, pygame.Rect(48, 84, W - 96, 558), 24)
-
-
-def days_ago(ts):
-    """"today", "yesterday" or "N days ago" for epoch seconds (local dates)."""
-    d = (datetime.date.today() - datetime.date.fromtimestamp(ts)).days
-    return "today" if d <= 0 else "yesterday" if d == 1 else "%d days ago" % d
 
 
 class HomeScreen(Screen):
@@ -520,7 +513,7 @@ class HomeScreen(Screen):
         parts = [label] if label else []
         here = self.played.get(rom["id"])
         if here and here.get("last_played"):
-            parts.append("played here " + days_ago(here["last_played"]))
+            parts.append("played here " + time_ago(here["last_played"]))
         if not parts and key == "recommended":
             return next((w for r, w, _ in self.app.recs or [] if r["id"] == rom["id"] and w), "")
         return " · ".join(parts)

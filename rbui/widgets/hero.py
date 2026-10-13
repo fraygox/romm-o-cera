@@ -1,5 +1,6 @@
 """A game's one action (the verb button and the line saying what it does) and the soft art
 backdrop behind a game's page."""
+import datetime
 import time
 
 import pygame
@@ -97,6 +98,23 @@ def game_note(app, rom, status=None):
     if lay and lay["convert"]:
         return "Saved to roms/%s, made into %s after." % (system, lay["convert"])
     return "Saved to roms/%s." % system
+
+
+def time_ago(ts, now=None):
+    """When epoch seconds ts was, in calendar days: "today", "yesterday", "3 days ago",
+    "2 weeks ago", "5 months ago", "2 years ago"."""
+    if not ts:
+        return ""
+    now = time.time() if now is None else now
+    days = (datetime.date.fromtimestamp(now) - datetime.date.fromtimestamp(ts)).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    for limit, unit, size in ((14, "day", 1), (60, "week", 7), (730, "month", 30), (None, "year", 365)):
+        if limit is None or days < limit:
+            n = days // size
+            return "%d %s%s ago" % (n, unit, "" if n == 1 else "s")
 
 
 # ------------------------------------------------------------------ the backdrop

@@ -4,6 +4,7 @@
   home         Home, the platform list
   collection   collections (RomM's own and the virtual ones)
   games        a game list, Search
+  game         a game's own page
   downloads    the download queue
   text_input   a text setting, typed on the shared keyboard (rbui/widgets/keyboard.py)
   settings     Settings

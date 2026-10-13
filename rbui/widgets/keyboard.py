@@ -278,3 +278,22 @@ def text_field(c, f, rect, value, placeholder="", font=None, focused=True, curso
     if cursor:
         hline(c, theme.ACCENT_HI, (r.right + 3, rect.top + 16), (r.right + 3, rect.bottom - 16), 2)
     return r
+
+
+def code_slots(c, f, center_x, y, value, n=8, split=4, w=62, h=68, gap=10):
+    """A short code as n boxes (a dash after the first `split`), the next one to fill outlined
+    and underlined: a pairing code being typed. Returns the row's rect."""
+    total = n * w + (n - 1) * gap + 2 * gap
+    x0 = center_x - total // 2
+    for i in range(n):
+        r = pygame.Rect(x0 + i * (w + gap) + (2 * gap if i >= split else 0), y, w, h)
+        cur = i == len(value)
+        rrect(c, theme.PANEL_HI if cur else theme.BG2, r, 12)
+        if cur:
+            rrect(c, theme.ACCENT, r, 12, 2)
+            hline(c, theme.ACCENT_HI, (r.centerx - 10, r.bottom - 14), (r.centerx + 10, r.bottom - 14), 2)
+        if i < len(value):
+            text(c, f.h1, value[i], r.center, theme.TEXT, "center")
+        if i == split - 1:
+            text(c, f.h2, "-", (r.right + gap * 1.5, r.centery), theme.FAINT, "center")
+    return pygame.Rect(x0, y, total, h)
