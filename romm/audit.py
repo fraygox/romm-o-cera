@@ -11,6 +11,13 @@ from . import (core as _core, discs as _discs, es as _es, api as _api, convert a
                downloader as _downloader)
 
 
+def _guess_unpacked(detail, system):
+    """An archive RomM listed no member sizes for: a Wii U disc image's fixed
+    size, else the rough unpacking estimate."""
+    inner = _downloader.unpacked_size(detail, system)
+    return inner if inner is not None else _downloader.space_needed(detail, system)
+
+
 def disc_layout(detail, system, cfg, accepts=None):
     """What a download of this game is and becomes, from RomM's full record
     (files and archive members): {"label": "CUE/BIN, 3 tracks", "discs": n,
@@ -34,7 +41,7 @@ def disc_layout(detail, system, cfg, accepts=None):
     exts = [os.path.splitext(n)[1].lower() for n, _ in members]
     if not any(e in _core.DISC_EXTS for e in exts):
         if archived and not sizes_known and system in _downloader.EXPANDS:     # an archive RomM didn't list
-            return {"label": "", "discs": 0, "unpacked": _downloader.space_needed(detail, system), "estimated": True,
+            return {"label": "", "discs": 0, "unpacked": _guess_unpacked(detail, system), "estimated": True,
                     "convert": None}
         return None
     count = exts.count
@@ -54,7 +61,7 @@ def disc_layout(detail, system, cfg, accepts=None):
     if archived and sizes_known and all(s for _, s in members):
         unpacked = sum(s for _, s in members)        # loose files are in members too
     elif archived:
-        unpacked, estimated = _downloader.space_needed(detail, system), True     # RomM didn't list sizes
+        unpacked, estimated = _guess_unpacked(detail, system), True     # RomM didn't list sizes
     convs = (_convert.conversion_for(system, e, cfg, accepts) for e in exts)
     convert = next((c.label for c in convs if c is not None), None)
     return {"label": ", ".join(kinds), "discs": discs, "unpacked": unpacked, "estimated": estimated,

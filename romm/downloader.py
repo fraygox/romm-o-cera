@@ -23,9 +23,55 @@ EXPANDS = {"psx", "ps2", "ps3", "psp", "saturn", "dreamcast", "megacd", "pcengin
            "xbox360", "3ds", "jaguarcd", "fmtowns"}
 
 
+# A Wii U disc image (.wud) is always the whole disc, whatever the game.
+WUD_SIZE = 25_025_314_816
+
+
+def _archived(rom):
+    """The rom's archive files as RomM lists them, [] for loose files. Without
+    a file list (a list record) its own file name says: None for an archive
+    (or when nothing says), [] for anything else."""
+    files = [f for f in rom.get("files") or [] if f.get("category") in (None, "game")]
+    if not files:
+        name, ext = rom.get("fs_name") or "", (rom.get("fs_extension") or "").lower()
+        if not name and not ext:
+            return None                       # nothing says
+        ext = "." + ext if ext else os.path.splitext(name)[1].lower()
+        return None if ext in _core.ARCHIVE_EXTS else []
+    return [f for f in files if os.path.splitext(f.get("file_name") or "")[1].lower() in _core.ARCHIVE_EXTS]
+
+
+def unpacked_size(rom, system):
+    """What a downloaded archive unpacks to, in bytes, when that's known:
+    the sum of its members' sizes when RomM listed them (it does for the
+    platforms it hashes), else for Wii U a full disc image (.wud, the usual
+    zipped dump; RomM lists no members for Wii U). None otherwise: not an
+    archive, or nothing says."""
+    if system in _core.ZIP_NATIVE:
+        return None
+    arcs = _archived(rom)
+    if arcs == []:
+        return None
+    if arcs:
+        members = [m for f in arcs for m in f.get("archive_members") or []]
+        if members and all(isinstance(m.get("size"), int) for m in members) and \
+                all(f.get("archive_members") for f in arcs):
+            return sum(m["size"] for m in members)
+    return WUD_SIZE if system == "wiiu" else None
+
+
 def space_needed(rom, system):
-    """Rough bytes on disk once downloaded and extracted."""
+    """Bytes on disk once downloaded and extracted, at the peak (the archive
+    and what it unpacks to side by side): exact when the archive's unpacked
+    size is known (unpacked_size), else about 2.2 times the download for the
+    systems whose downloads are usually zipped disc images."""
     size = rom.get("fs_size_bytes") or 0
+    if system in EXPANDS:
+        inner = unpacked_size(rom, system)
+        if inner is not None:
+            return size + inner
+        if _archived(rom) == []:
+            return size                  # loose files: nothing to unpack
     return int(size * (2.2 if system in EXPANDS else 1.0))
 
 

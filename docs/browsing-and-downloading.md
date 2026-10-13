@@ -94,7 +94,10 @@ outside the download hours.
 never leave less than this free. A download that doesn't fit waits ("Waiting
 for space") and starts once there's room; smaller ones behind it keep going.
 Downloads shows what the whole queue still needs against what's free, and
-adding a game the queue can't fit warns you. Conversions waiting for room
+adding a game the queue can't fit warns you. An archive counts what it
+really unpacks to when RomM lists its contents; a zipped Wii U disc, whose
+contents RomM doesn't list, counts a whole disc image (25 GB, the size of
+every `.wud`); anything else counts about 2.2 times the download. Conversions waiting for room
 start as soon as you free some.
 
 ### Download hours

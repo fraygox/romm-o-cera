@@ -231,7 +231,8 @@ class App:
             lands = lay["unpacked"]
             parts.append("%s%s once unpacked" % ("about " if lay["estimated"] else "", human_size(lands)))
         elif (rom.get("fs_extension") or "").lower() in ("zip", "7z", "rar") and system in rommlib.EXPANDS:
-            lands = rommlib.space_needed(rom, system)
+            inner = rommlib.unpacked_size(rom, system)
+            lands = rommlib.space_needed(rom, system) if inner is None else inner
             parts.append("about %s once unpacked" % human_size(lands))
         if lay and lay["convert"] == rommlib.CONVERTER["ps3"].label:
             parts.append("then made into a .ps3 game folder in the background (read from the zip)")
