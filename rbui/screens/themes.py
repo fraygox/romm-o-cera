@@ -373,11 +373,15 @@ class ThemePickerScreen(Screen):
         else:
             note, col = "The whole app shows it now. {A} keeps it, {B} goes back to %s." % THEMES[self.was][0], \
                 theme.FAINT
-        for ln in rich_lines(self.f, self.f.small, note, w, 3):
+        rows_top = p.bottom - 176                                   # the sample rows below
+        copy = self.items[self.sel] != "custom"
+        room = (rows_top - 6 - 40 - 8 if copy else rows_top - 6) - y   # whatever the fonts wrap to, nothing overlaps
+        fit = min(3, room // 23)
+        for ln in (rich_lines(self.f, self.f.small, note, w, fit) if fit > 0 else []):   # 0 would mean no limit
             rich_text(c, self.f, self.f.small, ln, (x, y), col)
             y += 23
-        if self.items[self.sel] != "custom":                        # touch: X's "Edit a copy" as a button
-            self.copy_button = pygame.Rect(x, max(y + 8, p.bottom - 228), w, 40)
+        if copy:                                                    # touch: X's "Edit a copy" as a button
+            self.copy_button = pygame.Rect(x, min(max(y + 8, p.bottom - 228), rows_top - 46), w, 40)
             rrect(c, theme.BG2, self.copy_button, 20)
             rrect(c, theme.LINE, self.copy_button, 20, 1)
             label = "{X} Edit a copy"
