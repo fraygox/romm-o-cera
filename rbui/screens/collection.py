@@ -248,7 +248,7 @@ class CollectionScreen(Screen):
             return None, None
         self.clamp()
         k = self.kinds[self.row]
-        return k, k["items"][self.col]
+        return k, (k["items"][self.col] if k["items"] else None)     # an empty Browse by type: none
 
     def state(self, it):
         """The box's side of a collection: {"here", "roms", "rest"}; here from RomM's game ids
@@ -474,6 +474,11 @@ class CollectionScreen(Screen):
             return
         k, it = self.current()
         if it is None:
+            if self.vtype:
+                text(c, self.f.h2, "Nothing under %s" % self.vlabel, (W // 2, 300), theme.DIM, "center")
+                text(c, self.f.body, "RomM has no %s for its games yet: it fills them in from game metadata."
+                     % self.vlabel.lower(), (W // 2, 340), theme.FAINT, "center", maxw=W - 96)
+                return
             text(c, self.f.h2, "No collections", (W // 2, 300), theme.DIM, "center")
             text(c, self.f.body, "Make some in RomM and they show up here, grouped by their names.",
                  (W // 2, 340), theme.FAINT, "center")

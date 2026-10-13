@@ -284,3 +284,16 @@ def test_the_last_shelf_and_the_last_wall_row_reach_the_foot_of_the_column(app, 
     tiles = _tiles(app, scr)
     assert scr.wall_top == 1 and col.bottom - max(r.bottom for r in tiles) < 8
     assert any(r.collidepoint(r.centerx, r.centery) for r in tiles if r.top >= col.top)
+
+
+def test_an_empty_browse_by_type_says_so_instead_of_crashing(app, rb):
+    """RomM with no franchise data: the Franchise wall opens, draws, moves and hints without a tile."""
+    scr = rb.CollectionScreen(app, vtype="franchise", vlabel="Franchise")
+    app.push(scr)
+    scr._loaded_virtual([{"id": 1, "name": "Lorem", "rom_count": 0}])
+    assert scr.current()[1] is None
+    app.draw()
+    assert scr.crumbs() == ["Collections", "Franchise"] and scr.hints() == [("B", "Back")]
+    for a in ("left", "right", "down", "up", "ok", "x", "y", "l1", "r1"):
+        scr.action(a)
+    app.draw()
