@@ -304,3 +304,16 @@ def test_recommendations(api):
         assert ROM_FIELDS <= set(x["rom"]) and isinstance(x["reasons"], list)
         assert all({"facet", "value"} <= set(r) for r in x["reasons"])
         assert isinstance(rommlib.recommendation_why(x), str)
+
+
+def test_your_statuses_and_lists(api, busiest):
+    """RomM 5.4: every rom record carries rom_user, the statuses filter and the
+    last_played order work, and /api/users/me answers (RA progress optional)."""
+    page = api.roms(platform_ids=[busiest["id"]], limit=5)
+    for r in page["items"]:
+        assert {"status", "now_playing", "backlogged", "hidden", "last_played"} <= set(r["rom_user"])
+        assert isinstance(r.get("merged_screenshots"), list)
+    for name in rommlib.USER_LISTS:
+        got = api.user_list(name, limit=5)
+        assert not got["filtered"], name
+    assert isinstance(api.me().get("id"), int)

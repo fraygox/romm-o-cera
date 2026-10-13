@@ -23,6 +23,15 @@ def junk_tags(tags):
 
 # ------------------------------------------------------- installed tracking
 
+STAMP_KEYS = (("fs_size_bytes", "size"), ("sha1_hash", "sha1"), ("md5_hash", "md5"), ("crc_hash", "crc"))
+
+
+def romm_stamp(rom):
+    """What RomM said about the game's file when it was installed (size and
+    hashes), kept on its record so Compare can tell RomM's copy changed since."""
+    return {k: rom[f] for f, k in STAMP_KEYS if rom.get(f)}
+
+
 class Library:
     """What's already on the box: our own installs (installed.json) plus a
     filename-stem scan of roms/<sys>, so games pushed earlier (same RomM
@@ -109,6 +118,9 @@ class Library:
     def mark(self, rom, system, paths, group=None, meta=None):
         rec = {"system": system, "paths": list(paths), "name": rom.get("name"),
                "fs_name": rom.get("fs_name"), "when": time.strftime("%Y-%m-%d %H:%M:%S")}
+        stamp = romm_stamp(rom)
+        if stamp:
+            rec["romm"] = stamp
         if group:
             rec["group"] = group
         if meta:

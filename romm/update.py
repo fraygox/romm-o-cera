@@ -406,3 +406,79 @@ def rollback(app_dir=rommlib.APP_DIR, backup=None):
         _move(tmp, backup)
     _core.log("ROLLBACK now %s (backup %s)" % (_version_in(app_dir, True), _version_in(backup, True)))
     return _version_in(app_dir, True)
+
+
+# ----------------------------------------------------------- What's new
+NOTES_MAX = 20000            # characters of a release's notes kept (GitHub allows 125,000)
+
+
+def release_notes(label=None):
+    """The GitHub release notes of a version (this one by default): {"tag",
+    "name", "body" (Markdown), "url", "label"}, or None when GitHub can't be
+    asked or has none. A nightly label reads the nightly build's notes, an
+    internal build (0.9.0+abc1234) its release's. Blocking; never raises."""
+    label = label or rommlib.VERSION_LABEL
+    tag = NIGHTLY_TAG if _NIGHTLY.search(label) else "v" + label.split("+")[0].lstrip("v")
+    try:
+        rel = _gh_json("releases/tags/" + tag)
+    except Exception:
+        return None
+    if not isinstance(rel, dict) or not isinstance(rel.get("body"), str) or not rel["body"].strip():
+        return None
+    return {"tag": rel.get("tag_name") or tag, "name": str(rel.get("name") or tag),
+            "body": rel["body"][:NOTES_MAX], "url": str(rel.get("html_url") or ""), "label": label}
+
+
+def notes_due(cfg):
+    """The version whose notes What's new should show now, or None: once per
+    version, after an update. A fresh install (nothing set up, notes never
+    shown) has nothing to catch up on."""
+    seen = _config.config_value(cfg, "notes_seen") or ""
+    label = rommlib.VERSION_LABEL
+    if not seen:
+        return label if _config.config_value(cfg, "url") else None
+    return label if version_key(label) > version_key(seen) else None
+
+
+def whats_new(cfg):
+    """release_notes() for this version when notes_due(cfg), else None.
+    Blocking (one GitHub call). Offline: None, and it's asked again next time."""
+    label = notes_due(cfg)
+    return release_notes(label) if label else None
+
+
+def mark_notes_seen(cfg, label=None):
+    """Remember in config.json that this version's notes were shown (or that
+    a fresh install starts here). False when config.json can't be written."""
+    cfg["notes_seen"] = label or rommlib.VERSION_LABEL
+    try:
+        _config.save_config(cfg)
+    except (OSError, _core.RommError):
+        return False
+    return True
+
+
+def release_note_lines(body):
+    """A release's Markdown as lines to draw: [(kind, text)], kind "h" (a
+    heading), "li" (a list item) or "p"; links keep their text, emphasis and
+    code marks go, blank lines and HTML comments are dropped."""
+    out = []
+    body = re.sub(r"<!--.*?-->", "", body or "", flags=re.S)
+    for ln in body.splitlines():
+        s = ln.strip()
+        if not s or re.fullmatch(r"[-*_=]{3,}", s):
+            continue
+        kind = "p"
+        m = re.match(r"^#{1,6}\s+(.*)$", s)
+        if m:
+            kind, s = "h", m.group(1)
+        else:
+            m = re.match(r"^(?:[-*+]|\d+[.)])\s+(.*)$", s)
+            if m:
+                kind, s = "li", m.group(1)
+        s = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", s)
+        s = re.sub(r"(\*\*|__|`)", "", s)
+        s = re.sub(r"(?<!\w)[*_](\S[^*_]*?)[*_](?!\w)", r"\1", s).strip()
+        if s:
+            out.append((kind, s))
+    return out

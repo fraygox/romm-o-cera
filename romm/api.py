@@ -4,12 +4,13 @@ import queue
 import random
 import re
 import threading
+import time
 import urllib.parse
 from concurrent.futures import Future
 
 import requests
 
-from . import core as _core, config as _config, covers as _covers, net as _net
+from . import core as _core, config as _config, covers as _covers, net as _net, mine as _mine
 
 
 class Api:
@@ -63,14 +64,15 @@ class Api:
 
     def roms(self, platform_ids=None, search=None, collection=None,
              offset=0, limit=60, order_by="name", char_index=False, regions=None,
-             verified=None, exclude_tags=None, player_counts=None):
+             verified=None, exclude_tags=None, player_counts=None, statuses=None, order_dir="asc"):
         """collection: (param, id) with param one of collection_id,
         smart_collection_id, virtual_collection_id. player_counts: RomM's own
-        player count values to keep (party_values() picks them)."""
+        player count values to keep (party_values() picks them). statuses:
+        your RomM statuses to keep, any of them (USER_LISTS names them)."""
         params = {"offset": offset, "limit": limit,
                   "with_char_index": "true" if char_index else "false",
                   "with_filter_values": "false", "with_rom_id_index": "false",
-                  "order_by": order_by, "order_dir": "asc"}
+                  "order_by": order_by, "order_dir": order_dir}
         if platform_ids:
             params["platform_ids"] = list(platform_ids)
         if search:
@@ -89,7 +91,40 @@ class Api:
         if player_counts:
             params["player_counts"] = list(player_counts)
             params["player_counts_logic"] = "any"
+        if statuses:
+            params["statuses"] = list(statuses)
+            params["statuses_logic"] = "any"
         return self.get("/api/roms", params)
+
+    def user_list(self, name, offset=0, limit=60, platform_ids=None):
+        """One page of one of your RomM lists (USER_LISTS: "playing",
+        "backlog", "finished"...), filtered and ordered by RomM: {"items",
+        "total", "filtered"}. A RomM that ignores the status filter (older
+        than 5) would hand back the whole library: the page keeps only the
+        games whose rom_user is on the list, and "filtered" says the total
+        can't be trusted then."""
+        statuses, order_by, order_dir = _mine.USER_LISTS[name]
+        page = self.roms(platform_ids=platform_ids, offset=offset, limit=limit, order_by=order_by,
+                         order_dir=order_dir, statuses=statuses)
+        items = page.get("items") or []
+        mine = [r for r in items if _mine.on_user_list(r, name)]
+        return {"items": mine, "total": page.get("total") or 0, "filtered": len(mine) != len(items)}
+
+    def me(self, max_age=300):
+        """Your RomM user (GET /api/users/me): id, username, ra_username,
+        ra_progression... Kept for max_age seconds; {} when RomM won't say."""
+        got = getattr(self, "_me", None)
+        if got and time.monotonic() - got[0] < max_age:
+            return got[1]
+        try:
+            me = self.get("/api/users/me")
+        except _core.RommError as e:
+            if "HTTP 404" not in str(e):
+                raise
+            me = None
+        me = me if isinstance(me, dict) else {}
+        self._me = (time.monotonic(), me)
+        return me
 
     def rom_filters(self):
         """The values RomM's filters take across the library, e.g.
@@ -204,16 +239,21 @@ class Api:
         finally:
             r.close()
 
-    def roms_all(self, limit=500, cap=None, cancel=None, keep=None, **kw):
+    def roms_all(self, limit=500, cap=None, cancel=None, keep=None, fields=None, **kw):
         """Every page of a roms() listing, in order: the first page gives the
         total, the rest are fetched PAGE_WORKERS at a time. cap: stop at that
         many (rounded up to a page). keep(rom): only the games it's True for
         are kept, each page filtered as it arrives (a big platform's full
-        listing is hundreds of MB once parsed). None if cancel was set."""
+        listing is hundreds of MB once parsed); fields: only these keys of
+        each are kept. None if cancel was set."""
         def page_at(off):
             page = self.roms(offset=off, limit=limit, **kw)
             got = page.get("items") or []
-            return len(got), page.get("total") or 0, [r for r in got if keep(r)] if keep else got
+            n = len(got)
+            got = [r for r in got if keep(r)] if keep else got
+            if fields:
+                got = [{k: r[k] for k in fields if k in r} for r in got]
+            return n, page.get("total") or 0, got
         step, total, items = page_at(0)
         if not step:
             return items
@@ -280,10 +320,27 @@ class Api:
         keys = ("path_cover_large", "path_cover_small") if large else \
             ("path_cover_small", "path_cover_large")
         path = rom.get(keys[0]) or rom.get(keys[1])
-        if not path or not path.startswith("/") or path.startswith("//"):
+        return self.fetch_asset(path, "%d%s" % (rom["id"], "-L" if large else ""))
+
+    def fetch_screenshot(self, rom, i):
+        """Cached copy of a rom's i-th screenshot (screenshot_paths(rom)), as
+        fetch_cover: its path, None when there's none, CoverError for now."""
+        paths = _mine.screenshot_paths(rom)
+        if not 0 <= i < len(paths):
+            return None
+        import hashlib
+        tag = hashlib.sha1(paths[i].encode("utf-8", "replace")).hexdigest()[:12]   # a new shot: a new file
+        return self.fetch_asset(paths[i], "%d-shot-%s" % (rom["id"], tag))
+
+    def fetch_asset(self, path, key, cap=None):
+        """A RomM asset (a server path: cover, screenshot...) in the cover
+        cache as <key>.img, fetched once and pruned with the covers (least
+        recently used first, under cache_limit). The path, None, or
+        CoverError, as fetch_cover says. cap: refuse bigger (COVER_MAX)."""
+        if not path or not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
             return None             # only server-relative paths: the session carries the token
         os.makedirs(_core.COVER_CACHE, exist_ok=True)
-        dest = os.path.join(_core.COVER_CACHE, "%d%s.img" % (rom["id"], "-L" if large else ""))
+        dest = os.path.join(_core.COVER_CACHE, "%s.img" % key)
         if os.path.exists(dest):
             _covers.touch_cached(dest)
             return dest
@@ -301,7 +358,7 @@ class Api:
                 _net.discard(r)
                 raise CoverError("cover: HTTP %d" % r.status_code)
             try:
-                data = _read_capped(r, COVER_MAX)
+                data = _read_capped(r, cap or COVER_MAX)
             except requests.RequestException as e:
                 raise CoverError("cover: %s" % e.__class__.__name__) from None
             except _core.RommError:

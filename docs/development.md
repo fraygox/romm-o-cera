@@ -205,6 +205,8 @@ modules, in import order (each uses only the ones above it):
 | `romm/audit.py` | Check games, and game info for games already here |
 | `romm/unseen.py` | games EmulationStation can't see |
 | `romm/qr.py` | a small QR code encoder (byte mode, versions 1-6) for the Documentation row |
+| `romm/mine.py` | your side of RomM, read-only: statuses and lists (`USER_LISTS`), notes, RetroAchievements progress, screenshot paths |
+| `romm/compare.py` | Compare with RomM per platform or collection, which backlog games fit now, plays here (from ES) |
 
 The rules (`tests/test_package.py` checks them):
 
