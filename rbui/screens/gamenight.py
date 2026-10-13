@@ -338,7 +338,7 @@ class GameNightScreen(Screen):
             scroll_text(c, f.small, summary, (tx, y, tw, vb.top - 16 - y), theme.DIM, key=rom["id"], line_h=20,
                         bg=bg, slot="night-summary")
         app.hit(vb, lambda: press_verb(app, rom))
-        verb_button(c, f, vb, **game_verb(app, rom))
+        verb_button(c, f, vb, glyph=None, **game_verb(app, rom))     # a tap: the verb; A opens the page
         self.draw_foot(c, p, cov.bottom + 20)
 
     def draw_foot(self, c, p, y):

@@ -513,7 +513,7 @@ class HomeScreen(Screen):
     def panel_game(self, p, key, rom):
         app = self.app
         self.want_played(rom)
-        p.verb(fn=lambda: press_verb(app, rom), **game_verb(app, rom))      # a tap: the verb itself; A: the page
+        p.verb(fn=lambda: press_verb(app, rom), glyph=None, **game_verb(app, rom))   # a tap: the verb; A: the page
         ch = max(120, min(COVER_BOX[1], p.room() - 162))        # leaves a line of title, meta, status, 2 of summary
         cw = ch * 3 // 4
         cover(p.c, app, rom, (p.x + (p.w - cw) // 2, p.y, cw, ch), fit=True)
