@@ -23,7 +23,8 @@ commercial game names in screenshots, tests or fixtures.
 
 ## The screenshot harness
 
-The whole UI at once — every screen and dialog, in the Xbox, PlayStation,
+The whole UI at once: every screen and dialog (the theme picker, Custom,
+Surprise me and Recommended for you included), in the Xbox, PlayStation,
 Nintendo and keyboard styles, with a contact sheet (`index.html`). It starts
 its own mock RomM and fake EmulationStation, and fails on a hint that
 bypasses the glyph helper:
@@ -34,8 +35,12 @@ bypasses the glyph helper:
 ```
 
 Each scene is drawn once the app's background loads have landed (at most 50
-frames); `--fixed-wait` always waits the full 50. `--theme xbox_oled` (any
-Settings theme) draws them in that theme; `screenshots/themes/` comes from it.
+frames); `--fixed-wait` always waits the full 50. `--readme` copies the
+Xbox-style scenes named in `README_SET` (at the end of `tools/shots.py`) to
+`screenshots/`; `tools/release.py screenshots` runs exactly that. A new
+README picture is a new `README_SET` entry. `--theme xbox_oled` (any `theme`
+key) draws every scene in that theme; `screenshots/themes/` comes from it,
+copied by hand.
 
 ## The documentation site
 
@@ -51,7 +56,9 @@ python3 tools/docs_site.py && pip install -r tools/docs-requirements.txt && mkdo
 ```
 
 `mkdocs build --strict` fails on a broken link or anchor, so the site never
-publishes one.
+publishes one. A new page in docs/ also needs its place in `mkdocs.yml`'s
+`nav`, a row in docs/README.md, and one in the README's Documentation
+table.
 
 ## Releasing
 
@@ -111,14 +118,28 @@ git config user.email you@users.noreply.github.com
 git config --add public.deny 'your-name|your-domain\.example'
 ```
 
-## dolphin-tool
+## Converter tool builds
 
-Built in a container from the Dolphin commit Batocera ships:
-`tools/dolphin-tool/make.sh [x86_64|aarch64]` then
-`tools/dolphin-tool/package.sh [x86_64|aarch64]`. The ARM build is a
-cross-build; test it on real ARM hardware — under qemu-user it hangs at
-startup (Dolphin's udev hot-plug listener waits on a real-time signal
-qemu-user uses itself).
+Three converters download a tool the box doesn't have, the first time their
+switch is turned on in Settings. Each tool is built in a container from
+pinned sources by `make.sh`, packed with its licenses and exact source by
+`package.sh`, and published as its own GitHub release
+(`dolphin-tool-2603a`, `xbox360-tools-2610a`, `wiiu-tools-2610b`); the app pins
+each archive's URL, size and SHA-256 in `romm/tools.py`
+(`ROMM_BROWSER_<TOOL>_URL` and `_SHA256` point it at a local build).
+
+- `tools/dolphin-tool/`: dolphin-tool for GameCube and Wii to RVZ, built
+  from the Dolphin commit Batocera ships:
+  `make.sh [x86_64|aarch64]` then `package.sh [x86_64|aarch64]`. The ARM
+  build is a cross-build; test it on real ARM hardware: under qemu-user it
+  hangs at startup (Dolphin's udev hot-plug listener waits on a real-time
+  signal qemu-user uses itself).
+- `tools/xbox360-tools/`: extract-xiso and zarchive for Xbox 360 to .zar,
+  x86_64 only (Batocera's xenia packages are x86_64 only); ZArchive is the
+  commit the xenia-canary Batocera ships pins, so the reader matches.
+- `tools/wiiu-tools/`: wuatool for Wii U discs, built on Cemu's disc code
+  and ZArchive, with a self-test on synthetic discs; see
+  [Disc compression](disc-compression.md).
 
 ## Tests
 
@@ -127,16 +148,19 @@ pip install -r tests/requirements.txt
 python -m pytest tests                       # logic + downloads/UI vs the mock RomM
 docker build -t rb-test:local tests/         # or in a container (tests/Dockerfile):
 docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v $PWD:$PWD -w $PWD rb-test:local \
-  python -m pytest -q -p no:cacheprovider tests
+  python -m pytest -q -p no:cacheprovider -n 6 tests
 ROMM_CONTRACT_URL=https://romm.example.com ROMM_CONTRACT_TOKEN=rmm_… \
   python -m pytest tests/test_contract.py    # your RomM still has the API the app uses
 python tests/contract/disposable.py --tag 5.4.0   # same, against a throwaway RomM (needs docker)
 ```
 
-The suite takes about 55 s (it took over 5 minutes before v0.7.0). It also runs in parallel if you install the
-optional `pytest-xdist` (`python -m pytest tests -n 8`, about 17 s, bound by the
-screenshot harness). The tests are independent of order and of each other,
-and each xdist worker starts its own mock RomM. Without xdist nothing changes.
+The suite runs in parallel with the optional `pytest-xdist`
+(`python -m pytest tests -n 6`, about 70 s; the `rb-test:local` image has
+it), bound by the screenshot harness; without it the tests run one after
+another and take a few minutes. The tests are independent of order and of each other, and
+each xdist worker starts its own mock RomM. Some read the docs: the
+`config.json` table in [Settings](settings.md) must list every key with its
+default.
 
 The contract tests are read-only and download only the smallest file they
 find. `disposable.py` is handy before upgrading RomM: run it with the new tag
@@ -335,6 +359,8 @@ it in every module that holds it.
 | `tools/settle.py` | tells the screenshot drivers when the app has settled (`SHOOT_SETTLE`) |
 | `tools/build-release.sh`, `tools/install.sh` | build the release zip (`NIGHTLY=…` for a nightly) / the on-box installer |
 | `tools/release.py` | push, nightly and stable releases, screenshots, docs ([Releasing](#releasing)) |
+| `tools/docs_site.py`, `mkdocs.yml`, `tools/docs-requirements.txt` | the documentation site ([The documentation site](#the-documentation-site)) |
+| `tests/` | the test suite, its mock EmulationStation (`fake_es.py`), the UI facade (`uifacade.py`) and its Docker image (`Dockerfile`) |
 | `tools/check_public.py`, `tools/hooks/` | keep private details out of public commits (git hooks) |
 | `CHANGELOG.md` | every stable release's notes (the GitHub release shows its section) |
 | `docs/` | these pages |
