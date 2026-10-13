@@ -112,3 +112,33 @@ def test_a_rows_grey_line_runs_under_a_bare_status(rb, fonts, monkeypatch):
     assert widths["dl-sub"] > widths["dl-label"]                         # nothing under the status: full width
     rb.list_row(_canvas(rb), fonts, r, False, "Ipsum", "roms/psx", "38 MB/s", rb.BLUE, aside=(0.4, rb.BLUE), slot="bar")
     assert widths["bar-sub"] == widths["bar-label"]                      # a progress bar under it: both stop short
+
+
+def test_the_games_note_fits_under_its_verb(rb, app, monkeypatch):
+    rom = {"id": 1, "name": "Lorem", "platform_id": 7, "fs_name": "Lorem.zip", "fs_extension": "zip",
+           "fs_size_bytes": 1 << 20}
+    monkeypatch.setattr(app, "layout", lambda rom: {"convert": "CHD", "label": "CUE/BIN", "unpacked": 0,
+                                                    "estimated": False, "discs": 1})
+    notes = [rb.game_note(app, rom, ("remote", None)), rb.game_note(app, rom, ("installed", None))]
+    assert notes == ["Saved to roms/psx, then CHD.", "Starts it in EmulationStation."]
+    for n in notes:
+        assert rb.measure(app.fonts.small, n) <= rb.game.SIDE.width
+
+
+def test_the_your_romm_strip_follows_a_short_summary(rb, app, monkeypatch):
+    rom = {"id": 1, "name": "Lorem", "platform_id": 7, "fs_name": "Lorem.zip", "fs_name_no_ext": "Lorem",
+           "fs_extension": "zip", "fs_size_bytes": 1 << 20, "summary": "One short line.",
+           "rom_user": {"id": 3, "user_id": 1, "backlogged": True},
+           "merged_screenshots": ["/assets/romm/resources/roms/7/1/screenshots/%d.png" % k for k in range(3)]}
+    monkeypatch.setattr(app, "detail", lambda rom: rom)
+    scr = rb.GameScreen(app, rom)
+    strips = []
+    monkeypatch.setattr(scr, "draw_strip", lambda c, rec, r: strips.append(r.copy()))
+    scr.draw(app.canvas)
+    assert strips and strips[0].top < rb.game.COVER.bottom - scr.strip_height(rom)   # right under the summary
+    rom["summary"] = "Lorem ipsum dolor sit amet consectetur adipiscing elit. " * 30
+    scr.draw(app.canvas)
+    assert strips[-1].top == rb.game.COVER.bottom - scr.strip_height(rom)            # a long one: at the foot
+
+
+# ---- Activity

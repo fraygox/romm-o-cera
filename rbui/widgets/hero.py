@@ -76,16 +76,16 @@ def game_verb(app, rom, status=None, play="Play now", play_detail="on this box",
 
 
 def game_note(app, rom, status=None):
-    """What the game's verb does next, in a short sentence."""
+    """What the game's verb does next, in a sentence short enough for the line under the button."""
     st = (status or app.rom_status(rom))[0]
     system = app.system_for(rom)
     if not system:
         return ""
     if st == "installed":
-        return "Hands the box's copy to EmulationStation."
+        return "Starts it in EmulationStation."
     lay = app.layout(rom)
     if lay and lay["convert"]:
-        return "Saved to roms/%s, made into %s after." % (system, lay["convert"])
+        return "Saved to roms/%s, then %s." % (system, lay["convert"])
     return "Saved to roms/%s." % system
 
 
