@@ -7,8 +7,8 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import (button_glyph, circle, focus_box, GLYPH_RE, hline, polyline, rich_lines, rich_text, rom_title,
-                       rrect, text)
+from rbui.draw import (button_glyph, circle, focus_box, hline, marquee, polyline, rom_title, rrect, scroll_text,
+                       text)
 
 
 # ------------------------------------------------------------------ modals
@@ -136,14 +136,15 @@ class ActionMenu:
                 vr = text(c, f.body, value, (row.right - 18, row.centery),
                           theme.ACCENT_HI if on else theme.DIM, "midright")
                 vw = vr.width + 24
+            # the focused row's label and grey line slide to show what doesn't fit; the others keep "…"
             if sub:
-                text(c, f.body, label, (row.left + 18, row.top + 6), col, maxw=row.width - 36 - vw)
-                if GLYPH_RE.search(sub):
-                    rich_text(c, f, f.small, sub, (row.left + 18, row.top + 30), theme.FAINT)
-                else:
-                    text(c, f.small, sub, (row.left + 18, row.top + 30), theme.FAINT, maxw=row.width - 36 - vw)
+                marquee(c, f.body, label, (row.left + 18, row.top + 6), col, maxw=row.width - 36 - vw,
+                        focused=on, bg=theme.PANEL_HI, slot="menu-label")
+                marquee(c, f.small, sub, (row.left + 18, row.top + 30), theme.FAINT, maxw=row.width - 36 - vw,
+                        focused=on, bg=theme.PANEL_HI, slot="menu-sub")
             else:
-                text(c, f.body, label, (row.left + 18, row.centery), col, "midleft", maxw=row.width - 36 - vw)
+                marquee(c, f.body, label, (row.left + 18, row.centery), col, anchor="midleft", maxw=row.width - 36 - vw,
+                        focused=on, bg=theme.PANEL_HI, slot="menu-label")
 
 
 class ManageMenu(ActionMenu):
@@ -222,8 +223,9 @@ class Confirm:
         rrect(c, theme.PANEL, r, 18)
         rrect(c, theme.LINE, r, 18, 1)
         text(c, f.h2, self.title, (r.left + 32, r.top + 28), theme.TEXT, maxw=r.width - 64)
-        for i, ln in enumerate(rich_lines(self.app.fonts, f.body, self.body, r.width - 64, 4)):
-            rich_text(c, self.app.fonts, f.body, ln, (r.left + 32, r.top + 76 + i * 26), theme.DIM)
+        # a body longer than its four lines scrolls by itself (never cut)
+        scroll_text(c, f.body, self.body, (r.left + 32, r.top + 74, r.width - 64, 4 * 26 + 2), theme.DIM,
+                    key=self.title, line_h=26, slot=("confirm", id(self)))
         bx = r.left + 32
         by = r.bottom - 58
         okw, nw = (220, 150) if self.alt else (260, 180)

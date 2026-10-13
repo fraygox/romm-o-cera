@@ -993,6 +993,7 @@ class App:
 
     # ---- drawing
     def draw(self):
+        draw.NOW = self.t                       # the scrolling texts' clock
         c = self.canvas
         c.fill(theme.BG)
         self.targets, self.tapped = [], False

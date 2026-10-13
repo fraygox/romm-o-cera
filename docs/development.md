@@ -305,7 +305,7 @@ on `sys.path`, imports it and runs `main()`. The modules, in import order
 | `rbui/__init__.py` | `APP_DIR` (the app folder) and `APP_NAME` |
 | `rbui/theme.py` | scaling (`W`, `H`, `K`, `S()`, `SR()`, `LR()`), the palette, `THEMES` and `apply_theme()`, the theme picker's groups and descriptions, the Custom theme (`custom_palette()`), the space bar's derived colours |
 | `rbui/pads.py` | controller styles: the glyph and label each hint token shows, `PAD_STYLE`, `INPUT_MODE` |
-| `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, covers' scaling |
+| `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, text that scrolls in its box (`scroll_text`, `marquee`), covers' scaling |
 | `rbui/sfx.py` | the UI's sounds |
 | `rbui/input.py` | keyboard, game controllers and raw joysticks to actions |
 | `rbui/modals.py` | menus and dialogs: `ActionMenu`, `ManageMenu`, `Confirm`, `InfoDialog`, `DownloadConfirm` |
@@ -318,9 +318,19 @@ The rules (`tests/test_ui_package.py` checks them):
 - Names that change while the app runs live in one module and the others read
   them through it: `theme.BG` (every palette colour: `apply_theme()` rebinds
   them), `theme.K`, `draw.TEXT_BUDGET` / `draw.COVER_BUDGET`, `draw.FONTS`,
-  `pads.INPUT_MODE` / `pads.PAD_STYLE`. A `from rbui.theme import BG` would
+  `pads.INPUT_MODE` / `pads.PAD_STYLE`, `draw.NOW` (the frame clock the
+  scrolling texts run on: `App.draw` sets it to `app.t`). A `from rbui.theme import BG` would
   keep the colour of the theme at import. Everything else (functions,
   classes, constants) is imported by name.
+- Text that may not fit its box is never cut with a line cap: prose goes
+  through `scroll_text(c, font, text, rect, colour, key=…)`, which scrolls it
+  up by itself when it's taller than `rect` (a pause at the top, a calm glide,
+  a pause at the end, back to the top; a fade at the cut edges and a thin
+  position bar), and a focused row's one-line label through
+  `marquee(c, font, text, pos, colour, maxw=…, focused=on)` (unfocused rows
+  keep their "…"). Both start over when the text or `key` changes and stay
+  still when it fits. `tests/test_scroll_text.py` and the help-fits tests in
+  `tests/test_text_fits.py` check them.
 - Everything is imported at start-up: no rbui import inside a function, so
   nothing loads later from a folder an update swapped in. The workers
   (rb_*) never import rbui.

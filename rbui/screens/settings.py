@@ -8,7 +8,7 @@ import rommlib
 from rommlib import human_size
 from rbui import APP_NAME, theme
 from rbui.theme import S, THEMES
-from rbui.draw import hline, measure, polyline, rich_lines, rich_text, rrect, text
+from rbui.draw import hline, marquee, measure, polyline, rich_text, rrect, scroll_text, text
 from rbui.pads import style_from_names, STYLE_NAMES
 from rbui.screens.base import Screen
 from rbui.screens.text_input import TextInputScreen
@@ -660,7 +660,8 @@ class SettingsScreen(Screen):
                 rrect(c, theme.ACCENT, r, 12, 2)
             text(c, self.f.h3, label, (r.left + 22, r.top + 4), theme.TEXT if on else theme.DIM)
             warn = sub.startswith("Plain HTTP")
-            text(c, self.f.small, sub, (r.left + 22, r.top + 28), theme.AMBER if warn else theme.FAINT, maxw=420)
+            marquee(c, self.f.small, sub, (r.left + 22, r.top + 28), theme.AMBER if warn else theme.FAINT, maxw=420,
+                    focused=on, slot="settings-sub")
             vcol = theme.ACCENT_HI if key in self.ACTIONS else (theme.TEXT if on else theme.DIM)
             vr = text(c, self.f.body, value, (r.right - 22, r.centery), vcol, "midright", maxw=240)
             if key not in self.STEPLESS:          # a tap left of the value's middle steps back
@@ -686,10 +687,9 @@ class SettingsScreen(Screen):
         text(c, self.f.h2, label, (p.left + 28, p.top + 46), theme.TEXT, maxw=p.width - 56)
         yy = p.top + 92
         a = p.bottom - 150
-        most = 7 if key == "docs" else (a - 40 - yy) // 26        # the QR code needs the room; else up to "Now:"
-        for ln in rich_lines(self.f, self.f.body, SETTING_HELP.get(key, sub), p.width - 56, most):
-            rich_text(c, self.f, self.f.body, ln, (p.left + 28, yy), theme.DIM)
-            yy += 26
+        room = 4 * 26 if key == "docs" else a - 40 - yy            # the QR code needs the room; else up to "Now:"
+        yy = scroll_text(c, self.f.body, SETTING_HELP.get(key, sub), (p.left + 28, yy, p.width - 56, room),
+                         theme.DIM, key=key, line_h=26, slot="settings-help").bottom
         if key == "docs":
             draw_qr(c, docs_qr(), pygame.Rect(p.left + 28, yy + 10, p.width - 56, a - yy - 22))
         elif value:

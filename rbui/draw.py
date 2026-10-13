@@ -442,3 +442,179 @@ def progress_bar(surf, rect, frac, color=None):
     if frac > 0:
         w = max(rect[3], int(rect[2] * min(1.0, frac)))
         rrect(surf, color, (rect[0], rect[1], w, rect[3]), rect[3] // 2)
+
+
+# ------------------------------------------------------------------ text that scrolls in its box
+#
+# Text longer than the box it's drawn in is never cut: scroll_text() moves a block of prose up
+# by itself (a pause at the top, a calm glide, a pause at the end, back to the top) and marquee()
+# slides the focused row's one-line label sideways. Both run on the app's frame clock (NOW,
+# which App.run sets to app.t every frame), start over when their text or key changes, and
+# don't move at all when the text fits.
+
+NOW = 0.0                   # the app's frame clock, seconds (App.run: draw.NOW = app.t)
+SCROLL_WAIT = 2.0           # seconds still at the top, and again at the end, before moving on
+SCROLL_SPEED = 18           # logical px a second up: a calm reading pace (~ a line every 1.4 s)
+MARQUEE_WAIT = 1.5
+MARQUEE_SPEED = 40          # logical px a second sideways
+
+_SCROLLS = {}               # slot -> [signature, start time, last drawn]
+_WRAPS = OrderedDict()      # (font, text, width) -> wrapped lines
+_FADES = OrderedDict()      # (colour, w, h, side) -> a small alpha gradient Surface
+
+
+def scroll_offset(elapsed, overflow, speed=SCROLL_SPEED, wait=SCROLL_WAIT):
+    """How far (logical px) text `overflow` px longer than its box has moved after `elapsed`
+    seconds: still for `wait`, then `speed` px/s to the end, still for `wait`, then back to
+    0 and round again. 0 when it fits."""
+    if overflow <= 0 or elapsed <= 0:
+        return 0.0
+    run = overflow / float(speed)
+    t = elapsed % (wait + run + wait)
+    if t < wait:
+        return 0.0
+    return min(float(overflow), (t - wait) * speed)
+
+
+def scroll_elapsed(slot, sig, t=None):
+    """Seconds since what `slot` shows last changed (its signature) or came back on screen.
+    A slot not drawn for half a second starts over: a dialog opened again starts at the top."""
+    now = NOW if t is None else t
+    st = _SCROLLS.get(slot)
+    if st is None or st[0] != sig or now - st[2] > 0.5 or now < st[1]:
+        st = _SCROLLS[slot] = [sig, now, now]
+        if len(_SCROLLS) > 64:                  # forget slots that went off screen
+            for k in [k for k, v in _SCROLLS.items() if now - v[2] > 1.0 and k != slot]:
+                del _SCROLLS[k]
+    st[2] = now
+    return now - st[1]
+
+
+def wrapped(font, s, width):
+    """Lines of s wrapped to width, {TOKEN} glyphs kept whole; cached per (font, text, width)."""
+    key = (id(font), s, width)
+    lines = _WRAPS.get(key)
+    if lines is None:
+        if FONTS.get("f") and "{" in s and GLYPH_RE.search(s):
+            lines = rich_lines(FONTS["f"], font, s, width)
+        else:
+            lines = wrap(font, s, width)
+        _WRAPS[key] = lines
+        if len(_WRAPS) > 256:
+            _WRAPS.popitem(last=False)
+    else:
+        _WRAPS.move_to_end(key)
+    return lines
+
+
+def _fade(surf, color, prect, side):
+    """Fade the text at one edge of prect (physical) into color: "top", "bottom", "left", "right"."""
+    if prect.width <= 0 or prect.height <= 0:
+        return
+    key = (tuple(color), prect.width, prect.height, side)
+    img = _FADES.get(key)
+    if img is None:
+        img = pygame.Surface(prect.size, pygame.SRCALPHA)
+        n = prect.height if side in ("top", "bottom") else prect.width
+        for i in range(n):
+            a = int(255 * (1 - (i + 0.5) / n) ** 1.5)       # solid at the edge, clear inwards
+            j = i if side in ("top", "left") else n - 1 - i
+            if side in ("top", "bottom"):
+                img.fill(tuple(color) + (a,), (0, j, prect.width, 1))
+            else:
+                img.fill(tuple(color) + (a,), (j, 0, 1, prect.height))
+        _FADES[key] = img
+        if len(_FADES) > 24:
+            _FADES.popitem(last=False)
+    surf.blit(img, prect)
+
+
+def _clip_to(surf, prect):
+    old = surf.get_clip()
+    surf.set_clip(prect.clip(old))
+    return old
+
+
+def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None, slot=None, t=None):
+    """Prose wrapped into rect (logical), never drawn outside it. When it's taller than rect it
+    scrolls up by itself (scroll_offset) with its edges fading into bg (the colour behind it,
+    default PANEL) and a thin position bar on the right; when it fits it stays still.
+    s: a string (\\n splits paragraphs; {TOKEN} glyphs work) or a list of paragraphs.
+    key: anything else that should start the scroll over when it changes (the selection).
+    slot: which scroller this is (default: the rect). Returns the rect the text took up (its
+    height is the text's, at most rect's); scroll_fits() tells beforehand whether it will move."""
+    color = theme.TEXT if color is None else color
+    bg = theme.PANEL if bg is None else bg
+    rect = pygame.Rect(rect)
+    s = "\n".join(s) if isinstance(s, (list, tuple)) else (s or "")
+    lh = line_h or (font.get_height() / theme.K + 4)
+    lines = wrapped(font, s, rect.width)
+    total = len(lines) * lh
+    over = total - rect.height
+    if over > 0.5:                      # room for the position bar
+        lines = wrapped(font, s, rect.width - 10)
+        total = len(lines) * lh
+        over = total - rect.height
+    over = max(0.0, over)
+    off = scroll_offset(scroll_elapsed(slot or ("v",) + tuple(rect), (s, key, rect.width), t), over) \
+        if over > 0.5 else 0.0
+    prect = SR(rect)
+    old = _clip_to(surf, prect)
+    py0 = S(rect.top - off)
+    for i, ln in enumerate(lines):
+        py = py0 + S(i * lh)
+        if py + S(lh) < prect.top or py > prect.bottom:
+            continue
+        y = py / theme.K
+        if FONTS.get("f") and "{" in ln and GLYPH_RE.search(ln):
+            rich_text(surf, FONTS["f"], font, ln, (rect.left, y), color)
+        else:
+            text(surf, font, ln, (rect.left, y), color)
+    if over > 0.5:
+        fh = max(2, S(min(lh * 0.7, rect.height / 4)))
+        if off > 0.5:
+            _fade(surf, bg, pygame.Rect(prect.left, prect.top, prect.width, fh), "top")
+        if off < over - 0.5:
+            _fade(surf, bg, pygame.Rect(prect.left, prect.bottom - fh, prect.width, fh), "bottom")
+        track = pygame.Rect(rect.right - 3, rect.top + 2, 3, rect.height - 4)
+        rrect(surf, theme.LINE, track, 1)
+        th = max(12, track.height * rect.height / total)
+        rrect(surf, theme.FAINT, (track.left, track.top + (track.height - th) * off / over, 3, th), 1)
+    surf.set_clip(old)
+    return pygame.Rect(rect.left, rect.top, rect.width, int(min(total, rect.height) + 0.999))
+
+
+def scroll_fits(font, s, width, height, line_h=None):
+    """Whether scroll_text would draw s still (it fits width x height)."""
+    s = "\n".join(s) if isinstance(s, (list, tuple)) else (s or "")
+    lh = line_h or (font.get_height() / theme.K + 4)
+    return len(wrapped(font, s, width)) * lh <= height + 0.5
+
+
+def marquee(surf, font, s, pos, color=None, maxw=None, focused=True, anchor="topleft", key=None,
+            bg=None, slot=None, t=None):
+    """A one-line label in maxw: unfocused (or fitting) it's text() with its "…"; focused and too
+    long it slides left after MARQUEE_WAIT to show its end, waits, and comes back, its cut edges
+    fading into bg (default PANEL_HI, the focused row). topleft or midleft anchors."""
+    s = s or ""
+    rich = bool(FONTS.get("f") and "{" in s and GLYPH_RE.search(s))
+    w = rich_width(FONTS["f"], font, s) if rich else measure(font, s) if maxw else 0
+    if not focused or not maxw or w <= maxw:
+        return text(surf, font, s, pos, color, anchor, maxw=maxw)
+    bg = theme.PANEL_HI if bg is None else bg
+    lh = font.get_height() / theme.K
+    top = pos[1] - lh / 2 if anchor == "midleft" else pos[1]
+    box = pygame.Rect(int(pos[0]), int(top), int(maxw), int(lh + 1.999))
+    over = w - maxw
+    off = scroll_offset(scroll_elapsed(slot or ("h", box.left, box.top, box.width), (s, key), t),
+                        over, MARQUEE_SPEED, MARQUEE_WAIT)
+    prect = SR(box)
+    old = _clip_to(surf, prect)
+    text(surf, font, s, (pos[0] - off, pos[1]), color, anchor)
+    fw = max(2, S(14))
+    if off > 0.5:
+        _fade(surf, bg, pygame.Rect(prect.left, prect.top, fw, prect.height), "left")
+    if off < over - 0.5:
+        _fade(surf, bg, pygame.Rect(prect.right - fw, prect.top, fw, prect.height), "right")
+    surf.set_clip(old)
+    return box

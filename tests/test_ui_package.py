@@ -16,7 +16,7 @@ SOURCES = sorted(glob.glob(os.path.join(APP, "rbui", "*.py")) + glob.glob(os.pat
 # budgets, the last input used, the button style), so read as theme.BG etc.
 LIVE = {"theme": ("K", "BG", "BG2", "PANEL", "PANEL_HI", "LINE", "TEXT", "DIM", "FAINT", "ACCENT", "ACCENT_HI",
                   "GREEN", "AMBER", "RED", "BLUE", "SYSTEM_COL", "SPACE_PARTS"),
-        "draw": ("TEXT_BUDGET", "COVER_BUDGET", "FONTS"),
+        "draw": ("TEXT_BUDGET", "COVER_BUDGET", "FONTS", "NOW"),
         "pads": ("INPUT_MODE", "PAD_STYLE")}
 
 
