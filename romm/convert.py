@@ -954,6 +954,57 @@ def conversions_state(recent=60):
     return {"current": cur, "queue": queue, "results": results}
 
 
+def _hold_path():
+    return os.path.join(_core.DATA_DIR, "chd-hold")      # there: the worker pauses (Activity's Pause)
+
+
+def _stop_path():
+    return os.path.join(_core.DATA_DIR, "chd-stop")      # the task the worker drops, keeping its original
+
+
+def conversions_held():
+    """True while the owner has paused conversions (Activity): the worker freezes its converter
+    as it does while a game runs, and starts nothing new."""
+    return os.path.exists(_hold_path())
+
+
+def hold_conversions(on=True):
+    """Pause (on) or resume the conversion worker. Kept across restarts until resumed."""
+    if on:
+        os.makedirs(_core.DATA_DIR, exist_ok=True)
+        _core.atomic_write_text(_hold_path(), "%d\n" % time.time())
+    else:
+        try:
+            os.remove(_hold_path())
+        except FileNotFoundError:
+            pass
+
+
+def stop_conversion(name):
+    """Ask the worker to stop the conversion of queue task `name`: what it made so far goes, the
+    original stays, and the task leaves the queue (the results list can queue it again)."""
+    os.makedirs(_core.DATA_DIR, exist_ok=True)
+    _core.atomic_write_text(_stop_path(), name)
+
+
+def stop_requested(name):
+    """True when stop_conversion(name) asked for it (the worker polls this)."""
+    if not name or not os.path.exists(_stop_path()):
+        return False
+    try:
+        with open(_stop_path()) as f:
+            return f.read().strip() == name
+    except OSError:
+        return False
+
+
+def clear_stop():
+    try:
+        os.remove(_stop_path())
+    except FileNotFoundError:
+        pass
+
+
 # Compress's "after" estimate, for a converter this box hasn't run yet: what its outputs
 # usually weigh against their sources (CD images ~60%, GameCube/Wii junk dropped, a .cso
 # already compressed, a PS3 folder the same game unpacked).

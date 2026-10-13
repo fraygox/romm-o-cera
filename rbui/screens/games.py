@@ -18,7 +18,7 @@ from rbui.widgets.keyboard import Keyboard
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
 from rbui.widgets.chips import tag
 from rbui.widgets.factsheet import facts
-from rbui.widgets.hero import game_verb, verb_button, VERB_H
+from rbui.widgets.hero import game_verb, rom_year, verb_button, VERB_H
 from rbui.widgets.tiles import cover
 from rbui.widgets.layout import bubble_at, split
 
@@ -83,13 +83,8 @@ def surprise_about(rom):
     n = rommlib.max_players(md.get("player_count"))
     if n > 1:
         bits.append("up to %d players" % n)
-    ts = md.get("first_release_date")
-    if ts:
-        try:
-            bits.append(time.strftime("%Y", time.gmtime(int(ts) / (1000 if int(ts) > 10 ** 11 else 1))))
-        except (TypeError, ValueError, OverflowError):
-            pass
-    return " · ".join(bits) + "." if bits else ""
+    bits.append(rom_year(rom))
+    return " · ".join(b for b in bits if b) + "." if bits else ""
 
 
 def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"):
@@ -735,9 +730,7 @@ class GameListScreen(ListScreen):
             y += 25 + used.height
         md = rom.get("metadatum") or {}
         plat = app.platform_by_id.get(rom.get("platform_id"))
-        year = ""
-        if md.get("first_release_date"):
-            year = time.strftime("%Y", time.gmtime(md["first_release_date"] / 1000))
+        year = rom_year(rom)
         size, fmt = human_size(rom.get("fs_size_bytes")), ""
         lay = app.layout(rom)
         if lay:

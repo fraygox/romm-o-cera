@@ -13,7 +13,7 @@ face button (confirm), **B** the right one (back), **X** the left one and
 
 ## Controller
 
-**A** confirms · **B** goes back · **Select** opens Downloads · **Start**
+**A** confirms · **B** goes back · **Select** opens Activity (downloads and compressing) · **Start**
 goes Home · **Hotkey + Start exits**. What X, Y, L/R and L2/R2 do depends on
 the screen ([below](#on-each-screen)).
 
@@ -107,12 +107,13 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Platforms | Open | Game night from this platform | Search this platform | |
 | Collections | Open | A collection's menu: open, Game night, download every game | | A–Z (in a single list) |
 | Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search | A–Z |
-| A game's page | Download / Play now | Actions: more like this, surprise me, delete (on the box) | | |
+| A game's page | Download / Play now | Actions: more like this, Game night, delete (on the box) | | |
 | Game night | Play now or Download the pick | Actions: players, only what's on this box | Another | |
 | Backlog | Play now or Download | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
-| Downloads | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Activity (downloads) | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Activity (compressing) | Pause or resume; a queued one: convert next; Compress games | Stop this one; a queued one: take it out | Compress games | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |
 | Games from RomM | The game's page (play now; X: delete, download again, more like this) | Actions: sort, pick several | Sort | A–Z (by name) |

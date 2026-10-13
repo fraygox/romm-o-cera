@@ -164,6 +164,7 @@ def fake_jobs():
 
 def fake_conversions():
     import json as _j
+    rommlib.hold_conversions(False)
     q = rommlib.CHD_QUEUE_DIR
     os.makedirs(q, exist_ok=True)
     mk("psx/Veniam Chronicles (USA) (Disc 1).cue", 2 * MB)
@@ -184,6 +185,18 @@ def fake_conversions():
         f.write(_j.dumps({"time": time.time() - 300, "task": "0-b.json", "result": "failed",
                           "message": "Misplaced.iso: not a GameCube/Wii disc image (dolphin-tool verify failed)",
                           "sources": ["Misplaced.iso"], "mode": "rvz", "retry": {"mode": "rvz"}}) + "\n")
+
+
+def no_conversions():
+    """Nothing queued, running or finished: the empty Activity screen."""
+    import shutil as _sh
+    _sh.rmtree(rommlib.CHD_QUEUE_DIR, ignore_errors=True)
+    rommlib.hold_conversions(False)
+    for n in ("chd-current.json", "chd-results.jsonl"):
+        try:
+            os.remove(os.path.join(rommlib.DATA_DIR, n))
+        except OSError:
+            pass
 
 
 def fake_audit():
@@ -249,39 +262,6 @@ def install_some():
     return r
 
 
-def install_backlog():
-    """Three of the mock's backlog games on the box."""
-    lib = app.library
-    got = [r for r in app.api.user_list("backlog", limit=100)["items"] if app.system_for(r)]
-    for r in got[:6:2]:
-        sy = app.system_for(r)
-        p = os.path.join(R, sy, r["fs_name_no_ext"] + ".chd")
-        mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // 2)
-        lib.mark(r, sy, [p])
-
-
-def game_night(players=0, here=False, rolls=4, scope=None, then=None):
-    """Game night from Home after a few rolls (the same ones every run)."""
-    import random
-    random.seed(7)
-    if here:
-        install_some()
-    app.night_opts = {"players": players, "here": here}
-    scr = rb.GameNightScreen(app, scope or rb.Scope.library(app))
-    app.push(scr)
-
-    def more():
-        for _ in range(rolls - 1):
-            rom, why, pool = rb.gamenight.roll(app, scr.scope, players, here, [r["id"] for r in scr.picks])
-            if rom:
-                scr.picks.append(rom)
-                scr.rolls += 1
-        scr.sel = max(0, len(scr.picks) - 1)
-        if then:
-            then()
-    app._after = more
-
-
 def compare_box():
     """Games for Compare with RomM: the app's compressed installs, one RomM changed since, one
     copied over by hand that matches, one at another size, and the homebrew already here."""
@@ -332,6 +312,39 @@ def whats_new(theme_key=None, prev="0.8.2"):
     if theme_key:
         rb.apply_theme(theme_key)
     app.push(rb.WhatsNewScreen(app, rommlib.release_notes(), prev))
+
+
+def install_backlog():
+    """Three of the mock's backlog games on the box."""
+    lib = app.library
+    got = [r for r in app.api.user_list("backlog", limit=100)["items"] if app.system_for(r)]
+    for r in got[:6:2]:
+        sy = app.system_for(r)
+        p = os.path.join(R, sy, r["fs_name_no_ext"] + ".chd")
+        mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // 2)
+        lib.mark(r, sy, [p])
+
+
+def game_night(players=0, here=False, rolls=4, scope=None, then=None):
+    """Game night from Home after a few rolls (the same ones every run)."""
+    import random
+    random.seed(7)
+    if here:
+        install_some()
+    app.night_opts = {"players": players, "here": here}
+    scr = rb.GameNightScreen(app, scope or rb.Scope.library(app))
+    app.push(scr)
+
+    def more():
+        for _ in range(rolls - 1):
+            rom, why, pool = rb.gamenight.roll(app, scr.scope, players, here, [r["id"] for r in scr.picks])
+            if rom:
+                scr.picks.append(rom)
+                scr.rolls += 1
+        scr.sel = max(0, len(scr.picks) - 1)
+        if then:
+            then()
+    app._after = more
 
 
 def search_ready():
@@ -533,14 +546,22 @@ SCENES = [
     ("search", search_ready),
     ("download-confirm", lambda: setattr(app, "modal", rb.DownloadConfirm(app, a_rom()))),
     ("downloads", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
-                           app.push(rb.DownloadsScreen(app)))),
+                           fake_conversions(), app.push(rb.DownloadsScreen(app)))),
+    ("downloads-compress", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
+                                    fake_conversions(), app.push(rb.DownloadsScreen(app)),
+                                    setattr(app, "_after", lambda: app.dispatch("right")))),
+    ("downloads-paused", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", True),
+                                  fake_conversions(), rommlib.hold_conversions(True),
+                                  app.push(rb.DownloadsScreen(app)),
+                                  setattr(app, "_after", lambda: app.dispatch("right")))),
     ("downloads-picked", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
+                                  rommlib.hold_conversions(False),
                                   app.push(rb.DownloadsScreen(app)),
                                   setattr(app, "_after", lambda: (setattr(app.stack[-1], "picking", True),
                                                                   [app.dispatch(k) for k in ("ok", "ok", "x")])))),
     ("conversions", lambda: (fake_conversions(), app.push(rb.ConversionsScreen(app)))),
     ("downloads-cancel", paused_cancel),
-    ("downloads-empty", lambda: (app.downloader.jobs.clear(), app.push(rb.DownloadsScreen(app)))),
+    ("downloads-empty", lambda: (app.downloader.jobs.clear(), no_conversions(), app.push(rb.DownloadsScreen(app)))),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
     ("settings-pair", lambda: app.push(settings_at("pair"))),
     ("pair-code", lambda: (app.push(settings_at("pair")), app.stack[-1].pair(),

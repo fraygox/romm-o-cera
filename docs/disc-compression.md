@@ -8,7 +8,8 @@ original is deleted. Settings → **Disc compression**. Games already on the
 box can be compressed too (see
 [Converting a library you already have](#converting-a-library-you-already-have)).
 
-Progress: **On this box → Conversions** (or L2/R2 in Downloads), and
+Progress: **Activity** (Select: pause, resume or stop the running one), **On this box → Conversions**
+(or L2/R2 in Activity), and
 `/userdata/system/romm-browser/romm-browser.log` (older lines in
 `romm-browser.log.1` … `.9`; a new file starts every 10 MB).
 

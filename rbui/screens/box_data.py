@@ -117,8 +117,29 @@ def conversion_rows():
         srcs = d.get("sources") or [""]
         rows.append({"kind": d.get("result"), "name": d.get("task"), "task": d.get("retry"),
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0], "discs": len(srcs),
-                     "message": d.get("message") or "", "time": d.get("time", 0), "mode": d.get("mode")})
+                     "message": d.get("message") or "", "time": d.get("time", 0), "mode": d.get("mode"),
+                     "sizes": rommlib.result_sizes(d)})
     return rows
+
+
+def conversion_left(r):
+    """Seconds the running row's conversion still needs, from its progress so far; None until
+    there's enough of it to tell (or while it's paused)."""
+    cu = r.get("cur") or {}
+    pct = cu.get("pct")
+    if not pct or pct <= 2 or cu.get("paused"):
+        return None
+    el = time.time() - (cu.get("since") or time.time())
+    return el * (100 - pct) / pct
+
+
+def time_left(secs):
+    """A duration as said on screen: "40 s", "about 7 min", "about 1 h 20 min"."""
+    secs = max(0, int(round(secs)))
+    if secs < 60:
+        return "%d s" % max(1, secs)
+    mins = max(1, round(secs / 60))
+    return "about %d min" % mins if mins < 60 else "about %d h %d min" % divmod(mins, 60)
 
 
 def conversion_status(r):
@@ -128,9 +149,9 @@ def conversion_status(r):
     st = cu.get("step") or "Starting"
     if pct:
         st += " %d%%" % pct
-        if pct > 2:
-            el = time.time() - (cu.get("since") or time.time())
-            st += " · about %d min left" % max(1, round(el * (100 - pct) / pct / 60))
+        left = conversion_left(r)
+        if left is not None:
+            st += " · about %d min left" % max(1, round(left / 60))
     return st, (pct or 0) / 100.0
 
 

@@ -221,6 +221,9 @@ class InstalledScreen(ListScreen):
         p.prose(note, color=theme.FAINT, lines=3)
 
 
+RESULT_LABELS = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting", "stopped": "Stopped"}
+
+
 def _lastplayed_label(lp):
     return "never played" if not lp else "played %s-%s-%s" % (lp[:4], lp[4:6], lp[6:8])
 
@@ -298,7 +301,7 @@ class ConversionsScreen(ListScreen):
             e += [("Convert next", "", first), ("Remove from the queue", "The original is kept as it is", drop)]
         elif r["kind"] == "running":
             e.append(("Converting now", "It pauses by itself while a game runs", None))
-        elif r["kind"] in ("failed", "waiting") and r.get("task"):
+        elif r["kind"] in ("failed", "waiting", "stopped") and r.get("task"):
             def retry():
                 rommlib.publish_queue_task(r["task"], "%d-retry.json" % int(time.time() * 1000))
                 app.spawn_helper("rb_chd.py")
@@ -351,7 +354,7 @@ class ConversionsScreen(ListScreen):
                       "checks out.",
             "running": "It pauses by itself while a game runs. The original goes only after the copy checks out."}
     COLOURS = {"running": "BLUE", "queued": "DIM", "ok": "GREEN", "failed": "RED", "skipped": "AMBER",
-               "waiting": "AMBER"}
+               "waiting": "AMBER", "stopped": "AMBER"}
 
     def mode(self, r):
         return self.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")
@@ -370,5 +373,5 @@ class ConversionsScreen(ListScreen):
         if k == "queued":
             return ("Waiting for %s" % r["tool"] if r.get("tool") else "Queued"), col, \
                 "%s · %s" % (mode, human_size(r["size"])), 0
-        st = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(k, k)
+        st = RESULT_LABELS.get(k, k)
         return st, col, r.get("message") or "", 0
