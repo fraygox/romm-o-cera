@@ -503,6 +503,7 @@ class Downloader:
         self.rate_limit = 0           # bytes/s, 0 = unlimited (rb_dl.py sets it while a game runs)
         self.unpacking_bytes = 0      # space games handed to the post thread will still take
         self.es = _es.load_es_systems()
+        self.unopenable = _es.load_es_unopenable()  # listed by ES, but its emulator can't open them
         self.jobs = []
         self._closed = False
         Downloader.instances.append(self)
@@ -1209,6 +1210,9 @@ class Downloader:
         return bool(members) and not (self._accepts(j.system, ext) and not has_disc)
 
     def _accepts(self, system, ext):
+        """The system's emulator opens ext as it is (else a zip is unpacked)."""
+        if ext.lower() in self.unopenable.get(system, ()):
+            return False
         exts = self.es.get(system)
         return True if exts is None else ext.lower() in exts
 

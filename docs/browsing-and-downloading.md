@@ -252,7 +252,9 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
 - **Download while extracting** (Settings, on by default): the next game
   downloads while the last one unpacks. Turn it off for slow storage (SD
   cards, USB sticks).
-- Cartridge zips stay zipped when the system reads them; disc archives are
+- Cartridge zips stay zipped when the system's emulator reads them (the one
+  chosen in Batocera for that system, else its default: N64's default,
+  mupen64plus, can't, so N64 games are unzipped); disc archives are
   extracted, and disc games can be compressed in the background (see
   [Disc compression](disc-compression.md)).
 - An archive never unpacks into another game's folder. If its folder name is

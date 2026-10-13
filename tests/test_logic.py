@@ -145,7 +145,7 @@ def test_fix_m3us(tmp_path):
 
 def _downloader(isolated, es=None):
     d = rommlib.Downloader.__new__(rommlib.Downloader)   # no worker thread
-    d.cfg, d.es, d._chd_queued = {"chd": True}, es or {}, False
+    d.cfg, d.es, d.unopenable, d._chd_queued = {"chd": True}, es or {}, {}, False
     return d
 
 

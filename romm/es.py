@@ -468,9 +468,8 @@ def es_add_games(system, games, timeout=30):
 
 # ---------------------------------------------------------------- ES systems
 
-def load_es_systems():
-    """{system_dir_name: set(extensions)} from Batocera's es_systems.cfg."""
-    out = {}
+def _es_system_elements():
+    """(system dir name, <system> element) for every system, the user's es_systems_*.cfg last."""
     paths = [os.environ.get("ROMM_BROWSER_ES_SYSTEMS",
                             "/usr/share/emulationstation/es_systems.cfg")]
     cfgdir = "/userdata/system/configs/emulationstation"
@@ -484,9 +483,55 @@ def load_es_systems():
             continue
         for s in root.findall("system"):
             path = (s.findtext("path") or "").rstrip("/")
-            exts = (s.findtext("extension") or "").lower().split()
             if path:
-                out[os.path.basename(path)] = set(exts)
+                yield os.path.basename(path), s
+
+
+def load_es_systems():
+    """{system_dir_name: set(extensions)} from Batocera's es_systems.cfg: what ES lists."""
+    return {name: set((s.findtext("extension") or "").lower().split()) for name, s in _es_system_elements()}
+
+
+def batocera_conf():
+    """batocera.conf as {key: value} (comments and blank lines skipped); {} when unreadable."""
+    out = {}
+    try:
+        with open(os.path.join(_core.USERDATA, "system", "batocera.conf"), encoding="utf-8",
+                  errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def load_es_unopenable(conf=None):
+    """{system_dir_name: set(extensions)} ES lists but the system's emulator and core can't open:
+    the chosen core's incompatible_extensions (N64's default mupen64plus can't open .zip). The
+    choice is batocera.conf's <system>.emulator / <system>.core, else the core es_systems marks
+    default. Systems with nothing left out aren't in it."""
+    conf = batocera_conf() if conf is None else conf
+    out = {}
+    for name, s in _es_system_elements():
+        cores = [(e.get("name"), c) for e in s.iter("emulator") for c in e.iter("core")]
+        want_emu, want_core = conf.get(name + ".emulator"), conf.get(name + ".core")
+        pick = None
+        if want_emu or want_core:
+            pick = next((ec for ec in cores if (not want_emu or ec[0] == want_emu) and
+                         (not want_core or (ec[1].text or "").strip() == want_core)), None)
+            if pick is None and want_emu:
+                pick = next((ec for ec in cores if ec[0] == want_emu and ec[1].get("default") == "true"),
+                            next((ec for ec in cores if ec[0] == want_emu), None))
+        if pick is None:
+            pick = next((ec for ec in cores if ec[1].get("default") == "true"), cores[0] if cores else None)
+        bad = set((pick[1].get("incompatible_extensions") or "").lower().split()) if pick is not None else set()
+        if bad:
+            out[name] = bad
+        else:
+            out.pop(name, None)
     return out
 
 
