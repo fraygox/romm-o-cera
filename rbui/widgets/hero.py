@@ -1,5 +1,7 @@
 """A game's one action (the verb button and the line saying what it does) and the soft art
 backdrop behind a game's page."""
+import time
+
 import pygame
 import rommlib
 from rommlib import human_size
@@ -68,6 +70,19 @@ def game_verb(app, rom, status=None, play="Play now", play_detail="on this box",
         return dict(label=label, kind="busy", frac=frac)
     return dict(label="Retry download" if st == "failed" else "Download", kind="go",
                 detail=go_detail if go_detail is not None else human_size(rom.get("fs_size_bytes")))
+
+
+def game_meta(app, rom):
+    """The short line under a game's name: platform · year · genre (what RomM knows of it)."""
+    md = rom.get("metadatum") or {}
+    plat = app.platform_by_id.get(rom.get("platform_id")) or {}
+    year = ""
+    ts = md.get("first_release_date")
+    if isinstance(ts, (int, float)) and ts > 0:
+        year = time.strftime("%Y", time.gmtime(ts / 1000))
+    genre = (md.get("genres") or [""])[0]
+    return " · ".join(x for x in (plat.get("display_name") or plat.get("name") or rom.get("platform_display_name"),
+                                  year, genre) if x)
 
 
 def game_note(app, rom, status=None):

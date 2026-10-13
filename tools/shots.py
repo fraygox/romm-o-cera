@@ -401,8 +401,11 @@ SCENES = [
                                app.stack[0].surprise_menu())),
     ("surprise-pick", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
                                setattr(app, "_after", lambda: app.stack[-1].surprise_me()))),
-    ("home-recommended", lambda: setattr(app, "_after", lambda: setattr(
-        app.stack[0], "sel", [it[0] for it in app.stack[0].items()].index("recommended")))),
+    ("home-recommended", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("recommended", 1))),
+    ("home-rail", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("rail", 2))),
+    ("home-collections", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("collections", 1))),
+    ("home-backlog", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("backlog", 0))),
+    ("home-actions", lambda: setattr(app, "_after", lambda: app.dispatch("x"))),
     ("recommended", lambda: setattr(app, "_after", lambda: app.stack[0].open_recs())),
     ("search", search_ready),
     ("download-confirm", lambda: setattr(app, "modal", rb.DownloadConfirm(app, a_rom()))),
@@ -495,7 +498,7 @@ def reset():
     if os.path.exists(ENC3DS):
         os.remove(ENC3DS)
     del app.stack[1:]
-    app.stack[0].sel = 0
+    app.stack[0].focus = None
     rb.apply_theme(app.theme_key())          # a theme a picker scene previewed
     app.modal = None
     app.toasts = []

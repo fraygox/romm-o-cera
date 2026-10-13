@@ -197,12 +197,13 @@ def test_a_second_click_before_the_next_frame_waits_for_it(make_app, rb):
     app = make_app((3840, 2160))
     app.push(rb.HomeScreen(app))
     app.draw()
-    tile = next(r for r, fn in app.targets if r.left == 48 and r.top == 84 + 71 * 6)    # Settings
-    click(rb, app, tile.center)
+    pill = app.stack[-1].rail_rects[-1]                     # Settings, on Home's rail
+    click(rb, app, pill.center)
     assert isinstance(app.stack[-1], rb.SettingsScreen)
     s = app.stack[-1]
     seen = []
     s.tap_now = lambda i, a="ok": seen.append(i)
+    tile = rb.pygame.Rect(48, 290, 700, 20)                 # where Settings draws a row (Home: a shelf)
     click(rb, app, tile.center)
     assert seen == [] and len(app.ptr_later) == 2           # held back
     app.draw()

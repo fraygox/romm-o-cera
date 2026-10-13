@@ -336,15 +336,18 @@ def test_api_recommendations(mock_url, recs_mode):
 def test_recommended_for_you_on_home(live, rb, monkeypatch):
     app = live
     home = app.stack[0]
-    home.sel = 6                                 # Settings: focus stays on it when the row appears
+    home.focus_shelf("rail", 5)                  # Settings: focus stays on it when the shelf appears
     app.draw()
     _pump(app, lambda: app.recs)
-    keys = [it[0] for it in home.items()]
-    assert keys[keys.index("recent") + 1] == "recommended"
-    assert keys[home.sel] == "settings"
+    keys = [s[0] for s in home.shelves()]
+    assert "recommended" in keys and home.focused()[2][0] == "settings"
     assert all(app.system_for(rom) for rom, _, _ in app.recs)
-    home.sel = keys.index("recommended")
-    app.draw()                                   # the shelf shows them
+    home.focus_shelf("recommended", 0)
+    app.draw()                                   # the shelf shows them, the first one in the panel
+    assert home.focused()[2] is app.recs[0][0]
+    app.dispatch("x")                            # its Actions: the whole shelf as a list
+    m = app.modal
+    m.sel = next(i for i, e in enumerate(m.entries) if e and e[0] == "See the whole shelf")
     app.dispatch("ok")
     gl = app.stack[-1]
     assert gl.title == "Recommended for you" and gl.crumbs() == ["Recommended for you"]
@@ -387,7 +390,7 @@ def test_no_recommendations_hides_the_row_quietly(isolated, rb, mock_url, recs_m
         _pump(app, lambda: app.recs is not asking)
     app.draw()
     assert app.recs == []
-    assert "recommended" not in [it[0] for it in app.stack[0].items()]
+    assert "recommended" not in [s[0] for s in app.stack[0].shelves()]
     assert not [t for t in app.toasts if t[1] == rb.theme.RED]
 
 

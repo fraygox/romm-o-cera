@@ -58,6 +58,18 @@ def rank_search(query, items):
     return sorted(items, key=key)
 
 
+def more_like(app, rom):
+    """RomM's similar games to rom, as a list of their own."""
+    name = rom.get("name") or rom.get("fs_name_no_ext")
+
+    def done(roms):
+        if not roms:
+            app.toast("RomM has no similar games for %s" % name, theme.AMBER)
+            return
+        app.push(GameListScreen(app, "Games like %s" % name, static=roms))
+    app.bg(lambda: app.api.similar(rom["id"]), done)
+
+
 def surprise_about(rom):
     """Genre, players and year of a Surprise me pick, for its prompt (from Home
     there's no detail panel behind it)."""
@@ -460,15 +472,7 @@ class GameListScreen(ListScreen):
             m.reload()
 
     def _more_like(self, rom):
-        app = self.app
-        name = rom.get("name") or rom.get("fs_name_no_ext")
-
-        def done(roms):
-            if not roms:
-                app.toast("RomM has no similar games for %s" % name, theme.AMBER)
-                return
-            app.push(GameListScreen(app, "Games like %s" % name, static=roms))
-        app.bg(lambda: app.api.similar(rom["id"]), done)
+        more_like(self.app, rom)
 
     def surprise_me(self):
         """A random game from this list as it's filtered now. RomM picks when

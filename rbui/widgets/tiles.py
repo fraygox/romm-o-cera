@@ -91,11 +91,12 @@ def focus_ring(c, rect, radius=8):
     rrect(c, theme.ACCENT, pygame.Rect(rect).inflate(6, 6), radius + 2, 3)
 
 
-def plus_badge(c, f, n, rect):
-    """"+N" (more beyond the edge) on rect's top-right corner, inside it."""
+def plus_badge(c, f, n, rect, corner="top"):
+    """"+N" (more beyond the edge) on rect's top-right corner, inside it (corner "bottom":
+    the bottom-right one, clear of a card's name)."""
     s = "+%d" % n
     w = int(measure(f.tiny, s)) + 14
-    rr = pygame.Rect(rect.right - w - 4, rect.top + 4, w, 22)
+    rr = pygame.Rect(rect.right - w - 4, rect.top + 4 if corner == "top" else rect.bottom - 26, w, 22)
     rrect(c, mix(theme.BG, theme.PANEL, 0.5), rr, 11)
     text(c, f.tiny, s, rr.center, theme.TEXT, "center")
     return rr
@@ -172,8 +173,8 @@ class Shelf:
     the gaps), scrolled so the focused one is in view, a "+N" on the last when more lie beyond.
     Keep one per shelf on the screen: it remembers its scroll and the rects it drew (index_at)."""
 
-    def __init__(self, tile=(90, 120), gap=12):
-        self.tile, self.gap = tile, gap
+    def __init__(self, tile=(90, 120), gap=12, badge="top"):
+        self.tile, self.gap, self.badge = tile, gap, badge
         self.first = 0
         self.rects = []                 # [(item index, Rect)] as last laid out
 
@@ -204,22 +205,31 @@ class Shelf:
         """The item under a point (logical), as last laid out; None between tiles."""
         return next((i for i, r in self.rects if r.collidepoint(pos)), None)
 
-    def draw(self, c, app, items, x0, x1, y, sel=None, tile=None, on_tap=None):
+    def draw(self, c, app, items, x0, x1, y, sel=None, tile=None, on_tap=None, clip=None):
         """Lay out and draw items: tile(c, item, rect, focused) draws one (default: a cover_tile
-        of a rom). on_tap(i) runs when a tile is tapped. Returns the rects drawn."""
+        of a rom). on_tap(i) runs when a tile is tapped (clip: only where a tile shows inside
+        that rect, for a shelf scrolled half out of its area). Returns the rects drawn."""
         rects = self.layout(x0, x1, y, len(items), sel)
         more = self.more(len(items))
         for k, (i, r) in enumerate(rects):
-            if on_tap:
-                app.hit(r, lambda i=i: on_tap(i))
+            tap = r if clip is None else r.clip(clip)
+            if on_tap and tap.height > 0:
+                app.hit(tap, lambda i=i: on_tap(i))
             on = i == sel
             if tile:
                 drawn = tile(c, items[i], r, on)
             else:
                 drawn = cover_tile(c, app, items[i], r, on)
             if more and k == len(rects) - 1:
-                plus_badge(c, app.fonts, more, drawn or r)
+                plus_badge(c, app.fonts, more, drawn or r, self.badge)
         return rects
+
+
+def cover_capacity():
+    """How many covers fit in memory at once (draw.COVER_BUDGET over one decoded cover at this
+    scale): a screen showing more than this many at a time makes them load over and over."""
+    pw, ph = SR(pygame.Rect((0, 0), draw.COVER_BOX)).size
+    return int(draw.COVER_BUDGET // max(1, pw * ph * 4))
 
 
 def tile_size(width, per, gap=12, aspect=4 / 3):

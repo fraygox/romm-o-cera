@@ -94,21 +94,30 @@ def test_cancel_then_resume(isolated, mock_url):
     assert not os.path.exists(part)
 
 
-STEPS = ("wait:3,act:down,act:ok,wait:2,act:right,act:down,act:ok,wait:2,act:r2,act:r2,act:l2,"
+RAIL = "act:up," * 6                 # Home: up to the rail of destinations, whatever shelf has the focus
+STEPS = ("wait:3," + RAIL +
+         # Platforms (rail 1), a platform's list, letter jumps, a download prompt
+         "act:right,act:ok,wait:2,act:right,act:down,act:ok,wait:2,act:r2,act:r2,act:l2,"
          "act:down,act:ok,wait:0.3,act:back,act:back,act:back,"
-         "act:down,act:ok,wait:2,act:right,act:right,act:right,act:right,act:right,act:ok,wait:2,"
+         # Collections (rail 2) and a group's list
+         "act:right,act:ok,wait:2,act:right,act:right,act:right,act:right,act:right,act:ok,wait:2,"
          "act:r2,act:ok,wait:2,act:back,act:back,act:back,"
-         "act:up,act:up,act:ok,type:magna,wait:2,act:start,wait:2,act:back,act:back,"
+         # Search (rail 0), Home, the quit prompt and out of it, Downloads
+         "act:left,act:left,act:ok,type:magna,wait:2,act:start,wait:2,act:back,act:back,"
          "act:select,wait:0.5,act:back,"
-         "act:down,act:down,act:down,act:down,act:down,act:down,act:ok,wait:0.5,act:down,act:down,act:down,act:ok,wait:2,"
-         "act:back,act:start,act:down,act:down,act:down,act:ok,wait:2,act:x,act:down,act:ok,wait:2,"
+         # On this box (rail 4), then New in RomM's Actions: the whole shelf (Recently added) + its menu
+         "act:right,act:right,act:right,act:right,act:ok,wait:0.5,act:down,act:down,act:down,act:ok,wait:2,"
+         "act:back,act:start,act:down,act:down,act:down,act:x,act:down,act:down,act:ok,wait:2,"
+         "act:x,act:down,act:ok,wait:2,"
          # list menu: picks + download picked, filters, then On this box
-         "act:start,act:down,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:down,act:ok,wait:2,"
+         "act:start," + RAIL + "act:left,act:left,act:left,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:down,"
+         "act:ok,wait:2,"
          "act:x,act:down,act:down,act:down,act:ok,act:ok,act:down,act:ok,act:x,wait:0.3,"
          "act:down,act:down,act:down,act:down,act:ok,wait:0.3,act:ok,wait:2,"
-         "act:start,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:ok,wait:0.3,act:back,"
+         "act:start," + RAIL + "act:right,act:right,act:right,act:ok,wait:2,act:ok,wait:0.3,act:back,"
          # list menu: more like this, junk + verified filters
-         "act:start,act:down,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:2,act:back,"
+         "act:start," + RAIL + "act:left,act:left,act:left,act:ok,wait:2,act:ok,wait:2,act:x,wait:0.3,act:ok,"
+         "wait:2,act:back,"
          "act:x,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,"
          "shot:end")
 
@@ -202,14 +211,14 @@ def test_similar_and_filters_against_mock(isolated, mock_url):
 
 
 MULTIDISC_STEPS = (
-    "wait:3,act:ok,type:lorem odyssey,wait:2,act:start,wait:2,act:ok,wait:2,act:ok,wait:0.5,"
+    "wait:3," + RAIL + "act:ok,type:lorem odyssey,wait:2,act:start,wait:2,act:ok,wait:2,act:ok,wait:0.5,"
     "act:select,wait:0.5,act:ok,wait:0.3,act:back,act:x,wait:0.3,act:x,wait:4,act:y,act:back,"
-    "act:start,act:down,act:down,act:down,act:down,act:down,act:down,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
-    "act:back,act:back,act:down,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
+    "act:start," + RAIL + "act:right,act:right,act:right,act:right,act:ok,wait:2,act:x,wait:0.3,act:ok,wait:4,"
+    "act:back,act:back,act:right,act:ok,wait:1," + ",".join(["act:down"] * 8) + ",act:right,act:left,"
     "act:down,act:ok,wait:0.3,act:back,"
-    # Home (Settings selected; one more Back would quit) -> up to On this box: every section in
+    # Home (Settings focused; one more Back would quit) -> left to On this box: every section in
     # turn (games, space + a system, compress, BIOS, check + quick check, conversions, game info), then out
-    "act:up,act:ok,wait:1,shot:hub,act:ok,wait:1,shot:games,act:back,act:down,act:ok,wait:2,act:right,act:down,act:down,"
+    "act:left,act:ok,wait:1,shot:hub,act:ok,wait:1,shot:games,act:back,act:down,act:ok,wait:2,act:right,act:down,act:down,"
     "act:up,act:up,shot:space,act:back,act:down,act:ok,wait:2,shot:compress,act:back,"
     "act:down,act:ok,wait:2,act:back,act:down,act:ok,act:right,act:left,"
     "act:ok,wait:4,act:back,shot:check,act:back,act:down,act:ok,wait:0.5,act:back,act:down,act:ok,wait:2,"

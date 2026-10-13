@@ -12,9 +12,10 @@ across the whole screen.
 import pygame
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, hline, marquee, measure, meter, rich_text, rrect, scroll_text, text
+from rbui.draw import focus_box, hline, marquee, measure, meter, rich_text, rrect, scroll_text, text, wrap
 from rbui.widgets.chips import button_chip, button_chip_width, tag as draw_tag
 from rbui.widgets.factsheet import facts
+from rbui.widgets.hero import VERB_H, verb_button
 
 CONTENT = pygame.Rect(32, 80, W - 64, 576)     # under the top bar, above the hint bar
 GAP = 20                                       # between the list and the panel
@@ -51,11 +52,11 @@ def need_width(f, rows, mark=False, limit=200):
 
 def list_head(c, f, lst, title, note="", note_color=None, color=None):
     """The line above the rows: what the list is on the left, a count or total on the right."""
-    nw = min(measure(f.small, note), lst.width // 2) if note else 0
+    room = max(lst.width // 2, lst.width - 36 - measure(f.h3, title))     # a short title leaves the note more
+    nw = min(measure(f.small, note), room) if note else 0
     text(c, f.h3, title, (lst.left + 8, lst.top + 6), color or theme.TEXT, maxw=lst.width - 16 - (nw + 20 if nw else 0))
     if note:
-        text(c, f.small, note, (lst.right - 8, lst.top + 10), note_color or theme.FAINT, "topright",
-             maxw=lst.width // 2)
+        text(c, f.small, note, (lst.right - 8, lst.top + 10), note_color or theme.FAINT, "topright", maxw=room)
 
 
 def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_color=None, sub_color=None,
@@ -107,15 +108,32 @@ class Panel:
         self.n += 1
         return "%s-%d" % (self.slot, self.n)
 
-    def title(self, s, sub=None, sub_color=None, lines=2):
-        """The heading (wraps, up to `lines`, then scrolls) and a line under it."""
+    def title(self, s, sub=None, sub_color=None, lines=2, center=False):
+        """The heading (wraps, up to `lines`, then scrolls) and a line under it; center: both
+        centred in the panel (under a cover) while the heading fits its lines."""
         lh = 32
-        self.y = scroll_text(self.c, self.f.h2, s, (self.x, self.y, self.w, lines * lh), theme.TEXT, key=self.key,
-                             line_h=lh, slot=self._slot()).bottom + 4
+        rows = wrap(self.f.h2, s, self.w) if center else ()
+        if center and len(rows) <= lines:
+            for ln in rows:
+                text(self.c, self.f.h2, ln, (self.x + self.w // 2, self.y), theme.TEXT, "midtop")
+                self.y += lh
+            self.y += 4
+        else:
+            self.y = scroll_text(self.c, self.f.h2, s, (self.x, self.y, self.w, lines * lh), theme.TEXT,
+                                 key=self.key, line_h=lh, slot=self._slot()).bottom + 4
         if sub:
-            text(self.c, self.f.body, sub, (self.x, self.y), sub_color or theme.DIM, maxw=self.w)
-            self.y += 30
+            self.line(sub, sub_color or theme.DIM, self.f.body, center, 30)
         self.y += 12
+
+    def line(self, s, color=None, font=None, center=False, h=24):
+        """One line (default f.small, DIM), centred or not; one too long slides."""
+        font = font or self.f.small
+        if center and measure(font, s) <= self.w:
+            text(self.c, font, s, (self.x + self.w // 2, self.y), color or theme.DIM, "midtop")
+        else:
+            marquee(self.c, font, s, (self.x, self.y), color or theme.DIM, maxw=self.w, bg=theme.PANEL,
+                    slot=self._slot())
+        self.y += h
 
     def fact(self, label, value, color=None):
         """A grey label with its value under it (skipped when there's no value)."""
@@ -189,12 +207,28 @@ class Panel:
             y -= 44
         self.bottom = y + 44 - 16
 
-    def foot(self, s, color=None):
-        """A rule and one line ({TOKEN} glyphs work) at the bottom."""
+    def foot(self, s, color=None, right="", right_color=None):
+        """A rule and one line ({TOKEN} glyphs work) at the bottom; right: a second, shorter one
+        at its right end (a server address)."""
         y = self.bottom - 22
         hline(self.c, theme.LINE, (self.x, y - 20), (self.x + self.w, y - 20))
-        rich_text(self.c, self.f, self.f.small, s, (self.x, y), color or theme.DIM, "midleft", maxw=self.w)
+        left = self.x + self.w
+        if right:
+            room = max(self.w * 2 // 5, self.w - 16 - measure(self.f.small, s))
+            left = text(self.c, self.f.small, right, (self.x + self.w, y), right_color or theme.FAINT, "midright",
+                        maxw=room).left - 16
+        rich_text(self.c, self.f, self.f.small, s, (self.x, y), color or theme.DIM, "midleft", maxw=left - self.x)
         self.bottom = y - 36
+
+    def verb(self, label, kind="go", detail="", glyph="A", frac=0.0, fn=None):
+        """hero.verb_button across the panel's foot (above any foot line), tapped like A when fn
+        is given. Returns its rect."""
+        r = pygame.Rect(self.x, self.bottom - VERB_H, self.w, VERB_H)
+        if fn and self.app:
+            self.app.hit(r, fn)
+        verb_button(self.c, self.f, r, label, kind, detail, glyph, frac)
+        self.bottom = r.top - 16
+        return r
 
 
 def bubble_at(lst):

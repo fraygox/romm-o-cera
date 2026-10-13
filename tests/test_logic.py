@@ -348,8 +348,8 @@ def test_touch_taps_rows_hints_and_dialogs(isolated, rb, monkeypatch):
     app.push(rb.HomeScreen(app))
     app.draw()
     home = app.stack[-1]
-    # tap the Settings tile (index 6) -> opens Settings in one tap
-    rect = next(r for r, fn in app.targets if r.left == 48 and r.top == 84 + 71 * 6)
+    # tap the Settings pill on the rail -> opens Settings in one tap
+    rect = home.rail_rects[[k for k, _, _ in home.RAIL].index("settings")]
     app.tap(rect.center)
     assert isinstance(app.stack[-1], rb.SettingsScreen)
     app.draw()
