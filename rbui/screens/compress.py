@@ -34,16 +34,38 @@ def cant_convert_rows(skipped):
     return list(by.values())
 
 
+def needs_text(app, c):
+    """What a candidate (or a system's row) waits for, starting lower case: its
+    switch, or, with the switch on, the tool it needs ("wiiu-tools is
+    downloading…", "wiiu-tools isn't installed yet: Settings → Wii U to .wux")."""
+    conv = rommlib.CONVERTER.get(c.get("mode"))
+    spec = conv.tool if conv else None
+    if spec and rommlib.config_value(app.cfg, conv.setting) and spec.supported():
+        if getattr(app, spec.setting + "_busy", False):
+            return "%s is downloading…" % spec.slug
+        if not spec.installed():
+            return "%s isn't installed yet: Settings → %s" % (spec.slug, conv.setting_name)
+    return "turn on %s in Settings" % c["setting"]
+
+
+def needs_toast(app, c):
+    t = needs_text(app, c)
+    return "T" + t[1:] + " first" if t.startswith("turn on") else t
+
+
 def compress_by_system(cands):
-    """[{"system", "n", "size", "label", "enabled", "setting"}], biggest first."""
+    """[{"system", "n", "size", "label", "enabled", "setting", "mode"}], biggest first
+    (setting and mode: of a candidate that needs its switch, if any)."""
     by = {}
     for c in cands:
         r = by.setdefault(c["system"], {"system": c["system"], "n": 0, "size": 0, "labels": [],
-                                        "enabled": c["enabled"], "setting": c["setting"]})
+                                        "enabled": c["enabled"], "setting": c["setting"], "mode": c["mode"]})
         r["n"] += 1
         r["size"] += c["size"]
         if c["label"] not in r["labels"]:
             r["labels"].append(c["label"])
+        if r["enabled"] and not c["enabled"]:
+            r["setting"], r["mode"] = c["setting"], c["mode"]
         r["enabled"] = r["enabled"] and c["enabled"]
     for r in by.values():
         r["label"] = "/".join(r["labels"])
@@ -132,7 +154,7 @@ class CompressScreen(ListScreen):
             self.app.push(CompressSystemScreen(self.app, r["system"]))
         elif a == "x":
             if not r["enabled"]:
-                self.app.toast("Turn on %s in Settings first" % r["setting"], theme.AMBER)
+                self.app.toast(needs_toast(self.app, r), theme.AMBER)
             else:
                 compress_confirm(self.app, "Compress every %s game here?" % r["system"],
                                  [c for c in self.cands if c["system"] == r["system"]], self.enter)
@@ -169,9 +191,10 @@ class CompressScreen(ListScreen):
             col = (theme.TEXT if on else theme.DIM) if r_["enabled"] else theme.FAINT
             text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), col)
             sub = "%s, %s" % (plural(r_["n"], "game"), human_size(r_["size"]))
-            text(c, self.f.small, sub if r_["enabled"] else sub + " · turn on %s in Settings" % r_["setting"],
+            text(c, self.f.small, sub if r_["enabled"] else sub + " · " + needs_text(self.app, r_),
                  (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200)
-            text(c, self.f.small, ("to " + r_["label"]) if r_["enabled"] else "needs a setting",
+            text(c, self.f.small, ("to " + r_["label"]) if r_["enabled"] else
+                 "needs a setting" if needs_text(self.app, r_).startswith("turn on") else "needs its tool",
                  (r.right - 20, r.centery), theme.ACCENT_HI if r_["enabled"] else theme.FAINT, "midright")
 
 
@@ -282,7 +305,7 @@ class CompressSystemScreen(ListScreen):
             return
         cand = self.cands[self.sel]
         if a in ("ok", "x") and not cand["enabled"]:
-            self.app.toast("Turn on %s in Settings first" % cand["setting"], theme.AMBER)
+            self.app.toast(needs_toast(self.app, cand), theme.AMBER)
         elif self.pick_action(a):
             return
         elif a == "ok":

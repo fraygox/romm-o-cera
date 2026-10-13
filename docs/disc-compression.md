@@ -165,8 +165,12 @@ MD5). A `.wux` carries no checksum of its own: Check games checks its layout
 whole and compares it with RomM's `.wud` (full).
 
 It needs **wuatool** (about 3 MB, checked by SHA-256, x86_64 and 64-bit ARM),
-downloaded once: select the switch in Settings (it shows "Tool missing" until
-then). Decrypt Wii U discs uses the same download. wuatool is built from
+downloaded once. The app fetches it by itself, in the background, once there
+are Wii U disc images on the box (or a Wii U game finishes downloading) and
+whenever a newer version replaces the one installed (the old one is removed);
+a box without Wii U games downloads nothing. Selecting the switch in Settings
+fetches it too. Decrypt Wii U discs uses the same download. Any converter
+tool whose switch is on is updated the same way. wuatool is built from
 Cemu's own disc code and the ZArchive library Cemu reads `.wua` with, from
 their published source; licenses and source are on RomM-o-Cera's `wiiu-tools`
 release. Its `.wux` writer is RomM-o-Cera's own, written to the layout Cemu's

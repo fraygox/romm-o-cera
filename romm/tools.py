@@ -64,6 +64,7 @@ class ToolSpec:
     help: dict                 # the Settings row's grey line: "cpu", "on", "missing", "off"
     supported: Callable        # () -> built for this box's CPU
     installed: Callable        # () -> what the converter runs (paths), or None when not installed
+    purpose: str = ""          # what it's for, in "Getting <slug> for <purpose>…" (fetched by itself)
 
     @property
     def folder(self):
@@ -72,6 +73,18 @@ class ToolSpec:
 
 def tool_dir(spec):
     return os.path.join(os.environ.get("ROMM_BROWSER_TOOLS", TOOLS_DIR), spec.folder)
+
+
+def old_tool_dirs(spec):
+    """Other versions of the tool installed beside this one (tools/<slug>-<version>)."""
+    parent = os.path.dirname(tool_dir(spec))
+    try:
+        names = os.listdir(parent)
+    except OSError:
+        return []
+    return [os.path.join(parent, n) for n in sorted(names) if n.startswith(spec.slug + "-") and n != spec.folder
+            and not n.endswith(".new") and n[len(spec.slug) + 1:][:1].isdigit()
+            and os.path.isdir(os.path.join(parent, n)) and not os.path.islink(os.path.join(parent, n))]
 
 
 def tool_paths(spec):
@@ -111,7 +124,7 @@ TOOL_DOLPHIN = ToolSpec(
     {"cpu": "dolphin-tool is built for x86_64 and 64-bit ARM only",
      "on": "Lossless, usually much smaller (dolphin-tool %s)" % DOLPHIN_TOOL["version"],
      "missing": "{A} downloads dolphin-tool again", "off": "Turning it on downloads dolphin-tool once"},
-    lambda: rvz_supported(), lambda: dolphin_tool_path())
+    lambda: rvz_supported(), lambda: dolphin_tool_path(), "GameCube and Wii to RVZ")
 
 
 def _fetch_tool_archive(label, url, want, dest, progress=None):
@@ -193,6 +206,9 @@ def install_tool(spec, progress=None, url=None, sha256=None):
     os.replace(root, dest)
     shutil.rmtree(staging, ignore_errors=True)
     _core.log("%s %s installed (%s)" % (spec.slug, spec.pin["version"], spec.built_from))
+    for old in old_tool_dirs(spec):            # an upgrade: the version before is no use now
+        shutil.rmtree(old, ignore_errors=True)
+        _core.log("%s: removed %s" % (spec.slug, os.path.basename(old)))
     return spec.installed()
 
 
@@ -232,7 +248,7 @@ TOOL_X360 = ToolSpec(
     "extract-xiso %s, zarchive %s" % (X360_TOOLS["extract_xiso"][:7], X360_TOOLS["zarchive"][:7]),
     {"cpu": "Xbox 360 emulation on Batocera is x86_64 only", "on": "Smaller files xenia-canary opens directly",
      "missing": "{A} downloads them again", "off": "Turning it on downloads two small tools once"},
-    lambda: zar_supported(), lambda: x360_tools())
+    lambda: zar_supported(), lambda: x360_tools(), "Xbox 360 to .zar")
 
 
 # ---------------------------------------------------------- Wii U -> .wux, .wua (ZArchive)
@@ -272,4 +288,4 @@ TOOL_WIIU = ToolSpec(
     "Cemu %s, zarchive %s" % (WIIU_TOOLS["cemu"][:7], WIIU_TOOLS["zarchive"][:7]),
     {"cpu": "wuatool is built for x86_64 and 64-bit ARM only", "on": "Smaller files Cemu opens directly",
      "missing": "{A} downloads wuatool (once, about 2 MB)", "off": "Turning it on downloads wuatool once"},
-    lambda: wua_supported(), lambda: wuatool_path())
+    lambda: wua_supported(), lambda: wuatool_path(), "Wii U compression")

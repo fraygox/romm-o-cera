@@ -94,6 +94,9 @@ class CoverLoader:
 
 
 class App:
+    # systems whose converter needs a downloaded tool: a finished download there may fetch it
+    TOOL_SYSTEMS = frozenset(s for c in rommlib.CONVERTERS if c.tool for s in c.systems)
+
     def __init__(self, screen, headless=False):
         self.screen = screen
         if screen is not None:
@@ -695,6 +698,45 @@ class App:
             self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
                                                     " from the background" if was_running else ""), theme.BLUE)
 
+    def fetch_tools(self, systems=None):
+        """Fetch, quietly in the background, a tool a turned-on setting needs when
+        there's a reason to (rommlib.tools_to_fetch: an upgrade, or games here it
+        would convert; systems: only those, after a download). Pinned by SHA-256
+        like any tool download; one toast, and a failure is shown once per version
+        (logged every time)."""
+        if self.headless:
+            return
+        self.bg(lambda: rommlib.tools_to_fetch(self.cfg, systems),
+                lambda found: [self._fetch_tool(spec, why) for spec, why in found], lambda e: None)
+
+    def _fetch_tool(self, spec, why):
+        busy = spec.setting + "_busy"              # the Settings rows that need it show the progress
+        if getattr(self, busy, False):
+            return
+        setattr(self, busy, True)
+        self.toast("Getting %s for %s…" % (spec.slug, spec.purpose or "compression"))
+        rommlib.log("tools: fetching %s %s by itself (%s)" % (spec.slug, spec.pin["version"], why))
+
+        def install():
+            def prog(got, total):
+                setattr(self, spec.setting + "_progress", (got / total) if total else None)
+            try:
+                return rommlib.install_tool(spec, prog)
+            finally:
+                setattr(self, busy, False)
+
+        def done(paths):
+            self.toast("%s %s is ready" % (spec.slug, spec.pin["version"]), theme.GREEN)
+
+        def failed(e):
+            rommlib.log("tools: %s %s couldn't be fetched: %r" % (spec.slug, spec.pin["version"], e))
+            mark = "%s-%s" % (spec.slug, spec.pin["version"])
+            if read_marker(".tool-fetch-failed") != mark:     # said once; retried quietly next time
+                write_marker(".tool-fetch-failed", mark)
+                self.toast("Couldn't get %s (%s); Settings can try again" % (
+                    spec.slug, e if isinstance(e, rommlib.RommError) else e.__class__.__name__), theme.RED)
+        self.bg(install, done, failed)
+
     def startup_checks(self):
         """Things the player must know before anything else."""
         if rommlib.config_unreadable():
@@ -728,6 +770,7 @@ class App:
         self.load_platforms()
         if not self.headless:
             self.bg(lambda: rommlib.newer_release(self.cfg), self._update_found, lambda e: None)
+        self.fetch_tools()
         self.push(HomeScreen(self))
         while self.running:
             dt = clock.tick(self.fps) / 1000.0
@@ -912,6 +955,8 @@ class App:
                     scr.__dict__.pop("_variants", None)
                 if j.chd_queued and not self.headless:
                     self.spawn_helper("rb_chd.py")   # flock'd: no-op if already running
+                if j.system in self.TOOL_SYSTEMS:
+                    self.fetch_tools({j.system})     # a first Wii U game: its converter's tool
             elif j.state == rommlib.Job.FAILED and not getattr(j, "_announced", False):
                 j._announced = True
                 self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)

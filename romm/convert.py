@@ -726,6 +726,35 @@ def converters_for(system):
     return [c for c in CONVERTERS if system in c.systems]
 
 
+def _has_images(system, exts):
+    """True when roms/<system> holds a file with one of these extensions (stops at the first)."""
+    for dp, dns, fns in os.walk(os.path.join(_core.ROMS_ROOT, system)):
+        dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS and not d.startswith(".")]
+        if any(f.lower().endswith(exts) for f in fns):
+            return True
+    return False
+
+
+def tools_to_fetch(cfg, systems=None):
+    """[(ToolSpec, reason)]: tools the app fetches by itself, quietly: a setting that
+    needs the tool is on (on by default, like Wii U to .wux, or turned on before),
+    this version of it isn't installed, and there's a reason: "upgrade" (an older
+    version is installed) or "games" (roms/ holds images it would convert; only
+    these systems' when given: a download that just finished). Nothing for a box
+    without such games."""
+    out = []
+    for spec in dict.fromkeys(c.tool for c in CONVERTERS if c.tool):
+        convs = [c for c in CONVERTERS if c.tool is spec and _config.config_value(cfg, c.setting)]
+        if not convs or not spec.supported() or spec.installed():
+            continue
+        if _tools.old_tool_dirs(spec):
+            out.append((spec, "upgrade"))
+        elif any(_has_images(s, c.sources) for c in convs for s in sorted(c.systems)
+                 if systems is None or s in systems):
+            out.append((spec, "games"))
+    return out
+
+
 def settle(conv, system, src, cfg, alt_enabled=True):
     """Which converter takes this file, for a converter with a fallback (Wii U:
     decrypt to .wua, else .wux): (taker, why, off). why: why conv itself doesn't
