@@ -7,7 +7,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, progress_bar, rrect, text, wrap
+from rbui.draw import focus_box, marquee, progress_bar, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.games import GameListScreen
 from rbui.screens.box_data import conversion_rows, conversion_status, installed_games, plural
@@ -191,7 +191,8 @@ class InstalledScreen(ListScreen):
                 focus_box(c, r)
             nx = r.left + (44 if self.draw_pick(c, it, (r.left + 22, r.centery)) else 18)
             sr = text(c, self.f.small, human_size(it["size"]), (r.right - 14, r.centery), theme.DIM, "midright")
-            text(c, self.f.row, it["name"], (nx, r.top + 4), theme.TEXT if on else theme.DIM, maxw=sr.left - 16 - nx)
+            marquee(c, self.f.row, it["name"], (nx, r.top + 4), theme.TEXT if on else theme.DIM,
+                    maxw=sr.left - 16 - nx, focused=on, slot="installed-name")
             sub = (it["system"] or "?") + ("  ·  added %s" % it["when"][:10] if it.get("when") else "")
             text(c, self.f.small, sub, (nx, r.top + 29), theme.FAINT, maxw=sr.left - 16 - nx)
         it = self.items[self.sel]
@@ -207,17 +208,15 @@ class InstalledScreen(ListScreen):
         p = pygame.Rect(728, 80, 520, 576)
         rrect(c, theme.PANEL, p, 16)
         x, y, w = p.left + 24, p.top + 24, p.width - 48
-        for ln in wrap(self.f.h3, it["name"], w, 3):
-            text(c, self.f.h3, ln, (x, y), theme.TEXT)
-            y += 25
-        y += 12
+        y = scroll_text(c, self.f.h3, it["name"], (x, y, w, 3 * 25), theme.TEXT, line_h=25,
+                        slot="local-title").bottom + 12
         for k, v in (("System", it["system"]), ("Size", human_size(it["size"])), ("Added", it.get("when", "")[:10])):
             if v:
                 text(c, self.f.small, k, (x, y), theme.FAINT)
                 text(c, self.f.cond, str(v), (x, y + 17), theme.DIM, maxw=w)
                 y += 42
-        for k, ln in enumerate(wrap(self.f.small, note, w, 3)):
-            text(c, self.f.small, ln, (x, y + 12 + k * 20), theme.FAINT)
+        scroll_text(c, self.f.small, note, (x, y + 12, w, min(3 * 20, p.bottom - 24 - y - 12)), theme.FAINT,
+                    line_h=20, slot="local-note")
 
 
 def _lastplayed_label(lp):
@@ -328,7 +327,8 @@ class ConversionsScreen(ListScreen):
                 rrect(c, theme.ACCENT, box, 12, 2)
             mode = self.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")
             title = r["title"] + (" (%d discs)" % r["discs"] if r["discs"] > 1 else "")
-            text(c, self.f.h3, title, (box.left + 20, box.top + 8), theme.TEXT if on else theme.DIM, maxw=box.width - 500)
+            marquee(c, self.f.h3, title, (box.left + 20, box.top + 8), theme.TEXT if on else theme.DIM,
+                    maxw=box.width - 500, focused=on, slot="conv-title")
             k = r["kind"]
             if k == "running":
                 st, frac = conversion_status(r)
@@ -341,5 +341,5 @@ class ConversionsScreen(ListScreen):
                 st = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(k, k)
                 sub = r.get("message") or ""
             text(c, self.f.small, st, (box.right - 20, box.top + 12), col.get(k, theme.DIM), "topright", maxw=440)
-            text(c, self.f.small, sub, (box.left + 20, box.top + 34), theme.FAINT,
-                 maxw=(box.width - 40) if k not in ("running",) else 420)
+            marquee(c, self.f.small, sub, (box.left + 20, box.top + 34), theme.FAINT,
+                    maxw=(box.width - 40) if k not in ("running",) else 420, focused=on, slot="conv-sub")

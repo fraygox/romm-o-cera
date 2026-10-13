@@ -6,7 +6,7 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import theme
-from rbui.draw import circle, focus_box, hline, measure, progress_bar, rich_text, rrect, text, wrap
+from rbui.draw import circle, focus_box, hline, measure, progress_bar, rich_text, rrect, scroll_text, text
 from rbui.screens.base import Screen
 from rbui.screens.box_data import (bios_pill, bios_rows, conversion_rows, conversion_status, disk_space,
                                    installed_games, pending_roms, plural, space_bar, space_parts, storage_by_system)
@@ -181,7 +181,13 @@ class OnThisBoxScreen(Screen):
             text(c, self.f.small, right, (p.right - 28, p.top + 28), theme.FAINT, "topright", maxw=280)
 
     def waiting(self, c, p, s):
-        text(c, self.f.body, s, (p.left + 28, p.top + 72), theme.DIM)
+        self.prose(c, p, s, p.top + 72)
+
+    def prose(self, c, p, s, top):
+        """A panel's text, from top down to its foot; a long one scrolls."""
+        if p.bottom - 84 - top >= 26:
+            scroll_text(c, self.f.body, s, (p.left + 28, top, p.width - 56, p.bottom - 84 - top), theme.DIM,
+                        key=self.sel, line_h=26, slot="box-prose")
 
     def panel_games(self, c, p):
         x = p.left + 28
@@ -189,9 +195,8 @@ class OnThisBoxScreen(Screen):
         if self.games is None:
             return self.waiting(c, p, "Measuring…")
         if not self.games:
-            for i, ln in enumerate(wrap(self.f.body, "Nothing downloaded with RomM-o-Cera yet. Games copied over "
-                                        "another way are in Space, under Free up space.", p.width - 56)):
-                text(c, self.f.body, ln, (x, p.top + 72 + i * 26), theme.DIM)
+            self.prose(c, p, "Nothing downloaded with RomM-o-Cera yet. Games copied over "
+                                        "another way are in Space, under Free up space.", p.top + 72)
             return
         yy = p.top + 72
         for g in self.games[:7]:
@@ -306,9 +311,8 @@ class OnThisBoxScreen(Screen):
             return self.waiting(c, p, "Looking through every system…")
         rows = compress_by_system(self.compress)
         if not rows:
-            for i, ln in enumerate(wrap(self.f.body, "Every disc game here that a converter supports is "
-                                        "compressed already (or queued).", p.width - 56)):
-                text(c, self.f.body, ln, (x, p.top + 72 + i * 26), theme.DIM)
+            self.prose(c, p, "Every disc game here that a converter supports is "
+                                        "compressed already (or queued).", p.top + 72)
             return
         yy = p.top + 70
         for r in rows[:7]:
@@ -331,9 +335,8 @@ class OnThisBoxScreen(Screen):
         mode = lambda r: ConversionsScreen.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")  # noqa: E731
         if not self.convs:
             self.head(c, p, "Nothing to convert")
-            for i, ln in enumerate(wrap(self.f.body, "Disc games are compressed in the background after they "
-                                        "download, while nothing is playing.", p.width - 56)):
-                text(c, self.f.body, ln, (x, p.top + 72 + i * 26), theme.DIM)
+            self.prose(c, p, "Disc games are compressed in the background after they "
+                                        "download, while nothing is playing.", p.top + 72)
             return
         yy = p.top + 66
         if run:
@@ -381,8 +384,6 @@ class OnThisBoxScreen(Screen):
         if len(systems) > 6:
             text(c, self.f.small, "and %s more" % plural(len(systems) - 6, "system"), (x, yy), theme.FAINT)
             yy += 26
-        for i, ln in enumerate(wrap(self.f.body, "Names, descriptions, covers and manuals from RomM, matched "
-                                    "by file name. Only empty fields are filled: your own scrapes and edits "
-                                    "are never replaced.", p.width - 56)):
-            text(c, self.f.body, ln, (x, yy + 18 + i * 26), theme.DIM)
+        self.prose(c, p, "Names, descriptions, covers and manuals from RomM, matched by file name. Only empty "
+                   "fields are filled: your own scrapes and edits are never replaced.", yy + 18)
         self.foot(c, p, "To do one system: its game list, then {X}")

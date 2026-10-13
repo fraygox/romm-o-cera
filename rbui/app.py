@@ -9,7 +9,7 @@ from rommlib import human_size
 from rbui import APP_NAME, draw, pads, theme
 from rbui.theme import apply_theme, FPS, H, ink_on, S, set_custom, W
 from rbui.draw import (as_rgba, button_glyph, circle, COVER_DECODES, COVER_ENTRIES, cover_fit, Fonts, glyph_width,
-                       hline, measure, rich_text, rich_width, rom_title, rrect, surface_bytes, text)
+                       hline, marquee, measure, rich_width, rom_title, rrect, surface_bytes, text)
 from rbui.pads import FACE, style_from_names, theme_for, TOKEN_ACTION, TOKEN_BACK
 from rbui.sfx import Sfx, SOUND_FOR
 from rbui.input import Input
@@ -183,7 +183,10 @@ class App:
             if burst:
                 return
         else:
-            self.toasts.append([msg, color, now + (6 if tap else 3.5), 1, tap])
+            # one too long for its pill slides to show its end (draw_toasts), so it stays up that much longer
+            over = rich_width(self.fonts, self.fonts.body, msg) + 52 - self.TOAST_W
+            extra = draw.MARQUEE_WAIT + over / draw.MARQUEE_SPEED if over > 0 else 0
+            self.toasts.append([msg, color, now + (6 if tap else 3.5) + extra, 1, tap])
         if color == theme.RED:
             self.sfx.play("deny")
         elif msg.startswith("Ready"):
@@ -1079,6 +1082,8 @@ class App:
             self.screen.blit(c, ((sw - cw) // 2, (sh - ch) // 2))
             pygame.display.flip()
 
+    TOAST_W = 900                  # the widest a toast's pill gets
+
     def draw_toasts(self, c):
         now = time.time()
         self.toasts = [t for t in self.toasts if t[2] > now][-3:]
@@ -1087,12 +1092,13 @@ class App:
             msg, color = t[0], t[1]
             if t[3] > 1:
                 msg = "%s  ×%d" % (msg, t[3])
-            w = min(900, rich_width(self.fonts, self.fonts.body, msg) + 52)
+            w = min(self.TOAST_W, rich_width(self.fonts, self.fonts.body, msg) + 52)
             r = pygame.Rect(0, 0, w, 40)
             r.midbottom = (W // 2, y)
             rrect(c, theme.PANEL_HI, r, 20)
             circle(c, color, (r.left + 18, r.centery), 5)
-            rich_text(c, self.fonts, self.fonts.body, msg, (r.left + 30, r.centery), theme.TEXT, "midleft", maxw=w - 44)
+            marquee(c, self.fonts.body, msg, (r.left + 30, r.centery), theme.TEXT, maxw=w - 44, anchor="midleft",
+                    slot=("toast", t[0]))
             if len(t) > 4 and t[4] and self.modal is None:     # never tapped through an open dialog
                 self.hit(r, t[4])
             y -= 48

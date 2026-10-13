@@ -3,9 +3,9 @@ import time
 
 import pygame
 from rbui import theme
-from rbui.theme import (apply_theme, CUSTOM_MODES, custom_from, custom_palette, hue_name, palette_of, set_custom, SR,
+from rbui.theme import (apply_theme, CUSTOM_MODES, H, custom_from, custom_palette, hue_name, palette_of, set_custom, SR,
                         THEME_DESC, THEME_GROUPS, theme_base, theme_oled, THEMES)
-from rbui.draw import circle, polyline, rich_lines, rich_text, rich_width, rrect, text, wrap
+from rbui.draw import circle, polyline, rich_text, rich_width, rrect, scroll_text, text
 from rbui.pads import theme_for
 from rbui.screens.base import Screen
 
@@ -354,11 +354,8 @@ class ThemePickerScreen(Screen):
         x, w = p.left + 24, p.width - 48
         text(c, self.f.small, group.upper(), (x, p.top + 22), theme.ACCENT_HI)
         text(c, self.f.h2, name, (x, p.top + 44), theme.TEXT, maxw=w)
-        y = p.top + 84
-        for ln in wrap(self.f.body, desc, w, 3):
-            text(c, self.f.body, ln, (x, y), theme.DIM)
-            y += 25
-        y += 14
+        y = scroll_text(c, self.f.body, desc, (x, p.top + 84, w, 3 * 25), theme.DIM, key=self.key(), line_h=25,
+                        slot="theme-desc").bottom + 14
         y = draw_meanings(c, self.f, x, y, w) + 10
         k, app = self.key(), self.app
         shown = theme_for(k, app.cfg["theme_auto"], app.cfg["button_style"], app.input.names())
@@ -376,10 +373,9 @@ class ThemePickerScreen(Screen):
         rows_top = p.bottom - 176                                   # the sample rows below
         copy = self.items[self.sel] != "custom"
         room = (rows_top - 6 - 40 - 8 if copy else rows_top - 6) - y   # whatever the fonts wrap to, nothing overlaps
-        fit = min(3, room // 23)
-        for ln in (rich_lines(self.f, self.f.small, note, w, fit) if fit > 0 else []):   # 0 would mean no limit
-            rich_text(c, self.f, self.f.small, ln, (x, y), col)
-            y += 23
+        if room >= 23:                                              # up to three lines; a longer note scrolls
+            y = scroll_text(c, self.f.small, note, (x, y, w, min(3 * 23, room)), col, key=self.key(), line_h=23,
+                            slot="theme-note").bottom
         if copy:                                                    # touch: X's "Edit a copy" as a button
             self.copy_button = pygame.Rect(x, min(max(y + 8, p.bottom - 228), rows_top - 46), w, 40)
             rrect(c, theme.BG2, self.copy_button, 20)
@@ -544,9 +540,8 @@ class CustomThemeScreen(Screen):
         if self.source:
             note = "Started from %s, as near as these four come. Nothing is saved until {A} keeps it, " \
                    "{B} goes back and changes nothing. " % self.source + note
-        for ln in rich_lines(self.f, self.f.small, note, 700, 5):
-            rich_text(c, self.f, self.f.small, ln, (52, y), theme.FAINT)
-            y += 23
+        scroll_text(c, self.f.small, note, (52, y, 700, min(5 * 23, H - 56 - y)), theme.FAINT, bg=theme.BG,
+                    line_h=23, slot="custom-note")
         self.draw_panel(c)
 
     def draw_strip(self, c, r, cols, at, row):
@@ -586,8 +581,8 @@ class CustomThemeScreen(Screen):
         text(c, self.f.small, "PREVIEW" if not self.source else "FROM %s" % self.source.upper(), (x, p.top + 22),
              theme.ACCENT_HI, maxw=w)
         text(c, self.f.h2, "Custom", (x, p.top + 44), theme.TEXT)
-        for n, ln in enumerate(wrap(self.f.body, custom_summary(*self.values()), w, 2)):
-            text(c, self.f.body, ln, (x, p.top + 84 + 25 * n), theme.DIM)
+        scroll_text(c, self.f.body, custom_summary(*self.values()), (x, p.top + 84, w, 2 * 25), theme.DIM,
+                    line_h=25, slot="custom-summary")
         pal = {k: getattr(theme, k) for k in theme.PALETTE}
         h = min(220, p.bottom - 60 - 3 * 31 - 18 - (p.top + 130))      # the colour key fits above the badge
         mini = pygame.Rect(0, p.top + 130, round(h * 176 / 118), h)

@@ -9,7 +9,7 @@ from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, mix, SR
 from rbui.draw import (_wide, arc, button_glyph, circle, COVER_BOX, focus_box, hline, installed_mark, measure,
-                       progress_bar, rich_text, rom_title, rrect, smooth_scale, text, wrap)
+                       progress_bar, rich_text, rom_title, rrect, scroll_text, smooth_scale, text, wrap)
 from rbui.screens.base import letter_of, ListScreen, Screen
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
 
@@ -700,17 +700,14 @@ class GameListScreen(ListScreen):
         title = rom_title(rom)
         tl = wrap(self.f.h3, title, tw)
         tf, lh = (self.f.h3, 25) if len(tl) <= 3 else (self.f.body, 22)
-        for ln in wrap(tf, title, tw, 5):
-            text(c, tf, ln, (tx, y), theme.TEXT)
-            y += lh
-        y += 8
+        y = scroll_text(c, tf, title, (tx, y, tw, 5 * lh), theme.TEXT, key=rom["id"], line_h=lh,
+                        slot="detail-title").bottom + 8
         why = getattr(self, "why", {}).get(rom["id"])    # (Games from RomM draws this panel too)
         if why:                                    # Recommended for you: RomM's reason, first
             text(c, self.f.small, "Why", (tx, y), theme.FAINT)
-            lines = wrap(self.f.cond, why, tw, 3)
-            for k, ln in enumerate(lines):
-                text(c, self.f.cond, ln, (tx, y + 17 + k * 20), theme.ACCENT_HI)
-            y += 25 + 20 * len(lines)
+            used = scroll_text(c, self.f.cond, why, (tx, y + 17, tw, 3 * 20), theme.ACCENT_HI, key=rom["id"],
+                               line_h=20, slot="detail-why")
+            y += 25 + used.height
         md = rom.get("metadatum") or {}
         plat = app.platform_by_id.get(rom.get("platform_id"))
         year = ""
@@ -744,15 +741,17 @@ class GameListScreen(ListScreen):
         # summary
         sy = max(y, cov.bottom) + 18
         summ = rom.get("summary") or ""
-        room = (p.bottom - 110 - sy) // 20                 # a long fact list leaves none: no summary over the button
-        lines = wrap(self.f.small, summ, p.width - 48, room) if summ and room > 0 else []
-        for i, ln in enumerate(lines):
-            text(c, self.f.small, ln, (p.left + 24, sy + i * 20), theme.DIM)
         # action area
         ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, 52)
         self.app.hit(ar, lambda: self.action("ok"))
         st, j = self.rom_status(rom)
         system = app.system_for(rom)
+        notes = (st == "failed") + bool(system and not self.picking and st not in ("installed", "active")
+                                        and self.variants(rom, system))
+        bottom = ar.top - 12 - 22 * max(1, notes)       # above the button and its notes; a long one scrolls
+        if summ and bottom - sy >= 20:                  # a long fact list leaves none: no summary over the button
+            scroll_text(c, self.f.small, summ, (p.left + 24, sy, p.width - 48, bottom - sy), theme.DIM,
+                        key=rom["id"], line_h=20, slot="detail-summary")
         if not system:
             rrect(c, theme.BG2, ar, 12)
             text(c, self.f.body, "No Batocera system for this platform", ar.center, theme.FAINT, "center")

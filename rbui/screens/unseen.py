@@ -6,7 +6,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import circle, focus_box, measure, rrect, text
+from rbui.draw import circle, focus_box, marquee, measure, rrect, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import plural
 from rbui.modals import ActionMenu, Confirm
@@ -255,9 +255,11 @@ class UnseenScreen(ListScreen):
             if not self.draw_pick(c, it, (r.left + 18, r.top + 18)):
                 circle(c, col, (r.left + 18, r.top + 18), 5)
             rel = os.path.relpath(it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))
-            text(c, self.f.row, rel, (r.left + 34, r.top + 6), theme.TEXT if on else theme.DIM, maxw=r.width - 260)
+            marquee(c, self.f.row, rel, (r.left + 34, r.top + 6), theme.TEXT if on else theme.DIM,
+                    maxw=r.width - 260, focused=on, slot="unseen-path")
             why = it["why"][:1].upper() + it["why"][1:]
-            text(c, self.f.small, why, (r.left + 34, r.top + 32), col, maxw=r.width - 260)
+            marquee(c, self.f.small, why, (r.left + 34, r.top + 32), col, maxw=r.width - 260, focused=on,
+                    slot="unseen-why")
             tag = it["system"]
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(r.right - 20 - tw, r.top + 8, tw, 20)

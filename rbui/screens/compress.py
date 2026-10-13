@@ -5,7 +5,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, text
+from rbui.draw import focus_box, marquee, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.box_data import plural
 from rbui.modals import Confirm
@@ -169,9 +169,9 @@ class CompressScreen(ListScreen):
             return
         if not self.cands:
             text(c, self.f.h3, "Nothing left to compress.", (56, 86), theme.GREEN)
-            text(c, self.f.body, "Every disc game here that a converter supports is compressed already, "
-                 "or queued. Formats with a Settings switch (RVZ, squashfs, .zcci, .zar, .wux, .wua, PS3 folders) show "
-                 "up once it's on.", (56, 124), theme.DIM, maxw=W - 112)
+            scroll_text(c, self.f.body, "Everything a converter supports is compressed or queued. Formats with a "
+                        "Settings switch show up once it's on.", (56, 122, W - 112, 30), theme.DIM, bg=theme.BG,
+                        line_h=26, slot="compress-empty")
             if not self.rows:
                 return
         else:
@@ -184,15 +184,16 @@ class CompressScreen(ListScreen):
                 focus_box(c, r)
             if r_.get("cant"):
                 text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), theme.TEXT if on else theme.DIM)
-                text(c, self.f.small, "%s, %s · left as they are" % (plural(r_["n"], "game"),
-                     human_size(r_["size"])), (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200)
+                marquee(c, self.f.small, "%s, %s · left as they are" % (plural(r_["n"], "game"),
+                        human_size(r_["size"])), (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200,
+                        focused=on, slot="compress-sub")
                 text(c, self.f.small, "can't convert", (r.right - 20, r.centery), theme.AMBER, "midright")
                 continue
             col = (theme.TEXT if on else theme.DIM) if r_["enabled"] else theme.FAINT
             text(c, self.f.row, r_["system"], (r.left + 22, r.top + 5), col)
             sub = "%s, %s" % (plural(r_["n"], "game"), human_size(r_["size"]))
-            text(c, self.f.small, sub if r_["enabled"] else sub + " · " + needs_text(self.app, r_),
-                 (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200)
+            marquee(c, self.f.small, sub if r_["enabled"] else sub + " · " + needs_text(self.app, r_),
+                    (r.left + 22, r.top + 30), theme.FAINT, maxw=r.width - 200, focused=on, slot="compress-sub")
             text(c, self.f.small, ("to " + r_["label"]) if r_["enabled"] else
                  "needs a setting" if needs_text(self.app, r_).startswith("turn on") else "needs its tool",
                  (r.right - 20, r.centery), theme.ACCENT_HI if r_["enabled"] else theme.FAINT, "midright")
@@ -230,9 +231,10 @@ class CantConvertScreen(ListScreen):
             f, why = self.items[i]
             if on:
                 focus_box(c, r)
-            text(c, self.f.row, os.path.basename(f), (r.left + 22, r.top + 5), theme.TEXT if on else theme.DIM,
-                 maxw=r.width - 200)
-            text(c, self.f.small, why[:1].upper() + why[1:], (r.left + 22, r.top + 30), theme.AMBER, maxw=r.width - 200)
+            marquee(c, self.f.row, os.path.basename(f), (r.left + 22, r.top + 5), theme.TEXT if on else theme.DIM,
+                    maxw=r.width - 200, focused=on, slot="cant-name")
+            marquee(c, self.f.small, why[:1].upper() + why[1:], (r.left + 22, r.top + 30), theme.AMBER,
+                    maxw=r.width - 200, focused=on, slot="cant-why")
             try:
                 size = human_size(os.path.getsize(f))
             except OSError:
@@ -329,8 +331,8 @@ class CompressSystemScreen(ListScreen):
             if on:
                 focus_box(c, r)
             tx = r.left + (48 if self.draw_pick(c, cand, (r.left + 22, r.centery)) else 22)
-            text(c, self.f.row, self.title_of(cand), (tx, r.top + 5), theme.TEXT if on else theme.DIM,
-                 maxw=r.width - 200)
+            marquee(c, self.f.row, self.title_of(cand), (tx, r.top + 5), theme.TEXT if on else theme.DIM,
+                    maxw=r.width - 200, focused=on, slot="compress-title")
             discs = len(cand["files"])
             ext = os.path.splitext(cand["files"][0])[1].lower().lstrip(".")
             sub = {"cue": "CUE/BIN", "gdi": "GDI"}.get(ext, ext.upper())
@@ -341,5 +343,6 @@ class CompressSystemScreen(ListScreen):
                 sub += " · " + where
             if cand["cut"]:
                 sub += " · made bootable first"
-            text(c, self.f.small, sub, (tx, r.top + 30), theme.FAINT, maxw=r.width - 200)
+            marquee(c, self.f.small, sub, (tx, r.top + 30), theme.FAINT, maxw=r.width - 200, focused=on,
+                    slot="compress-sub")
             text(c, self.f.small, human_size(cand["size"]), (r.right - 20, r.centery), theme.DIM, "midright")

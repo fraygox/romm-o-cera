@@ -5,7 +5,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import measure, progress_bar, rich_text, rrect, text
+from rbui.draw import marquee, measure, progress_bar, rich_text, rrect, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import plural
 from rbui.screens.installed import ConversionsScreen
@@ -273,8 +273,13 @@ class DownloadsScreen(ListScreen):
                 x += 30
             st, col = self.status(j)
             sw = min(520, int(measure(self.f.small, st)) + 4)
-            text(c, self.f.h3, j.label, (x, r.top + 12), theme.TEXT, maxw=r.right - 40 - sw - x)
-            text(c, self.f.small, st, (r.right - 20, r.top + 14), col, "topright", maxw=520)
+            # the focused row slides what doesn't fit (a long failure message); the others keep "…"
+            marquee(c, self.f.h3, j.label, (x, r.top + 12), theme.TEXT, maxw=r.right - 40 - sw - x, focused=on,
+                    slot="dl-label")
+            if on and sw >= 520:
+                marquee(c, self.f.small, st, (r.right - 20 - 520, r.top + 14), col, maxw=520, slot="dl-status")
+            else:
+                text(c, self.f.small, st, (r.right - 20, r.top + 14), col, "topright", maxw=520)
             sub = "roms/" + j.system
             if j.group:
                 sub += "  ·  %s, %d discs" % (j.group.get("title") or j.group.get("base"),
@@ -282,7 +287,8 @@ class DownloadsScreen(ListScreen):
             if j.state == J.DONE and j.verified:
                 sub += "  ·  checksum OK"
             bar = j.active and j.state != J.QUEUED
-            text(c, self.f.small, sub, (x, r.top + 42), theme.FAINT, maxw=(r.left + 440 - x) if bar else r.width - 60)
+            marquee(c, self.f.small, sub, (x, r.top + 42), theme.FAINT, maxw=(r.left + 440 - x) if bar else r.width - 60,
+                    focused=on, slot="dl-sub")
             if bar:
                 frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
                 busy = j.state in (J.EXTRACTING, J.VERIFYING)

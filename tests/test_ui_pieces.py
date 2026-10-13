@@ -348,9 +348,8 @@ def test_a_burst_of_the_same_error_sounds_once(app, rb, monkeypatch):
 
 def test_a_repeated_toast_draws_its_count(app, rb, monkeypatch):
     seen = []
-    real = rb.rich_text
-    rb.patch(monkeypatch, "rich_text", lambda c, fonts, font, s, *a, **k: (seen.append(s),
-                                                                          real(c, fonts, font, s, *a, **k))[1])
+    real = rb.marquee
+    rb.patch(monkeypatch, "marquee", lambda c, font, s, *a, **k: (seen.append(s), real(c, font, s, *a, **k))[1])
     app.toast("Queued: Lorem")
     app.toast("Queued: Lorem")
     app.toast("Queued: Lorem")

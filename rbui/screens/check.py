@@ -7,7 +7,7 @@ import pygame
 import rommlib
 from rbui import theme
 from rbui.theme import W
-from rbui.draw import circle, focus_box, hline, measure, rrect, text
+from rbui.draw import circle, focus_box, hline, marquee, measure, rrect, scroll_text, text
 from rbui.screens.base import ListScreen, Screen
 from rbui.screens.box_data import plural
 from rbui.screens.unseen import UnseenScreen
@@ -212,8 +212,10 @@ class AuditScreen(ListScreen):
             if not self.draw_pick(c, f, (r.left + 18, r.top + 20)):
                 circle(c, col, (r.left + 18, r.top + 20), 5)
             name = os.path.relpath(f["path"], os.path.join(rommlib.ROMS_ROOT, f["system"]))
-            text(c, self.f.row, name, (r.left + 34, r.top + 8), theme.TEXT if on else theme.DIM, maxw=r.width - 230)
-            text(c, self.f.small, f["problem"], (r.left + 34, r.top + 34), col, maxw=r.width - 230)
+            marquee(c, self.f.row, name, (r.left + 34, r.top + 8), theme.TEXT if on else theme.DIM,
+                    maxw=r.width - 230, focused=on, slot="check-name")
+            marquee(c, self.f.small, f["problem"], (r.left + 34, r.top + 34), col, maxw=r.width - 230, focused=on,
+                    slot="check-problem")
             tag = "queued" if f["path"] in self.queued else f["system"]
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(r.right - 20 - tw, r.top + 10, tw, 20)
@@ -322,9 +324,10 @@ class CheckScreen(AuditScreen):
         r = text(c, self.f.h3, head, (56, 176), theme.TEXT)
         if not self.findings:
             text(c, self.f.h3, "everything looks right.", (r.right + 4, 176), theme.GREEN)
-            text(c, self.f.body, "%d checked, %d matched to RomM. Games not in RomM under the same file name "
-                 "aren't checked (%d)." % (st.get("checked", 0), st.get("matched", 0), st.get("unmatched", 0)),
-                 (56, 212), theme.DIM, maxw=W - 112)
+            scroll_text(c, self.f.body, "%d checked, %d matched to RomM. Games not in RomM under the same file "
+                        "name aren't checked (%d)." % (st.get("checked", 0), st.get("matched", 0),
+                                                       st.get("unmatched", 0)),
+                        (56, 212, W - 112, 3 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="check-none")
             return
         x = r.right + 4
         if dmg:

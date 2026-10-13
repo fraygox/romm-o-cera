@@ -3,7 +3,7 @@ import pygame
 import rommlib
 from rbui import theme
 from rbui.theme import H, SR, W
-from rbui.draw import rrect, text, wrap
+from rbui.draw import marquee, rrect, text, wrap
 from rbui.screens.base import ListScreen, Screen
 
 
@@ -132,8 +132,12 @@ class CreditsScreen(ListScreen):
             if on:
                 rrect(c, theme.ACCENT, r, 12, 2)
             t = text(c, self.f.h3, name, (r.left + 22, r.top + 8), theme.TEXT)
-            text(c, self.f.small, what, (t.right + 12, r.top + 13), theme.DIM, maxw=r.right - 380 - t.right)
+            # the focused row's lines slide to show what doesn't fit; the others keep "…"
+            marquee(c, self.f.small, what, (t.right + 12, r.top + 13), theme.DIM, maxw=r.right - 380 - t.right,
+                    focused=on, slot="credit-what")
             text(c, self.f.small, lic, (r.right - 22, r.top + 13), theme.ACCENT_HI, "topright", maxw=330)
-            text(c, self.f.small, url, (r.left + 22, r.top + 38), theme.FAINT, maxw=r.width - 44)
+            marquee(c, self.f.small, url, (r.left + 22, r.top + 38), theme.FAINT, maxw=r.width - 44, focused=on,
+                    slot="credit-url")
             if note:
-                text(c, self.f.small, note, (r.left + 22, r.top + 60), theme.FAINT, maxw=r.width - 44)
+                marquee(c, self.f.small, note, (r.left + 22, r.top + 60), theme.FAINT, maxw=r.width - 44,
+                        focused=on, slot="credit-note")

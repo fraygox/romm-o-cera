@@ -6,7 +6,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import circle, focus_box, hline, measure, rrect, text
+from rbui.draw import circle, focus_box, hline, marquee, measure, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.box_data import disk_space, pending_roms, plural, space_bar, space_parts, storage_by_system
 from rbui.screens.installed import _lastplayed_label
@@ -263,8 +263,8 @@ class FreeUpScreen(ListScreen):
             if on:
                 focus_box(c, r)
             self.draw_pick(c, g, (r.left + 26, r.centery))
-            text(c, self.f.row, g["name"], (r.left + 50, r.centery), theme.TEXT if on else theme.DIM, "midleft",
-                 maxw=r.width - 520)
+            marquee(c, self.f.row, g["name"], (r.left + 50, r.centery), theme.TEXT if on else theme.DIM,
+                    anchor="midleft", maxw=r.width - 520, focused=on, slot="freeup-name")
             tw = int(measure(self.f.tiny, g["system"])) + 14
             tr = pygame.Rect(r.right - 380 - tw, r.centery - 10, tw, 20)
             rrect(c, theme.BG2, tr, 6)
@@ -369,9 +369,9 @@ class LeftoversScreen(ListScreen):
             return
         if not self.items:
             text(c, self.f.h3, "Nothing to clean up.", (56, 86), theme.GREEN)
-            text(c, self.f.body, "No partial files, empty game folders or copies of converted games. "
-                 "Partial downloads still in the queue are kept so they can resume.", (56, 124), theme.DIM,
-                 maxw=W - 112)
+            scroll_text(c, self.f.body, "No partial files, empty game folders or copies of converted games. "
+                        "Partial downloads still in the queue are kept so they can resume.",
+                        (56, 124, W - 112, 3 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="leftovers-none")
             return
         text(c, self.f.h3, "%d leftovers · %s" % (len(self.items), human_size(sum(i["size"] for i in self.items))),
              (56, 86), theme.TEXT)
@@ -384,8 +384,9 @@ class LeftoversScreen(ListScreen):
                 if p.startswith(root + "/"):
                     p = os.path.relpath(p, os.path.dirname(root))
             tx = r.left + (48 if self.draw_pick(c, it, (r.left + 22, r.centery)) else 22)
-            text(c, self.f.row, p, (tx, r.top + 6), theme.TEXT if on else theme.DIM, maxw=r.width - 200)
-            text(c, self.f.small, it["kind"] + (" · " + it["note"] if it.get("note") else ""),
-                 (tx, r.top + 32), theme.FAINT, maxw=r.width - 200)
+            marquee(c, self.f.row, p, (tx, r.top + 6), theme.TEXT if on else theme.DIM, maxw=r.width - 200,
+                    focused=on, slot="leftover-path")
+            marquee(c, self.f.small, it["kind"] + (" · " + it["note"] if it.get("note") else ""),
+                    (tx, r.top + 32), theme.FAINT, maxw=r.width - 200, focused=on, slot="leftover-note")
             text(c, self.f.small, human_size(it["size"]) if it["size"] else "", (r.right - 20, r.centery),
                  theme.DIM, "midright")

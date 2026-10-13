@@ -6,7 +6,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import SR, W
-from rbui.draw import focus_box, hline, installed_mark, measure, rrect, smooth_scale, text, wrap
+from rbui.draw import focus_box, hline, installed_mark, measure, rrect, scroll_text, smooth_scale, text, wrap
 from rbui.screens.base import Screen
 from rbui.screens.collection import CollectionScreen
 from rbui.screens.games import GameListScreen, SearchScreen, surprise
@@ -238,8 +238,8 @@ class HomeScreen(Screen):
                 text(c, self.f.body, "Nothing new yet.", (p.left + 28, p.top + 80), theme.DIM)
         elif app.error:
             text(c, self.f.h2, "Can't reach RomM", (p.left + 28, p.top + 22), theme.RED)
-            for i, line in enumerate(wrap(self.f.body, app.error, p.width - 56, 4)):
-                text(c, self.f.body, line, (p.left + 28, p.top + 66 + i * 26), theme.DIM)
+            scroll_text(c, self.f.body, app.error, (p.left + 28, p.top + 66, p.width - 56, 4 * 26), theme.DIM,
+                        line_h=26, slot="home-error")
             text(c, self.f.small, rommlib.display_url(app.cfg["url"]) or "No server set",
                  (p.left + 28, p.top + 180), theme.FAINT)
             text(c, self.f.small, "Check Settings, then select any item to retry.",

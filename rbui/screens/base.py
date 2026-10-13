@@ -4,7 +4,7 @@ import time
 import pygame
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import measure, polyline, rrect, text
+from rbui.draw import measure, polyline, rrect, scroll_text, text
 from rbui.modals import ActionMenu
 
 
@@ -54,8 +54,8 @@ class Screen:
         if not self.load_error:
             return False
         text(c, self.f.h3, self.LOAD_ERROR_HEAD, (56, y), theme.RED)
-        text(c, self.f.body, "%s. Go back and open it again to try once more." % self.load_error.rstrip("."),
-             (56, y + 38), theme.DIM, maxw=W - 112)
+        scroll_text(c, self.f.body, "%s. Go back and open it again to try once more." % self.load_error.rstrip("."),
+                    (56, y + 38, W - 112, 3 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="load-error")
         return True
 
     def tap_row(self, i):

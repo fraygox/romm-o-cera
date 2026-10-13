@@ -5,7 +5,7 @@ import pygame
 import rommlib
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, measure, rrect, text
+from rbui.draw import focus_box, marquee, measure, rrect, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import bios_pill, bios_rows
 from rbui.modals import Confirm
@@ -118,7 +118,8 @@ class BiosScreen(ListScreen):
             if not it.get("here", True):
                 sub = "No games here yet · " + sub
             text(c, self.f.row, it["name"], (r.left + 22, r.top + 8), theme.TEXT if on else theme.DIM, maxw=r.width - 420)
-            text(c, self.f.small, sub, (r.left + 22, r.top + 34), theme.FAINT, maxw=r.width - 60)
+            marquee(c, self.f.small, sub, (r.left + 22, r.top + 34), theme.FAINT, maxw=r.width - 60, focused=on,
+                    slot="bios-sub")
             pw = int(measure(self.f.small, pill)) + 20
             pr = pygame.Rect(r.right - 20 - pw, r.top + 8, pw, 24)
             rrect(c, theme.BG2, pr, 8)
