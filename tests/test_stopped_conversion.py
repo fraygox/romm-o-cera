@@ -117,6 +117,53 @@ def test_stopped_chdman_leaves_no_part(chd, monkeypatch):
     assert open(track, "rb").read() == b"x" * 4096
 
 
+DISC_ONE_FINISHES = r'''#!%s
+import os, sys, time
+a = sys.argv[1:]
+if a[0] in ("verify", "info"):
+    sys.exit(0)
+out = a[a.index("-o") + 1]
+with open(out, "wb") as f:
+    f.write(b"chd")
+if "Disc 1" not in out:
+    time.sleep(60)
+    sys.exit(1)
+'''
+
+
+def test_a_stop_during_a_multi_disc_set_drops_the_part_and_the_finished_discs(chd, monkeypatch):
+    """Disc 1 is converted, Disc 2 is half written when the owner stops it (Activity): neither
+    CHD stays (a set is converted whole or not at all), every original is untouched."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    cues = []
+    for n in (1, 2):
+        stem = "Lorem (World) (Disc %d)" % n
+        _w(os.path.join(sysdir, stem + ".bin"))
+        cues.append(_w(os.path.join(sysdir, stem + ".cue"),
+                       ('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n' % stem).encode()))
+    tool = chd._test_bin / "chdman"
+    tool.write_text(DISC_ONE_FINISHES % sys.executable)
+    monkeypatch.setitem(chd._state, "task", "1-set.json")
+    monkeypatch.setattr(chd, "memory_check", lambda *a: None)
+
+    done_first = []
+
+    def busy():
+        if os.path.exists(os.path.join(sysdir, "Lorem (World) (Disc 2).chd.part")):
+            done_first.append(os.path.exists(os.path.join(sysdir, "Lorem (World) (Disc 1).chd")))
+            rommlib.stop_conversion("1-set.json")
+        return ""
+    monkeypatch.setattr(chd, "busy_reason", busy)
+    try:
+        with pytest.raises(chd.Stopped):
+            chd.convert({"system": "psx", "mode": "createcd", "sources": cues, "roots": cues})
+    finally:
+        rommlib.clear_stop()
+    assert done_first[0]
+    assert _left(sysdir) == ["Lorem (World) (Disc 1).bin", "Lorem (World) (Disc 1).cue",
+                             "Lorem (World) (Disc 2).bin", "Lorem (World) (Disc 2).cue"]
+
+
 @pytest.mark.parametrize("during", ["*" + rommlib.CSO_TEMP_SUFFIX, "*.chd.part"])   # decoding, chdman
 def test_stopped_cso_leaves_no_part_and_no_decoded_iso(chd, monkeypatch, during):
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psp")
