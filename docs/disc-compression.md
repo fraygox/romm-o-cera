@@ -153,7 +153,8 @@ The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 
 Turns each Wii U disc image (`.wud`, or the same image as a `.wux`) into
 `Game.wua`, the compressed archive Cemu opens directly. Often 30–90% smaller:
-most discs are largely empty space, and `.wua` keeps only what the game uses.
+most discs are largely empty space, and `.wua` keeps only what the game uses
+(a 1.1 GB `.wux` became 127 MB in 6 seconds, checks included).
 
 A `.wua` holds the disc's game partition, decrypted (the files Cemu plays,
 in the layout Cemu's own "Convert to .wua" writes), not the whole disc, so it

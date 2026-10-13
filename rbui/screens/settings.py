@@ -521,7 +521,7 @@ class SettingsScreen(Screen):
 
         def done(n):
             if n:
-                app.toast("%s Wii U disc keys ready" % "{:,}".format(n), theme.GREEN)
+                app.toast("%s Wii U disc key%s ready" % ("{:,}".format(n), "" if n == 1 else "s"), theme.GREEN)
             else:
                 app.toast("No Wii U disc keys yet: put the keys for discs you own in Cemu's keys.txt "
                           "(bios/cemu) or bios/wiiukeys, or add them to RomM's Wii U firmware", theme.AMBER)
