@@ -6,7 +6,7 @@ import shutil
 import threading
 import time
 
-from . import core as _core, es as _es
+from . import core as _core, es as _es, convert as _convert
 
 
 # Filename tags that mark something other than a finished release. Matched as
@@ -361,6 +361,49 @@ def primary_path(system, paths, es):
         e = os.path.splitext(c)[1].lower()
         return (PRIMARY_ORDER.index(e) if e in PRIMARY_ORDER else 99, len(c))
     return sorted(cands, key=key)[0]
+
+
+def _holds(paths, src):
+    src = os.path.normpath(src)
+    return any(src == p or src.startswith(p.rstrip(os.sep) + os.sep) for p in paths)
+
+
+def play_target(library, rom, system, es=None):
+    """What EmulationStation would start for a game on the box: (path, None),
+    or (None, why not now). The path is the one ES lists: a multi-disc set's
+    .m3u, a game folder ES lists as one game (a PS3 .ps3 folder), else the
+    game's primary file (.chd, .rvz, .zar, .wua... once converted). Never a
+    game whose conversion is queued or running: its files are about to be
+    replaced. es: {system: extensions} (load_es_systems() when None)."""
+    paths = [os.path.normpath(p) for p in library.paths_for(rom, system)]
+    if not paths:
+        return None, "It isn't on this box"
+    state = _convert.conversions_state(recent=1)
+    for name, task in state["queue"]:
+        if task and any(_holds(paths, s) for s in task.get("sources") or []):
+            label = _convert.CONVERT_LABELS.get(task.get("mode"), "CHD")
+            cur = state["current"]
+            if cur.get("task") == name:
+                pct = cur.get("pct")
+                return None, "Being compressed to %s%s: it plays once that's done" % (
+                    label, " (%d%%)" % pct if isinstance(pct, (int, float)) else "")
+            return None, "Waiting to be compressed to %s: it plays once that's done" % label
+    es = es if es is not None else _es.load_es_systems()
+    exts = es.get(system)
+    accepts = (lambda p: exts is None or os.path.splitext(p)[1].lower() in exts)
+    m3u = [p for p in paths if p.lower().endswith(".m3u") and os.path.isfile(p) and accepts(p)]
+    if m3u:
+        return m3u[0], None
+    group = library.group_for(rom["id"])
+    if group and (exts is None or ".m3u" in exts):
+        for rid in group.get("rom_ids") or []:
+            if not library.paths_for({"id": rid, "fs_name": None, "fs_name_no_ext": None}, system):
+                return None, "Its other discs aren't on the box yet"
+    for p in paths:
+        if os.path.isdir(p) and os.path.splitext(p)[1] and accepts(p):
+            return p, None
+    prim = primary_path(system, paths, es)
+    return (prim, None) if prim else (None, "EmulationStation can't start these files")
 
 
 def manual_path(rom):

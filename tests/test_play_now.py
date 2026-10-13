@@ -92,3 +92,82 @@ def test_reopening_after_an_update_uses_the_same_waiter(es, tmp_path, monkeypatc
     monkeypatch.setattr(rommlib, "launch_when_closed", lambda path, **kw: seen.append((path, kw)) or True)
     assert rommlib.relaunch_when_closed(str(tmp_path), python="/usr/bin/python3")
     assert seen == [(os.path.join(str(tmp_path), "rommbrowser.pygame"), {"python": "/usr/bin/python3"})]
+
+
+# ------------------------------------------------------------ what to launch
+
+ES_EXTS = {"psx": {".cue", ".chd", ".m3u", ".zip"}, "ps3": {".ps3", ".psn", ".squashfs"},
+           "wiiu": {".wua", ".wud", ".wux", ".rpx"}, "gba": {".gba", ".zip"}}
+
+
+def _file(system, name, data=b"x"):
+    p = os.path.join(rommlib.ROMS_ROOT, system, name)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "wb").write(data)
+    return p
+
+
+def _rom(rid, name):
+    return {"id": rid, "name": name, "fs_name": name, "fs_name_no_ext": os.path.splitext(name)[0]}
+
+
+def test_the_primary_file_is_launched(isolated):
+    lib = rommlib.Library()
+    cue = _file("psx", "Lorem (USA).cue")
+    bins = _file("psx", "Lorem (USA) (Track 1).bin")
+    lib.mark(_rom(1, "Lorem (USA).zip"), "psx", [cue, bins])
+    assert rommlib.play_target(lib, _rom(1, "Lorem (USA).zip"), "psx", ES_EXTS) == (cue, None)
+    wua = _file("wiiu", "Ipsum (USA).wua")
+    lib.mark(_rom(2, "Ipsum (USA).zip"), "wiiu", [wua])
+    assert rommlib.play_target(lib, _rom(2, "Ipsum (USA).zip"), "wiiu", ES_EXTS) == (wua, None)
+
+
+def test_a_ps3_folder_is_launched_as_the_folder(isolated):
+    lib = rommlib.Library()
+    folder = os.path.join(rommlib.ROMS_ROOT, "ps3", "Dolor (USA).ps3")
+    os.makedirs(os.path.join(folder, "PS3_GAME"))
+    open(os.path.join(folder, "PS3_GAME", "PARAM.SFO"), "wb").write(b"x")
+    lib.mark(_rom(3, "Dolor (USA).zip"), "ps3", [folder])
+    assert rommlib.play_target(lib, _rom(3, "Dolor (USA).zip"), "ps3", ES_EXTS) == (folder, None)
+
+
+def test_a_disc_set_launches_its_playlist_once_every_disc_is_here(isolated):
+    lib = rommlib.Library()
+    group = {"id": "psx:sit", "base": "Sit (USA)", "title": "Sit", "rom_ids": [4, 5]}
+    d1 = _file("psx", "Sit (USA) (Disc 1).chd")
+    lib.mark(_rom(4, "Sit (USA) (Disc 1).zip"), "psx", [d1], group=group)
+    path, why = rommlib.play_target(lib, _rom(4, "Sit (USA) (Disc 1).zip"), "psx", ES_EXTS)
+    assert path is None and why == "Its other discs aren't on the box yet"
+    d2 = _file("psx", "Sit (USA) (Disc 2).chd")
+    m3u = _file("psx", "Sit (USA).m3u", b"Sit (USA) (Disc 1).chd\nSit (USA) (Disc 2).chd\n")
+    lib.mark(_rom(4, "Sit (USA) (Disc 1).zip"), "psx", [d1, m3u], group=group)
+    lib.mark(_rom(5, "Sit (USA) (Disc 2).zip"), "psx", [d2, m3u], group=group)
+    assert rommlib.play_target(lib, _rom(5, "Sit (USA) (Disc 2).zip"), "psx", ES_EXTS) == (m3u, None)
+
+
+def test_never_a_game_whose_conversion_is_waiting_or_running(isolated):
+    lib = rommlib.Library()
+    cue = _file("psx", "Amet (USA).cue")
+    lib.mark(_rom(6, "Amet (USA).zip"), "psx", [cue])
+    task = {"system": "psx", "mode": "chd", "sources": [cue], "roots": [], "queued": 0}
+    rommlib.publish_queue_task(task, "1-6-psx.json")
+    path, why = rommlib.play_target(lib, _rom(6, "Amet (USA).zip"), "psx", ES_EXTS)
+    assert path is None and why == "Waiting to be compressed to CHD: it plays once that's done"
+    rommlib.atomic_write_json(rommlib.chd_current_path(), {"task": "1-6-psx.json", "pct": 42})
+    path, why = rommlib.play_target(lib, _rom(6, "Amet (USA).zip"), "psx", ES_EXTS)
+    assert path is None and why == "Being compressed to CHD (42%): it plays once that's done"
+    os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, "1-6-psx.json"))      # done: the CHD replaced the cue
+    os.remove(cue)
+    chd = _file("psx", "Amet (USA).chd")
+    lib.mark(_rom(6, "Amet (USA).zip"), "psx", [chd])
+    assert rommlib.play_target(lib, _rom(6, "Amet (USA).zip"), "psx", ES_EXTS) == (chd, None)
+
+
+def test_other_games_conversions_dont_block(isolated):
+    lib = rommlib.Library()
+    gba = _file("gba", "Consectetur (USA).gba")
+    lib.mark(_rom(7, "Consectetur (USA).gba"), "gba", [gba])
+    rommlib.publish_queue_task({"system": "psx", "mode": "chd", "sources": ["/elsewhere/x.cue"]}, "1-1-psx.json")
+    assert rommlib.play_target(lib, _rom(7, "Consectetur (USA).gba"), "gba", ES_EXTS) == (gba, None)
+    path, why = rommlib.play_target(lib, _rom(8, "Gone (USA).gba"), "gba", ES_EXTS)
+    assert path is None and why == "It isn't on this box"
