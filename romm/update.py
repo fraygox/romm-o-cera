@@ -377,40 +377,9 @@ def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
     return sorted(set(pids.values()))
 
 
-# Reopen after an update: a detached waiter (stdlib only, its own session)
-# asks ES to launch the app again once ES no longer reports it running. It
-# gives up when anything else starts meanwhile, or after a minute.
-_RELAUNCH = r"""
-import json, sys, time, urllib.request
-es, path = sys.argv[1], sys.argv[2]
-def running():
-    try:
-        with urllib.request.urlopen(es + "/runningGame", timeout=3) as r:
-            return (json.loads(r.read() or b"{}").get("path") or "")
-    except ValueError:
-        return ""
-    except Exception:
-        return None
-end = time.time() + 60
-while time.time() < end and running() != "":
-    time.sleep(0.3)
-time.sleep(1.5)                       # ES back in its menus
-if time.time() < end and running() == "":
-    urllib.request.urlopen(urllib.request.Request(es + "/launch", data=path.encode(), method="POST"), timeout=5)
-"""
-
-
 def relaunch_when_closed(app_dir=rommlib.APP_DIR, python=None):
-    """Start the waiter that reopens the app through ES once it has quit."""
-    import subprocess
-    import sys
-    try:
-        subprocess.Popen([python or sys.executable, "-c", _RELAUNCH, _es.ES_API,
-                          os.path.join(app_dir, "rommbrowser.pygame")], start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except OSError:
-        return False
+    """Reopen the app through ES once it has quit (after an update)."""
+    return _es.launch_when_closed(os.path.join(app_dir, "rommbrowser.pygame"), python=python)
 
 
 def backup_version(backup=None):

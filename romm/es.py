@@ -288,6 +288,90 @@ def es_messagebox(msg):
         return False
 
 
+# Starting a game once this app has quit: ES runs one thing at a time and
+# its POST /launch only starts a game when nothing else runs, so a detached
+# waiter (stdlib only, its own session) asks for it once ES no longer reports
+# the app running and has had a moment to get back to its menus. It gives up
+# when anything else starts meanwhile, or when the app hasn't quit within a
+# minute. Used to reopen the app after an update, and for Play now.
+#
+# /launch looks the path up in ES's in-memory game lists (every game system,
+# the exact absolute path) and silently does nothing for a path it doesn't
+# list: its reply is 200 either way. A game downloaded this session isn't
+# listed until rb_finalize hands it to ES, which it does once the app has quit
+# and ES is idle, so with `system` the waiter first waits (up to `wait` s)
+# for /systems/<system>/games to list the path, and afterwards checks that
+# the game is running (else a popup says where to start it).
+_LAUNCHER = r"""
+import json, sys, time, urllib.parse, urllib.request
+es, path, system, name, wait = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], float(sys.argv[5])
+def get(p, timeout=10):
+    with urllib.request.urlopen(es + p, timeout=timeout) as r:
+        return r.read()
+def post(p, body):
+    urllib.request.urlopen(urllib.request.Request(es + p, data=body.encode("utf-8"), method="POST"), timeout=5)
+def running():
+    try:
+        return json.loads(get("/runningGame", 3) or b"{}").get("path") or ""
+    except ValueError:
+        return ""
+    except Exception:
+        return None
+def listed():
+    try:
+        return any(g.get("path") == path for g in json.loads(get("/systems/" + urllib.parse.quote(system) + "/games", 30)))
+    except Exception:
+        return False
+def say(msg):
+    try:
+        post("/notify", msg)
+    except Exception:
+        pass
+end = time.time() + 60
+while time.time() < end and running() != "":
+    time.sleep(0.3)
+time.sleep(1.5)                       # ES back in its menus
+if time.time() >= end or running() != "":
+    sys.exit()
+if system:
+    end = time.time() + wait
+    while not listed():
+        if running():                 # the player started something else
+            sys.exit()
+        if time.time() >= end:
+            say("%s isn't in EmulationStation's list yet: start it from %s once it shows." % (name, system))
+            sys.exit()
+        time.sleep(2)
+    if running():
+        sys.exit()
+post("/launch", path)
+if name:
+    end = time.time() + min(20, wait)
+    while time.time() < end:
+        now = running()
+        if now:
+            sys.exit()
+        time.sleep(0.5)
+    say("%s didn't start: open it from %s in EmulationStation." % (name, system or "its system"))
+"""
+
+
+def launch_when_closed(path, system=None, name=None, wait=600, python=None):
+    """Start the waiter that has ES launch `path` once this app has quit.
+    system: the game's system, when ES may not list it yet (Play now: the
+    waiter waits for the list); name: the game's name for the popups if it
+    can't start. True when the waiter is running."""
+    import subprocess
+    import sys
+    try:
+        subprocess.Popen([python or sys.executable, "-c", _LAUNCHER, ES_API, path, system or "", name or "",
+                          str(wait)], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
+
+
 def gamelist_xml(system, games):
     """A partial gamelist.xml (bytes) for games of a system: {absolute path:
     {tag: text}}; paths are written relative to the system folder."""

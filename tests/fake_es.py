@@ -21,6 +21,11 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
                                     `busy` (scraping, hashing, installing, updating);
                                     `has_isidle = False` = before Batocera 36: 404
 - POST /messagebox                  text/plain message box: 200, empty body; 400 if no body
+- POST /launch                      text/plain path: 200, empty body, always; the game
+                                    starts (`running`) only if ES lists that exact path
+                                    (`launch_any = True`, the default here: any path, e.g.
+                                    the app itself), and `launch_works = False` starts
+                                    nothing at all
 
 All of it as in batocera-emulationstation's es-app/src/services/HttpServerThread.cpp.
 
@@ -60,6 +65,8 @@ class FakeES:
         self.busy = False                                # scraping, hashing, installing...
         self.has_isidle = True                           # False: an ES before /isIdle
         self.addgames_bug = False                        # True: Batocera 43.1's /addgames
+        self.launch_any = True                           # False: /launch only starts listed paths
+        self.launch_works = True                         # False: /launch starts nothing
         self.lock = threading.Lock()
         self.reload()
         fake = self
@@ -116,8 +123,12 @@ class FakeES:
                     if not body:
                         return self._send(400, b"400 bad request - body is missing", "text/html")
                 if p == "/launch":                       # ES starts the game (here: just says it runs)
-                    fake.running = body.decode("utf-8")
-                    fake.launched.append(fake.running)
+                    path = body.decode("utf-8")
+                    fake.launched.append(path)
+                    with fake.lock:
+                        known = any(path in games for games in fake.mem.values())
+                    if fake.launch_works and (fake.launch_any or known):
+                        fake.running = path
                     return self._send(200, b"")
                 if p in ("/notify", "/messagebox"):
                     (fake.notes if p == "/notify" else fake.messages).append(body.decode("utf-8"))
