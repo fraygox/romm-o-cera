@@ -180,3 +180,44 @@ def test_panel_facts_fill_columns_and_move_down(app, rb):
     assert p.y == y + 2 * 42 + 6
     p.fact("Where", "")                                     # nothing to say: nothing drawn
     assert p.y == y + 2 * 42 + 6
+
+
+def test_a_row_with_an_aside_puts_its_status_on_the_label_line_and_a_bar_under_it(app, rb, monkeypatch):
+    """aside: the status goes up beside the label, a progress bar under it, and the label and
+    grey line stop short of that column; mark_w makes room for a cover thumb."""
+    import pygame
+    drawn, bars, marks = [], [], []
+    real = rb.draw.text
+
+    def spy(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
+        r = real(surf, font, s, pos, color, anchor, maxw)
+        drawn.append((s, r))
+        return r
+    rb.patch(monkeypatch, "text", spy)
+    monkeypatch.setattr(rb.layout, "progress_bar", lambda c, rect, frac, color=None: bars.append((rect, frac, color)))
+    r = pygame.Rect(32, 216, 700, 58)
+    tx = rb.list_row(app.canvas, app.fonts, r, False, "A label long enough to reach the bar " * 3, "roms/psx",
+                     "38.0 MB/s", rb.BLUE, aside=(0.6, rb.BLUE), mark=lambda ctr: marks.append(ctr) or True,
+                     mark_w=62, box=rb.PANEL)
+    st = dict(drawn)["38.0 MB/s"]
+    (bx, by, bw, bh), frac, col = bars[0]
+    assert tx == r.left + 62 and marks == [(r.left + 29, r.centery)]
+    assert st.right <= r.right - 19 and st.bottom <= by and frac == 0.6 and col == rb.BLUE
+    assert bx + bw == r.right - 20 and by + bh <= r.bottom
+    label = next(rr for s, rr in drawn if s.startswith("A label"))
+    assert label.right <= bx - 20
+
+
+def test_panel_cards_stack_down_and_footer_cards_sit_at_the_bottom(app, rb):
+    import pygame
+    hits = []
+    app.hit = lambda rect, fn: hits.append(pygame.Rect(rect))
+    pan = rb.split(None)[1]
+    p = rb.Panel(app.canvas, app.fonts, pan, app=app)
+    foot, _ = p.card("Compress games…", "Pick games", bottom=True, chevron=True, tap=lambda: None)
+    assert foot.bottom == pan.bottom - p.PAD and p.bottom == foot.top - 12
+    p.head("Compressing", "pauses while you play")
+    a, room = p.card("Lorem (USA)", "to CHD", on=True, h=62, more=52, tap=lambda: None)
+    b, _ = p.card("Ipsum (USA)", "to RVZ", tap=lambda: None)
+    assert a.bottom + 8 == b.top and room.top == a.top + 62 and room.height == 52
+    assert hits == [foot, a, b] and a.left == b.left == foot.left and a.width == pan.width - 2 * p.PAD + 24

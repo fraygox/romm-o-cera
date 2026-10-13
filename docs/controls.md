@@ -13,7 +13,7 @@ face button (confirm), **B** the right one (back), **X** the left one and
 
 ## Controller
 
-**A** confirms · **B** goes back · **Select** opens Downloads · **Start**
+**A** confirms · **B** goes back · **Select** opens Activity (downloads and compressing) · **Start**
 goes Home · **Hotkey + Start exits**. What X, Y, L/R and L2/R2 do depends on
 the screen ([below](#on-each-screen)).
 
@@ -110,7 +110,8 @@ pick adds **Y Another**, to roll again.
 | Game lists | Download (a game on the box: its menu) | Actions: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
-| Downloads | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Activity (downloads) | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Activity (compressing) | Pause or resume; a queued one: convert next; Compress games | Stop this one; a queued one: take it out | Compress games | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |
 | Games from RomM | The game's menu: play now, delete, download again, more like this | Actions: sort, pick several | Sort | A–Z (by name) |

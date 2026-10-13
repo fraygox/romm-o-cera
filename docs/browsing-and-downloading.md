@@ -155,9 +155,15 @@ cancels it, and a popup says where to find the game if it isn't ready by
 then. Where EmulationStation asks
 before starting a game (a system with missing BIOS files), it asks then too.
 
-### The Downloads screen
+### Activity: downloads and compressing
 
-**Select** opens it from anywhere. The queue comes first, in the order it
+**Select** opens it from anywhere (Home's Downloads too). The line on top says
+when everything is done (downloads at their smoothed speed, plus the running
+conversion and the ones queued behind it), with one bar for all of it.
+Downloads are on the left, what this box is compressing on the right;
+**left/right** moves between them.
+
+On the left, the queue comes first, in the order it
 runs, then finished downloads, newest first. **A** on a download gives its
 options: move it to the top, up or down, Download now (outside the download
 hours), pause, resume, cancel, retry, or remove it from the list. The **X**
@@ -166,16 +172,23 @@ Pick several (X › Pick several) to pause, resume, cancel, retry or remove
 them at once; cancelling (one or several, active or paused) asks first, since it
 deletes the partial files. Each game shows what it's being compressed to (CHD,
 RVZ, squashfs, .zcci, .zar, .wux, .wua, a `.ps3` folder) and when that's done. A
-finished game's menu has [Play now](#play-now). L2/R2 opens
-**Conversions** (background compression,
-[On this box](on-this-box.md#conversions)).
+finished game's menu has [Play now](#play-now). A failed download says why
+under its name.
+
+On the right, **Compressing**: the running conversion with its progress and time
+left (**A** pauses or resumes it, **X** stops it: what's made so far goes, the
+original stays, and Conversions can queue it again), the queue (**A** converts
+it next, **X** takes it out), what finished lately, and **Compress games…**
+(**Y**) to pick games already on the box. A pause lasts until you resume, even
+across restarts; conversions also pause by themselves while a game runs. L2/R2
+opens **Conversions** ([On this box](on-this-box.md#conversions)).
 
 ### Space
 
 **Keep free on disk** (Settings, default 20 GB): downloads and conversions
 never leave less than this free. A download that doesn't fit waits ("Waiting
 for space") and starts once there's room; smaller ones behind it keep going.
-Downloads shows what the whole queue still needs against what's free, and
+Activity shows the space free (or how much the queue is short by), and
 adding a game the queue can't fit warns you. An archive counts what it
 really unpacks to: RomM's list of its contents, or, when RomM has none (Wii U,
 for one), the zip's own list, read from RomM in the background before the

@@ -28,17 +28,19 @@ def verb_button(c, f, rect, label, kind="go", detail="", glyph="A", frac=0.0):
         progress_bar(c, (rect.left + 18, rect.bottom - 16, rect.width - 36, 6), frac, theme.BLUE)
         return rect
     play = kind == "play"
-    rrect(c, mix(theme.BG, theme.GREEN, 0.18) if play else theme.BG2 if kind == "quiet" else
-          theme.RED if kind == "danger" else theme.ACCENT, rect, 12)
+    fill = mix(theme.BG, theme.GREEN, 0.18) if play else theme.BG2 if kind == "quiet" else \
+        theme.RED if kind == "danger" else theme.ACCENT
+    rrect(c, fill, rect, 12)
+    ink = theme.ink_on(fill)                  # a light theme's TEXT is dark: unreadable on its red or accent
     gx = rect.left + 18
     if glyph:
         gx += button_glyph(c, f, glyph, gx, rect.centery - 11) + 12
     lw = min(measure(f.h3, label), rect.right - 20 - gx)
     room = rect.right - 20 - (gx + lw + 16)             # the label first; the detail gets what's left
     if detail and measure(f.small, detail) <= room:      # whole or not at all
-        text(c, f.small, detail, (rect.right - 20, rect.centery), theme.TEXT if kind == "go" else theme.DIM,
+        text(c, f.small, detail, (rect.right - 20, rect.centery), ink if kind == "go" else theme.DIM,
              "midright")
-    text(c, f.h3, label, (gx, rect.centery), theme.GREEN if play else theme.DIM if kind == "quiet" else theme.TEXT,
+    text(c, f.h3, label, (gx, rect.centery), theme.GREEN if play else theme.DIM if kind == "quiet" else ink,
          "midleft", maxw=lw + 1)
     return rect
 

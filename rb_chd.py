@@ -50,12 +50,26 @@ def running_game():
 def busy_reason():
     """Why conversions wait: "" they may run, "game" a game runs (or ES
     can't be asked), "es" ES scrapes, hashes, installs or updates (/isIdle,
-    Batocera 36+; without it the running game alone decides). The browser
-    alone counts as idle (rommlib.es_busy without app_busy)."""
+    Batocera 36+; without it the running game alone decides), "hold" the
+    owner paused conversions (Activity). The browser alone counts as idle
+    (rommlib.es_busy without app_busy)."""
+    if _new("conversions_held"):
+        return "hold"
     return rommlib.es_busy()
 
 
-PAUSED = {"game": "a game runs", "es": "EmulationStation is busy"}
+def _new(name, *args):
+    """rommlib.<name>(*args) for a name newer than the last release: False on an older rommlib
+    still in memory during an update (test_package)."""
+    fn = getattr(rommlib, name, None)
+    return fn(*args) if fn else False
+
+
+PAUSED = {"game": "a game runs", "es": "EmulationStation is busy", "hold": "you paused it"}
+
+
+class Stopped(Exception):
+    """The owner stopped this conversion (Activity, rommlib.stop_conversion)."""
 
 
 class ChdmanMissing(Exception):
@@ -164,14 +178,14 @@ def memory_check(pid, busy):
 
 
 RESULTS_KEEP = 200
-_state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "last": ""}
+_state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "paused": "", "last": ""}
 
 
 def status(**kw):
     """What the worker is doing, for the app's Conversions screen."""
     _state.update(kw)
     try:
-        rommlib.atomic_write_json(rommlib.chd_current_path(), {k: _state[k] for k in ("task", "since", "file", "step", "pct")},
+        rommlib.atomic_write_json(rommlib.chd_current_path(), {k: _state[k] for k in ("task", "since", "file", "step", "pct", "paused")},
                                   sync=False)        # rewritten every few seconds
     except OSError:
         pass
@@ -190,7 +204,7 @@ def record(task_name, task, result):
     """Append one finished task to chd-results.jsonl (kept short)."""
     entry = {"time": time.time(), "task": task_name, "result": result, "message": _state["last"][:300],
              "system": task.get("system"), "mode": task.get("mode"), "sources": task.get("sources"),
-             "retry": task if result == "failed" and task else None}
+             "retry": task if result in ("failed", "stopped") and task else None}
     sizes = _state.pop("sizes", None)
     if result == "ok" and sizes:
         entry["in_size"], entry["out_size"] = sizes          # Compress's "after" estimate reads these
@@ -260,7 +274,7 @@ def run_tool(argv, keep_stdout=False):
     with outf:
         p = subprocess.Popen(cmd, stdout=outf if keep_stdout else subprocess.DEVNULL, stderr=outf, text=True,
                              preexec_fn=_die_with_parent)
-    paused = False
+    paused = stopped = False
     guard = None
     try:
         while p.poll() is None:
@@ -273,6 +287,9 @@ def run_tool(argv, keep_stdout=False):
                     status(pct=min(100.0, float(m[-1])))
             except (OSError, ValueError):
                 pass
+            if _new("stop_requested", _state["task"]):
+                stopped = True
+                break                             # finally: resume + stop the tool
             why = busy_reason()
             busy = why != ""
             guard = memory_check(p.pid, busy)
@@ -281,10 +298,12 @@ def run_tool(argv, keep_stdout=False):
             if busy and not paused:
                 p.send_signal(signal.SIGSTOP)
                 paused = True
+                status(paused=why)
                 note("chd: paused (%s)" % PAUSED[why])
             elif not busy and paused:
                 p.send_signal(signal.SIGCONT)
                 paused = False
+                status(paused="")
                 note("chd: resumed")
     finally:
         if p.poll() is None:          # we're going down (killed, error): never leave chdman frozen
@@ -294,9 +313,11 @@ def run_tool(argv, keep_stdout=False):
                 p.wait(10)
             except Exception:
                 p.kill()
-    if guard:
+    if paused:
+        status(paused="")
+    if guard or stopped:
         errf.close()
-        raise guard
+        raise guard or Stopped()
     if p.returncode == 127:
         raise ChdmanMissing() if argv[0] == "chdman" else ToolMissing(argv[0])
     errf.seek(0, 2)
@@ -354,8 +375,7 @@ def _crc32_file(path):
     crc, n = 0, 0
     with open(path, "rb") as f:
         while True:
-            while busy_reason():               # ES can't be asked: treated as busy
-                time.sleep(10)
+            _idle()
             chunk = f.read(8 << 20)
             if not chunk:
                 return "%08x" % (crc & 0xffffffff)
@@ -414,11 +434,17 @@ def convert_squashfs(src, tmp, threads):
 def _idle():
     """Between frames of an in-process conversion: wait while a game runs
     (the subprocess tools get SIGSTOP instead)."""
+    was = False
     while True:
+        if _new("stop_requested", _state["task"]):
+            raise Stopped()
         why = busy_reason()                # ES can't be asked: treated as busy
         if not why:
+            if was:
+                status(paused="")
             return
-        status(step="Paused while " + PAUSED[why])
+        was = True
+        status(step="Paused while " + PAUSED[why], paused=why)
         time.sleep(10)
 
 
@@ -915,6 +941,11 @@ def convert(task):
                 if rc == 0:
                     status(step="Verifying", pct=None)
                     rc, err = chdman("verify", "-i", tmp)
+        except Stopped:
+            note("chd: STOPPED %s: you stopped it; the original stays as it is" % os.path.basename(src))
+            for m in made + [tmp]:
+                _drop(m)
+            raise
         except MemoryGuard as g:
             note("chd: STOPPED %s: %s; %s" % (os.path.basename(src), g,
                         "will try again later" if g.retry else "leaving it as it is"))
@@ -1116,8 +1147,9 @@ def work(fd, waiting=None):
                 break
             finalize_later()        # merge what's done (once ES is idle), in its own process
             break
-        if busy_reason():
-            time.sleep(20)
+        why = busy_reason()
+        if why:
+            time.sleep(3 if why == "hold" else 20)      # a resume shows at once
             continue
         path = os.path.join(rommlib.CHD_QUEUE_DIR, tasks[0])
         cur = rommlib.chd_current_path()
@@ -1128,7 +1160,9 @@ def work(fd, waiting=None):
             _state["last"] = ""
             _state.pop("sizes", None)
             status(task=tasks[0], since=time.time(), file=os.path.basename((task.get("sources") or [""])[0]),
-                   step="Starting", pct=None)
+                   step="Starting", pct=None, paused="")
+            if _new("stop_requested", tasks[0]):
+                raise Stopped()
             res = convert(task)
             if res is None:                   # memory needed by a game, or no room: keep it, try later
                 record(tasks[0], task, "waiting")
@@ -1141,6 +1175,10 @@ def work(fd, waiting=None):
                                                      "skip" in _state["last"].lower() else "failed"))
             if res:
                 since_finalize += 1
+        except Stopped:
+            if not _state["last"].startswith("STOPPED"):
+                note("chd: STOPPED %s: you stopped it; the original stays as it is" % tasks[0])
+            record(tasks[0], task, "stopped")
         except ToolWaiting as e:
             _wait(waiting, tasks[0], e.args[0], cur)
             continue
@@ -1169,6 +1207,7 @@ def work(fd, waiting=None):
             os.remove(cur)
         except OSError:
             pass
+        _new("clear_stop")                    # a stop for a task that finished first must not linger
         if since_finalize >= FINALIZE_EVERY:
             finalize_later()
             since_finalize = 0

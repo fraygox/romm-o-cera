@@ -343,3 +343,26 @@ def test_a_dialogs_buttons_are_verb_buttons(rb, app, monkeypatch):
     d.alt = ("Another", lambda: None)
     d.draw(app.canvas)
     assert kinds == [("Delete", "danger", "A"), ("Another", "quiet", "Y"), ("Back", "quiet", "B")]
+
+
+@pytest.mark.parametrize("name", ["default", "dreamcast", "high_contrast_light", "paper"])
+def test_verb_button_labels_read_on_their_fill(rb, fonts, monkeypatch, name):
+    """A light theme's TEXT is dark: on the red or the accent the label takes ink_on(fill)."""
+    seen = {}
+    real = rb.draw.text
+
+    def spy(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
+        seen[s] = color
+        return real(surf, font, s, pos, color, anchor, maxw)
+    rb.patch(monkeypatch, "text", spy)
+    rb.apply_theme(name)
+    try:
+        c = _canvas(rb)
+        rb.verb_button(c, fonts, (0, 0, 400, 52), "Delete", "danger")
+        rb.verb_button(c, fonts, (0, 60, 400, 52), "Download", "go", detail="1 GB")
+        assert seen["Delete"] == rb.ink_on(rb.RED) and seen["Download"] == rb.ink_on(rb.ACCENT)
+        assert seen["1 GB"] == rb.ink_on(rb.ACCENT)
+        if name == "dreamcast":
+            assert rb.ink_on(rb.RED) != rb.TEXT            # the case this fixes
+    finally:
+        rb.apply_theme("default")
