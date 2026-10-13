@@ -11,6 +11,7 @@ from rbui.screens.base import Screen
 from rbui.modals import ActionMenu
 from rbui.widgets.chips import PILL_GAP, PILL_PAD, pill_row, player_dots, switch_pill, switch_pill_width
 from rbui.widgets.hero import game_verb, meta_line, press_verb, verb_button, VERB_H
+from rbui.screens.game import GameScreen
 from rbui.widgets.tiles import cover, cover_tile
 
 PARTY = [(0, "Anyone"), (2, "2 players"), (3, "3 players"), (4, "4 players")]
@@ -197,10 +198,15 @@ class GameNightScreen(Screen):
 
     # -- input
     def menu_entries(self):
-        return [("Roll again", "Another game from %s" % self.scope.where, self.roll),
+        rom = self.current()
+        return [("Roll again", "Another game from %s" % self.scope.where, self.roll)] + \
+            ([("Open the game page", "Facts, screenshots and your RomM notes", self.open_page)] if rom else []) + [
                 None,
                 ("Players", "", self.step_players, dict(PARTY)[self.opts["players"]], "choice"),
                 (HERE, "", self.toggle_here, self.opts["here"], "switch")]
+
+    def open_page(self):
+        self.app.push(GameScreen(self.app, self.current()))
 
     def hints(self):
         h = []
@@ -257,7 +263,7 @@ class GameNightScreen(Screen):
                     % where)
         if self.opts["here"]:
             return ("No game %s %s" % (where, who) if who else "No game from %s on this box yet" % self.scope.where,
-                    "Turn off {X} %s, or download a few first." % HERE)
+                    "Turn off %s in {X} Actions, or download a few first." % HERE)
         return ("No game %s %s" % (where, who) if who else "No game %s to pick from" % where,
                 "Fewer players widen it." if who else "")
 

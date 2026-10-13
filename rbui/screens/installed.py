@@ -254,7 +254,7 @@ class ConversionsScreen(ListScreen):
         return self.trail("Conversions")
 
     def hints(self):
-        h = [("A", "Options")] if self.rows else []
+        h = [("A", "Manage")] if self.rows else []
         if any(r["kind"] in ("queued", "running") for r in self.rows):
             h.append(("X", "Start now"))
         if any(r["kind"] not in ("queued", "running") for r in self.rows):

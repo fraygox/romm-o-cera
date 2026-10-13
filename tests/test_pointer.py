@@ -260,9 +260,14 @@ def _search(rb, app, monkeypatch, installed=()):
     sc.preview = [{"id": i, "name": "Lorem %d" % i, "platform_id": 1, "fs_size_bytes": 1} for i in range(5)]
     sc.preview_total = 5
     monkeypatch.setattr(app, "rom_status", lambda rom: ("installed" if rom["id"] in installed else "remote", None))
-    opened = []
-    rb.patch(monkeypatch, "ManageMenu", lambda a, rom: opened.append(("manage", rom["id"])) or "menu")
-    rb.patch(monkeypatch, "DownloadConfirm", lambda a, rom: opened.append(("download", rom["id"])) or "dl")
+    opened = []                                           # the game pages opened, by rom id
+
+    def push(scr, _push=app.push):
+        if isinstance(scr, rb.GameScreen):
+            opened.append(scr.rom["id"])
+        else:
+            _push(scr)
+    monkeypatch.setattr(app, "push", push)
     return sc, opened
 
 
@@ -280,13 +285,11 @@ def test_search_matches_take_controller_focus(make_app, rb, monkeypatch):
     assert sc.pick == 4                                   # stays on the last
     sc.action("up")
     sc.action("up")
-    sc.action("ok")                                       # Lorem 2 is on the box: its manage menu
-    assert opened == [("manage", 2)] and app.modal == "menu"
-    app.modal = None
+    sc.action("ok")                                       # A: the game's page
+    assert opened == [2]
     sc.action("down")
     sc.action("ok")
-    assert opened[-1] == ("download", 3)
-    app.modal = None
+    assert opened[-1] == 3
     sc.action("left")                                     # back to the keyboard, beside it
     assert sc.pick is None and sc.text_entry and sc.kb.at_edge("right")
     sc.kb.c = 0
@@ -323,20 +326,19 @@ def test_search_enter_on_a_match_opens_it_from_the_keyboard(make_app, rb, monkey
     assert out == ["ok"]
     for a in out:
         app.dispatch(a)
-    assert opened == [("download", 1)]
+    assert opened == [1]
 
 
-def test_tapping_an_installed_match_opens_its_manage_menu(make_app, rb, monkeypatch):
+def test_tapping_a_match_opens_its_game_page(make_app, rb, monkeypatch):
     app = make_app()
     sc, opened = _search(rb, app, monkeypatch, installed={0})
     app.draw()
     hits = [(r, fn) for r, fn in app.targets if r.left == sc.PANEL.left + 12]
     assert len(hits) == 5
     app.tap(hits[0][0].center)
-    assert opened == [("manage", 0)]
-    app.modal = None
+    assert opened == [0]
     app.tap(hits[1][0].center)
-    assert opened[-1] == ("download", 1)
+    assert opened[-1] == 1
 
 
 # ---- raw joysticks (no SDL mapping)

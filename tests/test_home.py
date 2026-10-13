@@ -183,6 +183,11 @@ def test_the_verb_and_the_actions_menu(home, rb, monkeypatch):
     app.dispatch("x")
     labels = [e[0] for e in app.modal.entries if e]
     assert labels[0] == "Play now" and "More like this" in labels and "See the whole shelf" in labels
+    m = app.modal
+    m.sel = next(i for i, e in enumerate(m.entries) if e and e[0] == "Open the game page")
+    app.dispatch("ok")
+    assert isinstance(app.stack[-1], rb.GameScreen) and app.stack[-1].rom is home.focused()[2]
+    app.pop()
     app.modal = None
     opened = []
     home.open_game = opened.append                                # the one place A on a game goes

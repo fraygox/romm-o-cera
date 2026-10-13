@@ -333,7 +333,7 @@ def test_a_finished_download_offers_play_now_in_downloads_and_its_toast(app, rb)
     app.modal = None
     app.tick_downloads()
     msg, _, _, _, tap = app.toasts[-1]
-    assert msg == "Ready: Lorem Quest (USA) · Play now from {SELECT} Downloads" and tap
+    assert msg == "Ready: Lorem Quest (USA) · Play now from {SELECT} Activity" and tap
     tap()
     assert app.launches == [(p, "gba", "Lorem Quest (USA)")]
 

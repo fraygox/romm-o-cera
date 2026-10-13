@@ -14,6 +14,7 @@ from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.screens.backlog import BacklogScreen
 from rbui.modals import ActionMenu, DownloadConfirm, ManageMenu
 from rbui.screens.downloads import DownloadsScreen
+from rbui.screens.game import GameScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
 from rbui.widgets.chips import pill_row, tag
@@ -33,7 +34,7 @@ class HomeScreen(Screen):
     RAIL = [("search", "Search", "Find any game across every platform"),
             ("platforms", "Platforms", "Browse by console"),
             ("collections", "Collections", "Series, Top-N lists and themes"),
-            ("downloads", "Downloads", "Queue and progress"),
+            ("downloads", "Activity", "Downloads and compressing, as they run"),
             ("installed", "On this box", "Your games, space, BIOS files and checks"),
             ("settings", "Settings", "Server, controller, downloads, compression")]
     RAIL_Y = 84
@@ -317,6 +318,10 @@ class HomeScreen(Screen):
         """A on a game: its verb (Play now, or the download prompt)."""
         press_verb(self.app, rom)
 
+    def open_page(self, rom):
+        why = next((w for r, w, _ in self.app.recs or [] if r["id"] == rom["id"] and w), None)
+        self.app.push(GameScreen(self.app, rom, why=why))
+
     def open_collection(self, coll):
         self.app.push(GameListScreen(self.app, coll["full"], collection=coll))
 
@@ -332,11 +337,12 @@ class HomeScreen(Screen):
         app.push(GameListScreen(app, "Playing", static=list(self.lists[key]["items"]), crumb="Playing"))
 
     def game_actions(self, rom, shelf):
-        """X on a game: what the list's menus offer for it, and its shelf as a list."""
+        """X on a game: what the list's menus offer for it, its page, and its shelf as a list."""
         app = self.app
         key, heading = shelf[0], shelf[1]
         name = rom_title(rom)
-        more = [("More like this", name, lambda: more_like(app, rom)),
+        more = [("Open the game page", "Facts, screenshots and your RomM notes", lambda: self.open_page(rom)),
+                ("More like this", name, lambda: more_like(app, rom)),
                 ("See the whole shelf", heading, lambda: self.open_shelf(key))]
         if app.rom_status(rom)[0] == "installed":
             m = ManageMenu(app, rom)

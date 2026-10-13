@@ -72,7 +72,8 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
     a › at the right end (the row opens something). box: None, the focus box when on; a colour,
     draw.card filled with it (the focus box when on); False, none (the caller drew it). aside: a
     right column of two lines: the status moves up to the label's line and under it (frac,
-    colour) draws a progress bar, a callable(rect) anything else, "" nothing. Returns the text's x."""
+    colour) draws a progress bar, a callable(rect) anything else, "" nothing (the sub then runs
+    under the status, the row's full width). Returns the text's x."""
     if box is None:
         if on:
             focus_box(c, r)
@@ -91,6 +92,7 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
         right -= 28
     lh, sh = f.row.get_height() / theme.K, f.small.get_height() / theme.K
     top = r.centery - ((lh + sh) / 2 if sub else lh / 2)
+    sub_right = None                      # the sub's own right edge, when it differs from the label's
     if aside is not None:
         aw = min(300, r.width * 2 // 5)
         if status:
@@ -100,6 +102,8 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
             aside(low)
         elif aside:
             progress_bar(c, (low.left, low.centery - 3, aw, 6), aside[0], aside[1])
+        elif not tag:
+            sub_right = right             # nothing under the status: the sub runs the row's width
         right = low.left - 24
     elif status:
         sr = text(c, f.small, status, (right, r.centery), status_color or theme.DIM, "midright",
@@ -113,8 +117,8 @@ def list_row(c, f, r, on, label, sub="", status="", status_color=None, label_col
     marquee(c, f.row, label, (tx, top), label_color or (theme.TEXT if on else theme.DIM), maxw=right - tx,
             focused=on, slot=slot + "-label")
     if sub:
-        marquee(c, f.small, sub, (tx, top + lh), sub_color or theme.FAINT, maxw=right - tx, focused=on,
-                slot=slot + "-sub")
+        marquee(c, f.small, sub, (tx, top + lh), sub_color or theme.FAINT, maxw=(sub_right or right) - tx,
+                focused=on, slot=slot + "-sub")
     return tx
 
 
@@ -180,10 +184,14 @@ class Panel:
         self.y += 12
 
     def line(self, s, color=None, font=None, center=False, h=24):
-        """One line (default f.small, DIM), centred or not; one too long slides."""
+        """One line (default f.small, DIM). Left: one too long slides. Centred (under a cover):
+        one too long steps down a size or two, then ends in "…", still centred (a sliding line
+        would sit left-aligned under centred ones)."""
         font = font or self.f.small
-        if center and measure(font, s) <= self.w:
-            text(self.c, font, s, (self.x + self.w // 2, self.y), color or theme.DIM, "midtop")
+        if center:
+            if measure(font, s) > self.w:
+                font = next((alt for alt in (self.f.small, self.f.tiny) if measure(alt, s) <= self.w), font)
+            text(self.c, font, s, (self.x + self.w // 2, self.y), color or theme.DIM, "midtop", maxw=self.w)
         else:
             marquee(self.c, font, s, (self.x, self.y), color or theme.DIM, maxw=self.w, bg=theme.PANEL,
                     slot=self._slot())

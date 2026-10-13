@@ -6,7 +6,7 @@ import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import W
-from rbui.draw import card, marquee, measure, progress_bar, rom_title, scroll_text, text
+from rbui.draw import card, marquee, measure, progress_bar, rom_title, scroll_fits, scroll_text, text
 from rbui.modals import ActionMenu, ManageMenu
 from rbui.screens.about import draw_qr
 from rbui.screens.base import Screen
@@ -215,7 +215,8 @@ class GameScreen(Screen):
 
     # ---- drawing
     def draw(self, c):
-        """With screenshots: cover and text above, the shots and the verb/QR column below (the
+        """With screenshots: cover and text above (the Your RomM strip right under the summary,
+        at the lowest level with the cover's foot), the shots and the verb/QR column below (the
         mockup). Without: the text runs down the right column, the QR goes under the cover and the
         Your RomM strip and the verb share the column's foot."""
         app, f, rom = self.app, self.f, self.rom
@@ -242,9 +243,13 @@ class GameScreen(Screen):
                   key=rom["id"], slot="game-facts", bg=theme.BG,
                   strong=("On this box", "In RomM")).bottom + 6
         summ = rec.get("summary") or ""
+        fits = True
         if summ and bottom - y >= 40:
-            scroll_text(c, f.small, summ, (TX, y, TW, bottom - y), theme.DIM, key=rom["id"], line_h=20,
-                        bg=theme.BG, slot="game-summary")
+            fits = scroll_fits(f.small, summ, TW, bottom - y, 20)
+            y = scroll_text(c, f.small, summ, (TX, y, TW, bottom - y), theme.DIM, key=rom["id"], line_h=20,
+                            bg=theme.BG, slot="game-summary").bottom
+        if strip_h and shots != [] and fits:          # the strip follows a short summary, not a gap
+            strip.top = min(strip.top, y + 14)
         if strip_h:
             self.draw_strip(c, rec, strip)
         if shots:

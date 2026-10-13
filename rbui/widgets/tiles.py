@@ -95,11 +95,11 @@ def shot(c, app, rom, i, rect, radius=8):
 
 
 def placeholder(c, f, name, rect, radius=8):
-    """A recessed box with the name in it, as far as it fits (none on a thumbnail)."""
+    """A recessed box with the name in it, as far as it fits by whole words (none on a thumbnail)."""
     rrect(c, theme.BG2, rect, radius)
     if not name or rect.width < 60:
         return
-    lines = wrap(f.tiny, name, rect.width - 12, max(1, (rect.height - 12) // 17))
+    lines = wrap(f.tiny, name, rect.width - 12, max(1, (rect.height - 12) // 17), whole_words=True)
     for j, ln in enumerate(lines):
         text(c, f.tiny, ln, (rect.left + 6, rect.top + 8 + j * 17), theme.FAINT)
 

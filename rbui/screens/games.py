@@ -778,9 +778,8 @@ class SearchScreen(KeyboardScreen):
         self.pick = None                  # a key tapped after a match was open types, not reopens it
 
     def open(self, rom):
-        """A Top match: the manage menu for a game on the box (as in a game list), else download."""
-        app = self.app
-        app.modal = ManageMenu(app, rom) if app.rom_status(rom)[0] == "installed" else DownloadConfirm(app, rom)
+        """A Top match opens the game's page (its verb and menu are there)."""
+        self.app.push(GameScreen(self.app, rom))
 
     def tap_pick(self, i):
         self.pick = None                  # a tap opens it; focus stays with the keyboard
