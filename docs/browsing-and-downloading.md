@@ -10,15 +10,24 @@
   (genre, franchise, series, company, game mode). Like the platform cards,
   each shows how many of its games are already on the box (a green ✓ and a
   count, next to RomM's total), including games you copied over yourself.
-- **Recently added**, on the home screen and as a full list.
-- **Recommended for you** (RomM 5.4 and newer), on the home screen: games
-  RomM picks from what you play, ranked from its similarity graph and your
-  play history. Focus it and the home screen's shelf
-  shows them; open it for the list, where each game's detail panel says why
-  ("Because you played …", a series, genre or decade, "Highly rated"). Until
-  you've played a few, RomM suggests the library's best-rated games. When
-  RomM has nothing to suggest yet (or is older than 5.4), the entry doesn't
-  show.
+- **Home** is a rail of destinations (Search, Platforms, Collections,
+  Downloads, On this box, Settings) over shelves of covers: **Playing** and
+  **Backlog** (your RomM statuses, RomM 5 and newer), **Recommended for you**,
+  **New in RomM** and **Collections**. A shelf with nothing in it, or one
+  your RomM can't list, doesn't show. Up/down moves between the rail and the
+  shelves, left/right along one (L/R a page). The panel on the right shows
+  what has the focus: a game's cover, your status ("Playing · played here
+  today") and its verb, **A** to Play now or Download; on a rail pill, what's
+  behind it. **X** on a game: more like this, or the whole shelf as a list
+  (New in RomM is the full **Recently added** list, Backlog opens
+  [Backlog](#backlog)). On a touch screen a tap focuses a cover and a second
+  tap acts on it; a tap on a pill opens it.
+- **Recommended for you** (RomM 5.4 and newer): games RomM picks from what
+  you play, ranked from its similarity graph and your play history. Its
+  list says why for each game ("Because you played …", a series, genre or
+  decade, "Highly rated"). Until you've played a few, RomM suggests the
+  library's best-rated games. When RomM has nothing to suggest yet (or is
+  older than 5.4), the shelf doesn't show.
 
   ![Recommended for you on the home screen](../screenshots/recommended.png)
 
