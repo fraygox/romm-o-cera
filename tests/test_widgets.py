@@ -464,6 +464,30 @@ def test_step_dot_notice_code_slots_and_row_chevron(rb, fonts):
     assert tx == lr.left + 22
 
 
+def test_a_collection_tile_never_splits_a_word_and_a_focused_long_name_slides(rb, app, fonts, monkeypatch):
+    import pygame
+    monkeypatch.setattr(app, "cover", lambda rom: None)
+    drawn, slid = [], []
+    real_text = rb.text
+    rb.patch(monkeypatch, "text",
+             lambda surf, font, s, pos, *a, **k: drawn.append(s) or real_text(surf, font, s, pos, *a, **k))
+    rb.patch(monkeypatch, "marquee", lambda surf, font, s, pos, *a, **k: slid.append(s) or pygame.Rect(0, 0, 1, 1))
+    c = _canvas(rb)
+    r = pygame.Rect(48, 100, 88, rb.collection_tile_h(88))                # a small wall tile: "Role-Playing" is wider
+    rb.collection_tile(c, app, "Role-Playing", [], r)
+    assert len(drawn) == 1 and drawn[0].endswith("…") and "Role-Playing".startswith(drawn[0][:-1])   # cut, never split
+    drawn.clear()
+    rb.collection_tile(c, app, "Role-Playing", [], r, focused=True)       # focused: the whole word slides
+    assert slid == ["Role-Playing"] and drawn == []
+    slid.clear()
+    rb.collection_tile(c, app, "Couch Co-op & Party", [], r, focused=True)   # three lines' worth: slides as one
+    assert slid == ["Couch Co-op & Party"]
+    slid.clear()
+    rb.collection_tile(c, app, "Dolor Sit", [], r, focused=True)              # fits two lines: drawn still
+    assert slid == [] and drawn == ["Dolor Sit"]
+    assert c.get_at((r.right - 2, r.top + 88 + 6 + rb.TILE_LINE))[:3] == rb.BG   # no position bar at the edge
+
+
 def test_a_collection_tile_is_a_square_mosaic_over_its_name_with_the_box_line_along_its_foot(rb, app, fonts,
                                                                                                 monkeypatch):
     import pygame

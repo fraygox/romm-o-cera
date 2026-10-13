@@ -7,8 +7,8 @@ they stay under SCALED_SHARE of draw.COVER_BUDGET."""
 import pygame
 from rbui import draw, theme
 from rbui.theme import mix, SR
-from rbui.draw import (card, installed_mark, measure, meter, rrect, scroll_text, smooth_scale, surface_bytes, text,
-                       wrap)
+from rbui.draw import (card, installed_mark, marquee, measure, meter, rrect, scroll_text, smooth_scale, surface_bytes,
+                       text, wrap)
 
 SCALED_SHARE = 0.5          # scaled copies may take this much of draw.COVER_BUDGET
 
@@ -184,10 +184,10 @@ TILE_FOOT = 24              # its sub line's room under the name
 
 def collection_tile(c, app, name, cells, rect, focused=False, sub="", frac=None, radius=8, slot=None):
     """A tall collection tile for a wall or shelf: the mosaic square across its top (lifted in
-    the ring when focused), the name under it (two lines; the focused one scrolls when it's
-    longer), sub in a quiet line under that. frac (0..1, how much of it is on this box): a thin
-    green line along the mosaic's foot, the on-the-box tick when all of it is here. Returns the
-    mosaic's rect."""
+    the ring when focused), the name under it (two lines of whole words, cut with "…"; the
+    focused one slides on one line when it doesn't fit), sub in a quiet line under that. frac
+    (0..1, how much of it is on this box): a thin green line along the mosaic's foot, the
+    on-the-box tick when all of it is here. Returns the mosaic's rect."""
     rect = pygame.Rect(rect)
     f = app.fonts
     art_r = pygame.Rect(rect.left, rect.top, rect.width, rect.width)
@@ -198,12 +198,15 @@ def collection_tile(c, app, name, cells, rect, focused=False, sub="", frac=None,
         else:
             meter(c, (m.left + 6, m.bottom - 9, m.width - 12, 4), [(frac, theme.GREEN)], least=3)
     y = art_r.bottom + 6
-    if focused:
-        scroll_text(c, f.small, name, (rect.left, y, rect.width, 2 * TILE_LINE), theme.TEXT, line_h=TILE_LINE,
-                    bg=theme.BG, slot=slot or ("tile",) + tuple(rect))
+    lines = wrap(f.small, name, rect.width, 2, whole_words=True)
+    if focused and (len(lines) < len(wrap(f.small, name, rect.width, whole_words=True)) or
+                    any(ln.endswith("…") for ln in lines)):          # more than two lines fit: slide it
+        marquee(c, f.small, name, (rect.left, y), theme.TEXT, maxw=rect.width, bg=theme.BG,
+                slot=slot or ("tile",) + tuple(rect))
     else:
-        for i, ln in enumerate(wrap(f.small, name, rect.width, 2)):
-            text(c, f.small, ln, (rect.left, y + i * TILE_LINE), theme.DIM, maxw=rect.width)
+        for i, ln in enumerate(lines):
+            text(c, f.small, ln, (rect.left, y + i * TILE_LINE), theme.TEXT if focused else theme.DIM,
+                 maxw=rect.width)
     if sub:
         text(c, f.tiny, sub, (rect.left, rect.bottom - 18), theme.GREEN if frac and frac >= 1 else theme.FAINT,
              maxw=rect.width)
