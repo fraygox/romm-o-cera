@@ -358,3 +358,107 @@ def test_custom_kept_while_the_controller_picks_the_theme_shows_the_controller_t
     cs.action("ok")
     assert app.cfg["theme"] == "custom" and isinstance(app.stack[-1], rb.SettingsScreen)
     assert rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"] and "Xbox" in said[-1]
+
+
+def _hue_apart(a, b):
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
+
+
+def test_custom_from_lands_close_to_every_theme(themed):
+    """Edit a copy's four choices made back into colours: the accent's hue
+    within one step of the screen's (15°), the mode exact, the grounds near."""
+    rb = themed
+    for key in rb.THEMES:
+        if key == "custom":
+            continue
+        p = rb.palette_of(key)
+        accent, tint, strength, mode = rb.custom_from(p)
+        assert 0 <= accent < 360 and 0 <= tint < 360 and 0 <= strength <= 100, key
+        got = rb.custom_palette(accent, tint, strength, mode)
+        hue = lambda c: rb.colorsys.rgb_to_hls(*(v / 255 for v in c))[0] * 360   # noqa: E731
+        assert _hue_apart(hue(got["ACCENT"]), hue(p["ACCENT"])) <= rb.CustomThemeScreen.HUE_STEP, key
+        want = "oled" if p["BG"] == (0, 0, 0) else "light" if rb.luminance(p["BG"]) > 0.5 else "dark"
+        assert mode == want, key
+        assert ("oled" if got["BG"] == (0, 0, 0) else "light" if rb.luminance(got["BG"]) > 0.5 else "dark") == want
+        assert all(_dist(got[k], p[k]) < 70 for k in ("BG", "BG2", "PANEL")), key   # C64's bright blue: ~65
+    assert rb.custom_from(rb.palette_of("synthwave"))[2] > 50                # a strong tint stays strong
+    assert rb.custom_from(rb.palette_of("high_contrast"))[2:] == (0, "oled")   # greys: no tint
+
+
+def _copy_of(app, rb, key, oled=False):
+    _, pk = _picker(app, rb)
+    pk.go(pk.items.index(key))
+    if oled:
+        pk.toggle_oled()
+    assert ("X", "Edit a copy") in pk.hints()
+    shown = rb.palette_of(pk.key())
+    pk.action("x")
+    cs = app.stack[-1]
+    assert isinstance(cs, rb.CustomThemeScreen) and cs.source == pk.label()
+    assert cs.values() == rb.custom_from(shown)
+    return pk, cs
+
+
+def test_x_starts_custom_from_a_theme_and_b_changes_nothing(ui, rb):
+    app = ui
+    pk, cs = _copy_of(app, rb, "synthwave")
+    assert rb.ACCENT == rb.custom_palette(*cs.values())["ACCENT"]           # its look, previewed as Custom
+    assert app.cfg["theme"] == "default" and rommlib.load_config()["theme_custom_accent"] == 195
+    app.targets = []
+    cs.draw(app.canvas)                                                     # says where it came from
+    cs.action("right")
+    cs.action("back")
+    assert app.stack[-1] is pk and pk.key() == "synthwave"
+    assert rb.ACCENT == rb.THEMES["synthwave"][1]["ACCENT"]                 # the card under the cursor again
+    assert rb.THEMES["custom"][1] == rb.custom_palette()                    # Custom as saved
+    saved = rommlib.load_config()
+    assert saved["theme"] == "default" and [saved[k] for k in rb.CUSTOM_KEYS] == [195, 225, 30, "dark"]
+
+
+def test_x_then_a_keeps_the_copy_as_your_custom_theme(ui, rb):
+    app = ui
+    pk, cs = _copy_of(app, rb, "playstation", oled=True)
+    v = cs.values()
+    assert v[3] == "oled" and rb.BG == (0, 0, 0)                            # the OLED version it showed
+    cs.action("ok")
+    assert isinstance(app.stack[-1], rb.SettingsScreen)
+    saved = rommlib.load_config()
+    assert saved["theme"] == "custom" and tuple(saved[k] for k in rb.CUSTOM_KEYS) == v
+    assert rb.ACCENT == rb.custom_palette(*v)["ACCENT"]
+    rb.set_custom(195, 225, 30, "dark")
+
+
+def test_home_from_a_copy_drops_its_colours(ui, rb):
+    app = ui
+    pk, cs = _copy_of(app, rb, "dreamcast")
+    assert rb.luminance(rb.BG) > 0.5
+    app.dispatch("start")
+    assert len(app.stack) == 1 and app.cfg["theme"] == "default"
+    assert rb.ACCENT == rb._DEFAULT_PALETTE["ACCENT"] and rb.THEMES["custom"][1] == rb.custom_palette()
+
+
+def test_x_on_custom_opens_it_and_every_card_has_a_copy_button(ui, rb):
+    app = ui
+    _, pk = _picker(app, rb)
+    pk.go(pk.items.index("custom"))
+    assert all(tok != "X" for tok, _ in pk.hints())
+    pk.action("x")
+    cs = app.stack[-1]
+    assert isinstance(cs, rb.CustomThemeScreen) and cs.source is None and cs.values() == (195, 225, 30, "dark")
+    cs.action("back")
+    rows_top = pk.PANEL.bottom - 176
+    for i, k in enumerate(pk.items):                                        # touch: a button under the note
+        pk.go(i)
+        app.targets = []
+        pk.draw(app.canvas)
+        taps = [fn for _, fn in app.targets if fn == pk.edit_copy]
+        if k == "custom":
+            assert not taps
+            continue
+        assert len(taps) == 1 and pk.copy_button.bottom <= rows_top - 6, k
+    pk.go(pk.items.index("nord"))
+    app.targets = []
+    pk.draw(app.canvas)
+    next(fn for _, fn in app.targets if fn == pk.edit_copy)()
+    assert isinstance(app.stack[-1], rb.CustomThemeScreen) and app.stack[-1].source == "Nord"

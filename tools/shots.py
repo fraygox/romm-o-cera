@@ -341,6 +341,7 @@ SCENES = [
     ("theme-picker-oled", lambda: picker_at("playstation", oled=True)),
     ("theme-picker-custom", lambda: picker_at("custom")),
     ("theme-custom", lambda: (picker_at("custom"), app.push(rb.CustomThemeScreen(app)))),
+    ("theme-custom-copy", lambda: (picker_at("synthwave"), app.stack[-1].edit_copy())),
     ("theme-custom-light", lambda: (picker_at("custom"), app.push(custom_at(accent=150, tint=30, strength=60,
                                                                             mode="light")))),
     ("theme-custom-oled", lambda: (picker_at("custom"), app.push(custom_at(accent=330, tint=280, strength=100,

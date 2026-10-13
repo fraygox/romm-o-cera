@@ -88,8 +88,22 @@ app shows it as you change it; confirm keeps it and uses it, back leaves it as
 it was. Every colour is made from those four choices and then nudged until it
 meets the same readability floors as every other theme, with warnings kept
 apart from the accent, so no choice can make it hard to read. It's saved in
-`config.json` as four `theme_custom_` settings. Every
-theme keeps text at least as readable as Default, and warnings never share a
+`config.json` as four `theme_custom_` settings.
+
+**X** on any other card (on a touch screen, the side panel's **Edit a copy**
+button) starts Custom from that theme: the accent
+takes the theme's accent hue, the tint and its strength are worked out from
+the theme's backgrounds so Custom comes as close to its look as the four
+choices can, and the mode follows its background (pure black: OLED, light:
+Light, otherwise Dark; switch the card to its OLED version first to copy
+that). The Custom screen then opens on those colours, saying which theme they
+came from, for you to tweak. Nothing is saved until you confirm there; back
+returns to the picker with your Custom theme as it was, and so does going
+Home. The copy is close rather than exact, since Custom's lightness levels are
+fixed: themes with unusually bright backgrounds (Commodore 64, Indigo Cube) or
+rules (High contrast) come out a little deeper.
+
+Every theme keeps text at least as readable as Default, and warnings never share a
 colour with the highlight (in Kyoto, warnings are coral, not red). A new
 install starts on Default.
 

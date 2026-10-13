@@ -3,6 +3,7 @@
 apply_theme() rebinds the palette names in this module: read them as theme.BG (never
 `from rbui.theme import BG`, which would keep the colour of the theme at import)."""
 import colorsys
+import math
 
 import pygame
 
@@ -336,6 +337,32 @@ def custom_palette(accent=195, tint=225, strength=30, mode="dark"):
 
 def _dist(a, b):
     return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+
+
+def custom_from(p):
+    """The four Custom choices (accent, tint, strength, mode) that come closest to palette p: what
+    the theme picker's "Edit a copy" starts from. The accent's hue as it is; the mode from the
+    ground (black: OLED, light: light); the tint's hue from the grounds and rules, each weighted by
+    how coloured it is; then the strength, and the tint's hue round it, whose grounds and rules land
+    nearest the palette's (custom_palette is cheap: a few hundred tries)."""
+    mode = "oled" if tuple(p["BG"]) == (0, 0, 0) else "light" if luminance(p["BG"]) > 0.5 else "dark"
+    accent = round(_hls_of(p["ACCENT"])[0] * 360) % 360
+    keys = ("BG2", "PANEL", "LINE") if mode == "oled" else ("BG", "BG2", "PANEL", "LINE")
+    x = y = 0.0
+    for k in keys:
+        h, _, sat = _hls_of(p[k])
+        x, y = x + sat * math.cos(h * 2 * math.pi), y + sat * math.sin(h * 2 * math.pi)
+    if math.hypot(x, y) < 0.02 * len(keys):              # greys: no tint to speak of
+        return accent, 225, 0, mode
+    tint = round(math.degrees(math.atan2(y, x))) % 360
+
+    def miss(t, s):
+        got = custom_palette(accent, t, s, mode)
+        return sum(_dist(got[k], p[k]) for k in keys)
+    strength = min(range(101), key=lambda s: miss(tint, s))
+    tint = min(((tint + d) % 360 for d in range(-12, 13)), key=lambda t: miss(t, strength))
+    strength = min(range(101), key=lambda s: miss(tint, s))
+    return accent, tint, strength, mode
 
 
 def set_custom(accent, tint, strength, mode):

@@ -3,9 +3,9 @@ import time
 
 import pygame
 from rbui import theme
-from rbui.theme import (apply_theme, CUSTOM_MODES, custom_palette, hue_name, palette_of, set_custom, SR,
+from rbui.theme import (apply_theme, CUSTOM_MODES, custom_from, custom_palette, hue_name, palette_of, set_custom, SR,
                         THEME_DESC, THEME_GROUPS, theme_base, theme_oled, THEMES)
-from rbui.draw import circle, polyline, rich_lines, rich_text, rrect, text, wrap
+from rbui.draw import circle, polyline, rich_lines, rich_text, rich_width, rrect, text, wrap
 from rbui.pads import theme_for
 from rbui.screens.base import Screen
 
@@ -77,7 +77,7 @@ def draw_meanings(c, f, x, y, w):
 class ThemePickerScreen(Screen):
     """Every theme as a card in groups. Moving previews the theme across the
     whole app; A keeps it, B puts back the one there was. Y switches a card
-    to its OLED version."""
+    to its OLED version; X starts the Custom theme from the card's colours."""
     COLS, CW, CH, GAP, HEAD = 4, 196, 168, 16, 36
     X0, TOP, BOTTOM = 48, 84, 638
     PANEL = pygame.Rect(904, 84, 328, 554)
@@ -127,6 +127,15 @@ class ThemePickerScreen(Screen):
             app.toast("Saved. Match theme to controller is on: this controller shows %s" % THEMES[shown][0],
                       theme.AMBER)
         app.pop()
+
+    def edit_copy(self):
+        """The Custom screen, started from the focused card's colours (Custom itself: as it is).
+        Nothing is saved until A there."""
+        if self.items[self.sel] == "custom":
+            self.app.push(CustomThemeScreen(self.app))
+            return
+        start = custom_from(palette_of(self.key()))
+        self.app.push(CustomThemeScreen(self.app, start=start, source=self.label()))
 
     def toggle_oled(self):
         k = self.items[self.sel]
@@ -195,11 +204,11 @@ class ThemePickerScreen(Screen):
         self.toggle_oled()
 
     def hints(self):
-        o = theme_oled(self.items[self.sel])
         k = self.items[self.sel]
         o = theme_oled(k)
         oled = [("Y", "OLED off" if self.key() == o else "OLED on")] if o and o != k else []
-        return [("A", "Edit" if k == "custom" else "Use")] + oled + \
+        copy = [] if k == "custom" else [("X", "Edit a copy")]
+        return [("A", "Edit" if k == "custom" else "Use")] + copy + oled + \
             [("L", "Previous group"), ("R", "Next group"), ("B", "Back")]
 
     def action(self, a):
@@ -212,6 +221,8 @@ class ThemePickerScreen(Screen):
             self.choose()
         elif a == "y":
             self.toggle_oled()
+        elif a == "x":
+            self.edit_copy()
         else:
             i = self.step(a)
             if i is not None:
@@ -365,6 +376,15 @@ class ThemePickerScreen(Screen):
         for ln in rich_lines(self.f, self.f.small, note, w, 3):
             rich_text(c, self.f, self.f.small, ln, (x, y), col)
             y += 23
+        if self.items[self.sel] != "custom":                        # touch: X's "Edit a copy" as a button
+            self.copy_button = pygame.Rect(x, max(y + 8, p.bottom - 228), w, 40)
+            rrect(c, theme.BG2, self.copy_button, 20)
+            rrect(c, theme.LINE, self.copy_button, 20, 1)
+            label = "{X} Edit a copy"
+            lw = min(w - 20, rich_width(self.f, self.f.small, label))
+            rich_text(c, self.f, self.f.small, label, (self.copy_button.centerx - lw // 2, self.copy_button.centery),
+                      theme.DIM, "midleft", maxw=w - 20)
+            self.app.hit(self.copy_button, self.edit_copy)
         # a row as the lists draw it, focused and not: the text at its real size
         row = pygame.Rect(x, p.bottom - 176, w, 52)
         rrect(c, theme.PANEL_HI, row, 12)
@@ -384,7 +404,8 @@ class ThemePickerScreen(Screen):
 class CustomThemeScreen(Screen):
     """Settings → Theme → Custom: the player's own theme from four choices,
     the whole app showing it as they change. A keeps it (and uses it), B
-    leaves it as it was."""
+    leaves it as it was. Started from a theme (the picker's X: start, its
+    name: source), it shows that theme's look until A keeps it."""
     ROWS = (("accent", "Accent colour", "The focus, the logo, progress"),
             ("tint", "Background tint", "The hue the backgrounds and greys lean toward"),
             ("strength", "Tint strength", "From neutral grey to fully tinted"),
@@ -393,9 +414,10 @@ class CustomThemeScreen(Screen):
     ROW_Y, ROW_H = 96, 86
     PANEL = pygame.Rect(776, 84, 456, 554)
 
-    def __init__(self, app):
+    def __init__(self, app, start=None, source=None):
         super().__init__(app)
-        a, t, st, m = custom_of(app.cfg)
+        a, t, st, m = start or custom_of(app.cfg)
+        self.source = source
         self.v = {"accent": a, "tint": t, "strength": st, "mode": m if m in CUSTOM_MODES else "dark"}
         self.sel = 0
         self.preview()
@@ -513,9 +535,12 @@ class CustomThemeScreen(Screen):
             else:
                 self.draw_modes(c, strip)
         y = self.ROW_Y + len(self.ROWS) * self.ROW_H + 6
-        for ln in rich_lines(self.f, self.f.small, "Every colour is made from these four, then nudged until it's as "
-                             "easy to read as Default: a custom theme can't be hard to read. {L} and {R} take "
-                             "bigger steps.", 700, 3):
+        note = "Every colour is made from these four, then nudged until it's as easy to read as Default: a " \
+               "custom theme can't be hard to read. {L} and {R} take bigger steps."
+        if self.source:
+            note = "Started from %s, as near as these four come. Nothing is saved until {A} keeps it, " \
+                   "{B} goes back and changes nothing. " % self.source + note
+        for ln in rich_lines(self.f, self.f.small, note, 700, 5):
             rich_text(c, self.f, self.f.small, ln, (52, y), theme.FAINT)
             y += 23
         self.draw_panel(c)
@@ -554,7 +579,8 @@ class CustomThemeScreen(Screen):
         p = self.PANEL
         rrect(c, theme.PANEL, p, 16)
         x, w = p.left + 24, p.width - 48
-        text(c, self.f.small, "PREVIEW", (x, p.top + 22), theme.ACCENT_HI)
+        text(c, self.f.small, "PREVIEW" if not self.source else "FROM %s" % self.source.upper(), (x, p.top + 22),
+             theme.ACCENT_HI, maxw=w)
         text(c, self.f.h2, "Custom", (x, p.top + 44), theme.TEXT)
         for n, ln in enumerate(wrap(self.f.body, custom_summary(*self.values()), w, 2)):
             text(c, self.f.body, ln, (x, p.top + 84 + 25 * n), theme.DIM)
