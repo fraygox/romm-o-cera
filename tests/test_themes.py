@@ -347,7 +347,9 @@ def test_home_from_custom_leaves_no_unsaved_colours_behind(ui, rb):
     assert rb.THEMES["custom"][1] == rb.custom_palette()              # the saved custom colours again
 
 
-def test_custom_kept_while_the_controller_picks_the_theme_shows_the_controller_theme(ui, rb):
+def test_custom_kept_while_match_theme_to_controller_is_on_stays_custom(ui, rb):
+    """Match theme to controller leaves a Custom theme alone (like High contrast):
+    it was made for its own sake."""
     app = ui
     app.cfg["theme_auto"] = True
     app.input.names = lambda: ["Xbox Wireless Controller"]
@@ -357,7 +359,8 @@ def test_custom_kept_while_the_controller_picks_the_theme_shows_the_controller_t
     pk, cs = _custom(app, rb)
     cs.action("ok")
     assert app.cfg["theme"] == "custom" and isinstance(app.stack[-1], rb.SettingsScreen)
-    assert rb.ACCENT == rb.THEMES["xbox"][1]["ACCENT"] and "Xbox" in said[-1]
+    assert rb.ACCENT == rb.custom_palette()["ACCENT"]
+    assert not any("Match theme to controller" in m for m in said)
 
 
 def _hue_apart(a, b):
@@ -462,3 +465,9 @@ def test_x_on_custom_opens_it_and_every_card_has_a_copy_button(ui, rb):
     pk.draw(app.canvas)
     next(fn for _, fn in app.targets if fn == pk.edit_copy)()
     assert isinstance(app.stack[-1], rb.CustomThemeScreen) and app.stack[-1].source == "Nord"
+
+
+def test_match_theme_to_controller_keeps_a_custom_theme(rb):
+    """Someone who just built a Custom theme saw the controller's theme instead."""
+    assert rb.theme_for("custom", True, "auto", ["Xbox Wireless Controller"]) == "custom"
+    assert rb.theme_for("default", True, "auto", ["Xbox Wireless Controller"]) == "xbox"

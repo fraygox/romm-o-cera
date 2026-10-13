@@ -138,8 +138,7 @@ disconnects, and the Theme row shows what's on screen, for example
   your Theme stays.
 - When **Button labels** is set by hand, the theme follows that instead of
   the controller.
-- High contrast themes are never replaced.
-- Your Custom theme is replaced like any other, so turn this off to see it.
+- High contrast themes and your Custom theme are never replaced.
 
 If you keep a theme in the picker while this is on and your controller has
 its own theme, the app says so: your choice is saved, and shows again when

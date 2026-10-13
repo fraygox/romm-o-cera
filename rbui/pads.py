@@ -67,8 +67,8 @@ def pad_family(names):
 
 def theme_for(name, auto, button_style, names):
     """The Theme setting (and Match theme to controller) -> the THEMES key to paint with."""
-    if not auto or name.startswith("high_contrast"):
-        return name
+    if not auto or name.startswith("high_contrast") or name == "custom":
+        return name                      # a theme the player chose for its own sake stays
     fam = button_style if button_style in FACE else pad_family(names)
     return fam + ("_oled" if name.endswith("_oled") else "") if fam else name
 
