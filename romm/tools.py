@@ -80,13 +80,16 @@ def tool_paths(spec):
     return tuple(exe) if all(os.path.isfile(p) and os.access(p, os.X_OK) for p in exe) else None
 
 
-def tool_state(spec, cfg):
-    """{"label", "help"} for the setting's Settings row."""
+def tool_state(spec, cfg, setting=None):
+    """{"label", "help"} for a Settings row whose switch needs the tool: spec's own
+    setting, or another one sharing it (setting: Wii U to .wux and Decrypt Wii U
+    discs share wuatool). On, its grey line is the Setting's own, if it has one."""
     if not spec.supported():
         return {"label": "Not on this CPU", "help": spec.help["cpu"]}
-    on = _config.config_value(cfg, spec.setting)
+    key = setting or spec.setting
+    on = _config.config_value(cfg, key)
     if on and spec.installed():
-        return {"label": "On", "help": spec.help["on"]}
+        return {"label": "On", "help": _config.SETTING[key].sub or spec.help["on"]}
     if on:
         return {"label": "Tools missing" if len(spec.exes) > 1 else "Tool missing", "help": spec.help["missing"]}
     return {"label": "Off", "help": spec.help["off"]}
@@ -232,22 +235,23 @@ TOOL_X360 = ToolSpec(
     lambda: zar_supported(), lambda: x360_tools())
 
 
-# ---------------------------------------------------------- Wii U -> .wua (ZArchive)
+# ---------------------------------------------------------- Wii U -> .wux, .wua (ZArchive)
 
-# Cemu (Batocera 43.1: x86_64; master: aarch64 too) opens a ".wua": a ZArchive of
-# the game partition of a Wii U disc. wuatool reads the disc with Cemu's own disc
-# code and writes the archive with the ZArchive commit Cemu reads it with, then
-# reads both back and compares every file. Built by tools/wiiu-tools/ (x86_64, and
+# Cemu (Batocera 43.1: x86_64; master: aarch64 too) opens a ".wux" (a .wud with
+# each distinct 32 KB sector stored once; wuatool wux writes it, no keys) and a
+# ".wua": a ZArchive of the game partition of a Wii U disc. wuatool reads the disc
+# with Cemu's own disc code and writes the archive with the ZArchive commit Cemu
+# reads it with, then reads both back and compares every file. Built by tools/wiiu-tools/ (x86_64, and
 # aarch64 for plain ARMv8) and published as its own GitHub release with its
 # licenses and exact source. Disc keys are the user's (romm/wiiu.py).
-_WIIU_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/wiiu-tools-2610a/"
+_WIIU_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/wiiu-tools-2610b/"
 WIIU_TOOLS_ALL = {          # per CPU: the archive RomM-o-Cera downloads, and its pinned SHA-256
-    "x86_64": {"url": _WIIU_BASE + "wiiu-tools-2610a-x86_64.tar.gz",
-               "sha256": "54a521a8d9ee00b4aac24f32e0df05ee98774c0c1a34393169fd485ccef58b2c", "size": 2692250},
-    "aarch64": {"url": _WIIU_BASE + "wiiu-tools-2610a-aarch64.tar.gz",
-                "sha256": "6ad57441e0d647da18f5be12f39e574d977ed0c74f6aed317c440e8096dd8e95", "size": 2513813},
+    "x86_64": {"url": _WIIU_BASE + "wiiu-tools-2610b-x86_64.tar.gz",
+               "sha256": "e0360310923401ca11fe0d26a5750ee83ba3f9730ea36759f6c80ba4392d1980", "size": 2697613},
+    "aarch64": {"url": _WIIU_BASE + "wiiu-tools-2610b-aarch64.tar.gz",
+                "sha256": "88362363d256a808384b638512c3bd510a9a7b5b67b129cffb8e7e7855a2a58d", "size": 2517248},
 }
-WIIU_TOOLS = dict({"version": "2610a", "cemu": "b9b46ecb65e2eb1c15793380048309df73d2084e",
+WIIU_TOOLS = dict({"version": "2610b", "cemu": "b9b46ecb65e2eb1c15793380048309df73d2084e",
                    "zarchive": "d2c717730092c7bf8cbb033b12fd4001b7c4d932"},
                   **WIIU_TOOLS_ALL.get(_machine(), {"url": "", "sha256": "", "size": 0}))
 WUA_SYSTEMS = {"wiiu"}
@@ -267,5 +271,5 @@ TOOL_WIIU = ToolSpec(
     "wua", "wiiu-tools", "wuatool", "wuatool", WIIU_TOOLS, ("wuatool",), ((("--version",), "wuatool"),), "WIIU",
     "Cemu %s, zarchive %s" % (WIIU_TOOLS["cemu"][:7], WIIU_TOOLS["zarchive"][:7]),
     {"cpu": "wuatool is built for x86_64 and 64-bit ARM only", "on": "Smaller files Cemu opens directly",
-     "missing": "{A} downloads wuatool again", "off": "Turning it on downloads wuatool once"},
+     "missing": "{A} downloads wuatool (once, about 2 MB)", "off": "Turning it on downloads wuatool once"},
     lambda: wua_supported(), lambda: wuatool_path())

@@ -544,6 +544,30 @@ def convert_wua(src, tmp):
             pass
 
 
+def convert_wux(src, tmp):
+    """Wii U disc image (.wud) -> .wux, the lossless container Cemu reads (each
+    distinct 32 KB sector once), written by wuatool. No keys. Then wuatool
+    expands the .wux through Cemu's own reader and compares every byte with the
+    .wud before the caller deletes it; its CRC32 and MD5 go in the log."""
+    exe = rommlib.wuatool_path()
+    if not exe:
+        raise ToolMissing("wuatool")
+    status(step="Compressing", pct=None)
+    rc, out = run_tool([exe, "wux", src, tmp], keep_stdout=True)
+    if rc != 0 or not os.path.exists(tmp):
+        return rc or 4, {2: "not a Wii U disc image", 5: "the image changed or can't be read to the end",
+                         6: "the .wux couldn't be written (disk full?)"}.get(rc) or \
+            "wuatool failed (rc %d): %s" % (rc, out.strip()[-200:])
+    status(step="Verifying", pct=None)
+    rc, out = run_tool([exe, "compare", src, tmp], keep_stdout=True)
+    got = dict(l.split(" ", 1) for l in out.splitlines() if l.startswith(("crc32 ", "md5 ")))
+    if rc != 0 or "crc32" not in got:
+        return 5, ".wux doesn't expand to the image (rc %d): %s" % (rc, out.strip()[-200:])
+    msg = "every byte compared with the .wud (CRC32 %s, MD5 %s)" % (got["crc32"], got.get("md5", "?"))
+    note("chd: %s: %s" % (os.path.basename(src), msg))
+    return 0, msg
+
+
 def _data_sha1(out):
     """The CHD's "Data SHA1" from chdman info: the SHA-1 of the data it holds
     (for a DVD CHD, exactly the ISO's bytes; "SHA1" also covers metadata)."""
@@ -644,6 +668,7 @@ RUNNERS = {
     "z3ds": lambda src, tmp, threads: convert_z3ds(src, tmp, threads),
     "zar": lambda src, tmp, threads: convert_zar(src, tmp),
     "wua": lambda src, tmp, threads: convert_wua(src, tmp),
+    "wux": lambda src, tmp, threads: convert_wux(src, tmp),
     "cso": lambda src, tmp, threads: convert_cso(src, tmp, threads),
     "ps3": lambda src, tmp, threads: convert_ps3(src, tmp),
 }
@@ -657,6 +682,17 @@ def convert(task):
         note("chd: SKIP %s: its files are gone" % os.path.basename((task["sources"] or ["?"])[0]))
         return False
     conv = rommlib.CONVERTER.get(mode)        # None: an unknown mode goes to chdman as it is
+    # Wii U: decrypt to .wua or compress to .wux is settled now, by today's switches and keys
+    # (getattr: an older rommlib still in memory during an update has no fallbacks)
+    head = rommlib.conversion_for(system, srcs[0], enabled=False) if conv else None
+    if head is not None and getattr(head, "fallback", "") and mode in (head.mode, head.fallback):
+        taker, why, off = rommlib.settle(head, system, srcs[0], rommlib.load_config())
+        if (not why or taker is not head) and taker.mode != mode:
+            note("chd: %s %s instead of %s: %s" % (taker.label, os.path.basename(srcs[0]),
+                                                   rommlib.CONVERTER[mode].label,
+                                                   why or "%s takes it now" % head.setting_name))
+            conv, mode = taker, taker.mode
+            task["mode"] = mode                 # the results list shows what it became
     # CHD tasks run even with CHD turned off since they were queued; the others need their switch
     if conv and not conv.chd and not conv.enabled(rommlib.load_config(), system):
         note("chd: SKIP %s %s (%s)" % (mode, os.path.basename(srcs[0]), conv.off_reason))

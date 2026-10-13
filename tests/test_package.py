@@ -141,6 +141,7 @@ PREVIOUS_RELEASE_NAMES = frozenset((
     "DL_LOCK", "DL_STATUS", "DL_STOP", "Downloader", "Job", "es_messagebox", "es_notify",
     "start_conversions",   # rb_dl
     "wiiu_key_file", "wuatool_path",   # rb_chd (Wii U; only a "wua" task reaches them)
+    "settle",       # rb_chd, rb_chd_plan: only a converter with a fallback (Wii U, newer than v0.10.0) reaches it
 ))
 
 

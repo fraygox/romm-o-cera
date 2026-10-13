@@ -1177,11 +1177,20 @@ def test_one_converter_per_file_and_the_planner_knows_every_system():
     planner's default order covers every system a converter applies to."""
     import rb_chd_plan
     seen = {}
+    modes = [c.mode for c in rommlib.CONVERTERS]
     for c in rommlib.CONVERTERS:
+        if c.fallback:                   # a checked precedence: the fallback comes later and takes a subset
+            alt = rommlib.CONVERTER[c.fallback]
+            assert modes.index(alt.mode) > modes.index(c.mode) and alt.systems <= c.systems, c.mode
+            assert set(alt.sources) <= set(c.sources) and not alt.fallback and not alt.priority, c.mode
+            assert alt.tool is c.tool, c.mode                  # one download for both
         for system in c.systems:
             for ext in c.sources:
-                assert (system, ext) not in seen, (system, ext, seen.get((system, ext)), c.mode)
-                seen[(system, ext)] = c.mode
+                # a second converter for a file only as the first one's fallback (settle decides)
+                assert (system, ext) not in seen or rommlib.CONVERTER[seen[(system, ext)]].fallback == c.mode, \
+                    (system, ext, seen.get((system, ext)), c.mode)
+                seen.setdefault((system, ext), c.mode)
+    assert [c.mode for c in rommlib.CONVERTERS if c.fallback] == ["wua"]
     assert sorted(rb_chd_plan.ORDER) == sorted(set().union(*(c.systems for c in rommlib.CONVERTERS)))   # each once
     for c in rommlib.CONVERTERS:
         assert set(c.priority) <= c.systems, (c.mode, c.priority)      # ranks only its own systems

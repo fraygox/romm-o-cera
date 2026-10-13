@@ -132,12 +132,23 @@ SETTINGS = (
                  "partition, padding), so it isn't a copy of the original image. Every file is checked against "
                  "the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), downloaded "
                  "once when you turn this on. xenia (not canary) can't open .zar."),
-    Setting("wua", False,               # Wii U .wud/.wux -> .wua for Cemu (downloads wuatool when turned on)
-            row="wua", label="Wii U to .wua",
-            help="Turns Wii U disc images (.wud, .wux) into .wua, which Cemu opens directly: often 30-90% "
-                 "smaller. Only the game partition is kept, checked file by file against the disc first. Each "
-                 "disc needs its key (games you own) in bios/cemu/keys.txt or bios/wiiukeys; turning this on "
-                 "copies RomM's there."),
+    Setting("wux", True,                # Wii U .wud -> .wux, lossless, no keys (downloads wuatool when turned on)
+            row="wux", label="Wii U to .wux", sub="Lossless; Cemu opens .wux directly",
+            help="Compresses Wii U disc images (.wud) into .wux, which Cemu opens directly: the disc's empty "
+                 "and repeated parts are stored once, often 30-90% smaller. Lossless: the .wux expands back to "
+                 "the exact .wud, and is checked against it byte for byte before the .wud is deleted. Needs no "
+                 "keys. Needs wuatool (about 2 MB), downloaded once when you turn this on or press {A} here. "
+                 "With Decrypt Wii U discs on, a disc whose key is here becomes a .wua instead."),
+    Setting("wua", False,               # decrypt Wii U .wud/.wux -> .wua with the user's own disc keys (Cemu)
+            row="wua", label="Decrypt Wii U discs", sub="Uses disc keys for games you own",
+            help="Wii U discs (.wud, .wux) are encrypted. With its disc key, a disc becomes a .wua: the game's "
+                 "files in an archive Cemu opens directly, usually smaller than a .wux, each file checked "
+                 "against the disc first. Uses disc keys for games you own, which you put in Cemu's keys.txt "
+                 "(bios/cemu) or bios/wiiukeys (.key files, key lists, or zips of them) or add to RomM as Wii U "
+                 "firmware; turning this on copies RomM's into bios/wiiukeys. RomM-o-Cera comes with no keys. A "
+                 "key is checked against the disc itself, so a wrong one is never used. A disc without its key "
+                 "becomes a .wux (Wii U to .wux) instead. A .wua holds the game partition only: it can't become "
+                 "the disc image again. Needs wuatool, downloaded once."),
     Setting("ps3_folders", True,        # PS3 disc images (.iso, zipped .iso) -> "Name.ps3" game folders
             row="ps3folders", label="PS3 games as folders",
             sub="Disc images become .ps3 folders RPCS3 can update",

@@ -139,9 +139,9 @@ def test_install_x360_tools_runs_each_program_from_the_archives_top_folder(isola
 
 def test_converters_name_the_tools_they_need():
     assert {c.mode: c.tool for c in rommlib.CONVERTERS if c.tool} == \
-        {"rvz": rommlib.TOOL_DOLPHIN, "zar": rommlib.TOOL_X360, "wua": rommlib.TOOL_WIIU}
-    for c in rommlib.CONVERTERS:
-        assert c.tool is None or c.tool.setting == c.setting
+        {"rvz": rommlib.TOOL_DOLPHIN, "zar": rommlib.TOOL_X360, "wua": rommlib.TOOL_WIIU, "wux": rommlib.TOOL_WIIU}
+    for c in rommlib.CONVERTERS:      # a tool is named after the first switch that needs it; Wii U's two share it
+        assert c.tool is None or c.tool.setting == c.setting or (c.mode, c.tool.setting) == ("wux", "wua")
 
 
 def test_rvz_state_labels(isolated, tmp_path, monkeypatch):

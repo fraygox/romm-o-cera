@@ -2092,6 +2092,57 @@
    "toasts": [],
    "wake": 0
   },
+  "bare/defaults/wux/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/wux/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "bare/defaults/wux/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "bare/defaults/xboxboot/left": {
    "bg": 0,
    "cfg": {
@@ -3961,6 +4012,57 @@
    "wake": 0
   },
   "full/changed/wua/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/wux/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/wux/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/wux/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -5864,6 +5966,57 @@
    "toasts": [],
    "wake": 0
   },
+  "full/defaults/wux/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/wux/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/wux/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/defaults/xboxboot/left": {
    "bg": 0,
    "cfg": {
@@ -7631,6 +7784,54 @@
    "wake": 0
   },
   "full/odd/wua/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/wux/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/wux/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/wux/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -9488,6 +9689,57 @@
    "wake": 0
   },
   "tools/changed/wua/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/wux/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/wux/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/wux/right": {
    "bg": 0,
    "cfg": {},
    "gone": [],
@@ -11415,6 +11667,57 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/wux/left": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/wux/ok": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/wux/right": {
+   "bg": 0,
+   "cfg": {},
+   "gone": [],
+   "modal": [
+    "Confirm",
+    "Download wuatool?"
+   ],
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/xboxboot/left": {
    "bg": 0,
    "cfg": {
@@ -11611,7 +11914,8 @@
   "token": "A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it.",
   "update": "Checks GitHub for a newer RomM-o-Cera, then downloads and checks it and restarts the app to install it. Downloads pause and carry on when it's back. The current version is kept so you can go back.",
   "url": "Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// works but sends the token unencrypted.",
-  "wua": "Turns Wii U disc images (.wud, .wux) into .wua, which Cemu opens directly: often 30-90% smaller. Only the game partition is kept, checked file by file against the disc first. Each disc needs its key (games you own) in bios/cemu/keys.txt or bios/wiiukeys; turning this on copies RomM's there.",
+  "wua": "Wii U discs (.wud, .wux) are encrypted. With its disc key, a disc becomes a .wua: the game's files in an archive Cemu opens directly, usually smaller than a .wux, each file checked against the disc first. Uses disc keys for games you own, which you put in Cemu's keys.txt (bios/cemu) or bios/wiiukeys (.key files, key lists, or zips of them) or add to RomM as Wii U firmware; turning this on copies RomM's into bios/wiiukeys. RomM-o-Cera comes with no keys. A key is checked against the disc itself, so a wrong one is never used. A disc without its key becomes a .wux (Wii U to .wux) instead. A .wua holds the game partition only: it can't become the disc image again. Needs wuatool, downloaded once.",
+  "wux": "Compresses Wii U disc images (.wud) into .wux, which Cemu opens directly: the disc's empty and repeated parts are stored once, often 30-90% smaller. Lossless: the .wux expands back to the exact .wud, and is checked against it byte for byte before the .wud is deleted. Needs no keys. Needs wuatool (about 2 MB), downloaded once when you turn this on or press {A} here. With Decrypt Wii U discs on, a disc whose key is here becomes a .wua instead.",
   "xboxboot": "xemu boots only an Xbox disc's game partition: a full disc image (as Redump keeps them) shows \"Please insert an Xbox disc\". This keeps just the game partition, in place where the drive allows, and renames .xiso files to .iso so EmulationStation lists them. Images that are already bootable are left as they are.",
   "z3ds": "Compresses 3DS games (.3ds, .cci, .cxi) to Azahar's own .zcci format, often 40-60% smaller; Azahar opens them directly and saves stay where they are. Lossless: every block is read back and checked against the original before it's deleted. Encrypted dumps (which Azahar can't run anyway) are left alone. Uses the zstd library already on Batocera.",
   "zar": "Turns Xbox 360 disc images into .zar, a compressed archive xenia-canary opens directly, often 40-60% smaller. It keeps the game's files and leaves out the rest of the disc (video partition, padding), so it isn't a copy of the original image. Every file is checked against the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), downloaded once when you turn this on. xenia (not canary) can't open .zar."
@@ -12067,6 +12371,20 @@
     "Back"
    ]
   ],
+  "wux": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
   "xboxboot": [
    [
     "A",
@@ -12263,8 +12581,14 @@
     "Xbox 360 emulation on Batocera is x86_64 only"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -12535,8 +12859,14 @@
     "Xbox 360 emulation on Batocera is x86_64 only"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -12807,8 +13137,14 @@
     "Xbox 360 emulation on Batocera is x86_64 only"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -13079,8 +13415,14 @@
     "{A} downloads them again"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -13345,8 +13687,14 @@
     "Turning it on downloads two small tools once"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -13611,8 +13959,14 @@
     "Turning it on downloads two small tools once"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -13877,8 +14231,14 @@
     "Smaller files xenia-canary opens directly"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],
@@ -14143,8 +14503,14 @@
     "Turning it on downloads two small tools once"
    ],
    [
+    "wux",
+    "Wii U to .wux",
+    "Tool missing",
+    "{A} downloads wuatool (once, about 2 MB)"
+   ],
+   [
     "wua",
-    "Wii U to .wua",
+    "Decrypt Wii U discs",
     "Off",
     "Turning it on downloads wuatool once"
    ],

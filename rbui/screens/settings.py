@@ -56,12 +56,13 @@ class SettingsScreen(Screen):
 
         def tool_row(key):
             """A switch whose converter needs a download: its state, or how far the download is."""
-            if getattr(self.app, key + "_busy", False):
-                pr = getattr(self.app, key + "_progress", None)
+            spec = rommlib.CONVERTER[key].tool
+            if getattr(self.app, spec.setting + "_busy", False):        # per tool: two switches can share one
+                pr = getattr(self.app, spec.setting + "_progress", None)
                 return {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
                         "help": self.TOOL_TEXT[key]["fetching"]}
-            return rommlib.tool_state(rommlib.CONVERTER[key].tool, cfg)
-        rvz, zar, wua = tool_row("rvz"), tool_row("zar"), tool_row("wua")
+            return rommlib.tool_state(spec, cfg, key)
+        rvz, zar, wux, wua = tool_row("rvz"), tool_row("zar"), tool_row("wux"), tool_row("wua")
         sec = SettingsScreen.section
 
         def row(rid, value, sub=None):            # a config.json row: name and grey line from the table
@@ -99,6 +100,7 @@ class SettingsScreen(Screen):
             table("squashfs"),
             table("z3ds"),
             row("zar", zar["label"], zar["help"]),
+            row("wux", wux["label"], wux["help"]),
             row("wua", wua["label"], wua["help"]),
             table("ps3folders"),
             row("ps3decrypt", onoff(cfg["ps3_decrypt"]) if rommlib.ps3_decrypt_supported() else "Not available"),
@@ -451,18 +453,30 @@ class SettingsScreen(Screen):
                 "fetching": "extract-xiso and zarchive, from RomM-o-Cera's GitHub releases",
                 "done": "Xbox 360 tools installed: Xbox 360 games convert to .zar",
                 "failed": "Xbox 360 tools download failed ({error})"},
-        "wua": {"cpu": "wuatool is built for x86_64 and 64-bit ARM boxes only",
+        "wux": {"cpu": "wuatool is built for x86_64 and 64-bit ARM boxes only",
                 "busy": "wuatool is still downloading",
-                "off": "Wii U conversion off (wuatool stays installed)",
-                "on": "Wii U games will be converted to .wua",
+                "off": "Wii U to .wux off (wuatool stays installed)",
+                "on": "Wii U disc images will be compressed to .wux",
                 "title": "Download wuatool?",
-                "body": "Converting to .wua needs wuatool {version}{size}: Cemu's own disc code and ZArchive, "
-                        "built from their published source (MPL-2.0) and checked by SHA-256 before use. A .wua "
-                        "holds the game partition, not the whole disc image, and each disc needs its disc key. "
-                        "Credits are in Settings.",
+                "body": "Compressing to .wux needs wuatool {version}{size}: Cemu's own disc code and ZArchive, "
+                        "built from their published source (MPL-2.0) and checked by SHA-256 before use. A .wux "
+                        "is lossless and needs no keys. Credits are in Settings.",
                 "start": "Downloading wuatool…",
                 "fetching": "wuatool, from RomM-o-Cera's GitHub releases",
-                "done": "wuatool {version} installed: Wii U games convert to .wua",
+                "done": "wuatool {version} installed: Wii U disc images compress to .wux",
+                "failed": "wuatool download failed ({error})"},
+        "wua": {"cpu": "wuatool is built for x86_64 and 64-bit ARM boxes only",
+                "busy": "wuatool is still downloading",
+                "off": "Decrypt Wii U discs off (wuatool stays installed)",
+                "on": "Wii U discs with their key will become .wua",
+                "title": "Download wuatool?",
+                "body": "Decrypting Wii U discs needs wuatool {version}{size}: Cemu's own disc code and ZArchive, "
+                        "built from their published source (MPL-2.0) and checked by SHA-256 before use. Each disc "
+                        "needs its disc key (games you own); a .wua holds the game partition, not the whole disc "
+                        "image. Credits are in Settings.",
+                "start": "Downloading wuatool…",
+                "fetching": "wuatool, from RomM-o-Cera's GitHub releases",
+                "done": "wuatool {version} installed: Wii U discs with their key become .wua",
                 "failed": "wuatool download failed ({error})"},
     }
 
@@ -470,10 +484,11 @@ class SettingsScreen(Screen):
         """Turn a converter on or off; the first time on, download its tool (asked first)."""
         app, cfg = self.app, self.app.cfg
         spec, say = rommlib.CONVERTER[key].tool, self.TOOL_TEXT[key]
+        busy = spec.setting + "_busy"             # per tool: Wii U's two switches share wuatool
         if not spec.supported():
             app.toast(say["cpu"], theme.AMBER)
             return
-        if getattr(app, key + "_busy", False):
+        if getattr(app, busy, False):
             app.toast(say["busy"])
             return
         if spec.installed():
@@ -489,14 +504,14 @@ class SettingsScreen(Screen):
         t = spec.pin
 
         def install():
-            setattr(app, key + "_busy", True)
+            setattr(app, busy, True)
 
             def prog(got, total):
-                setattr(app, key + "_progress", (got / total) if total else None)
+                setattr(app, spec.setting + "_progress", (got / total) if total else None)
             try:
                 return rommlib.install_tool(spec, prog)
             finally:
-                setattr(app, key + "_busy", False)
+                setattr(app, busy, False)
 
         def done(paths):
             cfg[key] = True

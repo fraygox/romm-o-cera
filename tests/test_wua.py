@@ -118,7 +118,7 @@ def test_worker_packs_and_checks_every_file(tool, monkeypatch, ext):
 
 def test_refusals_keep_the_image(tool, monkeypatch):
     rb_chd = _idle(monkeypatch)
-    _cfg(monkeypatch, wua=True)
+    _cfg(monkeypatch, wua=True, wux=False)           # with .wux on, a disc without its key becomes one
     sysdir = os.path.join(rommlib.ROMS_ROOT, "wiiu")
     os.makedirs(sysdir)
 
@@ -138,7 +138,7 @@ def test_refusals_keep_the_image(tool, monkeypatch):
     assert not any(n.endswith((".wua", ".part")) for n in os.listdir(sysdir))
     log = open(rommlib.LOG_PATH).read()
     assert "not a Wii U disc image" in log and "no disc key" in log and "damaged or cut short" in log
-    _cfg(monkeypatch, wua=False)                     # turned off: nothing happens
+    _cfg(monkeypatch, wua=False, wux=False)          # both off: nothing happens
     ok = os.path.join(sysdir, "Off.wud")
     mkdisc.make_disc(ok, KEYS)
     assert run(ok) is False and os.path.exists(ok)

@@ -10,6 +10,9 @@ image (xemu can't boot it) is cut to its game partition right away and
 images are then queued for packing. 3DS (Settings -> 3DS to .zcci): decrypted
 .3ds/.cci/.cxi are queued for Z3DS; encrypted dumps are listed and skipped.
 Xbox 360 (Settings -> Xbox 360 to .zar, x86_64): .iso images are queued for .zar.
+Wii U: with Decrypt Wii U discs on, .wud/.wux discs whose key is here are queued
+for .wua; other .wud images for .wux (Settings -> Wii U to .wux), and a disc that
+can't be decrypted is listed with the reason.
 
 Finds cue/gdi (CD systems), iso (PS2/PSP) and cso (PSP) games that have no CHD yet, groups
 discs into games (a folder holding the disc files, with "(Disc N)" subfolders
@@ -149,6 +152,19 @@ def candidates(systems=None, cfg=None, skipped=None):
             # a system the table doesn't know (--systems): its cue/gdi as CD images
             conv = rommlib.conversion_for(system, files[0], enabled=False, renamed=True) \
                 or rommlib.CONVERTER["createcd"]
+            if getattr(conv, "fallback", ""):
+                # Wii U: decrypted to .wua when that's on and the key is here, else offered as .wux
+                taker, why, off = rommlib.settle(conv, system, files[0], cfg, alt_enabled=False)
+                if taker is not conv:
+                    if not off and skipped is not None:      # on, but this disc can't be decrypted
+                        skipped.append((system, files[0], "can't decrypt it: %s; offered as %s instead"
+                                        % (why, taker.label)))
+                    conv = taker
+                elif off and conv.check:
+                    try:                         # off, nothing else takes it: offered only if it could be done
+                        conv.check(files[0])
+                    except rommlib.CHECK_ERRORS:
+                        continue
             if conv.planner_skips_done and os.path.exists(conv.output_path(files[0])):
                 continue                         # already packed (the original stays until verified)
             if conv.check:

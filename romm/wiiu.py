@@ -25,7 +25,7 @@ WIIU_KEYZIP_MAX = 256 << 20
 
 
 class WiiuError(Exception):
-    """A Wii U disc image that can't become a .wua: not a disc, or no key for it."""
+    """A Wii U disc image that can't be converted (not a disc, no key for it), or a damaged .wux."""
 
 
 def cemu_keys_path():
@@ -157,9 +157,10 @@ class _Disc:
         self.wux = len(head) == 0x20 and head[:4] == WUX_MAGIC[0] and \
             struct.unpack_from("<I", head, 4)[0] == WUX_MAGIC[1]
         if self.wux:
-            self.sector, _flags, self.size = struct.unpack_from("<IIQ", head, 8)
+            # 0x08 sector size, 0x0C padding, 0x10 the disc's size, 0x18 flags (Cemu's wuxHeader_t)
+            self.sector, _pad, self.size = struct.unpack_from("<IIQ", head, 8)
             if self.sector < 0x100 or self.sector > (1 << 24) or self.sector & (self.sector - 1):
-                raise WiiuError("damaged .wux header")
+                raise WiiuError("damaged (a .wux header with a sector size Cemu can't read)")
             self.count = (self.size + self.sector - 1) // self.sector
             self.data = (0x20 + self.count * 4 + self.sector - 1) // self.sector * self.sector
 
@@ -184,6 +185,50 @@ class _Disc:
             offset += len(got)
             n -= len(got)
         return out
+
+
+def wiiu_disc(src):
+    """WiiuError unless src is a plain Wii U disc image (.wud): what .wux compresses."""
+    try:
+        with open(src, "rb") as f:
+            d = _Disc(f)
+            magic = d.read(0x10000, 4)
+    except OSError as e:
+        raise WiiuError("can't read it (%s)" % (e.strerror or e)) from None
+    if d.wux:
+        raise WiiuError("a .wux already")
+    if len(magic) < 4 or struct.unpack(">I", magic)[0] != WUD_MAGIC:
+        raise WiiuError("not a Wii U disc image")
+
+
+def wux_layout(path):
+    """The disc's size, from a .wux whose layout is whole (wuatool checks the
+    same before Cemu's reader, which checks none of it, is trusted with it): a
+    sector size Cemu reads, its whole sector index, and every sector it points
+    at in the file. WiiuError (what's wrong) otherwise. OSError: unreadable."""
+    import array
+    with open(path, "rb") as f:
+        end = os.fstat(f.fileno()).st_size
+        d = _Disc(f)                               # raises on a bad sector size
+        if not d.wux:
+            raise WiiuError("isn't a .wux (no WUX0 header)")
+        if not 0 < d.size <= 1 << 40:
+            raise WiiuError("damaged (its disc size is impossible)")
+        if end < d.data:
+            raise WiiuError("cut short (its sector index isn't whole)")
+        f.seek(0x20)
+        index = array.array("I")
+        index.frombytes(f.read(d.count * 4))
+    if index.itemsize != 4 or len(index) != d.count:
+        raise WiiuError("cut short (its sector index isn't whole)")
+    if struct.pack("=I", 1) != struct.pack("<I", 1):
+        index.byteswap()
+    held, tail = divmod(end - d.data, d.sector)
+    last = d.size - (d.count - 1) * d.sector       # bytes the final (maybe partial) sector holds
+    top = max(index[:-1]) if d.count > 1 else -1
+    if top >= held or index[-1] > held or (index[-1] == held and tail < last):
+        raise WiiuError("cut short or damaged (a sector index points past the end)")
+    return d.size
 
 
 def _aes_cbc_decrypt(key, iv, data):

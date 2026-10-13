@@ -314,6 +314,10 @@ def wua_enabled(cfg, system):
     return system in _tools.WUA_SYSTEMS and bool(_config.config_value(cfg, "wua")) and _tools.wuatool_path() is not None
 
 
+def wux_enabled(cfg, system):
+    return system in _tools.WUA_SYSTEMS and bool(_config.config_value(cfg, "wux")) and _tools.wuatool_path() is not None
+
+
 def xiso_listing(exe, iso):
     """{relative path: size} of the files on an Xbox / Xbox 360 disc image
     (extract-xiso -l), or None if it isn't one."""
@@ -376,6 +380,39 @@ def wua_audit(path, orig, deep):
     # the disc's game partition, packed here: RomM's image hashes can't match by design
     bad = zar_check(path, full=deep)                # a .wua is a ZArchive: the same footer and SHA-256
     return ("Compressed file %s" % bad.replace(".zar", ".wua"), "damaged") if bad else None
+
+
+def wux_audit(path, orig, deep):
+    """Quick: the .wux's layout (header, index, every sector it points at held)
+    and its disc's size against RomM's .wud. Full: wuatool expands it through
+    Cemu's own reader; its CRC32/SHA-1 must be RomM's .wud's. A .wux carries no
+    checksum of its own: without RomM's .wud, full finds only a broken layout."""
+    try:
+        size = _wiiu.wux_layout(path)
+    except _wiiu.WiiuError as e:
+        return "Compressed file %s" % e, "damaged"
+    except OSError as e:
+        return "Compressed file can't be read (%s)" % (e.strerror or e), "damaged"
+    raw = orig if orig and orig["name"].lower().endswith(".wud") else None
+    if raw and raw["size"] and size != raw["size"]:
+        return _differs(size, raw["size"]), "differs"
+    if not deep:
+        return None
+    exe = _tools.wuatool_path()
+    if not exe:
+        raise NotVerified("wuatool")
+    try:
+        p = subprocess.run(["nice", "-n", "19", exe, "hash", path], capture_output=True, text=True, errors="replace")
+    except OSError:
+        raise NotVerified("wuatool") from None
+    if p.returncode in (126, 127):
+        raise NotVerified("wuatool")
+    got = dict(l.split(" ", 1) for l in p.stdout.splitlines() if " " in l)
+    if p.returncode != 0 or "crc32" not in got:
+        return "Compressed file damaged (wuatool couldn't read all of it)", "damaged"
+    if raw and ((raw["crc"] and raw["crc"] != got["crc32"]) or (raw["sha1"] and raw["sha1"] != got.get("sha1"))):
+        return "Checksum doesn't match RomM's copy", "differs"
+    return None
 
 
 RVZ_MAGICS = (b"RVZ\x01", b"WIA\x01")
@@ -579,6 +616,8 @@ class Converter:
     audit: Optional[Callable] = None   # audit(path, orig, deep): how Check games checks an output (see NotVerified)
     audit_exts: tuple = ()     # other files audit checks as if they were its output (Azahar's own .zcia)
     tool: Optional[object] = None  # the ToolSpec it needs downloaded (romm/tools.py), if any
+    fallback: str = ""         # the mode that takes a source this one is off for or refuses (its check), when
+                               # it takes that extension: listed after it in the table (see settle)
 
     @property
     def sources(self):
@@ -644,12 +683,18 @@ CONVERTERS = (
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
               audit=zar_audit, tool=_tools.TOOL_X360, priority=("xbox360",)),
-    # Wii U: the disc's game partition, decrypted with the disc's key, becomes a .wua Cemu opens
+    # Wii U: the disc's game partition, decrypted with the disc's key, becomes a .wua Cemu opens;
+    # a .wud it can't take (Decrypt Wii U discs off, or no key for it) falls back to .wux
     Converter("wua", "WUA", "wua", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wua", ".wux": ".wua"},
               "wua", _config.SETTING["wua"].label, "turned off, or wuatool isn't installed",
               lambda cfg, system: wua_enabled(cfg, system), planner_skips_done=True,
               check=lambda src: _wiiu.wiiu_check(src), audit=wua_audit, tool=_tools.TOOL_WIIU,
-              priority=("wiiu",)),
+              priority=("wiiu",), fallback="wux"),
+    # Wii U .wud -> .wux: lossless, no keys; wuatool expands it through Cemu's reader and compares
+    Converter("wux", "WUX", "wux", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wux"},
+              "wux", _config.SETTING["wux"].label, "turned off, or wuatool isn't installed",
+              lambda cfg, system: wux_enabled(cfg, system), planner_skips_done=True,
+              check=lambda src: _wiiu.wiiu_disc(src), audit=wux_audit, tool=_tools.TOOL_WIIU),
     # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
     # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
     Converter("ps3", "PS3 folder", "ps3", frozenset({"ps3"}), {".iso": ".ps3", ".zip": ".ps3"},
@@ -681,16 +726,49 @@ def converters_for(system):
     return [c for c in CONVERTERS if system in c.systems]
 
 
+def settle(conv, system, src, cfg, alt_enabled=True):
+    """Which converter takes this file, for a converter with a fallback (Wii U:
+    decrypt to .wua, else .wux): (taker, why, off). why: why conv itself doesn't
+    take it ("": it does), off: because it's turned off (else its check refused
+    the file; checked only when src is a file here). taker: conv when it takes
+    it, its fallback when conv doesn't and the fallback takes the extension (and
+    is turned on, unless alt_enabled is False: the planner offers it anyway),
+    else conv (refusing it). Without a fallback: (conv, "", False)."""
+    if not conv.fallback:
+        return conv, "", False
+    why, off = "", False
+    if not conv.enabled(cfg, system):
+        why, off = conv.off_reason, True
+    elif conv.check and os.path.isfile(src):
+        try:
+            conv.check(src)
+        except CHECK_ERRORS as e:
+            why = str(e)
+    if not why:
+        return conv, "", False
+    alt = CONVERTER[conv.fallback]
+    if _ext(src) in alt.targets and (not alt_enabled or alt.enabled(cfg, system)):
+        return alt, why, off
+    return conv, why, off
+
+
 def conversion_for(system, path, cfg=None, accepts=None, enabled=True, renamed=False):
     """The Converter that turns this file (a path or a bare ".ext") on this
     system into something smaller, or None: nothing applies, it's turned off
     (not checked with enabled=False), or ES wouldn't list the result
     (accepts(system, ext), when given). renamed: also a file the planner
-    renames to a source first (Xbox .xiso)."""
+    renames to a source first (Xbox .xiso). A converter with a fallback hands
+    a file it's off for or refuses (a real file's check) to it (settle);
+    enabled=False: the table's first converter for the file."""
     ext = _ext(path)
     for c in CONVERTERS:
         if system in c.systems and (ext in c.targets or (renamed and ext in c.renamed_sources)):
-            if enabled and not c.enabled(cfg, system):
+            if enabled and c.fallback:
+                taker, why, _ = settle(c, system, path, cfg)
+                if why and taker is c:
+                    return None
+                c = taker
+            elif enabled and not c.enabled(cfg, system):
                 return None
             if accepts is not None and not accepts(system, c.output_ext(ext)):
                 return None
