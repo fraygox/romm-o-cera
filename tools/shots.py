@@ -310,6 +310,77 @@ def custom_at(sel=0, **v):
     return s
 
 
+class WidgetsGallery(rb.Screen):
+    """Every rbui/widgets building block on one frame (the "widgets-gallery" scene)."""
+
+    def __init__(self, app_):
+        super().__init__(app_)
+        install_some()
+        self.roms = app_.api.roms(platform_ids=[first_platform()["id"]], limit=14)["items"]
+        self.colls = [(c["name"], c.get("rom_count", 0)) for c in app_.api.collections()[:3]]
+        self.shelf = rb.Shelf((90, 120), 12)
+        self.cards = rb.Shelf((212, 104), 12)
+        self.installed = next(r for r in self.roms if app_.rom_status(r)[0] == "installed")
+        self.remote = next(r for r in self.roms if app_.rom_status(r)[0] != "installed")
+
+    def crumbs(self):
+        return ["Widgets"]
+
+    def draw(self, c):
+        from types import SimpleNamespace
+        f, a, roms = self.f, self.app, self.roms
+        x0, x1 = 48, 744
+        rb.pill_row(c, f.body, ["Search", "Platforms", "Collections", "Downloads", "On this box", "Settings"],
+                    x0, x1, 84, focus=1)
+        rb.text(c, f.h3, "Recently added", (x0, 136), rb.TEXT)
+        rb.text(c, f.small, "%d games" % len(roms), (x1, 139), rb.FAINT, "topright")
+        self.shelf.draw(c, a, roms, x0, x1, 166, sel=0)
+        cards = [(name, roms[3 * i:3 * i + 4], n) for i, (name, n) in enumerate(self.colls)]
+        self.cards.draw(c, a, cards, x0, x1, 306, sel=1, tile=lambda c_, it, r, on: rb.collection_card(
+            c_, a, it[0], it[1], r, on, "%d games" % it[2]))
+        rb.pill_row(c, f.small, ["All · 12", "Matches RomM · 8", "Newer in RomM · 2", "Not in RomM · 2"],
+                    x0, x1, 426, active=1, dots=[None, rb.GREEN, rb.BLUE, rb.FAINT], h=32)
+        for k, (col, title, parts) in enumerate((
+                (rb.BLUE, "Downloading 42%, 12.0 MB/s", [(0.42, rb.BLUE)]),
+                (rb.AMBER, "Backlog: 6 fit now, 2 wait for space", [(0.6, rb.ACCENT), (0.3, rb.AMBER)]))):
+            r = pygame.Rect(x0, 472 + k * 64, x1 - x0, 58)
+            rb.rrect(c, rb.PANEL, r, 12)
+            rb.state_stripe(c, r, col)
+            rb.cover_tile(c, a, roms[5 + k], (r.left + 16, r.top + 6, 34, 46), radius=4)
+            rb.text(c, f.body, rb.rom_title(roms[5 + k]), (r.left + 62, r.top + 8), rb.TEXT, maxw=300)
+            rb.text(c, f.small, title, (r.left + 62, r.top + 32), rb.FAINT, maxw=300)
+            rb.meter(c, (r.right - 260, r.centery - 3, 240, 6), parts)
+        y = 616
+        x = rb.status_chip(c, f.small, "Playing", (x0, y + 12), anchor="midleft").right + 10
+        x = rb.status_chip(c, f.small, "On your backlog", (x, y + 12), rb.AMBER, "midleft").right + 14
+        x = rb.stars(c, 3, (x, y + 12)) + 14
+        rb.tag(c, f.tiny, "roms/psx", (x, y + 12), "midleft")
+        # the hero side: backdrop, cover, facts, the verbs
+        rom = self.installed
+        rb.backdrop(c, a, rom, (768, 64, 1280 - 768, 300))
+        art = rb.cover(c, a, rom, (788, 84, 120, 160), fit=True)
+        rb.focus_ring(c, art)
+        tx, tw = 928, 1232 - 928
+        rb.text(c, f.h2, rb.rom_title(rom), (tx, 84), rb.TEXT, maxw=tw)
+        rb.text(c, f.small, "PlayStation · 1998 · Racing", (tx, 118), rb.DIM, maxw=tw)
+        rb.facts(c, f, [("Size", rb.human_size(rom.get("fs_size_bytes"))), ("Format", "CHD (from CUE/BIN)"),
+                        ("Region", "USA"), ("Developer", "Lorem Ipsum Soft"), ("Players", "1-2"),
+                        ("Released", "1998"), ("Genre", "Racing, Arcade"), ("Manual", "Included")],
+                 (tx, 148, tw, 112), cols=2, bg=rb.BG, slot="gallery-facts", strong=("Size",))
+        vr = pygame.Rect(788, 290, 1232 - 788, rb.VERB_H)
+        rb.verb_button(c, f, vr, **rb.game_verb(a, rom))
+        rb.verb_note(c, f, vr, rb.game_note(a, rom))
+        vr2 = vr.move(0, 100)
+        rb.verb_button(c, f, vr2, **rb.game_verb(a, self.remote))
+        rb.verb_note(c, f, vr2, rb.game_note(a, self.remote))
+        job = SimpleNamespace(state=J.DOWNLOADING, done_bytes=42, total_bytes=100, speed=12 << 20)
+        rb.verb_button(c, f, (788, 490, vr.width, rb.VERB_H), **rb.game_verb(a, self.remote, ("active", job)))
+        w1 = vr.width * 3 // 5
+        rb.verb_button(c, f, (788, 556, w1, rb.VERB_H), "Unpick", "quiet", "3 picked")
+        rb.verb_button(c, f, (788 + w1 + 12, 556, vr.width - w1 - 12, rb.VERB_H), "Not in RomM", "off")
+        rb.progress_bar(c, (788, 630, vr.width, 8), 0.7, rb.GREEN)
+
+
 # (name, setup) — setup pushes a screen / opens a modal; returns an optional
 # "ready" predicate (default: no background work pending)
 SCENES = [
@@ -410,6 +481,7 @@ SCENES = [
                               setattr(app, "_after", lambda: app.stack[-1].open_menu()))),
     ("leftovers", lambda: app.push(rb.LeftoversScreen(app))),
     ("bios", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.BiosScreen(app)))),
+    ("widgets-gallery", lambda: app.push(WidgetsGallery(app))),
     ("toast", lambda: app.toast("Picked 3 games (4.2 GB) — check the list, then {X} to delete them")),
     ("confirm-danger", lambda: setattr(app, "modal", rb.Confirm(
         app, "Delete 3 games?", "Frees about 4.2 GB. Saves are kept. Press {A} to delete or {B} to keep them.",
