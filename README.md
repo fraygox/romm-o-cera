@@ -44,7 +44,7 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   RomM, check for damaged or cut-short games and replace them.
   → [On this box](docs/on-this-box.md)
 - **Compress discs in the background**, lossless and verified: CHD for CD
-  systems, PS2 and PSP; RVZ for GameCube and Wii; squashfs for Xbox; .zcci for 3DS; .zar for Xbox 360; .wua for Wii U. Xbox
+  systems, PS2 and PSP; RVZ for GameCube and Wii; squashfs for Xbox; .zcci for 3DS; .zar for Xbox 360; .wux for Wii U, or .wua with your own disc keys. Xbox
   downloads are made bootable for xemu. Games already on the box can be
   compressed too, one or a whole system at a time. → [Disc compression](docs/disc-compression.md)
 - **PS3 games as game folders**: disc images become `.ps3` folders RPCS3 boots
@@ -139,7 +139,7 @@ this product includes software developed by in <in@fishtank.com>) and
 **ZArchive**'s `zarchive` (MIT-0, with **zstd**, BSD-3-Clause), an optional download
 for Xbox 360 to .zar whose licenses and source are on the `xbox360-tools` release,
 **wuatool**, built on **Cemu**'s disc code (MPL-2.0) with ZArchive, zstd and OpenSSL
-(Apache-2.0), an optional download for Wii U to .wua whose licenses and source are
+(Apache-2.0), an optional download for Wii U to .wux and Decrypt Wii U discs whose licenses and source are
 on the `wiiu-tools` release,
 **chdman** from MAME (BSD-3-Clause /
 GPL-2.0-or-later), **pygame**/**SDL** (LGPL-2.1 / zlib), **Requests**

@@ -149,30 +149,60 @@ by in <in@fishtank.com>. Before the image is deleted:
 The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 `.zar`'s footer (quick) or its whole SHA-256 (full).
 
-## Wii U to .wua — off by default
+## Wii U to .wux — on by default
 
-Turns each Wii U disc image (`.wud`, or the same image as a `.wux`) into
-`Game.wua`, the compressed archive Cemu opens directly. Often 30–90% smaller:
-most discs are largely empty space, and `.wua` keeps only what the game uses
-(a 1.1 GB `.wux` became 127 MB in 6 seconds, checks included).
+Compresses each Wii U disc image (`.wud`) into `Game.wux`, the lossless
+container Cemu opens directly: a disc is mostly empty space, and a `.wux`
+stores each distinct 32 KB sector once (a 25 GB `.wud` became a 1.5 GB `.wux`,
+byte for byte the `.wux` Redump's set has for it). It needs no
+keys, and the `.wux` expands back to the exact `.wud`, so Check games can still
+compare it with RomM's `.wud` checksums.
 
-A `.wua` holds the disc's game partition, decrypted (the files Cemu plays,
-in the layout Cemu's own "Convert to .wua" writes), not the whole disc, so it
+Before the `.wud` is deleted, wuatool expands the `.wux` through Cemu's own
+disc reader and compares every byte with the `.wud` (the log gets its CRC32 and
+MD5). A `.wux` carries no checksum of its own: Check games checks its layout
+(quick: header, sector index, every sector it points at present) or expands it
+whole and compares it with RomM's `.wud` (full).
+
+It needs **wuatool** (about 3 MB, checked by SHA-256, x86_64 and 64-bit ARM),
+downloaded once: select the switch in Settings (it shows "Tool missing" until
+then). Decrypt Wii U discs uses the same download. wuatool is built from
+Cemu's own disc code and the ZArchive library Cemu reads `.wua` with, from
+their published source; licenses and source are on RomM-o-Cera's `wiiu-tools`
+release. Its `.wux` writer is RomM-o-Cera's own, written to the layout Cemu's
+reader expects (Exzap's WudCompress, which introduced the format, carries no
+license).
+
+## Decrypt Wii U discs — off by default
+
+Wii U discs are encrypted. With its **disc key**, for games you own, a disc
+(`.wud` or `.wux`) becomes `Game.wua`, the compressed archive Cemu opens
+directly, usually smaller still than a `.wux` (it keeps only what the game
+uses: a 1.1 GB `.wux` became 127 MB in 6 seconds, checks included).
+
+A `.wua` holds the disc's game partition, decrypted (the files Cemu plays, in
+the layout Cemu's own "Convert to .wua" writes), not the whole disc, so it
 can't be turned back into the original image and won't match RomM's checksums.
 
-Each disc needs its **disc key**, for games you own: put it in Cemu's
-`keys.txt` (`/userdata/bios/cemu/keys.txt`, one 32-digit key per line, the
-file Batocera's Cemu reads) or in `/userdata/bios/wiiukeys/` (`.key` files,
-key lists, or zips of them). Turning the switch on copies the keys in your
-RomM's Wii U firmware (a `keys.txt`, `.key` files, or a zip with "key" in its
-name) into `bios/wiiukeys/`. RomM-o-Cera comes with no disc keys. A disc
-without its key is left as it is (Conversions shows it as skipped, and Compress
-games already here lists it as can't convert, with the reason).
+Put the disc keys in Cemu's `keys.txt` (`/userdata/bios/cemu/keys.txt`, one
+32-digit key per line, the file Batocera's Cemu reads) or in
+`/userdata/bios/wiiukeys/` (`.key` files, key lists, or zips of them). Turning
+the switch on copies the keys in your RomM's Wii U firmware (a `keys.txt`,
+`.key` files, or a zip with "key" in its name) into `bios/wiiukeys/`.
+RomM-o-Cera comes with no disc keys. A key is checked against the disc itself,
+so a wrong one is never used.
 
-Turning it on downloads **wuatool** once (about 3 MB, checked by SHA-256,
-x86_64 and 64-bit ARM): Cemu's own disc code and the ZArchive library Cemu
-reads `.wua` with, built from their published source; licenses and source are
-on RomM-o-Cera's `wiiu-tools` release. Before the image is deleted:
+How the two switches combine:
+
+- a `.wud` whose key is here becomes a `.wua`;
+- a `.wud` without its key (or with this switch off) becomes a `.wux`, when
+  Wii U to .wux is on; Compress games already here lists it as can't decrypt,
+  with the reason, and still offers it as `.wux`;
+- a `.wux` becomes a `.wua` once this is on and its key is here (turning it on
+  later brings the `.wux` files you have into Compress as `.wua`).
+
+The choice is made again when a queued disc's turn comes, by the switches and
+keys then. Before the image is deleted:
 
 - every hashed block read from the disc must match its hash, and a cut-short
   image is refused (like CHD and `.zar`, damage in a part of the disc that
@@ -182,6 +212,7 @@ on RomM-o-Cera's `wiiu-tools` release. Before the image is deleted:
 - every file in the archive is compared with the disc again.
 
 Check games checks a `.wua`'s footer (quick) or its whole SHA-256 (full).
+Titles from the eShop (NUS format: `.app`/`.tmd` folders) aren't handled yet.
 
 ## Safety
 
@@ -199,7 +230,7 @@ Check games checks a `.wua`'s footer (quick) or its whole SHA-256 (full).
 **On this box → Compress games already here** lists, system by system, the
 disc games on the box that could still be compressed. Compress one game or a
 whole system (a whole system can take hours). CHD works even with its switch
-off; RVZ, squashfs, .zcci, .zar, .wua and PS3 game folders need theirs on. Games it
+off; RVZ, squashfs, .zcci, .zar, .wux, .wua and PS3 game folders need theirs on. Games it
 can't convert (an encrypted 3DS dump, a PS3 or Wii U disc without its key, a
 damaged `.cso`) are listed apart with the reason, never queued. Details in
 [On this box](on-this-box.md#compress-games-already-here).
@@ -217,7 +248,7 @@ setsid nohup python3 rb_chd.py >/dev/null 2>&1 &
 
 It queues CD/DVD games for CHD (even with CHD turned off), and GameCube/Wii
 images for RVZ, 3DS games for `.zcci`, Xbox 360 images for `.zar`, Wii U
-discs for `.wua` and PS3 disc images for `.ps3` folders when those are on. What it can't convert
+discs for `.wua` (or `.wux`, see above) and PS3 disc images for `.ps3` folders when those are on. What it can't convert
 (encrypted 3DS dumps, PS3 or Wii U discs without a key, damaged `.cso` files) is
 listed as skipped, with the reason. Games already queued are left out.
 Xbox: with Make Xbox images bootable on, full disc images are cut to their
@@ -233,5 +264,6 @@ updates. Encrypted discs use disc keys for games you own. See
 
 ## Not offered (yet)
 
+- **Wii U eShop titles** (NUS format, `.app`/`.tmd` folders): not converted yet.
 - **PS3 squashfs**: measured about 2% smaller; Redump's PS3 images barely
   compress. PS3 discs become game folders instead ([PS3 games](ps3.md)).

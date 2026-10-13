@@ -32,7 +32,7 @@ for downloads.
   downloads or conversions left behind (including a half-made `.ps3` game
   folder), and **copies of games already here converted**: an archive, image
   or loose tracks next to the same game's `.chd`, `.rvz`, `.iso.squashfs`,
-  `.zcci`, `.zar`, `.wua` or `.ps3` folder (say `Game.7z` beside `Game.rvz`). Each
+  `.zcci`, `.zar`, `.wux`, `.wua` or `.ps3` folder (say `Game.7z` beside `Game.rvz`). Each
   copy names the converted game it duplicates. A copy is only offered when
   the converted game looks whole, never while a conversion runs, never for a
   file a queued conversion will use, and not on arcade systems (where
@@ -47,7 +47,7 @@ for downloads.
 Disc games already on the box that could still be compressed: ones copied
 over by hand, or downloaded while a format was off. The scan goes through
 every system and lists each one with its game count, size and the format it
-would become (CHD, RVZ, squashfs, .zcci, .zar, .wua, a `.ps3` game folder),
+would become (CHD, RVZ, squashfs, .zcci, .zar, .wux, .wua, a `.ps3` game folder),
 biggest first.
 
 - **A** on a system lists its games: **A** compresses one; the **X** menu
@@ -96,6 +96,7 @@ made from:
 | `.iso.squashfs` | its superblock, cut short, the image inside and its size (an Xbox game partition cut here counts as right) | the image read out whole; uncut, its CRC32 must be RomM's |
 | `.zcci` | its header, cut short, size against RomM's original | every block decoded; CRC32 against RomM's |
 | `.zar` | its footer, cut short | its whole SHA-256 |
+| `.wux` | its header and sector index, cut short, its disc's size against RomM's `.wud` | expanded whole by wuatool; CRC32 and SHA-1 against RomM's `.wud` |
 | `.wua` | its footer, cut short | its whole SHA-256 |
 | `.ps3` folder | `EBOOT.BIN`, `PARAM.SFO` (with the game's ID), `PS3_DISC.SFB` | every file read to its end |
 

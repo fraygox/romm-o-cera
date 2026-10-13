@@ -24,7 +24,7 @@ def disc_layout(detail, system, cfg, accepts=None):
     {"label": "CUE/BIN, 3 tracks", "discs": n, "unpacked": bytes or None,
     "estimated": unpacked is a guess, "upto": the guess is only the most it
     can be (a Wii U zip counted as a whole disc),
-    "convert": "CHD" | "RVZ" | "squashfs" | "ZCCI" | "ZAR" | "WUA" | None}. None for a
+    "convert": "CHD" | "RVZ" | "squashfs" | "ZCCI" | "ZAR" | "WUA" | "WUX" | None}. None for a
     game that isn't a disc image (carts), or when RomM listed no files."""
     files = (detail or {}).get("files") or []
     if not files:
