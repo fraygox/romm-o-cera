@@ -1,4 +1,4 @@
-"""The party filter (Players: 2+, 3+, 4+), Surprise me and Recommended for you,
+"""The party filter (Players: 2+, 3+, 4+), Api.surprise (Game night's picker) and Recommended for you,
 against tools/mock_romm.py."""
 import json
 import os
@@ -73,17 +73,6 @@ def live(isolated, rb, mock_url):
     app.load_platforms()
     _pump(app, lambda: app.loaded)
     return app
-
-
-@pytest.fixture
-def opened(rb, monkeypatch):
-    """The download prompt keeps the game it was opened for (as .rom), for the tests."""
-    class Prompt(rb.DownloadConfirm):
-        def __init__(self, app, rom):
-            self.rom = rom
-            super().__init__(app, rom)
-    rb.patch(monkeypatch, "DownloadConfirm", Prompt)
-    return Prompt
 
 
 def _menu_row(app, label):
@@ -220,40 +209,6 @@ def test_game_night_from_a_game_list_menu(live, rb):
     app.draw()
 
 
-def test_surprise_respects_the_lists_filters(live, rb, opened):
-    app = live
-    app.player_counts = ["1", "1-2", "1-4"]
-    gba = next(p for p in app.platforms if p["_system"] == "gba")
-    gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
-    gl.players, gl.region_i = 4, 3                             # 4+ players, Japan
-    gl.reset()
-    app.push(gl)
-    _pump(app, lambda: gl.total is not None)
-    for _ in range(3):
-        app.modal = None
-        gl.surprise_me()
-        _pump(app, lambda: app.modal is not None)
-        rom = app.modal.rom
-        assert rom["metadatum"]["player_count"] == "1-4" and "Japan" in rom["regions"]
-
-
-def test_surprise_opens_the_menu_of_a_game_already_here(live, rb):
-    app = live
-    roms = [{"id": 5, "name": "Lorem", "platform_id": 3, "fs_name": "Lorem.zip", "fs_name_no_ext": "Lorem"}]
-    p = os.path.join(rommlib.ROMS_ROOT, "gba", "Lorem.zip")
-    os.makedirs(os.path.dirname(p))
-    open(p, "wb").write(b"x")
-    app.library.mark(roms[0], "gba", [p])
-    gl = rb.GameListScreen(app, "Games like Ipsum", static=roms)
-    app.push(gl)
-    gl.surprise_me()
-    assert isinstance(app.modal, rb.ManageMenu)
-    app.modal = None
-    gl._toggle_hide()                                          # nothing left once the box's games are hidden
-    gl.surprise_me()
-    assert app.modal is None and app.toasts[-1][0] == "No game in this list to pick from"
-
-
 def test_game_night_from_home_platforms_and_collections(live, rb):
     """Home Y, a platform's X and a collection's menu open Game night on their own scope."""
     app = live
@@ -384,47 +339,6 @@ def test_no_recommendations_hides_the_row_quietly(isolated, rb, mock_url, recs_m
     assert app.recs == []
     assert "recommended" not in [s[0] for s in app.stack[0].shelves()]
     assert not [t for t in app.toasts if t[1] == rb.theme.RED]
-
-
-def test_a_surprise_pick_offers_another_on_y(live, rb, opened):
-    """Game night: Y on the surprise prompt rolls again; the prompt says it's a surprise."""
-    app = live
-    gba = next(p for p in app.platforms if p["_system"] == "gba")
-    gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
-    app.push(gl)
-    _pump(app, lambda: gl.server_total)
-    gl.surprise_me()
-    _pump(app, lambda: app.modal is not None)
-    first = app.modal
-    assert first.title.startswith("Surprise: ") and first.alt[0] == "Another"
-    app.targets = []
-    app.draw()                                            # three buttons fit the dialog
-    app.dispatch("y")
-    _pump(app, lambda: app.modal is not None and app.modal is not first)
-    assert isinstance(app.modal, rb.DownloadConfirm) and app.modal.alt and app.modal.rom["platform_id"] == gba["id"]
-
-
-def test_a_plain_download_prompt_has_no_another(live, rb, opened):
-    app = live
-    rom = {"id": 1, "name": "Lorem", "platform_id": next(p for p in app.platforms if p["_system"] == "gba")["id"],
-           "fs_name": "Lorem.gba", "fs_size_bytes": 10}
-    p = rb.DownloadConfirm(app, rom)
-    assert p.alt is None
-    app.modal = p
-    app.dispatch("y")
-    assert app.modal is p                                 # Y does nothing there
-
-
-def test_a_surprise_from_a_loaded_list_moves_the_cursor_to_it(live, rb, opened):
-    """The detail panel behind the prompt shows the pick, not the row you were on."""
-    app = live
-    gba = next(p for p in app.platforms if p["_system"] == "gba")
-    gl = rb.GameListScreen(app, "Game Boy Advance", platform=gba)
-    app.push(gl)
-    _pump(app, lambda: gl.server_total)
-    rb.surprise(app, pool=[r for r in gl.items if r][:30])
-    pick = app.modal.rom
-    assert gl.items[gl.sel] is pick
 
 
 def test_the_ready_toast_cant_be_tapped_through_a_dialog(live, rb):

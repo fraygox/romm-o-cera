@@ -42,6 +42,8 @@
 
 ### Game night
 
+![Game night: a random game, shown big](../screenshots/game-night.png)
+
 Can't decide? Game night rolls a random game and shows it big: cover, name,
 platform, year, genre, how many can play and its description. **A** plays it
 when it's on the box or downloads it when it isn't, **Y** rolls another, **B**

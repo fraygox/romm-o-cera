@@ -1,6 +1,5 @@
 """A game list (platform, collection, search results) and Search."""
 import os
-import random
 import time
 
 import pygame
@@ -71,58 +70,6 @@ def more_like(app, rom):
             return
         app.push(GameListScreen(app, "Games like %s" % name, static=roms))
     app.bg(lambda: app.api.similar(rom["id"]), done)
-
-
-def surprise_about(rom):
-    """Genre, players and year of a Surprise me pick, for its prompt (from Home
-    there's no detail panel behind it)."""
-    md = rom.get("metadatum") or {}
-    bits = []
-    if md.get("genres"):
-        bits.append(", ".join(md["genres"][:2]))
-    n = rommlib.max_players(md.get("player_count"))
-    if n > 1:
-        bits.append("up to %d players" % n)
-    bits.append(rom_year(rom))
-    return " · ".join(b for b in bits if b) + "." if bits else ""
-
-
-def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"):
-    """Surprise me: a random game, then its download prompt (its menu when it's
-    already on the box). From RomM (page/scope: Api.surprise()) or from a list
-    already loaded (pool). Only games with a Batocera system, and keep(rom)."""
-    def fits(r):
-        return bool(app.system_for(r)) and (keep is None or keep(r))
-
-    def done(res):
-        rom, why = res
-        if rom is None:
-            app.toast(("Every game it tried in %s is already on this box" % where) if why == "skipped" else
-                      "No game in %s to pick from" % where, theme.AMBER)
-        elif app.modal is not None:                # something else opened meanwhile: don't cover it
-            app.toast("Surprise: %s" % rom_title(rom))
-        else:
-            def again():
-                surprise(app, page, scope, keep, pool, where)
-            if app.rom_status(rom)[0] == "installed":
-                app.modal = ManageMenu(app, rom)
-                app.modal.entries.append(("Another surprise", "Pick again from %s" % where, again))
-            else:
-                scr = app.stack[-1] if app.stack else None
-                items = getattr(scr, "items", None)
-                if isinstance(items, list) and rom in items and hasattr(scr, "sel"):
-                    scr.sel = items.index(rom)          # the panel behind shows the pick, cover and all
-                app.modal = DownloadConfirm(app, rom)
-                if app.modal.ok_label == "Download":
-                    app.modal.title = "Surprise: " + app.modal.title
-                    app.modal.alt = ("Another", again)
-                    about = surprise_about(rom)
-                    if about and not app.modal.pending:
-                        app.modal.body = about + "  " + app.modal.body
-    if pool is not None:
-        got = [r for r in pool if r and fits(r)]
-        return done((random.choice(got), None) if got else (None, "skipped" if pool else "empty"))
-    app.bg(lambda: app.api.surprise(page, scope, fits), done)
 
 
 class GameListScreen(ListScreen):
@@ -501,19 +448,6 @@ class GameListScreen(ListScreen):
 
     def game_night(self):
         self.app.push(GameNightScreen(self.app, self.night_scope()))
-
-    def surprise_me(self):
-        """A random game from this list as it's filtered now. RomM picks when
-        no filter narrows the list; otherwise one of the filtered pages does."""
-        if self.static is not None:
-            return surprise(self.app, pool=self.items)
-        filtered = (self.search or self.regions or self.players or self.hide_junk or self.only_verified
-                    or self.hide_installed)
-        col = (self.collection["param"], self.collection["id"]) if self.collection else None
-        scope = None if filtered else {"platform_ids": self._pids() or [p["id"] for p in self.app.platforms],
-                                       "collection": col}
-        surprise(self.app, page=lambda off, lim: self._query(off, lim), scope=scope,
-                 keep=(lambda r: not self.installed(r)) if self.hide_installed else None)
 
     def _toggle_junk(self):
         app = self.app

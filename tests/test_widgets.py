@@ -340,9 +340,8 @@ def test_a_dialogs_buttons_are_verb_buttons(rb, app, monkeypatch):
         return real(c, f, rect, label, kind, *a, **k)
     rb.patch(monkeypatch, "verb_button", spy)
     d = rb.Confirm(app, "Delete?", "Gone for good.", "Delete", lambda: None, danger=True)
-    d.alt = ("Another", lambda: None)
     d.draw(app.canvas)
-    assert kinds == [("Delete", "danger", "A"), ("Another", "quiet", "Y"), ("Back", "quiet", "B")]
+    assert kinds == [("Delete", "danger", "A"), ("Back", "quiet", "B")]
 
 
 # ------------------------------------------------------------------ wave 2: Game night, Backlog

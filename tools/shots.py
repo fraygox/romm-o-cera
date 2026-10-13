@@ -535,8 +535,6 @@ SCENES = [
                          setattr(app, "_after", lambda: [app.dispatch("down") for _ in range(3)]))),
     ("backlog-tight", lambda: (install_backlog(), app.cfg.update(keep_free_gb=636),
                                app.push(rb.BacklogScreen(app)))),
-    ("surprise-pick", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
-                               setattr(app, "_after", lambda: app.stack[-1].surprise_me()))),
     ("home-recommended", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("recommended", 1))),
     ("home-rail", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("rail", 2))),
     ("home-collections", lambda: setattr(app, "_after", lambda: app.stack[0].focus_shelf("collections", 1))),
@@ -774,7 +772,7 @@ README_SET = {"home": "home", "platforms": "platforms", "game-list": "game-list"
               "settings-compression": "settings", "collection-menu": "collections",
               "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits",
               "compress-system": "compress", "theme-picker": "theme-picker", "theme-custom": "custom-theme",
-              "surprise-pick": "surprise", "home-recommended": "recommended"}
+              "game-night": "game-night", "home-recommended": "recommended"}
 if args.readme:
     import shutil
     dst = os.path.join(APP, "screenshots")

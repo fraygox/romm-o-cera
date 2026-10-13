@@ -192,8 +192,6 @@ class ManageMenu(ActionMenu):
 
 
 class Confirm:
-    alt = None                      # (label, fn): a third button on Y (Surprise me's "Another")
-
     def __init__(self, app, title, body, ok_label, on_ok, danger=False):
         self.app, self.title, self.body = app, title, body
         self.ok_label, self.on_ok, self.danger = ok_label, on_ok, danger
@@ -202,9 +200,6 @@ class Confirm:
         if a == "ok":
             self.app.modal = None
             self.on_ok()
-        elif a == "y" and self.alt:
-            self.app.modal = None
-            self.alt[1]()
         elif a in ("back", "quit"):
             self.app.modal = None
 
@@ -224,15 +219,9 @@ class Confirm:
                     key=self.title, line_h=26, slot=("confirm", id(self)))
         bx = r.left + 32
         by = r.bottom - 58
-        okw, nw = (220, 150) if self.alt else (260, 180)
-        okr = verb_button(c, f, (bx, by, okw, 40), self.ok_label, "danger" if self.danger else "go")
+        okr = verb_button(c, f, (bx, by, 260, 40), self.ok_label, "danger" if self.danger else "go")
         self.app.hit(okr, lambda: self.action("ok"))
-        nx = okr.right + 16
-        if self.alt:
-            ar = verb_button(c, f, (nx, by, 170, 40), self.alt[0], "quiet", glyph="Y")
-            self.app.hit(ar, lambda: self.action("y"))
-            nx = ar.right + 16
-        nr = verb_button(c, f, (nx, by, nw, 40), "Back", "quiet", glyph="B")
+        nr = verb_button(c, f, (okr.right + 16, by, 180, 40), "Back", "quiet", glyph="B")
         self.app.hit(nr, lambda: self.action("back"))
 
 
@@ -385,10 +374,7 @@ class DownloadConfirm(Confirm):
         if var:
             entries += [None, ("Already here: %s" % var[0],
                                ("and %d more" % (len(var) - 1)) if len(var) > 1 else "Another version", None)]
-        if self.alt:                          # a Surprise me pick: roll again from the discs menu too
-            entries += [None, ("Another surprise", "Pick again", self.alt[1])]
-        app.modal = ActionMenu(app, (self.title.split(":", 1)[0] + ": " if self.alt else "") + app.set_title(rom),
-                               entries)
+        app.modal = ActionMenu(app, app.set_title(rom), entries)
 
     def action(self, a):
         if self.pending and a == "ok":
