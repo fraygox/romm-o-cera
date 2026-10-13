@@ -126,6 +126,7 @@ def build_library(seed=7):
             "has_multiple_files": multi, "has_nested_single_file": nested,
             "tags": rng.choice([[], [], [], [], ["Proto"], ["Beta 1"], ["Demo"], ["Hack"]]),
             "verified": rng.random() < 0.85,
+            "updated_at": "2026-%02d-%02dT10:00:00Z" % (8 + rid % 3, 1 + rid % 28),
             "full_path": "roms/%s/%s" % (slug, fs_name),
         }
         if multi:
@@ -244,6 +245,7 @@ def add_special(roms):
                           "publishers": ["Lorem Ipsum Soft"], "average_rating": 80},
             "path_cover_small": "/covers/%d.png?s=1" % rid, "path_cover_large": "/covers/%d.png?s=2" % rid,
             "has_multiple_files": False, "has_nested_single_file": False, "tags": [], "verified": True,
+            "updated_at": "2026-%02d-%02dT10:00:00Z" % (9 + rid % 2, 1 + rid % 28),
             "full_path": "roms/%s/%s" % (slug, fs_name),
             "files": [{"id": rid * 10, "rom_id": rid, "file_name": fs_name, "file_size_bytes": len(data),
                        "category": "game", "full_path": "roms/%s/%s" % (slug, fs_name),
@@ -348,8 +350,16 @@ def on_status(r, statuses):
 
 
 RELEASE_NOTES = ("## Features\n\n- Lorem ipsum: **your RomM lists** on the box.\n"
-                 "- Dolor sit amet: compare a platform with RomM.\n\n## Fixes\n\n"
-                 "- Consectetur adipiscing: long names [scroll](https://example.com) instead of being cut off.\n")
+                 "- Dolor sit amet: compare a platform with RomM.\n"
+                 "- Sed do eiusmod: a game's page shows its cover, facts and notes side by side, with the "
+                 "one thing to do about it in the big button.\n"
+                 "- Tempor incididunt: one keyboard for search, the server address and every text setting.\n\n"
+                 "## Smoother on 4K\n\nUt labore et dolore magna aliqua: covers and text are kept within a "
+                 "memory budget, so a long scroll through a big library stays smooth.\n\n"
+                 "## Fixes\n\n"
+                 "- Consectetur adipiscing: long names [scroll](https://example.com) instead of being cut off.\n"
+                 "- Ut enim ad minim veniam: a download paused overnight carries on where it stopped.\n"
+                 "- Quis nostrud: the hint bar says Actions on every controller.\n")
 
 
 def build_collections(roms, seed=11):

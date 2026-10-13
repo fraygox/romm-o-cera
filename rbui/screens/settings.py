@@ -14,6 +14,7 @@ from rbui.pads import style_from_names, STYLE_NAMES
 from rbui.screens.base import Screen
 from rbui.screens.text_input import TextInputScreen
 from rbui.screens.about import CreditsScreen, docs_qr, DocsScreen, draw_qr
+from rbui.screens.whatsnew import WhatsNewScreen
 from rbui.screens.box_data import UPDATE_WAITS
 from rbui.screens.bios import BiosScreen
 from rbui.screens.themes import ThemePickerScreen
@@ -131,6 +132,7 @@ class SettingsScreen(Screen):
              else "v" + rommlib.VERSION_LABEL,
              ("Download, check and install %s" % self.app.update_tag) if self.app.update_tag
              else "Check GitHub for a newer " + ("build" if cfg["update_channel"] == "nightly" else "release")),
+            ("whatsnew", "What's new in this version", "Open", "The release notes of v" + rommlib.VERSION_LABEL),
         ] + ([("rollback", "Go back to the previous version", "v" + self.prev, "Undo the last update")]
              if self.prev else [])
 
@@ -256,7 +258,7 @@ class SettingsScreen(Screen):
     def crumbs(self):
         return ["Settings"]
 
-    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits", "docs")
+    ACTIONS = ("url", "token", "pair", "test", "cache", "update", "rollback", "bios", "credits", "docs", "whatsnew")
     STEPLESS = ACTIONS + ("resetcfg",)        # rows left/right don't step through
 
     def hints(self):
@@ -264,7 +266,7 @@ class SettingsScreen(Screen):
         key = items[min(self.sel, len(items) - 1)][0]
         jump = [("L", "Page up"), ("R", "Page down")]      # L/R move six rows
         if key in self.STEPLESS:
-            return [("A", "Open" if key in ("bios", "credits", "docs") else "Select")] + jump + [("B", "Back")]
+            return [("A", "Open" if key in ("bios", "credits", "docs", "whatsnew") else "Select")] + jump + [("B", "Back")]
         if key == "theme":
             return [("A", "All themes"), ("LEFT RIGHT", "Choose")] + jump + [("B", "Back")]
         return [("A", "Change"), ("LEFT RIGHT", "Choose")] + jump + [("B", "Back")]
@@ -386,6 +388,8 @@ class SettingsScreen(Screen):
                 app.push(CreditsScreen(app))
             elif key == "docs" and a == "ok":
                 app.push(DocsScreen(app))
+            elif key == "whatsnew" and a == "ok":
+                app.push(WhatsNewScreen(app))
             elif key == "resetcfg" and a == "ok":
                 app.modal = Confirm(app, "Reset all settings?",
                                     "Every setting goes back to its default, including the server address and "
@@ -720,6 +724,7 @@ SETTING_HELP = dict({s.row: s.help for s in rommlib.SETTINGS if s.row}, **{
     "docs": "Point your phone's camera at the code to open the documentation. {A} shows it bigger.",
     "update": "Checks GitHub for a newer version, then downloads it, checks it and restarts to install it. "
               "Downloads pause meanwhile, and the current version is kept so you can go back.",
+    "whatsnew": "This version's release notes from GitHub: what changed, in a minute's read.",
     "rollback": "Swaps the previous version back in and restarts the app. The current one is kept, so this can "
                 "be undone too.",
 })

@@ -56,6 +56,7 @@ mock = subprocess.Popen([sys.executable, os.path.join(APP, "tools", "mock_romm.p
                          "--rate-mb", "400"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 os.environ["ROMM_URL"] = "http://127.0.0.1:%d" % port
 os.environ["ROMM_TOKEN"] = "demo"
+os.environ["ROMM_BROWSER_GITHUB_API"] = os.environ["ROMM_URL"]     # What's new reads the mock's release notes
 
 import pygame  # noqa: E402
 import requests  # noqa: E402
@@ -246,6 +247,58 @@ def install_some():
         mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // 2)
         lib.mark(r, "psx", [p])
     return r
+
+
+def compare_box():
+    """Games for Compare with RomM: the app's compressed installs, one RomM changed since, one
+    copied over by hand that matches, one at another size, and the homebrew already here."""
+    lib = app.library
+    roms = app.api.roms(platform_ids=[first_platform()["id"]], limit=10)["items"]
+    install_some()
+    changed = roms[4]
+    p = os.path.join(R, "psx", changed["fs_name_no_ext"] + ".chd")
+    mk(os.path.relpath(p, R), 300 * MB)
+    lib.mark(dict(changed, fs_size_bytes=(changed.get("fs_size_bytes") or 0) + 1, sha1_hash="0" * 40), "psx", [p])
+    mk("psx/" + roms[5]["fs_name"], int(roms[5].get("fs_size_bytes") or 1))
+    mk("psx/" + roms[6]["fs_name"], int(roms[6].get("fs_size_bytes") or 1) + 4096)
+
+
+def compare_collection():
+    """A collection with games compare_box put on the box."""
+    here = {str(k) for k in app.library.snapshot()}
+    for c in app.api.collections():
+        ids = {str(r["id"]) for r in app.api.roms_all(collection=("collection_id", c["id"]))}
+        if ids & here:
+            return {"name": c["name"], "tag": "", "group": "Your collections", "count": c["rom_count"],
+                    "full": c["name"], "param": "collection_id", "id": c["id"]}
+    return collection_item()
+
+
+def compare_at(filt="all", sel=0, collection=False, wait=False, theme_key=None):
+    """Compare with RomM on PlayStation (or a collection), a filter and row chosen."""
+    compare_box()
+    if theme_key:
+        rb.apply_theme(theme_key)
+    if collection:
+        it = compare_collection()
+        sc = rb.CompareScreen(app, it["full"], collection=it)
+    else:
+        sc = rb.CompareScreen(app, "PlayStation", platform=first_platform())
+    app.push(sc)
+
+    def after():
+        if wait:
+            sc.result = None
+            return
+        sc.filt = filt
+        sc.sel = min(sel, max(0, len(sc.listed()) - 1))
+    app._after = after
+
+
+def whats_new(theme_key=None, prev="0.8.2"):
+    if theme_key:
+        rb.apply_theme(theme_key)
+    app.push(rb.WhatsNewScreen(app, rommlib.release_notes(), prev))
 
 
 def search_ready():
@@ -481,6 +534,20 @@ SCENES = [
                               setattr(app, "_after", lambda: app.stack[-1].open_menu()))),
     ("leftovers", lambda: app.push(rb.LeftoversScreen(app))),
     ("bios", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.BiosScreen(app)))),
+    ("compare", lambda: compare_at()),
+    ("compare-newer", lambda: compare_at("newer")),
+    ("compare-not-in-romm", lambda: compare_at("not_in_romm")),
+    ("compare-collection", lambda: compare_at(collection=True)),
+    ("compare-waiting", lambda: compare_at(wait=True)),
+    ("compare-oled", lambda: compare_at("newer", theme_key="playstation_oled")),
+    ("compare-light", lambda: compare_at(sel=3, theme_key="dreamcast")),
+    ("whats-new", lambda: whats_new()),
+    ("whats-new-oled", lambda: whats_new("playstation_oled")),
+    ("whats-new-light", lambda: whats_new("dreamcast", prev=None)),
+    ("whats-new-offline", lambda: (app.push(rb.WhatsNewScreen(app, None, None)), setattr(
+        app, "_after", lambda: app.stack[-1].__dict__.update(rel=None, lines=[], failed=True)))),
+    ("whats-new-full", lambda: (whats_new(), app.stack[-1].full_notes())),
+    ("settings-whatsnew", lambda: app.push(settings_at("whatsnew"))),
     ("widgets-gallery", lambda: app.push(WidgetsGallery(app))),
     ("toast", lambda: app.toast("Picked 3 games (4.2 GB) — check the list, then {X} to delete them")),
     ("confirm-danger", lambda: setattr(app, "modal", rb.Confirm(

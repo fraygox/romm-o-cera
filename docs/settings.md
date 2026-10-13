@@ -48,6 +48,8 @@ The rows that aren't a setting do something when you press A:
   and starts over. Nothing of the old version keeps running in the
   background. The app closes, and EmulationStation opens the new version a
   moment later (unless you start a game in that moment).
+- **What's new in this version**: this version's release notes from GitHub
+  (shown once by themselves after an update).
 - **Go back to the previous version** (only after an update or a `deploy.sh`) swaps the
   version you had back in and restarts the app the same way. The one you leave
   is kept, so this can be undone too.

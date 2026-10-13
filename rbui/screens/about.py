@@ -3,7 +3,7 @@ import pygame
 import rommlib
 from rbui import theme
 from rbui.theme import SR, W
-from rbui.draw import rrect, text, wrap
+from rbui.draw import rrect, scroll_text, text, wrap
 from rbui.screens.base import ListScreen, Screen
 from rbui.widgets.layout import Panel, ROWS_TOP, list_head, list_row, need_width, split
 
@@ -41,11 +41,16 @@ CREDITS = [
 ]
 
 
-def docs_qr():
-    """The documentation site's QR code (made once)."""
-    if "docs" not in _QR:
-        _QR["docs"] = rommlib.qr_matrix(rommlib.DOCS_URL)
-    return _QR["docs"]
+def docs_qr(url=None):
+    """The QR code of the documentation site (or another link: a release's notes), made once
+    each; a link too long for a QR code gets the documentation site's."""
+    url = url or rommlib.DOCS_URL
+    if url not in _QR:
+        try:
+            _QR[url] = rommlib.qr_matrix(url)
+        except ValueError:
+            return docs_qr()
+    return _QR[url]
 
 
 _QR = {}
@@ -75,10 +80,17 @@ def draw_qr(c, matrix, rect):
 
 
 class DocsScreen(Screen):
-    """Settings, Documentation: the docs site's QR code, big enough to scan from the couch."""
+    """Settings, Documentation: the docs site's QR code, big enough to scan from the couch.
+    With url/title/about: another link's (What's new's full release notes)."""
+    ABOUT = ("Installing, connecting to RomM, browsing and downloading, disc compression, PS3 games, "
+             "every setting, the controls, and what to do when something goes wrong.")
+
+    def __init__(self, app, url=None, title="Documentation", about=None, crumbs=("Settings", "Documentation")):
+        super().__init__(app)
+        self.url, self.title, self.about, self.path = url or rommlib.DOCS_URL, title, about or self.ABOUT, crumbs
 
     def crumbs(self):
-        return ["Settings", "Documentation"]
+        return list(self.path)
 
     def hints(self):
         return [("B", "Back")]
@@ -86,15 +98,13 @@ class DocsScreen(Screen):
     def draw(self, c):
         p = pygame.Rect(48, 84, W - 96, 554)
         rrect(c, theme.PANEL, p, 16)
-        draw_qr(c, docs_qr(), pygame.Rect(p.left + 32, p.top + 32, 490, p.height - 64))
+        draw_qr(c, docs_qr(self.url), pygame.Rect(p.left + 32, p.top + 32, 490, p.height - 64))
         x, w = p.left + 32 + 490 + 40, p.right - 32 - (p.left + 32 + 490 + 40)
-        text(c, self.f.h2, "Documentation", (x, p.top + 60), theme.TEXT, maxw=w)
-        text(c, self.f.body, rommlib.DOCS_URL.replace("https://", "").rstrip("/"), (x, p.top + 104), theme.ACCENT_HI,
-             maxw=w)
+        text(c, self.f.h2, self.title, (x, p.top + 60), theme.TEXT, maxw=w)
+        scroll_text(c, self.f.body, self.url.replace("https://", "").rstrip("/"), (x, p.top + 100, w, 2 * 26),
+                    theme.ACCENT_HI, line_h=26, slot="docs-url")
         yy = p.top + 160
-        for para in ("Point your phone's camera at the code to open it.",
-                     "Installing, connecting to RomM, browsing and downloading, disc compression, PS3 games, "
-                     "every setting, the controls, and what to do when something goes wrong."):
+        for para in ("Point your phone's camera at the code to open it.", self.about):
             for ln in wrap(self.f.body, para, w):
                 text(c, self.f.body, ln, (x, yy), theme.DIM)
                 yy += 28

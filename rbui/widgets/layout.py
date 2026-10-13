@@ -12,9 +12,12 @@ across the whole screen.
 import pygame
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import focus_box, hline, marquee, measure, meter, rich_text, rrect, scroll_text, text
-from rbui.widgets.chips import button_chip, button_chip_width, tag as draw_tag
+from rbui.draw import (doc_layout, focus_box, hline, marquee, measure, meter, rich_text, rrect, scroll_doc,
+                       scroll_text, text)
+from rbui.widgets.chips import button_chip, button_chip_width, status_chip, tag as draw_tag
 from rbui.widgets.factsheet import facts
+from rbui.widgets.hero import verb_button, VERB_H
+from rbui.widgets.tiles import cover, placeholder
 
 CONTENT = pygame.Rect(32, 80, W - 64, 576)     # under the top bar, above the hint bar
 GAP = 20                                       # between the list and the panel
@@ -107,15 +110,55 @@ class Panel:
         self.n += 1
         return "%s-%d" % (self.slot, self.n)
 
-    def title(self, s, sub=None, sub_color=None, lines=2):
-        """The heading (wraps, up to `lines`, then scrolls) and a line under it."""
-        lh = 32
-        self.y = scroll_text(self.c, self.f.h2, s, (self.x, self.y, self.w, lines * lh), theme.TEXT, key=self.key,
+    def title(self, s, sub=None, sub_color=None, lines=2, note=None, small=False):
+        """The heading (wraps, up to `lines`, then scrolls) and a line under it. note: a quiet
+        word at the top right ("a minute's read"); small: the h3 heading (beside cover art)."""
+        font, lh = (self.f.h3, 25) if small else (self.f.h2, 32)
+        w = self.w
+        if note:
+            nr = text(self.c, self.f.small, note, (self.x + self.w, self.y + 6), theme.FAINT, "topright",
+                      maxw=self.w // 2)
+            w = nr.left - 16 - self.x
+        self.y = scroll_text(self.c, font, s, (self.x, self.y, w, lines * lh), theme.TEXT, key=self.key,
                              line_h=lh, slot=self._slot()).bottom + 4
         if sub:
             text(self.c, self.f.body, sub, (self.x, self.y), sub_color or theme.DIM, maxw=self.w)
             self.y += 30
         self.y += 12
+
+    def art(self, rom, size=(104, 138), name=""):
+        """Cover art at the top left (rom None: a quiet box with name); the title and the lines
+        drawn next go beside it, until under_art()."""
+        r = pygame.Rect(self.x, self.y + 2, size[0], size[1])
+        if rom is not None and self.app is not None:
+            cover(self.c, self.app, rom, r, fit=True)
+        else:
+            placeholder(self.c, self.f, name, r)
+        self._art = (r, self.x, self.w)
+        self.x, self.w = r.right + 18, self.w - size[0] - 18
+
+    def under_art(self, gap=16):
+        """Back to the panel's full width, under the cover art."""
+        art = getattr(self, "_art", None)
+        if art:
+            r, self.x, self.w = art
+            self.y = max(self.y, r.bottom + gap)
+            self._art = None
+
+    def status(self, label, color=None):
+        """A coloured state chip (chips.status_chip): "Newer in RomM"."""
+        r = status_chip(self.c, self.f.small, label, (self.x, self.y), color, h=26)
+        self.y = r.bottom + 10
+
+    def verb(self, label, kind="go", detail="", glyph="A", fn=None):
+        """The panel's one big action (hero.verb_button) at the bottom, tapped like fn; a footer:
+        draw it before the body."""
+        r = pygame.Rect(self.x, self.bottom - VERB_H, self.w, VERB_H)
+        if fn and self.app is not None:
+            self.app.hit(r, fn)
+        verb_button(self.c, self.f, r, label, kind, detail, glyph)
+        self.bottom = r.top - 16
+        return r
 
     def fact(self, label, value, color=None):
         """A grey label with its value under it (skipped when there's no value)."""
@@ -160,6 +203,17 @@ class Panel:
         used = scroll_text(self.c, self.f.small, s, (self.x, self.y, self.w, h), color or theme.DIM,
                            key=self.key, line_h=line_h, slot=self._slot())
         self.y = used.bottom + 14
+
+    def doc(self, lines, slot=None):
+        """A document ([(kind, text)]: headings, bullets, paragraphs; draw.scroll_doc) in all the
+        room left, scrolling when longer. slot: name it to scroll_nudge it. True when it overflows."""
+        h = self.room()
+        if not lines or h < 24:
+            return False
+        slot = slot or self._slot()
+        used = scroll_doc(self.c, self.f, lines, (self.x, self.y, self.w, h), key=self.key, slot=slot)
+        self.y = used.bottom + 14
+        return doc_layout(self.f, lines, self.w)[1] > h + 0.5
 
     def rule(self):
         hline(self.c, theme.LINE, (self.x, self.y), (self.x + self.w, self.y))
