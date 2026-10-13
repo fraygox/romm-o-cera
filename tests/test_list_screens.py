@@ -123,8 +123,21 @@ GEOMETRY = {
     "ConversionsScreen": (8, 124, 60, 6),             # no ROWS today: pages by 8, (H - 60 - 124) // 60 shown
     "AuditScreen": (8, 124, 62, 6),
 }
-# the list's x and width where it isn't the whole screen (a game panel beside it)
-XW = {"InstalledScreen": (32, 676)}
+# the list's x and width where it isn't the whole screen (a panel beside it); "split": as wide as
+# its rows need (layout.split), the panel taking the rest
+XW = {"InstalledScreen": (32, 676), "LeftoversScreen": "split", "UnseenScreen": "split", "CompressScreen": "split",
+      "CompressSystemScreen": "split", "ConversionsScreen": "split", "BiosScreen": "split", "FreeUpScreen": "split"}
+
+
+def _xw(rb, app, scr, name):
+    got = XW.get(name, (48, rb.W - 96))
+    if got != "split":
+        return got
+    rows = _frame(app, scr, rows=True)
+    lst = rb.CONTENT
+    w = rows[0][2]
+    assert rb.split(w)[0].width == w and lst.width * rb.LIST_MIN <= w + 1 and w <= lst.width * rb.LIST_MAX
+    return lst.left, w
 
 
 def _script(rows):
@@ -146,30 +159,29 @@ TRACE = {
 }
 
 
-# CreditsScreen on 20 rows: 6 shown, L/R by 5
-TRACE_CREDITS = [(1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 1), (7, 2), (12, 7), (17, 12), (19, 14), (14, 14),
-                 (13, 13), (12, 12), (11, 11), (6, 6), (1, 1), (0, 0), (0, 0)]
-
-
-def _frame(app, scr):
+def _frame(app, scr, rows=False):
+    """The hit rects drawn; rows: only the rows' (not a panel's chips, right of the list)."""
     app.targets = []
     scr.draw(app.canvas)
-    return [tuple(r) for r, _ in app.targets]
+    rects = [tuple(r) for r, _ in app.targets]
+    if rows and rects:
+        return [r for r in rects if r[0] == rects[0][0] and r[2] == rects[0][2]]
+    return rects
 
 
 @pytest.mark.parametrize("name", sorted(GEOMETRY))
 def test_moves_pages_and_scroll_follow(app, rb, name, monkeypatch):
     rows, y0, rh, gap = GEOMETRY[name]
-    x, w = XW.get(name, (48, rb.W - 96))
     n = 3 * rows + 2
     scr, _ = _make(rb, app, name, n, monkeypatch)
     app.push(scr)
+    x, w = _xw(rb, app, scr, name)
     assert getattr(scr, "ROWS", rows) == rows and scr.ROW_H == rh
-    assert _frame(app, scr) == [(x, y0 + k * rh, w, rh - gap) for k in range(rows)]
+    assert _frame(app, scr, rows=True) == [(x, y0 + k * rh, w, rh - gap) for k in range(rows)]
     seen = []
     for a in _script(rows):
         scr.action(a)
-        rects = _frame(app, scr)
+        rects = _frame(app, scr, rows=True)
         seen.append((scr.sel, scr.scroll))
         assert 0 <= scr.sel <= n - 1
         assert scr.scroll <= scr.sel < scr.scroll + rows
@@ -183,16 +195,17 @@ def test_first_tap_selects_second_opens(app, rb, name, monkeypatch):
     rows, y0, rh, gap = GEOMETRY[name]
     scr, _ = _make(rb, app, name, 2 * rows, monkeypatch)
     app.push(scr)
+    x, _ = _xw(rb, app, scr, name)
     for _ in range(rows + 3):
         scr.action("down")
-    _frame(app, scr)
+    _frame(app, scr, rows=True)
     assert (scr.sel, scr.scroll) == (rows + 3, 4)
     opened = []
     monkeypatch.setattr(scr, "action", opened.append)
-    pt = (rb.W // 2, y0 + 2 * rh + rh // 2)           # the third visible row: row 6
+    pt = (x + 100, y0 + 2 * rh + rh // 2)             # the third visible row: row 6
     app.tap(pt)
     assert scr.sel == 6 and opened == []
-    _frame(app, scr)
+    _frame(app, scr, rows=True)
     assert scr.scroll == 4
     app.tap(pt)
     assert scr.sel == 6 and opened == ["ok"]
@@ -276,24 +289,26 @@ def test_list_base_moves_pages_and_offsets_taps_past_tiles(app, rb):
     assert scr.sel == 1                                   # max(0, base - 1): nothing below the tiles
 
 
-def test_credits_pages_by_five_shows_six_and_a_tap_only_selects(app, rb, monkeypatch):
-    """Credits: L/R page by 5 while 6 rows show; a tap selects and never opens."""
+def test_credits_pages_like_a_list_beside_its_panel_and_a_tap_only_selects(app, rb, monkeypatch):
+    """Credits: 9 rows beside the panel, paging like the other lists; a tap selects and never opens."""
     monkeypatch.setattr(rb.about, "CREDITS", [("Name %02d" % i, "what", "MIT", "https://x/%d" % i,
-                                               "" if i % 2 else "a note") for i in range(20)])
+                                               "" if i % 2 else "a note") for i in range(29)])
     scr = rb.CreditsScreen(app)
     app.push(scr)
-    n, rh = len(rb.CREDITS), 96
-    assert _frame(app, scr) == [(48, 84 + k * rh, rb.W - 96, rh - 8) for k in range(min(6, n))]
+    n, rh = len(rb.CREDITS), 56
+    x, w = _frame(app, scr, rows=True)[0][0], _frame(app, scr, rows=True)[0][2]
+    assert (x, w) == tuple(rb.split(w)[0])[::2] and w < rb.W // 2 + 100
+    assert _frame(app, scr, rows=True) == [(x, 124 + k * rh, w, rh - 4) for k in range(9)]
     seen = []
-    for a in ["down"] * 7 + ["r1"] * 3 + ["l1"] + ["up"] * 3 + ["l1"] * 3 + ["up"]:
+    for a in _script(9):
         scr.action(a)
-        rects = _frame(app, scr)
+        rects = _frame(app, scr, rows=True)
         seen.append((scr.sel, scr.scroll))
-        assert rects == [(48, 84 + k * rh, rb.W - 96, rh - 8) for k in range(min(6, n - scr.scroll))]
-    assert seen == TRACE_CREDITS
+        assert rects == [(x, 124 + k * rh, w, rh - 4) for k in range(min(9, n - scr.scroll))]
+    assert seen == TRACE[9]
     opened = []
     monkeypatch.setattr(scr, "action", opened.append)
-    pt = (rb.W // 2, 84 + 2 * rh + rh // 2)
+    pt = (x + 100, 124 + 2 * rh + rh // 2)
     app.tap(pt)
     app.tap(pt)
     assert scr.sel == scr.scroll + 2 and opened == []

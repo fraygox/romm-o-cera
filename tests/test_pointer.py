@@ -222,14 +222,14 @@ def test_a_click_on_a_scrolled_list_screen_selects_then_opens_that_row(make_app,
     cr.action("r1")
     app.draw()
     assert cr.scroll > 0
-    rows = sorted((r, fn) for r, fn in app.targets if r.left == 48 and fn.__defaults__)
+    rows = sorted((r, fn) for r, fn in app.targets if r.left == rb.CONTENT.left and fn.__defaults__)
     rows.sort(key=lambda t: t[0].top)
     r, fn = rows[1]
     want = fn.__defaults__[0]
     click(rb, app, r.center, touch=True)
     assert cr.sel == want
     app.draw()
-    rows2 = sorted(((r2, f2) for r2, f2 in app.targets if r2.left == 48 and f2.__defaults__),
+    rows2 = sorted(((r2, f2) for r2, f2 in app.targets if r2.left == rb.CONTENT.left and f2.__defaults__),
                    key=lambda t: t[0].top)
     assert rows2[1][0] == r and rows2[1][1].__defaults__ == (want,)      # nothing moved
 

@@ -7,17 +7,20 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
-from rbui.theme import H, mix, SR
+from rbui.theme import mix, SR
 from rbui.draw import (_wide, arc, button_glyph, circle, COVER_BOX, focus_box, hline, installed_mark, measure,
                        progress_bar, rich_text, rom_title, rrect, scroll_text, smooth_scale, text, wrap)
 from rbui.screens.base import letter_of, ListScreen, Screen
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
+from rbui.widgets.layout import bubble_at, fact, split
 
 
 REGION_ABBR = {"USA": "US", "Europe": "EU", "Japan": "JP", "World": "World", "Australia": "AU",
                "Brazil": "BR", "Korea": "KR", "China": "CN", "Germany": "DE", "France": "FR",
                "Spain": "ES", "Italy": "IT", "UK": "UK", "Asia": "Asia"}
 
+
+GAME_LIST, GAME_PANEL = split(676)      # the rows (name, regions, size, platform tag) and RomM's record beside them
 
 JUNK_MARKERS = ("~hack~", "~unlicensed~", "~prototype~", "~demo~", "~homebrew~", "(proto",
                 "(beta", "(demo", "(sample", "(hack", "(pirate", "(unl)")
@@ -118,7 +121,7 @@ class GameListScreen(ListScreen):
     BULK_MAX = 1000
     PICKS, PICK_ALL, PICK_WHAT = True, False, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works in full lists sorted by name"
-    BUBBLE_AT = (32 + 676 // 2, H // 2)
+    BUBBLE_AT = bubble_at(GAME_LIST)
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
                  order_by="name", static=None, why=None, crumb="More like this"):
@@ -582,7 +585,7 @@ class GameListScreen(ListScreen):
 
     def draw(self, c):
         app = self.app
-        lx, ly, lw = 32, 80, 676
+        lx, ly, lw = GAME_LIST.left, GAME_LIST.top, GAME_LIST.width
         # list header
         if self.total is None:
             cnt = "Loading…"
@@ -669,13 +672,12 @@ class GameListScreen(ListScreen):
         if self.items and self.items[self.sel] is not None:
             self.draw_detail(c, self.items[self.sel])
         elif self.items:
-            p = pygame.Rect(728, 80, 520, 576)
-            rrect(c, theme.PANEL, p, 16)
-            text(c, self.f.body, "Loading…", p.center, theme.DIM, "center")
+            rrect(c, theme.PANEL, GAME_PANEL, 16)
+            text(c, self.f.body, "Loading…", GAME_PANEL.center, theme.DIM, "center")
 
     def draw_detail(self, c, rom):
         app = self.app
-        p = pygame.Rect(728, 80, 520, 576)
+        p = GAME_PANEL
         rrect(c, theme.PANEL, p, 16)
         cov = pygame.Rect((p.left + 24, p.top + 24), COVER_BOX)
         img = app.cover(rom)
@@ -733,11 +735,8 @@ class GameListScreen(ListScreen):
             ("Manual", "Included" if rommlib.manual_path(rom) else ""),
         ]
         for k, v in facts:
-            if not v:
-                continue
-            text(c, self.f.small, k, (tx, y), theme.FAINT)
-            text(c, self.f.cond, str(v), (tx, y + 17), theme.DIM, maxw=tw)
-            y += 42
+            if v:
+                y = fact(c, self.f, k, v, tx, y, tw)
         # summary
         sy = max(y, cov.bottom) + 18
         summ = rom.get("summary") or ""

@@ -2,9 +2,10 @@
 import pygame
 import rommlib
 from rbui import theme
-from rbui.theme import H, SR, W
-from rbui.draw import marquee, rrect, text, wrap
+from rbui.theme import SR, W
+from rbui.draw import rrect, text, wrap
 from rbui.screens.base import ListScreen, Screen
+from rbui.widgets.layout import Panel, ROWS_TOP, list_head, list_row, need_width, split
 
 
 CREDITS = [
@@ -101,9 +102,9 @@ class DocsScreen(Screen):
 
 
 class CreditsScreen(ListScreen):
-    """Who made what RomM-o-Cera uses or downloads, and under which license."""
-    ROW_H = 96
-    ROWS, STEP = (H - 60 - 84) // ROW_H, 5     # 6 show, L/R pages by 5
+    """Who made what RomM-o-Cera uses or downloads, and under which license: the list on the
+    left, the focused one's license, where it's from and its note on the right."""
+    ROWS, ROW_H = 9, 56
 
     def __init__(self, app):
         super().__init__(app)
@@ -126,18 +127,15 @@ class CreditsScreen(ListScreen):
             super().action(a)
 
     def draw(self, c):
-        for i, r, on in self.row_rects(84, gap=8):
-            name, what, lic, url, note = CREDITS[i]
-            rrect(c, theme.PANEL_HI if on else theme.PANEL, r, 12)
-            if on:
-                rrect(c, theme.ACCENT, r, 12, 2)
-            t = text(c, self.f.h3, name, (r.left + 22, r.top + 8), theme.TEXT)
-            # the focused row's lines slide to show what doesn't fit; the others keep "…"
-            marquee(c, self.f.small, what, (t.right + 12, r.top + 13), theme.DIM, maxw=r.right - 380 - t.right,
-                    focused=on, slot="credit-what")
-            text(c, self.f.small, lic, (r.right - 22, r.top + 13), theme.ACCENT_HI, "topright", maxw=330)
-            marquee(c, self.f.small, url, (r.left + 22, r.top + 38), theme.FAINT, maxw=r.width - 44, focused=on,
-                    slot="credit-url")
-            if note:
-                marquee(c, self.f.small, note, (r.left + 22, r.top + 60), theme.FAINT, maxw=r.width - 44,
-                        focused=on, slot="credit-note")
+        lst, pan = split(need_width(self.f, [(name, what, lic) for name, what, lic, _, _ in CREDITS]))
+        list_head(c, self.f, lst, "Made with", "%d projects" % len(CREDITS))
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
+            name, what, lic, _, _ = CREDITS[i]
+            list_row(c, self.f, r, on, name, what, lic, theme.ACCENT_HI, slot="credit")
+        name, what, lic, url, note = CREDITS[self.sel]
+        p = Panel(c, self.f, pan, key=self.sel, slot="credit-panel")
+        p.title(name)
+        p.prose(what[:1].upper() + what[1:], lines=3)
+        p.fact("License", lic, theme.ACCENT_HI)
+        p.prose(url, label="Where it's from", lines=3)
+        p.prose(note, lines=6)

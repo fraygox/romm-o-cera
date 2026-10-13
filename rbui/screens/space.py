@@ -6,11 +6,12 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import circle, focus_box, hline, marquee, measure, rrect, scroll_text, text
+from rbui.draw import circle, focus_box, hline, measure, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.box_data import disk_space, pending_roms, plural, space_bar, space_parts, storage_by_system
 from rbui.screens.installed import _lastplayed_label
 from rbui.modals import Confirm
+from rbui.widgets.layout import Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width, split
 
 
 class SpaceScreen(ListScreen):
@@ -251,27 +252,30 @@ class FreeUpScreen(ListScreen):
         picked = self.picked()
         n, size = len(picked), sum(g["size"] for g in picked)
         head = "%d games · %s free" % (len(self.items), human_size(free))
-        if n:
-            head += " · %d picked (%s)" % (n, human_size(size))
-        text(c, self.f.h3, head, (56, 86), theme.TEXT)
-        text(c, self.f.small, dict(self.SORTS)[self.sort], (W - 56, 90), theme.FAINT, "topright")
         if not self.items:
+            text(c, self.f.h3, head, (56, 86), theme.TEXT)
             text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
             return
-        for i, r, on in self.row_rects(124):
+        row = lambda g: (g["name"], "%s · %s" % (g["system"], _lastplayed_label(g["lastplayed"])),  # noqa: E731
+                         human_size(g["size"]))
+        lst, pan = split(need_width(self.f, [row(g) for g in self.items[:200]], mark=True))
+        self.BUBBLE_AT = bubble_at(lst)
+        list_head(c, self.f, lst, head, dict(self.SORTS)[self.sort])
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             g = self.items[i]
-            if on:
-                focus_box(c, r)
-            self.draw_pick(c, g, (r.left + 26, r.centery))
-            marquee(c, self.f.row, g["name"], (r.left + 50, r.centery), theme.TEXT if on else theme.DIM,
-                    anchor="midleft", maxw=r.width - 520, focused=on, slot="freeup-name")
-            tw = int(measure(self.f.tiny, g["system"])) + 14
-            tr = pygame.Rect(r.right - 380 - tw, r.centery - 10, tw, 20)
-            rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, g["system"], tr.center, theme.FAINT, "center")
-            text(c, self.f.small, _lastplayed_label(g["lastplayed"]), (r.right - 130, r.centery),
-                 theme.FAINT, "midright")
-            text(c, self.f.small, human_size(g["size"]), (r.right - 20, r.centery), theme.DIM, "midright")
+            list_row(c, self.f, r, on, *row(g), mark=lambda ctr, g=g: self.draw_pick(c, g, ctr), slot="freeup")
+        g = self.items[self.sel]
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="freeup-panel")
+        p.foot("%d picked: frees %s" % (n, human_size(size)) if n else "Nothing picked yet",
+               theme.TEXT if n else theme.FAINT)
+        p.actions(hint_actions(self))
+        p.title(g["name"], "roms/" + g["system"])
+        p.fact("Size", human_size(g["size"]))
+        p.fact("Last played", _lastplayed_label(g["lastplayed"]).replace("played ", "") if g["lastplayed"] else
+               "Never")
+        p.fact("Times played", g["playcount"] or "")
+        p.prose("Deleting it takes its files (every disc and track); saves, states and screenshots stay.",
+                color=theme.FAINT, lines=3)
 
 
 class LeftoversScreen(ListScreen):
@@ -373,20 +377,44 @@ class LeftoversScreen(ListScreen):
                         "Partial downloads still in the queue are kept so they can resume.",
                         (56, 124, W - 112, 3 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="leftovers-none")
             return
-        text(c, self.f.h3, "%d leftovers · %s" % (len(self.items), human_size(sum(i["size"] for i in self.items))),
-             (56, 86), theme.TEXT)
-        for i, r, on in self.row_rects(124):
+        tot = sum(i["size"] for i in self.items)
+        row = lambda it: (os.path.basename(self.where(it)), it["kind"] + " · " + (  # noqa: E731
+            os.path.dirname(self.where(it)) or "/"), human_size(it["size"]) if it["size"] else "")
+        lst, pan = split(need_width(self.f, [row(it) for it in self.items[:200]], mark=self.showing_picks()))
+        self.BUBBLE_AT = bubble_at(lst)
+        list_head(c, self.f, lst, plural(len(self.items), "leftover"), "%s in all" % human_size(tot))
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             it = self.items[i]
-            if on:
-                focus_box(c, r)
-            p = it["path"]
-            for root in (rommlib.ROMS_ROOT, rommlib.DATA_DIR):
-                if p.startswith(root + "/"):
-                    p = os.path.relpath(p, os.path.dirname(root))
-            tx = r.left + (48 if self.draw_pick(c, it, (r.left + 22, r.centery)) else 22)
-            marquee(c, self.f.row, p, (tx, r.top + 6), theme.TEXT if on else theme.DIM, maxw=r.width - 200,
-                    focused=on, slot="leftover-path")
-            marquee(c, self.f.small, it["kind"] + (" · " + it["note"] if it.get("note") else ""),
-                    (tx, r.top + 32), theme.FAINT, maxw=r.width - 200, focused=on, slot="leftover-note")
-            text(c, self.f.small, human_size(it["size"]) if it["size"] else "", (r.right - 20, r.centery),
-                 theme.DIM, "midright")
+            list_row(c, self.f, r, on, *row(it), mark=lambda ctr, it=it: self.draw_pick(c, it, ctr), slot="leftover")
+        it = self.items[self.sel]
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="leftover-panel")
+        p.foot("{Y} deletes all %d: frees %s" % (len(self.items), human_size(tot)))
+        p.title(it["kind"], human_size(it["size"]) if it["size"] else "Takes no space")
+        p.prose(self.where(it), label="Where", lines=2)
+        why, gone = self.WHY.get(it["kind"], ("", "Deleting it frees the space."))
+        p.prose((it["note"] + ". " if it.get("note") else "") + why, label="Why it's here", lines=4)
+        p.prose(gone, label="If you delete it", lines=3)
+
+    WHY = {"Partial download": ("A download that stopped before it finished: the connection dropped, or it was "
+                                "cancelled. Downloads still queued or paused aren't listed here.",
+                                "It frees the space. Downloading the game again starts over."),
+           "Empty folder": ("A game folder with nothing left in it.", "Nothing you can play changes."),
+           "Copy of a converted game": ("The original of a game that's here converted too. The converted one is "
+                                        "what EmulationStation runs.",
+                                        "It frees the space; the converted game stays and plays as before."),
+           "Unfinished conversion": ("A conversion that was stopped before it finished. The original it came from "
+                                     "is still here.", "It frees the space; the original stays."),
+           "Unfinished CHD": ("A CHD that was stopped before it finished. The original it came from is still here.",
+                              "It frees the space; the original stays."),
+           "Temporary file": ("A temporary file a download or an unpack left behind.", "It frees the space."),
+           "RomM-o-Cera scratch": ("Scratch space an interrupted download or unpack left behind.",
+                                   "It frees the space.")}
+
+    @staticmethod
+    def where(it):
+        """Its path from roms/ (or the app's folder)."""
+        p = it["path"]
+        for root in (rommlib.ROMS_ROOT, rommlib.DATA_DIR):
+            if p.startswith(root + "/"):
+                return os.path.relpath(p, os.path.dirname(root))
+        return p
