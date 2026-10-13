@@ -8,8 +8,8 @@ on the right previews the selected section; press A to open it.
 ## Games from RomM
 
 Everything RomM-o-Cera downloaded, biggest first (**Y** sorts by name or
-newest first), with the cover and details from RomM beside the list, as in a
-game list. **A** opens the same menu as a game on the box in a game list:
+newest first instead), with the cover and details from RomM beside the list,
+as in a game list. **A** opens the same menu as a game on the box in a game list:
 **Play now** ([Browsing and downloading](browsing-and-downloading.md#play-now)), **Delete**, **Download again** and **More like this** (while RomM's record
 can't be fetched, only Delete). To delete several at once, pick them (X ›
 Pick several, see [Controls](controls.md#picking-several)). Any game marked ✓
@@ -25,9 +25,10 @@ reserve (Settings) that downloads never use, so you can see how much is left
 for downloads.
 
 - **Free up space**: every game EmulationStation lists, including ones copied
-  over another way, least played and biggest first (**Y** sorts). **A**
-  picks games, or the X menu picks enough to free 10–100 GB; then X deletes
-  them in one go, after asking. Saves and states are kept.
+  over another way, least played first (**Y** sorts by size or name
+  instead). **A** picks games, or the X menu picks the least played, biggest
+  ones until 10, 20, 50 or 100 GB would be freed; check the ticks, then X
+  deletes them in one go, after asking. Saves and states are kept.
 - **Clean up leftovers**: partial files and empty folders that interrupted
   downloads or conversions left behind (including a half-made `.ps3` game
   folder), and **copies of games already here converted**: an archive, image
@@ -76,10 +77,17 @@ don't show up again. Over SSH,
 ## BIOS files
 
 Also in Settings. Every system with games on the box: what's complete, what's
-missing that your RomM has (one press to fetch, or all at once — matched and
-verified by checksum), what's missing everywhere, and what was fetched when.
+missing that your RomM has, what's missing everywhere, and what was fetched
+when. **A** gets the missing files of one system from RomM, **X** all of
+them (after asking). Each file is matched and checked against Batocera's
+checksum; a wrong file already there is kept beside it as `.bak-romm`.
+A platform's game list offers the same for its system (X › Get BIOS).
 
 ## Check games
+
+Three tiles at the top: **Quick check**, **Full check** and
+[Games ES can't see](#games-es-cant-see); A starts or opens one, and B stops
+a check that's running. Below them are the last check's results.
 
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files
@@ -165,9 +173,13 @@ you leave RomM-o-Cera); game info RomM-o-Cera added follows a moved game.
 
 ## Conversions
 
-Also in Downloads (L2/R2). The conversion running now with time left, the
-queue, and recent results; retry a failed one. See
-[Disc compression](disc-compression.md).
+Also in Downloads (L2/R2). The conversion running now, with its progress and
+time left, then the queue and recent results. **A** on a queued one offers
+**Convert next** or **Remove from the queue** (the original stays as it is);
+on a failed one, **Try again**. **X** starts the queue now (when nothing is
+playing and there's room), and **Y** clears the finished results.
+Conversions run only while no game is playing, and pause while
+EmulationStation is busy. See [Disc compression](disc-compression.md).
 
 ## Fill in game info
 
