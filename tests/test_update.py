@@ -242,3 +242,29 @@ def test_the_ui_package_is_required_only_by_a_release_whose_entry_file_uses_it(i
     fake_github("v" + rommlib.VERSION, zip_bytes=pre_split)
     staged = rommlib.stage_release(rommlib.release_info(), staging=stage)
     assert os.path.isfile(os.path.join(staged, "rommbrowser.pygame"))
+
+
+@pytest.mark.skipif(not shutil.which("curl"), reason="install.sh needs curl")
+def test_install_sh_nightly_keeps_following_nightlies(release_zip, tmp_path):
+    """VERSION=nightly installed a nightly but left the channel on Stable, so the
+    box quietly stopped getting nightlies. Now it sets the channel and keeps the
+    rest of config.json."""
+    srv, base = _serve_release({"/romm-o-cera.zip": release_zip,
+                                "/SHA256SUMS": ("%s  romm-o-cera.zip\n" % hashlib.sha256(release_zip).hexdigest()).encode()})
+    cfg = tmp_path / "data" / "config.json"
+    try:
+        os.makedirs(cfg.parent)
+        cfg.write_text(json.dumps({"url": "https://romm.example.com", "token": "rmm_x"}))
+        p = _install_sh(tmp_path, base)                                     # a release: channel untouched
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert "update_channel" not in json.loads(cfg.read_text())
+        env_p = subprocess.run(["sh", os.path.join(APP, "tools", "install.sh")], capture_output=True, text=True,
+                               env=dict(os.environ, VERSION="nightly", ROMM_O_CERA_BASE=base,
+                                        ROMM_O_CERA_DEST=str(tmp_path / "roms" / "pygame" / "rommbrowser"),
+                                        ROMM_O_CERA_DATA=str(tmp_path / "data")))
+        assert env_p.returncode == 0, env_p.stdout + env_p.stderr
+        got = json.loads(cfg.read_text())
+        assert got == {"url": "https://romm.example.com", "token": "rmm_x", "update_channel": "nightly"}
+        assert oct(cfg.stat().st_mode & 0o777) == "0o600"
+    finally:
+        srv.shutdown()

@@ -61,6 +61,29 @@ else
     mv "$DEST.new" "$DEST" || { [ -d "$DEST.old" ] && mv "$DEST.old" "$DEST"; echo "install failed"; exit 1; }
     rm -rf "$DEST.old"
 fi
+# VERSION=nightly: keep following nightly builds (Settings → Update channel); config.json merged, never replaced
+if [ "$VERSION" = nightly ]; then
+    python3 - "$DATA/config.json" <<'PY'
+import json, os, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        cfg = json.load(f)
+except FileNotFoundError:
+    cfg = {}
+except ValueError:
+    print("config.json can't be read: set Settings → Update channel to Nightly yourself")
+    sys.exit(0)
+if cfg.get("update_channel") != "nightly":
+    cfg["update_channel"] = "nightly"
+    tmp = p + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(cfg, f, indent=1)
+    os.replace(tmp, p)
+    print("Update channel: Nightly (Settings → Update channel switches back to Stable)")
+PY
+fi
 echo "Installed $(python3 -c "import sys;sys.path.insert(0,'$DEST');import rommlib;print('romm-o-cera v'+rommlib.VERSION_LABEL)") to $DEST"
 echo "Next: Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera → Settings"
 echo "      to enter your RomM URL and client API token."

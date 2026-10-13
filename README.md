@@ -127,7 +127,7 @@ went missing. Your config, queue and logs are never touched.
 gets builds of the newest changes as they land: fixes sooner, less tested.
 Press Updates to get the newest one now. Back on Stable you keep the nightly
 until a release is newer. From the shell, `… install.sh | VERSION=nightly sh`
-installs the newest nightly once; set the channel to Nightly to keep
+installs the newest nightly and sets the channel to Nightly, so the box keeps
 following it.
 
 ## Documentation
