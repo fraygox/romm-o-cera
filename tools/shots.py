@@ -526,7 +526,8 @@ README_SET = {"home": "home", "platforms": "platforms", "game-list": "game-list"
               "search": "search", "manage": "manage", "on-this-box": "on-this-box", "downloads": "downloads",
               "settings-compression": "settings", "collection-menu": "collections",
               "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits",
-              "compress-system": "compress"}
+              "compress-system": "compress", "theme-picker": "theme-picker", "theme-custom": "custom-theme",
+              "surprise-pick": "surprise", "home-recommended": "recommended"}
 if args.readme:
     import shutil
     dst = os.path.join(APP, "screenshots")
