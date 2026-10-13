@@ -440,6 +440,16 @@ def notes_due(cfg):
     return label if version_key(label) > version_key(seen) else None
 
 
+def notes_start_here(cfg):
+    """A fresh install (no server set, notes never shown): this version's notes are the ones it
+    came with, so mark them seen in cfg (saved with the next config write, e.g. Welcome's
+    address) and the second start doesn't show them. True when it did."""
+    if _config.config_value(cfg, "notes_seen") or _config.config_value(cfg, "url"):
+        return False
+    cfg["notes_seen"] = rommlib.VERSION_LABEL
+    return True
+
+
 def whats_new(cfg):
     """release_notes() for this version when notes_due(cfg), else None.
     Blocking (one GitHub call). Offline: None, and it's asked again next time."""

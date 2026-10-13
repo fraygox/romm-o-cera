@@ -795,7 +795,9 @@ class App:
                 "Reset settings", self.reset_config, danger=True)
 
     def welcome(self):
-        """The first-run Welcome over Home, when the box isn't set up yet."""
+        """The first-run Welcome over Home, when the box isn't set up yet (its version's notes
+        then count as seen: What's new is for updates)."""
+        rommlib.notes_start_here(self.cfg)
         if welcome_due(self.cfg) and not self.modal:
             self.push(WelcomeScreen(self))
 

@@ -75,6 +75,21 @@ def test_start_pushes_welcome_only_when_due(isolated, rb, monkeypatch):
     assert len(app.stack) == 1
 
 
+def test_a_fresh_install_never_shows_the_notes_it_came_with(isolated, rb, monkeypatch):
+    """Fresh box: Welcome saves the address; the next start has nothing for What's new."""
+    monkeypatch.setattr(rommlib.Api, "platforms", lambda self: [])
+    app = _app(rb, monkeypatch)
+    assert rommlib.notes_due(app.cfg) is None
+    app.welcome()
+    rb.save_url(app, "https://romm.example.com", say=False)
+    app.stack[-1].later()
+    cfg = rommlib.load_config()
+    assert cfg["url"] and rommlib.notes_due(cfg) is None and cfg["notes_seen"] == rommlib.VERSION_LABEL
+    app = _app(rb, monkeypatch, {"url": "https://romm.example.com", "token": "rmm_" + "a" * 30})
+    app.welcome()                                  # set up before notes_seen existed: an update
+    assert rommlib.notes_due(app.cfg) == rommlib.VERSION_LABEL
+
+
 def test_a_rejected_token_on_the_first_fetch_opens_the_pair_step(isolated, rb, monkeypatch):
     _platforms(monkeypatch, _raise(rommlib.AuthRejected("RomM rejected the token (HTTP 401)")))
     app = _app(rb, monkeypatch, {"url": "https://romm.example.com", "token": "rmm_" + "a" * 30,
