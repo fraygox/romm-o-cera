@@ -53,7 +53,7 @@ SETTINGS = (
             help="Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// sends the token "
                  "unencrypted."),
     Setting("token", "",                # RomM client API token (read scopes)
-            row="token", label="API token", sub="Create one in RomM under Profile, Client API tokens",
+            row="token", label="API token", sub="Made in RomM: Profile, Client API tokens",
             valid=_str_or_null,
             help="A RomM client API token with read access: in RomM, Profile, Client API tokens. {A} edits it."),
     Setting("verify_tls", True,         # False for a self-signed cert, or a path to a CA bundle
@@ -133,7 +133,7 @@ SETTINGS = (
                  "become the disc image again. A disc without its key becomes a .wux."),
     Setting("ps3_folders", True,        # PS3 disc images (.iso, zipped .iso) -> "Name.ps3" game folders
             row="ps3folders", label="PS3 games as folders",
-            sub="Disc images become .ps3 folders RPCS3 can update",
+            sub="Disc images become folders RPCS3 can update",
             kind="onoff", effects=("downloader",),
             help="Turns PS3 disc images (.iso, zipped or not) into .ps3 folders, the layout RPCS3 installs updates"
                  " and DLC for. Checked before the image is deleted. Encrypted discs need Decrypt PS3 discs."),
@@ -166,7 +166,7 @@ SETTINGS = (
             kind="onoff",
             help="A popup in EmulationStation when background downloads finish."),
     Setting("manuals", True,            # fetch the game's manual (PDF) from RomM for ES's manual viewer
-            row="manuals", label="Download manuals", sub="PDF from RomM, opens from the game's menu in ES",
+            row="manuals", label="Download manuals", sub="PDFs from RomM, in the game's menu in ES",
             kind="onoff", effects=("downloader",),
             help="Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation."),
     Setting("sounds", "normal",         # UI sounds: normal | quiet | off
