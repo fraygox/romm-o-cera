@@ -21,9 +21,14 @@ CREDITS = [
      "This product includes software developed by in <in@fishtank.com>. Optional download for Xbox 360 to .zar."),
     ("ZArchive", "zarchive, by Exzap (commit %s)" % rommlib.TOOL_X360.pin["zarchive"][:7], "MIT-0",
      "github.com/Exzap/ZArchive",
-     "Optional download for Xbox 360 to .zar. Licenses and source are on the xbox360-tools release."),
-    ("zstd", "Zstandard, by Meta Platforms, linked into zarchive", "BSD-3-Clause", "github.com/facebook/zstd",
-     "Also on Batocera, where 3DS to .zcci uses it."),
+     "Optional download for Xbox 360 to .zar, and inside wuatool for Wii U to .wua (commit %s). Licenses and "
+     "source are on the xbox360-tools and wiiu-tools releases." % rommlib.TOOL_WIIU.pin["zarchive"][:7]),
+    ("wuatool", "by fraygox, built on Cemu's disc code (Cemu commit %s)" % rommlib.TOOL_WIIU.pin["cemu"][:10],
+     "MPL-2.0", "cemu.info · source: github.com/cemu-project/Cemu",
+     "Optional download for Wii U to .wua, built with OpenSSL (Apache-2.0). Its source, licenses and the "
+     "Cemu source it compiles are on the wiiu-tools release."),
+    ("zstd", "Zstandard, by Meta Platforms, linked into zarchive and wuatool", "BSD-3-Clause",
+     "github.com/facebook/zstd", "Also on Batocera, where 3DS to .zcci uses it."),
     ("chdman", "from MAME", "BSD-3-Clause / GPL-2.0-or-later", "mamedev.org",
      "Part of Batocera; RomM-o-Cera runs it to make CHDs."),
     ("RomM", "the game library server this app talks to", "AGPL-3.0", "romm.app", ""),

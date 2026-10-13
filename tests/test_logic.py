@@ -1189,7 +1189,7 @@ def test_one_converter_per_file_and_the_planner_knows_every_system():
     # converter or a priority entry must not change it by accident
     assert rb_chd_plan.ORDER == ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd", "3do",
                                  "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds",
-                                 "xbox360", "ps3"]
+                                 "xbox360", "wiiu", "ps3"]
     assert rommlib.conversion_for("ps2", "/r/G.cue", {"chd": True}).mode == "createcd"
     assert rommlib.conversion_for("ps2", ".iso", {"chd": True}).mode == "createdvd"
     assert rommlib.conversion_for("psx", ".iso", {"chd": True}) is None

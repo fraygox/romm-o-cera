@@ -61,7 +61,7 @@ class SettingsScreen(Screen):
                 return {"label": "Downloading %d%%" % (pr * 100) if pr is not None else "Downloading…",
                         "help": self.TOOL_TEXT[key]["fetching"]}
             return rommlib.tool_state(rommlib.CONVERTER[key].tool, cfg)
-        rvz, zar = tool_row("rvz"), tool_row("zar")
+        rvz, zar, wua = tool_row("rvz"), tool_row("zar"), tool_row("wua")
         sec = SettingsScreen.section
 
         def row(rid, value, sub=None):            # a config.json row: name and grey line from the table
@@ -99,6 +99,7 @@ class SettingsScreen(Screen):
             table("squashfs"),
             table("z3ds"),
             row("zar", zar["label"], zar["help"]),
+            row("wua", wua["label"], wua["help"]),
             table("ps3folders"),
             row("ps3decrypt", onoff(cfg["ps3_decrypt"]) if rommlib.ps3_decrypt_supported() else "Not available"),
             row("chdthreads", ("Auto (%d of %d)" % (rommlib.auto_chd_threads(), rommlib.cpu_threads()))
@@ -450,6 +451,19 @@ class SettingsScreen(Screen):
                 "fetching": "extract-xiso and zarchive, from RomM-o-Cera's GitHub releases",
                 "done": "Xbox 360 tools installed: Xbox 360 games convert to .zar",
                 "failed": "Xbox 360 tools download failed ({error})"},
+        "wua": {"cpu": "wuatool is built for x86_64 and 64-bit ARM boxes only",
+                "busy": "wuatool is still downloading",
+                "off": "Wii U conversion off (wuatool stays installed)",
+                "on": "Wii U games will be converted to .wua",
+                "title": "Download wuatool?",
+                "body": "Converting to .wua needs wuatool {version}{size}: Cemu's own disc code and ZArchive, "
+                        "built from their published source (MPL-2.0) and checked by SHA-256 before use. A .wua "
+                        "holds the game partition, not the whole disc image, and each disc needs its disc key. "
+                        "Credits are in Settings.",
+                "start": "Downloading wuatool…",
+                "fetching": "wuatool, from RomM-o-Cera's GitHub releases",
+                "done": "wuatool {version} installed: Wii U games convert to .wua",
+                "failed": "wuatool download failed ({error})"},
     }
 
     def _toggle_tool(self, key):
@@ -468,6 +482,7 @@ class SettingsScreen(Screen):
             app.downloader.cfg = cfg
             if cfg[key]:
                 app.toast(say["on"], theme.GREEN)
+                self._after_tool_on(key)
             else:
                 app.toast(say["off"])
             return
@@ -488,6 +503,7 @@ class SettingsScreen(Screen):
             app.apply_config()
             app.downloader.cfg = cfg
             app.toast(say["done"].format(version=t["version"]), theme.GREEN)
+            self._after_tool_on(key)
 
         def failed(e):
             app.toast(str(e) if isinstance(e, rommlib.RommError) else say["failed"].format(error=e.__class__.__name__),
@@ -495,6 +511,22 @@ class SettingsScreen(Screen):
         size = (" (%s)" % human_size(t["size"])) if t.get("size") else ""
         app.modal = Confirm(app, say["title"], say["body"].format(version=t["version"], size=size), "Download",
                             lambda: (app.toast(say["start"]), app.bg(install, done, failed)))
+
+    def _after_tool_on(self, key):
+        """Wii U: copy the disc keys in RomM's Wii U firmware (if any) into bios/wiiukeys."""
+        if key != "wua":
+            return
+        app = self.app
+        pid = next((p["id"] for p in app.platforms if p.get("_system") == "wiiu"), None)
+
+        def done(n):
+            if n:
+                app.toast("%s Wii U disc keys ready" % "{:,}".format(n), theme.GREEN)
+            else:
+                app.toast("No Wii U disc keys yet: put the keys for discs you own in Cemu's keys.txt "
+                          "(bios/cemu) or bios/wiiukeys, or add them to RomM's Wii U firmware", theme.AMBER)
+        app.bg(lambda: rommlib.fetch_wiiu_keys(app.api, pid) if pid and app.api else len(rommlib.wiiu_keys()),
+               done, lambda e: (app.toast(str(e), theme.RED), done(len(rommlib.wiiu_keys()))))
 
     def _toggle_ps3_decrypt(self):
         """On: copy the disc keys in RomM's PS3 firmware (if any) into bios/ps3keys."""

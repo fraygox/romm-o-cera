@@ -84,7 +84,7 @@ Reorder, pause, cancel, pause/resume everything (X menu), clear finished
 (Y). Pick several (X › Pick several) to pause, resume, cancel, retry or remove
 them at once; cancelling (one or several, active or paused) asks first, since it
 deletes the partial files. Each game shows what it's being compressed to (CHD,
-RVZ, squashfs, .zcci, .zar, a `.ps3` folder) and when that's done. L2/R2 opens
+RVZ, squashfs, .zcci, .zar, .wua, a `.ps3` folder) and when that's done. L2/R2 opens
 **Conversions** (background compression). "Download now" starts one game
 outside the download hours.
 

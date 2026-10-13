@@ -149,6 +149,39 @@ by in <in@fishtank.com>. Before the image is deleted:
 The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 `.zar`'s footer (quick) or its whole SHA-256 (full).
 
+## Wii U to .wua — off by default
+
+Turns each Wii U disc image (`.wud`, or the same image as a `.wux`) into
+`Game.wua`, the compressed archive Cemu opens directly. Often 30–90% smaller:
+most discs are largely empty space, and `.wua` keeps only what the game uses.
+
+A `.wua` holds the disc's game partition, decrypted (the files Cemu plays,
+in the layout Cemu's own "Convert to .wua" writes), not the whole disc, so it
+can't be turned back into the original image and won't match RomM's checksums.
+
+Each disc needs its **disc key**, for games you own: put it in Cemu's
+`keys.txt` (`/userdata/bios/cemu/keys.txt`, one 32-digit key per line, the
+file Batocera's Cemu reads) or in `/userdata/bios/wiiukeys/` (`.key` files,
+key lists, or zips of them). Turning the switch on copies the keys in your
+RomM's Wii U firmware (a `keys.txt`, `.key` files, or a zip with "key" in its
+name) into `bios/wiiukeys/`. RomM-o-Cera comes with no disc keys. A disc
+without its key is left as it is (Conversions shows it as skipped, and Compress
+games already here lists it as can't convert, with the reason).
+
+Turning it on downloads **wuatool** once (about 3 MB, checked by SHA-256,
+x86_64 and 64-bit ARM): Cemu's own disc code and the ZArchive library Cemu
+reads `.wua` with, built from their published source; licenses and source are
+on RomM-o-Cera's `wiiu-tools` release. Before the image is deleted:
+
+- every hashed block read from the disc must match its hash, and a cut-short
+  image is refused (like CHD and `.zar`, damage in a part of the disc that
+  carries no hash is packed as it is: Check games tells you whether the image
+  matched RomM's before you compress it);
+- the archive's own SHA-256 must check out;
+- every file in the archive is compared with the disc again.
+
+Check games checks a `.wua`'s footer (quick) or its whole SHA-256 (full).
+
 ## Safety
 
 - The new file is flushed to disk before any original is deleted, so a power
@@ -165,9 +198,9 @@ The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 **On this box → Compress games already here** lists, system by system, the
 disc games on the box that could still be compressed. Compress one game or a
 whole system (a whole system can take hours). CHD works even with its switch
-off; RVZ, squashfs, .zcci, .zar and PS3 game folders need theirs on. Games it
-can't convert (an encrypted 3DS dump, a PS3 disc without its key, a damaged
-`.cso`) are listed apart with the reason, never queued. Details in
+off; RVZ, squashfs, .zcci, .zar, .wua and PS3 game folders need theirs on. Games it
+can't convert (an encrypted 3DS dump, a PS3 or Wii U disc without its key, a
+damaged `.cso`) are listed apart with the reason, never queued. Details in
 [On this box](on-this-box.md#compress-games-already-here).
 
 Over SSH, `rb_chd_plan.py` does the same:
@@ -182,9 +215,9 @@ setsid nohup python3 rb_chd.py >/dev/null 2>&1 &
 ```
 
 It queues CD/DVD games for CHD (even with CHD turned off), and GameCube/Wii
-images for RVZ, 3DS games for `.zcci`, Xbox 360 images for `.zar` and PS3
-disc images for `.ps3` folders when those are on. What it can't convert
-(encrypted 3DS dumps, PS3 discs without a key, damaged `.cso` files) is
+images for RVZ, 3DS games for `.zcci`, Xbox 360 images for `.zar`, Wii U
+discs for `.wua` and PS3 disc images for `.ps3` folders when those are on. What it can't convert
+(encrypted 3DS dumps, PS3 or Wii U discs without a key, damaged `.cso` files) is
 listed as skipped, with the reason. Games already queued are left out.
 Xbox: with Make Xbox images bootable on, full disc images are cut to their
 game partition and `.xiso` files renamed right away (even with Xbox to
@@ -201,5 +234,3 @@ updates. Encrypted discs use disc keys for games you own. See
 
 - **PS3 squashfs**: measured about 2% smaller; Redump's PS3 images barely
   compress. PS3 discs become game folders instead ([PS3 games](ps3.md)).
-- **Wii U** (`.wua`): Cemu reads it, but making one needs a tool Batocera
-  doesn't ship and each disc's key.

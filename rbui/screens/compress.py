@@ -148,7 +148,7 @@ class CompressScreen(ListScreen):
         if not self.cands:
             text(c, self.f.h3, "Nothing left to compress.", (56, 86), theme.GREEN)
             text(c, self.f.body, "Every disc game here that a converter supports is compressed already, "
-                 "or queued. Formats with a Settings switch (RVZ, squashfs, .zcci, .zar, PS3 folders) show "
+                 "or queued. Formats with a Settings switch (RVZ, squashfs, .zcci, .zar, .wua, PS3 folders) show "
                  "up once it's on.", (56, 124), theme.DIM, maxw=W - 112)
             if not self.rows:
                 return

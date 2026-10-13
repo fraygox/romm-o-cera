@@ -15,7 +15,7 @@ def disc_layout(detail, system, cfg, accepts=None):
     """What a download of this game is and becomes, from RomM's full record
     (files and archive members): {"label": "CUE/BIN, 3 tracks", "discs": n,
     "unpacked": bytes or None, "estimated": unpacked is a guess,
-    "convert": "CHD" | "RVZ" | "squashfs" | "ZCCI" | "ZAR" | None}. None for a
+    "convert": "CHD" | "RVZ" | "squashfs" | "ZCCI" | "ZAR" | "WUA" | None}. None for a
     game that isn't a disc image (carts), or when RomM listed no files."""
     files = (detail or {}).get("files") or []
     if not files:
@@ -45,11 +45,11 @@ def disc_layout(detail, system, cfg, accepts=None):
     if count(".gdi"):
         kinds.append("GDI, %d tracks" % (len(exts) - count(".gdi")) if len(exts) > count(".gdi") + 1 else "GDI")
     for e in (".iso", ".chd", ".rvz", ".wbfs", ".gcz", ".ciso", ".cso", ".pbp", ".ccd", ".cdi", ".3ds", ".cci",
-              ".cxi", ".cia"):
+              ".cxi", ".cia", ".wud", ".wux"):
         if count(e):
             kinds.append(e[1:].upper())
     discs = count(".cue") + count(".gdi") + count(".iso") + count(".chd") + count(".rvz") + count(".wbfs") \
-        + count(".cso") + count(".cdi")
+        + count(".cso") + count(".cdi") + count(".wud") + count(".wux")
     unpacked, estimated = None, False
     if archived and sizes_known and all(s for _, s in members):
         unpacked = sum(s for _, s in members)        # loose files are in members too

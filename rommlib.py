@@ -45,7 +45,7 @@ DOCS_URL = "https://fraygox.github.io/romm-o-cera/"     # the documentation site
 
 # after the names above: the romm modules read them through rommlib
 from romm import (core as _core, config as _config, discs as _discs, es as _es, covers as _covers,
-                  api as _api, tools as _tools, bios as _bios, ps3 as _ps3, convert as _convert,
+                  api as _api, tools as _tools, bios as _bios, ps3 as _ps3, wiiu as _wiiu, convert as _convert,
                   library as _library, leftovers as _leftovers, update as _update, downloader as _downloader,
                   audit as _audit, unseen as _unseen, net as _net, qr as _qr)  # noqa: E402
 
@@ -54,7 +54,7 @@ from romm import (core as _core, config as _config, discs as _discs, es as _es, 
 # Every name the romm/ modules define is read and set through rommlib, as before
 # the split: rommlib.X reads romm.<owner>.X, and setting rommlib.X (tests, the
 # screenshot harness) sets it in its owner, where its code looks it up.
-_MODULES = (_core, _config, _discs, _es, _covers, _api, _tools, _bios, _ps3, _convert, _library, _leftovers,
+_MODULES = (_core, _config, _discs, _es, _covers, _api, _tools, _bios, _ps3, _wiiu, _convert, _library, _leftovers,
             _update, _downloader, _audit, _unseen, _net, _qr)
 _FOREIGN = {"dataclass", "Callable", "Optional"}
 _OWNER = {}

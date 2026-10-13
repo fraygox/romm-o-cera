@@ -132,6 +132,14 @@ SETTINGS = (
                  "partition, padding), so it isn't a copy of the original image. Every file is checked against "
                  "the disc before the image is deleted. Needs extract-xiso and zarchive (under 1 MB), downloaded "
                  "once when you turn this on. xenia (not canary) can't open .zar."),
+    Setting("wua", False,               # Wii U .wud/.wux -> .wua for Cemu (downloads wuatool when turned on)
+            row="wua", label="Wii U to .wua",
+            help="Turns Wii U disc images (.wud, .wux) into .wua, the compressed archive Cemu opens directly, "
+                 "often 30-90% smaller. It keeps the game partition (what Cemu plays), so it isn't a copy of the "
+                 "image. Every file is checked against the disc before the image is deleted. Each disc needs its "
+                 "key, for games you own: Cemu's keys.txt (bios/cemu) or bios/wiiukeys; turning this on copies "
+                 "RomM's Wii U firmware keys there. No keys come with RomM-o-Cera. Needs wuatool (about 3 MB), "
+                 "downloaded once."),
     Setting("ps3_folders", True,        # PS3 disc images (.iso, zipped .iso) -> "Name.ps3" game folders
             row="ps3folders", label="PS3 games as folders",
             sub="Disc images become .ps3 folders RPCS3 can update",

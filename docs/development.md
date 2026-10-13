@@ -169,9 +169,10 @@ modules, in import order (each uses only the ones above it):
 | `romm/covers.py` | the cover cache |
 | `romm/net.py` | the HTTP session every request goes through: shared connections, a per-server limit that backs off when the server is busy, retries |
 | `romm/api.py` | the RomM API client and pairing |
-| `romm/tools.py` | the tools a converter downloads (dolphin-tool, the Xbox 360 tools), each described once as a `ToolSpec` (pinned archives, Settings row state, credits' commits) that its Converter names (`Converter.tool`), and their one installer |
+| `romm/tools.py` | the tools a converter downloads (dolphin-tool, the Xbox 360 tools, wuatool), each described once as a `ToolSpec` (pinned archives, Settings row state, credits' commits) that its Converter names (`Converter.tool`), and their one installer |
 | `romm/bios.py` | BIOS checks and fetching |
 | `romm/ps3.py` | PS3 discs |
+| `romm/wiiu.py` | Wii U discs: disc keys (Cemu's keys.txt, bios/wiiukeys, RomM's firmware) and the check before a .wua |
 | `romm/convert.py` | conversions: the Converter table, Z3DS, .zar checks, the conversion queue (the screens read what the worker publishes through `conversions_state()`, never its files) |
 | `romm/library.py` | installed.json (`Library`: everything outside reads its records through `snapshot()`, never its lock or fields), multi-disc sets, gamelist entries |
 | `romm/leftovers.py` | files a download or conversion left behind |
@@ -318,7 +319,7 @@ it in every module that holds it.
 | `romm/` | the engine (see [The romm package](#the-romm-package)) |
 | `rb_finalize.py` | hands game info to EmulationStation through its API once ES is idle |
 | `rb_repair.py` | one-time restore of game info lost after CHD conversion (≤ v0.6.3) |
-| `rb_chd.py` | background conversion worker (CHD, RVZ, squashfs, .zcci, .zar) |
+| `rb_chd.py` | background conversion worker (CHD, RVZ, squashfs, .zcci, .zar, .wua) |
 | `rb_chd_plan.py` | finds games already on the box that could be compressed and queues them (On this box → Compress games already here, or its command line); makes Xbox images bootable |
 | `rb_dl.py` | background downloader (finishes the queue after exit) |
 | `fonts/` | Rubik (SIL Open Font License) |
@@ -330,6 +331,7 @@ it in every module that holds it.
 | `tools/shots.py` | screenshot harness: every screen and dialog in every control style + contact sheet |
 | `tools/dolphin-tool/` | builds and packages dolphin-tool for Batocera x86_64 and aarch64 (`make.sh`, `package.sh`) |
 | `tools/xbox360-tools/` | builds and packages extract-xiso and zarchive for Batocera x86_64 (`make.sh`, `package.sh`) |
+| `tools/wiiu-tools/` | builds wuatool (Cemu's disc code + ZArchive) for x86_64 and, cross-compiled, aarch64, self-tests it on synthetic discs (`mkdisc.py`, `selftest.py`) and packages it (`make.sh <arch>`, `package.sh`) |
 | `tools/settle.py` | tells the screenshot drivers when the app has settled (`SHOOT_SETTLE`) |
 | `tools/build-release.sh`, `tools/install.sh` | build the release zip (`NIGHTLY=…` for a nightly) / the on-box installer |
 | `tools/release.py` | push, nightly and stable releases, screenshots, docs ([Releasing](#releasing)) |

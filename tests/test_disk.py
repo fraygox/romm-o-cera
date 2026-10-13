@@ -486,7 +486,8 @@ def test_forecast_reserves_every_converters_working_space():
 def test_forecast_asks_every_converter_for_its_working_space(monkeypatch):
     """Every system a converter works on reserves that converter's working space
     while it's on (the biggest space_factor among them), and none while it's off."""
-    for name, key in (("squashfs_enabled", "squashfs"), ("z3ds_enabled", "z3ds"), ("zar_enabled", "zar")):
+    for name, key in (("squashfs_enabled", "squashfs"), ("z3ds_enabled", "z3ds"), ("zar_enabled", "zar"),
+                      ("wua_enabled", "wua")):
         monkeypatch.setattr(rommlib, name, lambda cfg, system=None, key=key: bool(cfg.get(key)))
     monkeypatch.setattr(rommlib, "rvz_enabled", lambda cfg: bool(cfg.get("rvz")))
     on = dict(rommlib.DEFAULT_CONFIG, **{c.setting: True for c in rommlib.CONVERTERS})

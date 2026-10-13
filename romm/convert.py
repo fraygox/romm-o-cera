@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 import rommlib
-from . import core as _core, config as _config, discs as _discs, tools as _tools, ps3 as _ps3
+from . import core as _core, config as _config, discs as _discs, tools as _tools, ps3 as _ps3, wiiu as _wiiu
 
 
 def squashfs_supported():
@@ -310,6 +310,10 @@ def zar_check(path, full=False):
     return None
 
 
+def wua_enabled(cfg, system):
+    return system in _tools.WUA_SYSTEMS and bool(_config.config_value(cfg, "wua")) and _tools.wuatool_path() is not None
+
+
 def xiso_listing(exe, iso):
     """{relative path: size} of the files on an Xbox / Xbox 360 disc image
     (extract-xiso -l), or None if it isn't one."""
@@ -366,6 +370,12 @@ def zar_audit(path, orig, deep):
     # packed here from the disc's files: RomM's image hashes can't match by design
     bad = zar_check(path, full=deep)
     return ("Compressed file %s" % bad, "damaged") if bad else None
+
+
+def wua_audit(path, orig, deep):
+    # the disc's game partition, packed here: RomM's image hashes can't match by design
+    bad = zar_check(path, full=deep)                # a .wua is a ZArchive: the same footer and SHA-256
+    return ("Compressed file %s" % bad.replace(".zar", ".wua"), "damaged") if bad else None
 
 
 RVZ_MAGICS = (b"RVZ\x01", b"WIA\x01")
@@ -538,7 +548,7 @@ def squashfs_audit(path, orig, deep):
 
 
 # what a converter's check() raises for a file it can't convert (planner and worker skip it)
-CHECK_ERRORS = (Z3dsError, _discs.CsoError, OSError, _ps3.Ps3Error)
+CHECK_ERRORS = (Z3dsError, _discs.CsoError, OSError, _ps3.Ps3Error, _wiiu.WiiuError)
 
 
 # ---------------------------------------------------------- which conversion applies
@@ -634,6 +644,12 @@ CONVERTERS = (
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
               audit=zar_audit, tool=_tools.TOOL_X360, priority=("xbox360",)),
+    # Wii U: the disc's game partition, decrypted with the disc's key, becomes a .wua Cemu opens
+    Converter("wua", "WUA", "wua", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wua", ".wux": ".wua"},
+              "wua", _config.SETTING["wua"].label, "turned off, or wuatool isn't installed",
+              lambda cfg, system: wua_enabled(cfg, system), planner_skips_done=True,
+              check=lambda src: _wiiu.wiiu_check(src), audit=wua_audit, tool=_tools.TOOL_WIIU,
+              priority=("wiiu",)),
     # PS3: a disc image (loose, or the one .iso in a zip, read without unzipping it) becomes
     # a "Name.ps3" game folder; encrypted discs need Decrypt PS3 discs and the disc's key
     Converter("ps3", "PS3 folder", "ps3", frozenset({"ps3"}), {".iso": ".ps3", ".zip": ".ps3"},

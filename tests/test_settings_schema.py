@@ -243,7 +243,7 @@ DEFAULTS_LITERAL = [
     ("url", ""), ("token", ""), ("verify_tls", True), ("verify_tls_ca", ""), ("swap_ab", False),
     ("button_style", "auto"), ("check_updates", True), ("chd", True), ("chd_threads", "auto"),
     ("chd_low_memory", "auto"), ("keep_free_gb", 20), ("extract_parallel", True), ("rvz", False),
-    ("xbox_bootable", True), ("squashfs", False), ("z3ds", True), ("zar", False), ("ps3_folders", True),
+    ("xbox_bootable", True), ("squashfs", False), ("z3ds", True), ("zar", False), ("wua", False), ("ps3_folders", True),
     ("ps3_decrypt", False), ("cache_limit_mb", 1024), ("download_hours", "any"), ("background_downloads", True),
     ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("sounds", "normal"), ("theme", "default"), ("update_channel", "stable"),
     ("theme_auto", False),
@@ -278,7 +278,7 @@ FRESH = {
     "keep_free": 20 << 30, "cache_limit": 1024 << 20, "chd_threads": 6, "chd_low_memory": False,
     "in_hours": True, "hours": "Any time", "token": "", "verify": True, "base": "", "api_verify": True,
     "conv_createcd": True, "conv_createdvd": True, "conv_cso": True, "conv_rvz": False, "conv_squashfs": False,
-    "conv_z3ds": True, "conv_zar": False, "conv_ps3": True, "on_swap_ab": False, "on_check_updates": True,
+    "conv_z3ds": True, "conv_zar": False, "conv_wua": False, "conv_ps3": True, "on_swap_ab": False, "on_check_updates": True,
     "on_extract_parallel": True, "on_background_downloads": True, "on_notify": True, "on_manuals": True,
     "sfx": 1.0, "speed": 0.0, "platform_map": {},
 }

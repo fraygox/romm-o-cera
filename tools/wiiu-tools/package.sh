@@ -3,8 +3,10 @@
 #   out/wiiu-tools-<ver>-<arch>.tar.gz   one top-level dir: wuatool, LICENSES/, SOURCE.txt, README.txt
 #   out/wiiu-tools-<ver>-src.tar.xz      the exact sources built (Cemu's src/, ZArchive, zstd) + this recipe
 #   out/SHA256SUMS
-# Packages every arch that's built. Reproducible from the same src/ checkout and
-# out/<arch> files (fixed mtimes, sorted, numeric root owner, gzip -n).
+# Packages every arch that's built. Re-packaging the same out/<arch> files gives the
+# same archives (fixed mtimes, sorted, numeric root owner, gzip -n); a fresh build
+# needn't (BUILDINFO's date, unpinned base image), so romm/tools.py pins the
+# published archives, not a rebuild.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE/out"

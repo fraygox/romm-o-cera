@@ -21,6 +21,7 @@ Per converted game it also:
 - queues the gamelist path rename for rb_finalize (flush → merge → reload,
   only when ES is idle).
 """
+import glob
 import json
 import os
 import re
@@ -505,6 +506,44 @@ def convert_zar(src, tmp):
         shutil.rmtree(work, ignore_errors=True)
 
 
+WUA_FAIL = {2: "not a Wii U game disc wuatool can read", 3: "no disc key for it (Cemu's keys.txt in bios/cemu, "
+            "or bios/wiiukeys)", 5: "the image is damaged or cut short (a block doesn't match its hash)",
+            6: "the .wua couldn't be written (disk full?)"}
+
+
+def convert_wua(src, tmp):
+    """Wii U disc image (.wud/.wux) -> .wua that Cemu opens directly: the game
+    partition's files, decrypted with the disc's key (the user's own, gathered
+    into a key list only this user can read, deleted after) and packed with
+    ZArchive by wuatool. Its pack exits 0 only when every block it read matched
+    its hash; then wuatool verify checks the archive's SHA-256 and compares every
+    file with the disc again before the caller deletes the image. The .wua holds
+    the game partition, not the whole disc, so it can't become the image again."""
+    exe = rommlib.wuatool_path()
+    if not exe:
+        raise ToolMissing("wuatool")
+    keys = os.path.join(rommlib.tmp_dir(), "wiiu-keys-%d.txt" % os.getpid())
+    os.makedirs(os.path.dirname(keys), exist_ok=True)
+    try:
+        if not rommlib.wiiu_key_file(keys):
+            return 3, WUA_FAIL[3]
+        status(step="Packing", pct=None)
+        rc, out = run_tool([exe, "pack", "-k", keys, src, tmp], keep_stdout=True)
+        if rc != 0 or not os.path.exists(tmp):
+            return rc or 4, WUA_FAIL.get(rc) or "wuatool failed (rc %d): %s" % (rc, out.strip()[-200:])
+        status(step="Verifying", pct=None)
+        rc, out = run_tool([exe, "verify", "-k", keys, src, tmp], keep_stdout=True)
+        if rc != 0:
+            return 5, ".wua doesn't match the disc (rc %d): %s" % (rc, out.strip()[-200:])
+        done = re.search(r"verified (\d+) files", out)
+        return 0, "%s files, each compared with the disc" % (done.group(1) if done else "all")
+    finally:
+        try:
+            os.remove(keys)
+        except OSError:
+            pass
+
+
 def _data_sha1(out):
     """The CHD's "Data SHA1" from chdman info: the SHA-1 of the data it holds
     (for a DVD CHD, exactly the ISO's bytes; "SHA1" also covers metadata)."""
@@ -604,6 +643,7 @@ RUNNERS = {
     "squashfs": lambda src, tmp, threads: convert_squashfs(src, tmp, threads),
     "z3ds": lambda src, tmp, threads: convert_z3ds(src, tmp, threads),
     "zar": lambda src, tmp, threads: convert_zar(src, tmp),
+    "wua": lambda src, tmp, threads: convert_wua(src, tmp),
     "cso": lambda src, tmp, threads: convert_cso(src, tmp, threads),
     "ps3": lambda src, tmp, threads: convert_ps3(src, tmp),
 }
@@ -914,6 +954,11 @@ def work(fd):
         os.remove(rommlib.chd_current_path())   # left by a killed run
     except OSError:
         pass
+    for left in glob.glob(os.path.join(rommlib.tmp_dir(), "wiiu-keys-*.txt")):
+        try:
+            os.remove(left)                     # a Wii U key list a killed run (power cut, kill -9) left
+        except OSError:
+            pass
     while True:
         tasks = sorted(t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json"))
         if not tasks:

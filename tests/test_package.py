@@ -140,6 +140,7 @@ PREVIOUS_RELEASE_NAMES = frozenset((
     "zar_check",
     "DL_LOCK", "DL_STATUS", "DL_STOP", "Downloader", "Job", "es_messagebox", "es_notify",
     "start_conversions",   # rb_dl
+    "wiiu_key_file", "wuatool_path",   # rb_chd (Wii U; only a "wua" task reaches them)
 ))
 
 

@@ -135,6 +135,7 @@ Theme row shows what's on screen ("Default (now PlayStation)").
 | `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
 | `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
+| `wua` | `false` | convert Wii U disc images (`.wud`, `.wux`) to `.wua` for Cemu (x86_64 and 64-bit ARM; turning it on in Settings downloads wuatool and copies the disc keys in RomM's Wii U firmware into `bios/wiiukeys`) |
 | `theme` | `default` | colours: `custom` (your own, from the four `theme_custom_` keys), `default`, `playstation`, `xbox`, `nintendo` (Kyoto), or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `dmg` (Brick), `virtualboy_oled` (Red Visor OLED), `famicom` (Red & White), `snes` (Lavender), `megadrive`, `dreamcast`, `gamecube` (Indigo Cube), `n64` (Sixty-Four), `turbografx`, `neogeo`, `atari`, `c64`, `phosphor`, `amber`, `synthwave`, `sakura`, `nord`, `solarized`, `dracula`, `paper` |
 | `theme_auto` | `false` | `true`: a PlayStation, Xbox or Nintendo controller picks the theme made for it (Match theme to controller) |
 | `theme_custom_accent` | `195` | the Custom theme's accent: a hue in degrees, `0`–`359` (0 red, 120 green, 240 blue); Settings steps it by 15 |
