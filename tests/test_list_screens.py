@@ -806,9 +806,9 @@ def test_page_hints_and_left_right_on_every_list(app, rb, monkeypatch):
 
 
 def test_games_from_romm_sorts_and_offers_the_game_list_menu(app, rb, monkeypatch):
-    """Games from RomM: Y sorts (biggest, name, newest); A opens the menu a
-    game opened from a game list has, plus More like this, once RomM's
-    record is here (else Delete only); the panel shows RomM's record."""
+    """Games from RomM: Y sorts (biggest, name, newest); A opens the game's page once RomM's
+    record is here (else a menu with Delete only); the panel shows RomM's record and its
+    button opens the game list's menu, plus More like this."""
     app.platform_by_id = {1: {"_system": "gba", "id": 1, "name": "GBA"}}
     recs = {}
     monkeypatch.setattr(app, "detail", lambda rom: recs.get(rom["id"]))
@@ -830,10 +830,14 @@ def test_games_from_romm_sorts_and_offers_the_game_list_menu(app, rb, monkeypatc
     app.modal = None
     _frame(app, scr)
     recs[0] = {"id": 0, "name": "Game B", "fs_name": "Game B.gba", "platform_id": 1, "fs_size_bytes": 5}
-    scr.action("ok")
+    rects = _frame(app, scr)
+    assert (752, 580, 472, 52) in rects                   # the game panel's action area (as in a game list)
+    tap = next(fn for r, fn in app.targets if tuple(r) == (752, 580, 472, 52))
+    tap()                                                 # tapped: the game's menu at once
     assert isinstance(app.modal, rb.ManageMenu)
     assert [e[0] for e in app.modal.entries] == ["Play now", "Delete from this box", "Download again",
                                                  "More like this"]
     app.modal = None
-    rects = _frame(app, scr)
-    assert (752, 580, 472, 52) in rects                   # the game panel's action area (as in a game list)
+    scr.action("ok")                                      # A: the game's page, deletes reload this list
+    page = app.stack[-1]
+    assert isinstance(page, rb.GameScreen) and page.rom is recs[0] and page.then == scr.load

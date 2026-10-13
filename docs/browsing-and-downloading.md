@@ -65,6 +65,25 @@ disc games the format and what it becomes on the box, for example
 lists the archive's contents, "~" when estimated). It also tells you when
 another region or revision of the game is already on the box.
 
+## The game page
+
+**A** on a game in a list (or in Games from RomM) opens its page: the cover
+over a soft backdrop, its facts and description, and your side of RomM in
+one strip: your status (Playing, On your backlog, Finished…), your rating,
+your newest note, and your RetroAchievements progress. Up to three
+screenshots sit under it, and a QR code opens the game's page in RomM on
+your phone. Anything RomM doesn't have is left out.
+
+- **A** is the game's one action: **Download** (A again in the prompt
+  downloads it), or **Play now** when it's on the box. Then the facts set the
+  box's copy beside RomM's ("On this box: CHD · 257 MB · roms/psx", "In RomM:
+  zip · 515 MB") and the strip says when you last played it here.
+- **X** opens the game's Actions: More like this, Surprise me (from the list
+  it came from), and for a game on the box Delete and Download again.
+- **Left/right** go to the previous or next game of the list; **B** goes back.
+
+While picking several games, A still picks.
+
 ## The Actions menu (X)
 
 Press **X** in a game list for its Actions menu. Filters change the list in place
@@ -136,7 +155,7 @@ download only what fits.
 ### Play now
 
 A game you've just downloaded can start straight away: **Play now** is in
-the game's menu (A on a game on the box), in its row's menu on the Downloads
+the game's page (A on a game on the box), in its row's menu on the Downloads
 screen, and the "Ready" toast says so (tapping the toast plays it).
 RomM-o-Cera closes and EmulationStation starts the game a few seconds later.
 If other downloads are still running it asks first: they keep going in the

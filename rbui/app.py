@@ -9,7 +9,7 @@ from rommlib import human_size
 from rbui import APP_NAME, draw, pads, theme
 from rbui.theme import apply_theme, FPS, H, ink_on, S, set_custom, W
 from rbui.draw import (as_rgba, button_glyph, circle, COVER_DECODES, COVER_ENTRIES, cover_fit, Fonts, glyph_width,
-                       hline, marquee, measure, rich_width, rom_title, rrect, surface_bytes, text)
+                       hline, marquee, measure, rich_width, rom_title, rrect, shot_fit, surface_bytes, text)
 from rbui.pads import FACE, style_from_names, theme_for, TOKEN_ACTION, TOKEN_BACK
 from rbui.sfx import Sfx, SOUND_FOR
 from rbui.input import Input
@@ -289,7 +289,22 @@ class App:
         return rommlib.disc_layout(d, system, self.cfg, self.downloader._accepts)
 
     def cover(self, rom):
-        rid = rom["id"]
+        large = theme.K > 1.5
+        return self.art(rom["id"], lambda: self.api.fetch_cover(rom, large=large), cover_fit)
+
+    def screenshot(self, rom, i):
+        """rom's i-th screenshot (Api.fetch_screenshot) in the covers' store and budget, under its
+        own key: the Surface, or None while it loads (or when there's none: art_missing)."""
+        return self.art(("shot", rom["id"], i), lambda: self.api.fetch_screenshot(rom, i), shot_fit)
+
+    def art_missing(self, key):
+        """True when RomM had no image for a key of art() (not merely still loading)."""
+        return key in self.covers and self.covers[key] is None
+
+    def art(self, rid, fetch, fit):
+        """An image from RomM's assets by key (a rom id: its cover; ("shot", id, i)...): fetch()
+        -> a cached file path or None (blocking, on the cover loader), fit(Surface) -> what's kept.
+        Kept least-recently-drawn under COVER_BUDGET with every other one. None while loading."""
         self.cover_loader.drawn(rid)
         c = self.covers.get(rid)
         if c is not None or rid in self.covers:
@@ -310,12 +325,12 @@ class App:
 
         def load():
             for _ in (1, 2):
-                path = self.api.fetch_cover(rom, large=theme.K > 1.5)
+                path = fetch()
                 if not path:
                     return None
                 try:
                     with COVER_DECODES:
-                        return cover_fit(as_rgba(pygame.image.load(path)))
+                        return fit(as_rgba(pygame.image.load(path)))
                 except (pygame.error, OSError):
                     # trimmed from the cache between finding and reading it
                     # (or unreadable): drop it and fetch once more
