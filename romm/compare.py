@@ -31,6 +31,22 @@ def _lower_ext(name):
     return os.path.splitext(name)[1].lower()
 
 
+def format_label(ext):
+    """A format as people say it: ".chd" -> "CHD"; no (or no short) extension -> "Folder"."""
+    e = (ext or "").lstrip(".")
+    return e.upper() if e and len(e) <= 5 else "Folder"
+
+
+def path_format(path):
+    """A file's format label (CHD, ZIP); a folder's "Folder"."""
+    return format_label(_lower_ext(path or ""))
+
+
+def rom_format(rom):
+    """RomM's file format label (ZIP), or "Folder" for a game of several files."""
+    return format_label(_rom_ext(rom))
+
+
 def _key(name, is_dir):
     """Grouping key of a top-level entry: a file's stem; a folder's whole name
     ("Dr. Mario (USA)" has no extension), unless it ends in a short one (X.ps3)."""

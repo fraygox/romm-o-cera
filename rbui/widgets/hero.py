@@ -89,12 +89,16 @@ def game_note(app, rom, status=None):
     return "Saved to roms/%s." % system
 
 
-def time_ago(ts, now=None):
+def time_ago(ts, now=None, minutes=False):
     """When epoch seconds ts was, in calendar days: "today", "yesterday", "3 days ago",
-    "2 weeks ago", "5 months ago", "2 years ago"."""
+    "2 weeks ago", "5 months ago", "2 years ago". minutes: the last hour as "just now" and
+    "12 min ago"."""
     if not ts:
         return ""
     now = time.time() if now is None else now
+    if minutes and now - ts < 3600:
+        m = int(max(0, now - ts) // 60)
+        return "just now" if m < 1 else "%d min ago" % m
     days = (datetime.date.fromtimestamp(now) - datetime.date.fromtimestamp(ts)).days
     if days <= 0:
         return "today"

@@ -195,8 +195,8 @@ class GameScreen(Screen):
         app.modal = ActionMenu(app, rom_title(rom), entries)
 
     def more_like(self):
-        from rbui.screens.games import GameListScreen
-        GameListScreen._more_like(self, self.rom)
+        from rbui.screens.games import more_like
+        more_like(self.app, self.rom)
 
     def step(self, d):
         """The previous or next game of the source list (one still loading: stay)."""

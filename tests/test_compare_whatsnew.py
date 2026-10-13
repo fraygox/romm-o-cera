@@ -202,6 +202,25 @@ def test_get_the_newer_one_under_another_name_replaces_the_file_here(rb, app, mo
     assert queued == [res["items"][4]["paths"]]
 
 
+def test_format_labels_come_from_the_compare_module(rb):
+    assert rommlib.path_format("/r/psx/Foo (USA).chd") == "CHD"
+    assert rommlib.path_format("/r/psx/Dr. Mario (USA)") == "Folder"
+    assert rommlib.rom_format({"fs_extension": "zip"}) == "ZIP"
+    assert rommlib.rom_format({"fs_name": "Foo.7z"}) == "7Z"
+    assert rommlib.rom_format({"fs_name": "Foo (USA)"}) == "Folder"
+    it = _item(rommlib.COMPRESSED, "Beta", 2)
+    assert rb.compare.say(it) == ("RomM's ZIP, compressed here to CHD to save space. The same game: "
+                                  "nothing to do.")
+
+
+def test_more_like_this_on_a_game_page_lists_romms_similar_games(rb, app, monkeypatch):
+    rom = {"id": 4, "name": "Lorem", "platform_id": 7, "fs_name": "Lorem.zip"}
+    monkeypatch.setattr(app.api, "similar", lambda rid: [dict(rom, id=5, name="Ipsum")])
+    app.push(rb.Screen(app))
+    rb.GameScreen(app, rom).more_like()
+    assert isinstance(app.stack[-1], rb.GameListScreen) and app.stack[-1].title == "Games like Lorem"
+
+
 def test_compare_draws_every_state_inside_its_boxes(rb, app, monkeypatch):
     scr, _ = _platform_screen(rb, app, monkeypatch)
     for filt in range(4):

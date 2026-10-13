@@ -37,18 +37,6 @@ def state_color(status):
             rommlib.NEWER: theme.BLUE}.get(status, theme.DIM if status else theme.TEXT)
 
 
-def ext_of(path):
-    """A file's format as people say it (CHD, ZIP); a folder's "Folder"."""
-    e = os.path.splitext(path or "")[1].lstrip(".")
-    return e.upper() if e and len(e) <= 5 else "Folder"
-
-
-def rom_ext(rom):
-    """RomM's file format (ZIP), or "Folder" for a game of several files."""
-    e = rom.get("fs_extension") or os.path.splitext(rom.get("fs_name") or "")[1].lstrip(".")
-    return e.upper() if e and len(e) <= 5 else "Folder"
-
-
 def display_name(it):
     """RomM's name for a game it has, else the file's name without its extension."""
     rom = it.get("rom")
@@ -70,9 +58,9 @@ def say(it, recorded=False):
     if st == rommlib.MATCHES:
         return "The same file RomM has. Nothing to do."
     if st == rommlib.COMPRESSED:
-        fmt = rom_ext(rom)
+        fmt = rommlib.rom_format(rom)
         return "RomM's %s, compressed here to %s to save space. The same game: nothing to do." % (
-            "files" if fmt == "Folder" else fmt, ext_of(it["path"]))
+            "files" if fmt == "Folder" else fmt, rommlib.path_format(it["path"]))
     if st == rommlib.NEWER:
         return ("RomM's copy changed since this one was downloaded." if recorded else
                 "RomM has a different copy under the same name.") + " Getting it replaces the file here; saves are kept."
@@ -243,7 +231,7 @@ class CompareScreen(ListScreen):
 
     def sub(self, it):
         size = human_size(it["size"]) if it.get("size") is not None else ""
-        return " · ".join(x for x in ("roms/" + system_of(it), ext_of(it["path"]).lower()
+        return " · ".join(x for x in ("roms/" + system_of(it), rommlib.path_format(it["path"]).lower()
                                       if it.get("size") is not None else "folder", size) if x)
 
     def queued(self, it):
@@ -302,9 +290,8 @@ class CompareScreen(ListScreen):
                      tag=busy)
         self.draw_scrollbar(c, lst.right + 6, TOP)
         n = len(self.result["items"])
-        ago = int((time.time() - self.when) // 60) if self.when else 0
         text(c, f.small, "{:,} game{} here · compared with RomM {}".format(
-            n, "" if n == 1 else "s", "just now" if ago < 1 else "%d min ago" % ago if ago < 60 else "a while ago"),
+            n, "" if n == 1 else "s", time_ago(self.when, minutes=True) or "just now"),
             (lst.left + 8, TOP + self.ROWS * self.ROW_H + 6), theme.FAINT, maxw=lst.width - 16)
         self.draw_bubble(c)
         it = self.current()
@@ -323,10 +310,10 @@ class CompareScreen(ListScreen):
         p.title(display_name(it), lines=3, small=True)
         p.status(it["label"], state_color(it["status"]))
         p.under_art()
-        here = ext_of(it["path"]) + (" · " + human_size(it["size"]) if it.get("size") is not None else "")
+        here = rommlib.path_format(it["path"]) + (" · " + human_size(it["size"]) if it.get("size") is not None else "")
         added = time_ago(self.added(it)) or "not known"
         if rom:
-            pairs = [("Here", here), ("In RomM", "%s · %s" % (rom_ext(rom), human_size(rom.get("fs_size_bytes")))),
+            pairs = [("Here", here), ("In RomM", "%s · %s" % (rommlib.rom_format(rom), human_size(rom.get("fs_size_bytes")))),
                      ("Folder", "roms/" + system_of(it)), ("RomM's file", rom.get("fs_name") or "not known"),
                      ("Added here", added),
                      ("Updated in RomM", time_ago(rommlib.utc_seconds(rom.get("updated_at"))) or "not known")]

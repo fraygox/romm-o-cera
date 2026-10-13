@@ -259,6 +259,8 @@ def test_time_ago_and_box_copy(rb, app):
     assert [rb.time_ago(now - d * day, now) for d in (0, 1, 3, 20, 90, 800)] == [
         "today", "yesterday", "3 days ago", "2 weeks ago", "3 months ago", "2 years ago"]
     assert rb.time_ago(None) == ""
+    assert [rb.time_ago(now - s, now, minutes=True) for s in (5, 60, 59 * 60, 2 * 3600)] == [
+        "just now", "1 min ago", "59 min ago", "today"]
     rom = _rom()
     assert rommlib.box_copy(app.library, rom, "psx") is None
     _install(app, rom, 3 << 20)
