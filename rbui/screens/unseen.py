@@ -264,5 +264,5 @@ class UnseenScreen(ListScreen):
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(r.right - 20 - tw, r.top + 8, tw, 20)
             rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
+            text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
             text(c, self.f.small, human_size(it["size"]), (r.right - 20, r.top + 40), theme.DIM, "midright")

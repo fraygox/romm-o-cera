@@ -338,7 +338,7 @@ class PlatformScreen(Screen):
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(r.right - tw - 14, r.bottom - 30, tw, 20)
             rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
+            text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
             room = tr.left - 10                   # the left side never runs into the tag
             games = "{:,} games".format(p["rom_count"])
             if r.left + 18 + measure(self.f.small, games) > room:

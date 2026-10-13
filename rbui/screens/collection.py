@@ -218,7 +218,7 @@ class CollectionScreen(ListScreen):
                 tw = int(measure(self.f.tiny, tag)) + 14
                 tr = pygame.Rect(r.right - right - tw, r.centery - 10, tw, 20)
                 rrect(c, theme.BG2, tr, 6)
-                text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
+                text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
                 right += tw + 16
             # full name: one line if it fits, else two smaller lines — never "…"
             name = it["name"]
@@ -236,7 +236,7 @@ class CollectionScreen(ListScreen):
                     text(c, fnt, ln, (r.left + 22, y0 + k * lh), col_txt)
             cnt = ("{:,} game{}".format(it["count"], "" if it["count"] == 1 else "s")
                    if it["count"] is not None else "›")
-            cr = text(c, self.f.small, cnt, (r.right - 20, r.centery), theme.FAINT, "midright")
+            cr = text(c, self.f.small, cnt, (r.right - 20, r.centery), theme.DIM, "midright")
             self._want_here(it)
             if here:                                   # like the platform cards: green tick + count
                 hr = text(c, self.f.small, "{:,}".format(here), (cr.left - 14, r.centery), theme.GREEN, "midright")

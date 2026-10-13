@@ -220,7 +220,7 @@ class AuditScreen(ListScreen):
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(r.right - 20 - tw, r.top + 10, tw, 20)
             rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.GREEN if f["path"] in self.queued else theme.FAINT, "center")
+            text(c, self.f.tiny, tag, tr.center, theme.GREEN if f["path"] in self.queued else theme.DIM, "center")
 
 
 class CheckScreen(AuditScreen):

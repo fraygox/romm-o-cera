@@ -268,7 +268,7 @@ class FreeUpScreen(ListScreen):
             tw = int(measure(self.f.tiny, g["system"])) + 14
             tr = pygame.Rect(r.right - 380 - tw, r.centery - 10, tw, 20)
             rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, g["system"], tr.center, theme.FAINT, "center")
+            text(c, self.f.tiny, g["system"], tr.center, theme.DIM, "center")
             text(c, self.f.small, _lastplayed_label(g["lastplayed"]), (r.right - 130, r.centery),
                  theme.FAINT, "midright")
             text(c, self.f.small, human_size(g["size"]), (r.right - 20, r.centery), theme.DIM, "midright")

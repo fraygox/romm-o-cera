@@ -194,7 +194,7 @@ class InstalledScreen(ListScreen):
             marquee(c, self.f.row, it["name"], (nx, r.top + 4), theme.TEXT if on else theme.DIM,
                     maxw=sr.left - 16 - nx, focused=on, slot="installed-name")
             sub = (it["system"] or "?") + ("  ·  added %s" % it["when"][:10] if it.get("when") else "")
-            text(c, self.f.small, sub, (nx, r.top + 29), theme.FAINT, maxw=sr.left - 16 - nx)
+            text(c, self.f.small, sub, (nx, r.top + 29), theme.DIM, maxw=sr.left - 16 - nx)
         it = self.items[self.sel]
         d = self.record(it)
         if d and d.get("id") is not None:

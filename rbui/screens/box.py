@@ -205,7 +205,7 @@ class OnThisBoxScreen(Screen):
             tw = int(measure(self.f.tiny, tag)) + 14
             tr = pygame.Rect(p.right - 128 - tw, yy + 3, tw, 20)
             rrect(c, theme.BG2, tr, 6)
-            text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
+            text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
             text(c, self.f.small, human_size(g["size"]), (p.right - 28, yy + 3), theme.DIM, "topright")
             yy += 44
         if len(self.games) > 7:
@@ -288,7 +288,7 @@ class OnThisBoxScreen(Screen):
                 name = (f.get("rom") or {}).get("name") or os.path.basename(f["path"])
                 text(c, self.f.row, name, (r.left + 20, r.top + 10), theme.TEXT, maxw=r.width - 120)
                 text(c, self.f.small, f["problem"], (r.left + 20, r.top + 40), col, maxw=r.width - 40)
-                text(c, self.f.tiny, f["system"], (r.right - 16, r.top + 14), theme.FAINT, "topright")
+                text(c, self.f.tiny, f["system"], (r.right - 16, r.top + 14), theme.DIM, "topright")
                 yy += 82
             st = a.get("stats") or {}
             more = len(a["findings"]) - 3
@@ -379,7 +379,7 @@ class OnThisBoxScreen(Screen):
         systems = sorted(((k, v) for k, v in counts.items() if not romm or k in romm), key=lambda kv: -kv[1])
         for sysn, n in systems[:6]:
             text(c, self.f.row, sysn, (x, yy), theme.DIM)
-            text(c, self.f.small, plural(n, "game"), (p.right - 28, yy + 3), theme.FAINT, "topright")
+            text(c, self.f.small, plural(n, "game"), (p.right - 28, yy + 3), theme.DIM, "topright")
             yy += 38
         if len(systems) > 6:
             text(c, self.f.small, "and %s more" % plural(len(systems) - 6, "system"), (x, yy), theme.FAINT)

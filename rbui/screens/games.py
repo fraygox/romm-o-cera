@@ -608,7 +608,7 @@ class GameListScreen(ListScreen):
             tw = max(measure(self.f.small, ln) for ln in lines)
             for k, ln in enumerate(lines):
                 text(c, self.f.small, ln, (lx + 8, ly - 2 + k * 18), theme.TEXT)
-        text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), theme.RED if failed else theme.FAINT, "topright",
+        text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), theme.RED if failed else theme.DIM, "topright",
              maxw=300 if failed else lw - 40 - int(tw))
         ly += 40
         multi_plat = self.platform is None
@@ -639,7 +639,7 @@ class GameListScreen(ListScreen):
                 circle(c, theme.LINE, (ix, r.centery), 4)
             right_w = 0
             size = human_size(rom.get("fs_size_bytes"))
-            sr = text(c, self.f.small, size, (r.right - 14, r.centery), theme.FAINT if not on else theme.DIM, "midright")
+            sr = text(c, self.f.small, size, (r.right - 14, r.centery), theme.DIM, "midright")
             right_w = sr.width + 14
             if multi_plat:
                 p = app.platform_by_id.get(rom.get("platform_id"))
@@ -647,7 +647,7 @@ class GameListScreen(ListScreen):
                 tw = int(measure(self.f.tiny, tag)) + 12
                 tr = pygame.Rect(r.right - right_w - tw - 12, r.centery - 10, tw, 20)
                 rrect(c, theme.BG2 if p else mix(theme.BG, theme.RED, 0.22), tr, 6)
-                text(c, self.f.tiny, tag, tr.center, theme.FAINT, "center")
+                text(c, self.f.tiny, tag, tr.center, theme.DIM, "center")
                 right_w += tw + 12
             name = rom_title(rom)
             nr = text(c, self.f.row, name, (r.left + 44, r.centery), theme.TEXT if on else theme.DIM,
@@ -655,7 +655,7 @@ class GameListScreen(ListScreen):
             regions = rom.get("regions") or []
             if regions:
                 rg = "/".join(REGION_ABBR.get(x, x[:3]) for x in regions[:2])
-                text(c, self.f.tiny, rg, (nr.right + 8, r.centery + 1), theme.FAINT, "midleft")
+                text(c, self.f.tiny, rg, (nr.right + 8, r.centery + 1), theme.DIM, "midleft")
         if self.loading:
             text(c, self.f.body, "Loading…", (lx + lw // 2, ly + 120), theme.DIM, "center")
         # scrollbar

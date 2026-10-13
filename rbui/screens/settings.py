@@ -118,7 +118,7 @@ class SettingsScreen(Screen):
             ("cache", "Clear cover cache",
              human_size(self.cache_bytes) if self.cache_bytes is not None else "…",
              "Covers re-download as you browse"),
-            ("bios", "BIOS files", "Open", "What each system needs, and what RomM can fill"),
+            ("bios", "BIOS files", "Open", "What each system needs, and what RomM has"),
             ("credits", "Credits and licenses", "Open", "The software RomM-o-Cera uses or downloads"),
             ("docs", "Documentation", "QR code", "Open it on your phone"),
             ("resetcfg", "Reset settings", "Can't be read" if rommlib.config_unreadable() else "Reset",

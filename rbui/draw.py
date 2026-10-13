@@ -70,9 +70,9 @@ class Fonts:
         self.h3 = mk(med, 20)
         self.body = mk(reg, 19)
         self.row = mk(reg, 21)
-        self.small = mk(reg, 17)
-        self.cond = mk(reg, 17)
-        self.tiny = mk(med, 15)
+        self.small = mk(reg, 18)
+        self.cond = mk(reg, 18)
+        self.tiny = mk(med, 16)
         self.key = mk(med, 24)
         self.btn = mk(bold, 14)
 
