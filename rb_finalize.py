@@ -45,6 +45,8 @@ USAGE_FIELDS = ("playcount", "lastplayed", "gametime", "favorite")
 # gamelist media tags ES accepts uploads for, and the content types it wants
 MEDIA_TAGS = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "bezel", "manual", "map",
               "titleshot", "wheel", "boxart", "cartridge", "magazine")
+IMAGE_MAX = 20 << 20     # an image from RomM bigger than this isn't one
+VIDEO_MAX = 50 << 20     # a game's video clip: a bigger one is skipped (and logged)
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
           ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
@@ -165,8 +167,9 @@ def has(game, k):
     return bool(v) and v not in ("0", "0.000000", "not-a-date-time", "false")
 
 
-def fetch_bytes(api, url_path, limit=200 << 20):
-    """A RomM asset by server-relative path (token session), or None."""
+def fetch_bytes(api, url_path, limit=200 << 20, info=None):
+    """A RomM asset by server-relative path (token session), or None. A file
+    over limit is None too, and sets info["too_big"] (its size when RomM says)."""
     if api is None or not url_path or not url_path.startswith("/") or url_path.startswith("//"):
         return None
     try:
@@ -174,19 +177,79 @@ def fetch_bytes(api, url_path, limit=200 << 20):
     except Exception:
         return None
     try:
-        if r.status_code != 200:
+        size = int(r.headers.get("Content-Length") or -1) if r.status_code == 200 else -1
+        if r.status_code != 200 or size > limit:
             n = 0
             for c in r.iter_content(1 << 14):     # a small error page: read it so the
                 n += len(c)                       # connection is kept, not closed
                 if n > 1 << 16:
                     break
+            if size > limit and info is not None:
+                info["too_big"] = size
             return None
         data = r.raw.read(limit + 1, decode_content=True)
+        if data and len(data) > limit and info is not None:
+            info["too_big"] = len(data)
         return data if data and len(data) <= limit else None
     except Exception:
         return None
     finally:
         r.close()          # the connection goes back to the pool
+
+
+def image_kind(data):
+    """The content type ES takes for these image bytes, or None (WebP, not an image...)."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return None
+
+
+def fetch_media(api, tag, path):
+    """(bytes, content type) of one of RomM's media files as ES takes it, or None:
+    images as PNG/JPEG/GIF (anything else converted to PNG), video as MP4 up to
+    VIDEO_MAX (a bigger one is logged and skipped), the manual a PDF."""
+    if tag == "video":
+        info = {}
+        data = fetch_bytes(api, path, VIDEO_MAX, info)
+        if info.get("too_big"):
+            rommlib.log("finalize: video skipped, %d MB is over %d MB: %s" % (
+                info["too_big"] >> 20, VIDEO_MAX >> 20, path))
+        return (data, "video/mp4") if data and data[4:8] == b"ftyp" else None
+    if tag == "manual":
+        data = fetch_bytes(api, path)
+        return (data, "application/pdf") if data and data.startswith(b"%PDF") else None
+    data = fetch_bytes(api, path, IMAGE_MAX)
+    if not data:
+        return None
+    kind = image_kind(data)
+    if kind:
+        return data, kind
+    png = as_png(data)
+    return (png, "image/png") if png else None
+
+
+def upload_media(api, esapi, system, g, e):
+    """Every media file the entry offers that the game has none of in ES yet
+    (what's there is never replaced): the first of its RomM paths that comes."""
+    media = entry_media(e)
+    if e.get("image_local") and os.path.isfile(e["image_local"]):
+        media.pop("image", None)
+        if not g.get("image"):
+            with open(e["image_local"], "rb") as f:
+                esapi.set_media(system, g["id"], "image", f.read(), "image/png")
+    if e.get("manual"):
+        media["manual"] = [e["manual"]]
+    for tag, paths in media.items():
+        if tag not in MEDIA_TAGS or g.get(tag):
+            continue
+        for p in paths:
+            got = fetch_media(api, tag, p)
+            if got and esapi.set_media(system, g["id"], tag, got[0], got[1]):
+                break
 
 
 def as_png(data):
@@ -211,16 +274,28 @@ def as_png(data):
 
 
 def entry_fields(e):
+    """A gamelist entry's text as ES's fields, in ES's formats; empty ones left out."""
     out = {"name": e.get("name"), "desc": e.get("desc"),
            "genre": ", ".join(e.get("genres") or []) or None,
            "developer": e.get("developer"), "publisher": e.get("publisher"),
-           "players": e.get("players")}
+           "players": e.get("players"), "region": e.get("region"), "lang": e.get("lang"),
+           "family": e.get("family")}
     ms = e.get("releasedate")
     if ms:
         out["releasedate"] = time.strftime("%Y%m%dT000000", time.gmtime(ms / 1000))
     if e.get("rating") is not None:
         out["rating"] = "%.2f" % (float(e["rating"]) / 100)
     return {k: v for k, v in out.items() if v not in (None, "")}
+
+
+def entry_media(e):
+    """{ES media tag: RomM server paths, best first} a gamelist entry offers
+    (library.es_media). Entries queued by older versions carry only "cover":
+    that is the image."""
+    m = e.get("media")
+    if isinstance(m, dict):
+        return {k: [p for p in v if isinstance(p, str)] for k, v in m.items() if isinstance(v, list) and v}
+    return {"image": [e["cover"]]} if e.get("cover") else {}
 
 
 def node_info(sysdir, g):
@@ -424,20 +499,7 @@ def apply(entries, api, es, esapi, carry):
             if not esapi.set_meta(system, g["id"], want):
                 left.append(e)
                 continue
-            if not g.get("image"):
-                data = None
-                if e.get("image_local") and os.path.isfile(e["image_local"]):
-                    with open(e["image_local"], "rb") as f:
-                        data = f.read()
-                elif e.get("cover"):
-                    raw = fetch_bytes(api, e["cover"])
-                    data = as_png(raw) if raw else None
-                if data:
-                    esapi.set_media(system, g["id"], "image", data, "image/png")
-            if e.get("manual") and not g.get("manual"):
-                pdf = fetch_bytes(api, e["manual"])
-                if pdf and pdf.startswith(b"%PDF"):
-                    esapi.set_media(system, g["id"], "manual", pdf, "application/pdf")
+            upload_media(api, esapi, system, g, e)
         except Exception as ex:                    # one bad entry never sinks the batch
             rommlib.log("finalize: entry for %s failed (%r)" % (system, ex))
             left.append(e)

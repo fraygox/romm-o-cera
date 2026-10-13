@@ -228,8 +228,8 @@ class Confirm:
 
 
 class InfoDialog(Confirm):
-    """Fill in game info (name, description, cover, manual) from RomM for
-    games already on the box. Only what's missing is added — scrapes and
+    """Fill in game info (text, screenshot, box art, logo, video, manual...)
+    from RomM for games already on the box. Only what's missing is added — scrapes and
     edits stay — and it's written by the usual idle-time gamelist merge."""
 
     @staticmethod
@@ -275,7 +275,7 @@ class InfoDialog(Confirm):
         self.pending = False
         if not self.plan:
             self.title = "Nothing to fill in"
-            self.body = ("%d games here, %d found in RomM, all already have a name, description and cover."
+            self.body = ("%d games here, %d found in RomM, all already have everything RomM has for them."
                          % (st["on_box"], st["matched"]))
             self.ok_label, self.on_ok = "OK", lambda: None
             return

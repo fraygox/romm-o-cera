@@ -490,7 +490,8 @@ class Downloader:
 
     SLIM_KEYS = ("id", "name", "fs_name", "fs_name_no_ext", "fs_size_bytes", "platform_id",
                  "platform_slug", "regions", "summary", "metadatum", "path_cover_small",
-                 "path_cover_large", "has_multiple_files", "has_nested_single_file", "_members")
+                 "path_cover_large", "has_multiple_files", "has_nested_single_file", "_members",
+                 "languages", "has_manual", "path_manual")
 
     def __init__(self, api, library, cfg, persist=True):
         self.api = api
@@ -689,7 +690,9 @@ class Downloader:
 
     def _save_queue(self):
         with self.qlock:
-            pend = [{"rom": {k: j.rom.get(k) for k in self.SLIM_KEYS}, "system": j.system,
+            # the game's media for ES ride along as paths (_es_media), not RomM's whole metadata
+            pend = [{"rom": dict({k: j.rom.get(k) for k in self.SLIM_KEYS}, _es_media=_library.es_media(j.rom)),
+                     "system": j.system,
                      "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(_core.DATA_DIR, exist_ok=True)

@@ -339,9 +339,34 @@ running when the window closes pauses and picks up the next night.
 
 ## Game info in EmulationStation
 
-Name, description, date, genre, developer, players, rating and cover are
-handed to EmulationStation through its own API once it's idle — never by
-editing `gamelist.xml` behind its back, which EmulationStation could overwrite.
+A downloaded game's info and media from RomM are handed to EmulationStation
+through its own API once it's idle — never by editing `gamelist.xml` behind
+its back, which EmulationStation could overwrite. What ES already has for a
+game (your own scrapes, an image) is never replaced.
+
+| EmulationStation | From RomM |
+|---|---|
+| name, description, release date, genre, developer, publisher, players, rating | the game's info |
+| region | its first region with a code ES knows: `us`, `eu`, `jp`, `wr` (World)… — ES shows its flag |
+| language | its languages as `en`, `fr`, `jp`…, several joined: `en,it` |
+| game family | its first franchise |
+| image | its first screenshot; the cover when it has none |
+| thumbnail (Box) | the cover (the box art), else ScreenScraper's 2D box |
+| marquee (Logo) | the logo (wheel), else the marquee |
+| title shot | the title screen |
+| alt box art | the 3D box |
+| box back, fan art, cartridge | the box back, fan art, physical media |
+| video | the video clip (MP4 up to 50 MB; a bigger one is skipped) |
+| manual | the PDF manual (Settings → Download manuals) |
+
+Only files RomM keeps itself are used, through your RomM login like covers —
+never the upstream links in RomM's records. Which of these RomM has depends on
+its own settings: the screenshot, box art and manual by default, the logo,
+title screen, 3D box, fan art and video when RomM's `config.yml` lists them
+under `scan: media:` (`logo`, `title_screen`, `box3d`, `fanart`, `video`…)
+and the game was scanned since. A game RomM has nothing more for gets what it
+has, and [Fill in game info](on-this-box.md#fill-in-game-info) brings the rest
+to games already here once RomM has it.
 New downloads are added to EmulationStation's lists on their own, so it
 doesn't reload every system for them. Batocera 43.1's EmulationStation can't
 add games this way (a bug fixed after it), so there it reloads its lists as

@@ -183,9 +183,13 @@ EmulationStation is busy. See [Disc compression](disc-compression.md).
 
 ## Fill in game info
 
-Names, descriptions, covers and manuals from RomM for games already on the
-box, matched by file name, added only where missing — your own scrapes and
-edits are never replaced. This does every system; to do just one, use that
+Game info and media from RomM for games already on the box, matched by file
+name: descriptions and details, region, language, screenshot, box art, logo,
+title screen, video, manual… ([what goes where](browsing-and-downloading.md#game-info-in-emulationstation)).
+Only what's empty is filled — your own scrapes and edits are never replaced,
+and a game's existing image stays. A game counts as complete when it has
+everything RomM has for it: one RomM has no video or logo for isn't listed
+for lacking them. This does every system; to do just one, use that
 platform's list menu.
 
 ## Game info lost after CHD conversion (v0.6.3 and earlier)

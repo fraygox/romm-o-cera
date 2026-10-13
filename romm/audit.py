@@ -512,6 +512,24 @@ def load_audit():
 # ----------------------------------------------------------- game info for games already here
 
 INFO_TAGS = ("name", "desc", "image")
+# what a game "lacks" is only ever what RomM has for it: these, when its entry offers them
+# (rating left out: ES may keep RomM's 0 as no rating at all)
+OFFER_TEXT = ("name", "desc", "releasedate", "developer", "publisher", "genre", "players", "region", "lang",
+              "family")
+OFFER_MEDIA = ("image", "thumbnail", "marquee", "titleshot", "boxart", "boxback", "fanart", "cartridge",
+               "video", "manual")
+
+
+def offered(entry):
+    """The gamelist tags a game's entry (library.gamelist_entry) would fill: its
+    text RomM has, and the media RomM keeps for it (manual if asked for)."""
+    out = {k for k in OFFER_TEXT if entry.get(k) not in (None, "", [])}
+    if entry.get("genres"):
+        out.add("genre")
+    out |= {k for k, v in (entry.get("media") or {}).items() if k in OFFER_MEDIA and v}
+    if entry.get("manual"):
+        out.add("manual")
+    return out
 
 
 LIST_PAGE = 250       # games per listing page: RomM's records are ~16 KB, and 5 pages are in flight
@@ -548,15 +566,16 @@ def _gamelist_info(sysdir):
     for g in root.findall("game"):
         p = g.findtext("path")
         if p:
-            out[p] = {t for t in INFO_TAGS + ("manual",) if (g.findtext(t) or "").strip()}
+            out[p] = {t for t in OFFER_TEXT + OFFER_MEDIA if (g.findtext(t) or "").strip()}
     return out
 
 
 def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
     """Gamelist entries for games already in roms/<system> that RomM knows
     (matched by file name, like "already on this box") and whose ES entry
-    lacks a name, description or cover. Entries carry "fill": the merge only
-    sets what's missing. Returns (entries, stats)."""
+    lacks something RomM has for it: text, images, video, manual (offered()).
+    Entries carry "fill": the merge only sets what's missing. Returns
+    (entries, stats)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
     if not os.path.isdir(sysdir):
@@ -619,13 +638,13 @@ def plan_info(api, system, platform_ids, es, manuals=True, cancel=None):
         if not prim:
             continue
         got = have.get("./" + os.path.relpath(prim, sysdir), set())
-        if set(INFO_TAGS) <= got and (not manuals or not _library.manual_path(rom) or "manual" in got):
-            stats["complete"] += 1
-            continue
         e = _library.gamelist_entry(rom, system, [prim], manual=manuals)
         e["fill"] = True
         if title:
             e["name"] = title
+        if offered(e) <= got:
+            stats["complete"] += 1
+            continue
         entries.append(e)
     stats["queued"] = len(entries)
     return entries, stats

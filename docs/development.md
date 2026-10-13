@@ -198,7 +198,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/ps3.py` | PS3 discs |
 | `romm/wiiu.py` | Wii U discs: disc keys (Cemu's keys.txt, bios/wiiukeys, RomM's firmware) and the check before a .wua |
 | `romm/convert.py` | conversions: the Converter table, Z3DS, .zar checks, the conversion queue (the screens read what the worker publishes through `conversions_state()`, never its files) |
-| `romm/library.py` | installed.json (`Library`: everything outside reads its records through `snapshot()`, never its lock or fields), multi-disc sets, gamelist entries |
+| `romm/library.py` | installed.json (`Library`: everything outside reads its records through `snapshot()`, never its lock or fields), multi-disc sets, gamelist entries (`gamelist_entry`; what of RomM's record becomes which ES field and media tag: `es_media`, `es_region`, `es_lang`) |
 | `romm/leftovers.py` | files a download or conversion left behind |
 | `romm/update.py` | release checks and the in-app updater |
 | `romm/downloader.py` | downloads: the queue, the workers, space planning |
@@ -354,7 +354,7 @@ it in every module that holds it.
 | `rommbrowser.pygame.keys` | evmapy override: only Hotkey+Start (exit) |
 | `rommlib.py` | the engine's front: VERSION, BUILD and APP_DIR, then imports the `romm/` package and makes every name in it readable and settable as `rommlib.X` |
 | `romm/` | the engine (see [The romm package](#the-romm-package)) |
-| `rb_finalize.py` | hands game info to EmulationStation through its API once ES is idle |
+| `rb_finalize.py` | hands game info to EmulationStation through its API once ES is idle: text with `POST /systems/<sys>/games/<id>`, each media file RomM has that ES lacks with `POST .../media/<tag>` (fetched from RomM's assets only, video capped) |
 | `rb_repair.py` | one-time restore of game info lost after CHD conversion (≤ v0.6.3) |
 | `rb_chd.py` | background conversion worker (CHD, RVZ, squashfs, .zcci, .zar, .wux, .wua) |
 | `rb_chd_plan.py` | finds games already on the box that could be compressed and queues them (On this box → Compress games already here, or its command line); makes Xbox images bootable |

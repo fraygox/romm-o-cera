@@ -147,7 +147,7 @@ class OnThisBoxScreen(Screen):
             if failed:
                 return "%s failed: retry from here" % plural(len(failed), "conversion"), theme.RED
             return "Nothing waiting", None
-        return "Covers, descriptions, manuals from RomM", None
+        return "Art, videos, descriptions from RomM", None
 
     def draw(self, c):
         if time.time() - self.conv_at > 1.0:
@@ -375,6 +375,6 @@ class OnThisBoxScreen(Screen):
         if len(systems) > 6:
             text(c, self.f.small, "and %s more" % plural(len(systems) - 6, "system"), (x, yy), theme.FAINT)
             yy += 26
-        self.prose(c, p, "Names, descriptions, covers and manuals from RomM, matched by file name. Only empty "
-                   "fields are filled: your own scrapes and edits are never replaced.", yy + 18)
+        self.prose(c, p, "Descriptions, screenshots, box art, logos, videos and manuals from RomM, matched by "
+                   "file name. Only what's empty is filled: your own scrapes and edits are never replaced.", yy + 18)
         self.foot(c, p, "To do one system: its game list, then {X}")

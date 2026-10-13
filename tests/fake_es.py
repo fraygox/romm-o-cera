@@ -48,7 +48,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 TEXT = ("name", "desc", "releasedate", "developer", "publisher", "genre", "players", "rating", "region",
         "lang", "family", "hidden", "favorite", "playcount", "lastplayed", "gametime")
 MEDIA = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "bezel", "manual", "map",
-         "titleshot", "wheel", "boxart", "cartridge", "magazine")
+         "titleshot", "wheel", "boxart", "cartridge", "magazine", "mix")
 EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "video/mp4": ".mp4",
        "application/pdf": ".pdf"}
 

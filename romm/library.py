@@ -418,18 +418,122 @@ def play_target(library, rom, system, es=None):
     return (prim, None) if prim else (None, "EmulationStation can't start these files")
 
 
+RESOURCES = "/assets/romm/resources/"
+
+
+def resource_path(p, exts=None):
+    """A file RomM keeps in its resources, as a server path the app's session
+    fetches ("/assets/romm/resources/roms/1/2/logo/logo.png"), or None. RomM's
+    records give these as "roms/1/2/..." (ss_metadata's *_path, path_video) or
+    already under /assets/romm/resources/. Anything else (an upstream scraper
+    URL, a path climbing out) is None: the app only ever asks RomM."""
+    if not p or not isinstance(p, str) or "://" in p or p.startswith("//") or "\\" in p:
+        return None
+    p = p.split("?")[0].lstrip("/")
+    if p.startswith(RESOURCES[1:]):
+        p = p[len(RESOURCES) - 1:]
+    if not p or ".." in p.split("/") or p.startswith("assets/"):
+        return None
+    if exts and not p.lower().endswith(tuple(exts)):
+        return None
+    return RESOURCES + p
+
+
 def manual_path(rom):
     """Server path of the rom's manual PDF in RomM's assets, or None. (Never
     url_manual: that's the upstream scraper URL, not RomM.)"""
-    p = rom.get("path_manual") if rom.get("has_manual") else None
-    if not p or not isinstance(p, str):
-        return None
-    p = p.split("?")[0].lstrip("/")
-    if p.startswith("assets/romm/resources/"):
-        p = p[len("assets/romm/resources/"):]
-    if ".." in p.split("/") or not p.lower().endswith(".pdf"):
-        return None
-    return "/assets/romm/resources/" + p
+    return resource_path(rom.get("path_manual"), (".pdf",)) if rom.get("has_manual") else None
+
+
+# ES's media tags RomM can fill beyond image (a screenshot) and thumbnail (the box art), and
+# where RomM keeps each: its ScreenScraper media first, then what it read from a gamelist.xml
+# or LaunchBox — the order RomM's own gamelist export uses. These *_path fields are files RomM
+# stored itself (config.yml scan: media:), never the *_url ones (upstream links). ES's
+# "marquee" is the game's logo (ES calls it Logo), "boxart" its alternative (3D) box.
+ES_MEDIA_SOURCES = (
+    ("marquee", (("ss_metadata", "logo_path"), ("ss_metadata", "marquee_path"),
+                 ("gamelist_metadata", "marquee_path"))),
+    ("titleshot", (("ss_metadata", "title_screen_path"), ("gamelist_metadata", "title_screen_path"))),
+    ("boxart", (("ss_metadata", "box3d_path"), ("gamelist_metadata", "box3d_path"),
+                ("launchbox_metadata", "box3d_path"))),
+    ("boxback", (("ss_metadata", "box2d_back_path"), ("gamelist_metadata", "box2d_back_path"),
+                 ("launchbox_metadata", "box2d_back_path"))),
+    ("fanart", (("ss_metadata", "fanart_path"), ("gamelist_metadata", "fanart_path"))),
+    ("cartridge", (("ss_metadata", "physical_path"), ("gamelist_metadata", "physical_path"))),
+)
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
+def _first(paths):
+    return list(dict.fromkeys(p for p in paths if p))
+
+
+def es_media(rom):
+    """{ES media tag: RomM server paths, best first} for what RomM has of this
+    game: image = its first screenshot (the cover when it has none), thumbnail
+    = the box art (the cover, else ScreenScraper's 2D box), video, and the
+    ES_MEDIA_SOURCES. Tags RomM has nothing for are left out. A record saved
+    with the download queue carries this already ("_es_media")."""
+    if isinstance(rom.get("_es_media"), dict):
+        return rom["_es_media"]
+    cover = rom.get("path_cover_large") or rom.get("path_cover_small")
+    cover = cover if isinstance(cover, str) and cover.startswith("/") and not cover.startswith("//") \
+        and ".." not in cover.split("?")[0].split("/") else None
+    md = {k: rom.get(k) if isinstance(rom.get(k), dict) else {}
+          for k in ("ss_metadata", "gamelist_metadata", "launchbox_metadata")}
+    shots = [resource_path(p, IMAGE_EXTS) for p in (rom.get("merged_screenshots") or [])[:1]]
+    out = {"image": _first(shots + [cover]),
+           "thumbnail": _first([cover, resource_path(md["ss_metadata"].get("box2d_path"), IMAGE_EXTS)]),
+           "video": _first([resource_path(rom.get("path_video"), (".mp4",))])}
+    for tag, sources in ES_MEDIA_SOURCES:
+        out[tag] = _first(resource_path(md[k].get(f), IMAGE_EXTS) for k, f in sources)
+    return {k: v for k, v in out.items() if v}
+
+
+# RomM's region and language names (its filename tags and providers) as the codes
+# EmulationStation keeps. Regions: Batocera's ES shows a region's flag by its code
+# (resources/flags/<code>.png: "us", "eu", "jp", "wr" for World, "es" Spain, "sw" Sweden...),
+# so those codes where it has a flag, ScreenScraper's otherwise. Languages: ScreenScraper's
+# codes, as Batocera's own scraper writes them ("en", "fr", "jp")
+ES_REGIONS = {
+    "usa": "us", "europe": "eu", "japan": "jp", "world": "wr", "australia": "au", "brazil": "br",
+    "canada": "ca", "china": "cn", "england": "uk", "uk": "uk", "united kingdom": "uk", "france": "fr",
+    "germany": "de", "greece": "gr", "holland": "nl", "netherlands": "nl", "italy": "it", "korea": "kr",
+    "norway": "no", "russia": "ru", "spain": "es", "sweden": "sw", "portugal": "pt", "poland": "pl",
+    "india": "in", "asia": "asi", "finland": "fi", "hong kong": "hk", "taiwan": "tw", "americas": "ame",
+    "denmark": "dk", "new zealand": "nz", "oceania": "oce", "middle east": "mor", "turkey": "tr",
+    "israel": "il", "czech republic": "cz", "hungary": "hu", "slovakia": "sk", "bulgaria": "bg",
+    "chile": "cl", "peru": "pe", "kuwait": "kw",
+}
+ES_LANGS = {
+    "english": "en", "french": "fr", "german": "de", "spanish": "es", "italian": "it",
+    "japanese": "jp", "korean": "ko", "chinese": "zh", "dutch": "nl", "portuguese": "pt",
+    "russian": "ru", "swedish": "sv", "danish": "da", "finnish": "fi", "norwegian": "no",
+    "polish": "pl", "greek": "el", "arabic": "ar", "serbian": "sr",
+}
+
+
+def _codes(names, table):
+    out = []
+    for n in names or []:
+        if not isinstance(n, str):
+            continue
+        low = n.strip().lower()
+        c = table.get(low) or (low if low in table.values() else None)
+        if c and c not in out:
+            out.append(c)
+    return out
+
+
+def es_region(rom):
+    """The game's region as ES keeps it ("us", "eu", "jp", "wr"...): the first
+    of RomM's regions ES has a code for (not Unlicensed, Unknown...), or None."""
+    return (_codes(rom.get("regions"), ES_REGIONS) or [None])[0]
+
+
+def es_lang(rom):
+    """The game's languages as ES keeps them ("en", "en,it"), or None."""
+    return ",".join(_codes(rom.get("languages"), ES_LANGS)) or None
 
 
 def ra_summary(rom):
@@ -442,6 +546,7 @@ def ra_summary(rom):
 
 def gamelist_entry(rom, system, paths, manual=True):
     md = rom.get("metadatum") or {}
+    fam = [f for f in (md.get("franchises") or []) if isinstance(f, str) and f.strip()]
     return {
         "manual": manual_path(rom) if manual else None,
         "system": system, "paths": paths, "rom_id": rom["id"],
@@ -452,7 +557,9 @@ def gamelist_entry(rom, system, paths, manual=True):
         "publisher": ", ".join(md.get("publishers") or []),
         "players": md.get("player_count"),
         "rating": md.get("average_rating"),
+        "region": es_region(rom), "lang": es_lang(rom), "family": fam[0] if fam else None,
         "cover": rom.get("path_cover_large") or rom.get("path_cover_small"),
+        "media": es_media(rom),
     }
 
 

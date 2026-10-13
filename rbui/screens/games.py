@@ -460,7 +460,7 @@ class GameListScreen(ListScreen):
         if self.platform:
             sy = self.platform["_system"]
             e.append(("Fill in game info for roms/%s" % sy,
-                      "Covers, descriptions, manuals from RomM for games already here",
+                      "Art, videos, descriptions from RomM for games already here",
                       lambda: InfoDialog.start(self.app, [(sy, [self.platform["id"]])])))
         if self.bios:
             n = len(self.bios)

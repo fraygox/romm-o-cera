@@ -266,6 +266,27 @@ def test_manual_and_achievement_fields(api, busiest):
             assert ach is None or isinstance(ach, list)
 
 
+def test_es_metadata_fields(api, busiest):
+    """What the app hands EmulationStation beyond text: regions, languages,
+    franchises, the screenshots, the video and ScreenScraper's stored media
+    (ss_metadata's *_path) — every record has the fields, and any media path it
+    names is one of RomM's own files the token may fetch."""
+    items = api.roms(platform_ids=[busiest["id"]], limit=200)["items"]
+    keys = {"regions", "languages", "merged_screenshots", "path_video", "ss_metadata", "gamelist_metadata",
+            "launchbox_metadata", "metadatum"}
+    assert items and all(keys <= set(r) for r in items)
+    assert all(isinstance(r["metadatum"].get("franchises", []), list) for r in items)
+    for r in items[:20]:
+        for tag, paths in rommlib.es_media(r).items():
+            assert all(p.startswith("/") and not p.startswith("//") for p in paths), (tag, paths)
+    withmedia = [p for r in items for ps in rommlib.es_media(r).values() for p in ps
+                 if p.startswith(rommlib.RESOURCES)]
+    if withmedia:
+        rr = api.s.get(api.base + withmedia[0], stream=True, timeout=30)
+        assert rr.status_code == 200
+        rr.close()
+
+
 def test_rom_by_hash(api, busiest):
     """Check games' repair finds RomM's copy by hash (/api/roms/by-hash): a
     known file's hash gives that game; an unknown one is a clean 'none'."""
