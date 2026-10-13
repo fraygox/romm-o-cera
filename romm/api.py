@@ -53,6 +53,13 @@ class Api:
     def platforms(self):
         return self.get("/api/platforms")
 
+    def server_version(self):
+        """RomM's version from its heartbeat ("5.4.0"), None when it doesn't say."""
+        try:
+            return (self.get("/api/heartbeat", timeout=8).get("SYSTEM") or {}).get("VERSION") or None
+        except (_core.RommError, AttributeError):
+            return None
+
     def collections(self):
         return self.get("/api/collections")
 
@@ -561,6 +568,17 @@ class Prefetch:
 
 PAIR_CODE_LEN = 8
 PAIR_BAD_CODE = "That code isn't valid or has expired — make a new one in RomM"
+
+
+def romm_label(version):
+    """"RomM 5.4.0", or "RomM" when its version isn't known (a long build name is cut)."""
+    v = str(version or "").strip()
+    return "RomM " + (v if len(v) <= 16 else v[:15] + "…") if v else "RomM"
+
+
+def online_label(version):
+    """The connection with RomM's version: "Online · RomM 5.4.0" (just "Online" without one)."""
+    return "Online · " + romm_label(version) if version else "Online"
 
 
 def normalize_pair_code(code):

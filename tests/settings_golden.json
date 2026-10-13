@@ -1,7 +1,7 @@
 {
  "actions": {
   "bare/defaults/arcade/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -24,7 +24,7 @@
    "wake": 0
   },
   "bare/defaults/arcade/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -47,7 +47,7 @@
    "wake": 0
   },
   "bare/defaults/arcade/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -1688,7 +1688,7 @@
      "None"
     ],
     [
-     "Connected: 0 platforms on the server",
+     "Connected to RomM: 0 platforms on the server",
      "GREEN"
     ]
    ],
@@ -1834,7 +1834,7 @@
    "wake": 0
   },
   "bare/defaults/tls/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -1859,7 +1859,7 @@
    "wake": 0
   },
   "bare/defaults/tls/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -1884,7 +1884,7 @@
    "wake": 0
   },
   "bare/defaults/tls/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -2365,7 +2365,7 @@
    "wake": 0
   },
   "full/changed/arcade/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "fbneo"
@@ -2383,7 +2383,7 @@
    "wake": 0
   },
   "full/changed/arcade/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "fbneo"
@@ -2401,7 +2401,7 @@
    "wake": 0
   },
   "full/changed/arcade/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "fbneo"
@@ -3709,7 +3709,7 @@
      "None"
     ],
     [
-     "Connected: 0 platforms on the server",
+     "Connected to RomM: 0 platforms on the server",
      "GREEN"
     ]
    ],
@@ -3830,7 +3830,7 @@
    "wake": 0
   },
   "full/changed/tls/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -3851,7 +3851,7 @@
    "wake": 0
   },
   "full/changed/tls/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": true
    },
@@ -3867,7 +3867,7 @@
    "wake": 0
   },
   "full/changed/tls/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": true
    },
@@ -4315,7 +4315,7 @@
    "wake": 0
   },
   "full/defaults/arcade/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -4333,7 +4333,7 @@
    "wake": 0
   },
   "full/defaults/arcade/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -4351,7 +4351,7 @@
    "wake": 0
   },
   "full/defaults/arcade/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -5681,7 +5681,7 @@
      "None"
     ],
     [
-     "Connected: 0 platforms on the server",
+     "Connected to RomM: 0 platforms on the server",
      "GREEN"
     ]
    ],
@@ -5802,7 +5802,7 @@
    "wake": 0
   },
   "full/defaults/tls/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -5823,7 +5823,7 @@
    "wake": 0
   },
   "full/defaults/tls/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -5844,7 +5844,7 @@
    "wake": 0
   },
   "full/defaults/tls/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -6297,7 +6297,7 @@
    "wake": 0
   },
   "full/odd/arcade/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -6314,7 +6314,7 @@
    "wake": 0
   },
   "full/odd/arcade/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -6331,7 +6331,7 @@
    "wake": 0
   },
   "full/odd/arcade/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -7580,7 +7580,7 @@
      "None"
     ],
     [
-     "Connected: 0 platforms on the server",
+     "Connected to RomM: 0 platforms on the server",
      "GREEN"
     ]
    ],
@@ -7694,7 +7694,7 @@
    "wake": 0
   },
   "full/odd/tls/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -7714,7 +7714,7 @@
    "wake": 0
   },
   "full/odd/tls/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -7734,7 +7734,7 @@
    "wake": 0
   },
   "full/odd/tls/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -8159,7 +8159,7 @@
    "wake": 0
   },
   "tools/changed/arcade/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "fbneo"
@@ -8177,7 +8177,7 @@
    "wake": 0
   },
   "tools/changed/arcade/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "fbneo"
@@ -8195,7 +8195,7 @@
    "wake": 0
   },
   "tools/changed/arcade/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "fbneo"
@@ -9515,7 +9515,7 @@
      "None"
     ],
     [
-     "Connected: 0 platforms on the server",
+     "Connected to RomM: 0 platforms on the server",
      "GREEN"
     ]
    ],
@@ -9636,7 +9636,7 @@
    "wake": 0
   },
   "tools/changed/tls/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -9657,7 +9657,7 @@
    "wake": 0
   },
   "tools/changed/tls/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": true
    },
@@ -9673,7 +9673,7 @@
    "wake": 0
   },
   "tools/changed/tls/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": true
    },
@@ -10133,7 +10133,7 @@
    "wake": 0
   },
   "tools/defaults/arcade/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -10151,7 +10151,7 @@
    "wake": 0
   },
   "tools/defaults/arcade/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -10169,7 +10169,7 @@
    "wake": 0
   },
   "tools/defaults/arcade/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "platform_map": {
      "arcade": "mame"
@@ -11511,7 +11511,7 @@
      "None"
     ],
     [
-     "Connected: 0 platforms on the server",
+     "Connected to RomM: 0 platforms on the server",
      "GREEN"
     ]
    ],
@@ -11632,7 +11632,7 @@
    "wake": 0
   },
   "tools/defaults/tls/left": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -11653,7 +11653,7 @@
    "wake": 0
   },
   "tools/defaults/tls/ok": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },
@@ -11674,7 +11674,7 @@
    "wake": 0
   },
   "tools/defaults/tls/right": {
-   "bg": 1,
+   "bg": 2,
    "cfg": {
     "verify_tls": false
    },

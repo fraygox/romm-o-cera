@@ -86,8 +86,9 @@ def pair(app, code, done=None, failed=None):
 
 def check_server(app, url, done, failed, token=None):
     """The connection check (RomM's platform list) against url with the current Verify TLS
-    certificate and token (or the one given), off the UI thread: done(platforms), or failed(e)
+    certificate and token (or the one given), off the UI thread: done(platforms, RomM's version or
+    None), or failed(e)
     with e a RommError (AuthRejected: RomM is there but wants a token; TlsRejected: its
     certificate didn't verify)."""
     api = rommlib.Api(url, app.cfg["token"] if token is None else token, app.cfg["verify_tls"])
-    app.bg(api.platforms, done, failed)
+    app.bg(lambda: (api.platforms(), api.server_version()), lambda r: done(*r), failed)

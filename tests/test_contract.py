@@ -44,8 +44,7 @@ def busiest(platforms):
 
 
 def test_heartbeat_reports_version(api):
-    hb = api.get("/api/heartbeat")
-    version = (hb.get("SYSTEM") or {}).get("VERSION") or hb.get("VERSION")
+    version = api.server_version()
     print("RomM version:", version)
     assert version
 

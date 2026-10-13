@@ -584,6 +584,8 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
         path = u.path
+        if path == "/api/heartbeat":                  # RomM's public status: its version
+            return self._json({"SYSTEM": {"VERSION": "5.4.0", "SHOW_SETUP_WIZARD": False}})
         if path == "/api/platforms":
             out = []
             for pid, slug, name in PLATFORMS:

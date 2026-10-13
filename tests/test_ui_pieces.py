@@ -463,3 +463,36 @@ def test_a_key_tapped_after_a_tapped_match_types_instead_of_reopening_it(isolate
     app.pop()                                       # and is left
     sc.kb.tap(1, 0)                                 # then the Q key
     assert app.stack[-1] is sc and sc.query == "loremq"
+
+
+def test_online_says_which_romm(app, rb, monkeypatch):
+    """Online in the header and Settings carries RomM's version; an answer from the
+    server before a reconnect is dropped, and an unknown version just says Online."""
+    monkeypatch.setattr(app.api, "platforms", lambda: [])
+    monkeypatch.setattr(app.api, "server_version", lambda: "5.4.0")
+    app.load_platforms()
+    assert app.status_label() == "Online · RomM 5.4.0"
+    late = []
+    monkeypatch.setattr(app, "bg", lambda fn, done=None, err=None: late.append((fn, done)))
+    app.romm_version = None
+    app.load_platforms()
+    fn, done = late.pop()
+    done(fn())                                    # the platforms: Online, then the version is asked
+    fn, done = late.pop()
+    app.conn_gen += 1                             # reconnected meanwhile
+    done(fn())
+    assert app.romm_version is None and app.status_label() == "Online"
+    assert rommlib.romm_label(None) == "RomM"
+
+
+def test_server_version_reads_the_heartbeat(monkeypatch):
+    api = rommlib.Api("http://127.0.0.1:9", "x", True)
+    monkeypatch.setattr(api, "get", lambda path, **kw: {"SYSTEM": {"VERSION": "5.4.0"}})
+    assert api.server_version() == "5.4.0"
+    monkeypatch.setattr(api, "get", lambda path, **kw: [])
+    assert api.server_version() is None
+
+    def down(path, **kw):
+        raise rommlib.RommError("Can't reach RomM")
+    monkeypatch.setattr(api, "get", down)
+    assert api.server_version() is None

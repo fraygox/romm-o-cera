@@ -294,7 +294,8 @@ class SettingsScreen(Screen):
             elif key == "test" and a == "ok":
                 app.toast("Testing…")
                 server.check_server(app, cfg["url"],
-                                    lambda p: app.toast("Connected: %d platforms on the server" % len(p), theme.GREEN),
+                                    lambda p, v: app.toast("Connected to %s: %d platforms on the server"
+                                                           % (rommlib.romm_label(v), len(p)), theme.GREEN),
                                     lambda e: app.toast(str(e), theme.RED))
             elif key in SETTING_ROW and SETTING_ROW[key].kind == "onoff":
                 st = SETTING_ROW[key]
@@ -661,7 +662,7 @@ class SettingsScreen(Screen):
             rommlib.PROJECT_URL.replace("https://", "")
         text(c, self.f.small, upd, (p.left + 28, a + 68), theme.BLUE if self.app.update_tag else theme.FAINT,
              maxw=p.width - 56)
-        text(c, self.f.small, "%s · %d platforms" % (self.app.error or self.app.status, len(self.app.platforms)),
+        text(c, self.f.small, "%s · %d platforms" % (self.app.error or self.app.status_label(), len(self.app.platforms)),
              (p.left + 28, a + 92), theme.FAINT, maxw=p.width - 56)
         rich_text(c, self.f, self.f.small, "Hotkey + {START} exits", (p.left + 28, a + 116), theme.FAINT)
 

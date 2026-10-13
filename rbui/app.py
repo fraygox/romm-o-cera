@@ -149,6 +149,7 @@ class App:
         self.running = True
         self.status = "Connecting…"
         self.error = None
+        self.romm_version = None     # RomM's own version once Online ("5.4.0")
         self.t = 0.0
         self._chd_spawned = 0
 
@@ -219,6 +220,8 @@ class App:
             self.status = "Online"
             self.error = None
             self.loaded = True
+            self.bg(self.api.server_version,
+                    lambda v: setattr(self, "romm_version", v) if gen == self.conn_gen else None, lambda e: None)
 
         first, self.fetched = not self.fetched, True
 
@@ -230,6 +233,10 @@ class App:
             if first and isinstance(e, rommlib.AuthRejected) and welcome_on_rejected(self):
                 self.push(WelcomeScreen(self, step=1 if self.cfg["url"] else 0))
         self.bg(self.api.platforms, done, err)
+
+    def status_label(self):
+        """The connection as the header and Settings say it: "Online · RomM 5.4.0"."""
+        return rommlib.online_label(self.romm_version) if self.status == "Online" else self.status
 
     def system_for(self, rom):
         p = self.platform_by_id.get(rom.get("platform_id"))
@@ -430,7 +437,7 @@ class App:
             self.details.clear()
             self.player_counts = self.recs = None
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
-            self.status, self.error = "Connecting…", None
+            self.status, self.error, self.romm_version = "Connecting…", None, None
             self.load_platforms()
 
     def uninstall(self, rom, system, then=None):
@@ -1077,7 +1084,7 @@ class App:
         n = self.downloader.active_count()
         rx = W - 24
         dot = theme.GREEN if self.status == "Online" else (theme.AMBER if self.status.startswith("Conn") else theme.RED)
-        r = text(c, self.fonts.small, self.status, (rx, 33), theme.DIM, "midright")
+        r = text(c, self.fonts.small, self.status_label(), (rx, 33), theme.DIM, "midright")
         circle(c, dot, (r.left - 12, 33), 5)
         rx = r.left - 30
         if n:
