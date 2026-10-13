@@ -1,125 +1,97 @@
-"""The on-screen keyboard for text settings."""
+"""Screens typed on the shared keyboard: the base layout, and a Settings text field."""
 import pygame
-from rbui import pads, theme
+from rbui import theme
 from rbui.theme import W
-from rbui.draw import hline, measure, rrect, text
+from rbui.draw import hline, marquee, rich_text, rrect, scroll_text, text
 from rbui.screens.base import Screen
+from rbui.widgets.keyboard import Keyboard, mask, text_field, CONTEXT_SPAN, UNIT_GAP
 
 
-class TextInputScreen(Screen):
-    """Full-charset on-screen keyboard for URLs / tokens. A types, X deletes,
-    Y = shift, Start saves, B cancels."""
-    LOWER = ["1234567890", "qwertyuiop", "asdfghjkl:", "zxcvbnm./-", "_@?=&%~+#!"]
-    SPECIAL = [("Shift", 2), ("Space", 2), ("Delete", 2), ("Clear", 2), ("Save", 2)]
+class KeyboardScreen(Screen):
+    """The field and the keyboard on the left, a panel the screen fills on the right.
+    self.kb is the Keyboard; A types, X deletes, Start / R does the primary verb."""
+    KB_W = 764
+    FIELD = pygame.Rect(48, 88, KB_W, 60)
+    KB = pygame.Rect(48, 172, KB_W, Keyboard.height_for(68))
+    PANEL = pygame.Rect(48 + KB_W + 24, 88, W - 48 - (48 + KB_W + 24), 568)
     own_start = True
+    text_entry = True
 
-    def __init__(self, app, title, value, on_save, secret=False):
+    def type_text(self, s):
+        self.kb.type_text(s)
+
+    def kb_rect(self):
+        """KB, narrowed (centred) for a keyboard without context keys: the same key size."""
+        pitch = (self.KB_W + 8) / (10 + UNIT_GAP + CONTEXT_SPAN)
+        r = pygame.Rect(self.KB)
+        r.width = round(self.kb.units * pitch - 8)
+        r.centerx = self.KB.centerx
+        return r
+
+    def draw_keyboard(self, c, placeholder, secret=False, focused=True, font=None, shown=None, note=None):
+        """The field, the keys, a note under them and the empty panel; returns the panel's rect."""
+        text_field(c, self.f, self.FIELD, self.kb.value if shown is None else shown, placeholder,
+                   font=font, secret=secret, cursor=focused and int(self.app.t * 2) % 2 == 0)
+        self.kb.draw(c, self.f, self.kb_rect(), focused, self.app.hit)
+        if note:
+            kr = self.kb_rect()
+            rich_text(c, self.f, self.f.small, note, (kr.left, kr.bottom + 32), theme.FAINT, "midleft", maxw=kr.width)
+        rrect(c, theme.PANEL, self.PANEL, 16)
+        return self.PANEL
+
+
+class TextInputScreen(KeyboardScreen):
+    """A text setting: Start saves, B cancels. context: the keys beside the grid ("url",
+    "token" or a list); mode "code" for a pairing code (letters and digits, upper case)."""
+
+    def __init__(self, app, title, value, on_save, secret=False, context=None, mode="text", help=None,
+                 primary="Save"):
         super().__init__(app)
-        self.title, self.value, self.on_save, self.secret = title, value or "", on_save, secret
-        self.shift = False
-        self.r, self.c = 1, 0
+        self.title, self.on_save, self.secret, self.help = title, on_save, secret, help
+        self.saved = value or ""
+        self.kb = Keyboard(primary, self.save, value, context=context, mode=mode)
 
-    def rows(self):
-        if not self.shift:
-            return self.LOWER
-        return [r.upper() if i in (1, 2, 3) else
-                ("!@#$%^&*()" if i == 0 else "<>[]{}|;,\'")
-                for i, r in enumerate(self.LOWER)]
+    @property
+    def value(self):
+        return self.kb.value
 
     def crumbs(self):
         return ["Settings", self.title]
 
     def hints(self):
-        if pads.INPUT_MODE["kb"]:
-            return [("TYPE", "Letters"), ("BKSP", "Delete"), ("A", "Save"), ("B", "Cancel")]
-        return [("A", "Type"), ("X", "Delete"), ("Y", "Shift"), ("START", "Save"), ("B", "Cancel")]
-
-    def row_len(self, r):
-        return len(self.rows()[r]) if r < len(self.LOWER) else len(self.SPECIAL)
+        return self.kb.hints() + [("B", "Cancel")]
 
     def action(self, a):
-        n = len(self.LOWER) + 1
-        if a == "up":
-            self.r = (self.r - 1) % n
-        elif a == "down":
-            self.r = (self.r + 1) % n
-        elif a == "left":
-            self.c = (self.c - 1) % self.row_len(self.r)
-        elif a == "right":
-            self.c = (self.c + 1) % self.row_len(self.r)
-        elif a == "x":
-            self.value = self.value[:-1]
-        elif a == "y":
-            self.shift = not self.shift
-        elif a == "ok":
-            if self.r < len(self.LOWER):
-                self.value += self.rows()[self.r][self.c]
-            else:
-                key = self.SPECIAL[self.c][0]
-                if key == "Shift":
-                    self.shift = not self.shift
-                elif key == "Space":
-                    self.value += " "
-                elif key == "Delete":
-                    self.value = self.value[:-1]
-                elif key == "Clear":
-                    self.value = ""
-                else:
-                    self.save()
-        elif a == "start":
-            self.save()
-        elif a == "back":
+        if a == "back":
             self.app.pop()
-        self.c = min(self.c, self.row_len(self.r) - 1)
+        else:
+            self.kb.action(a)
 
     def save(self):
         self.app.pop()
-        self.on_save(self.value.strip())
+        self.on_save(self.kb.value.strip())
 
-    text_entry = True
-
-    def type_text(self, s):
-        self.value = (self.value + s)[:2048]
-
-    def tap_key(self, r, c):
-        self.r, self.c = r, c
-        self.action("ok")
+    def shown(self):
+        v = self.kb.value
+        if self.kb.mode == "code" and len(v) > 4:
+            return v[:4] + "-" + v[4:]           # as RomM shows it
+        return v
 
     def draw(self, c):
-        qf = pygame.Rect(48, 88, W - 96, 60)
-        rrect(c, theme.PANEL, qf, 14)
-        rrect(c, theme.ACCENT, qf, 14, 2)
-        shown = self.value
-        if self.secret:
-            shown = (shown[:4] + "•" * min(24, len(shown) - 8) + shown[-4:]) if len(shown) > 16 \
-                else "•" * len(shown)
-        # keep the tail (where you type) visible
-        while shown and measure(self.f.h3, shown) > qf.width - 50:
-            shown = shown[1:]
-        r = text(c, self.f.h3, shown, (qf.left + 22, qf.centery), theme.TEXT, "midleft")
-        if not self.value:
-            text(c, self.f.h3, self.title, (qf.left + 22, qf.centery), theme.FAINT, "midleft")
-            r = pygame.Rect(qf.left + 20, qf.top, 0, qf.height)
-        if int(self.app.t * 2) % 2 == 0:
-            hline(c, theme.ACCENT_HI, (r.right + 3, qf.top + 16), (r.right + 3, qf.bottom - 16), 2)
-        kw, kh, gap = 96, 62, 8
-        kx = (W - (10 * kw + 9 * gap)) // 2
-        ky = 172
-        for ri, row in enumerate(self.rows()):
-            for ci, ch in enumerate(row):
-                kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
-                self.app.hit(kr, lambda ri=ri, ci=ci: self.tap_key(ri, ci))
-                on = (ri, ci) == (self.r, self.c)
-                rrect(c, theme.ACCENT if on else theme.PANEL, kr, 10)
-                text(c, self.f.key, ch, kr.center, theme.TEXT if on else theme.DIM, "center")
-        sy = ky + len(self.LOWER) * (kh + gap)
-        sx = kx
-        for ci, (label, span) in enumerate(self.SPECIAL):
-            w = span * kw + (span - 1) * gap
-            kr = pygame.Rect(sx, sy, w, kh)
-            self.app.hit(kr, lambda ci=ci: self.tap_key(len(self.LOWER), ci))
-            on = (self.r, self.c) == (len(self.LOWER), ci)
-            hot = label == "Save" or (label == "Shift" and self.shift)
-            rrect(c, theme.ACCENT if on else (theme.PANEL_HI if hot else theme.PANEL), kr, 10)
-            text(c, self.f.h3, label, kr.center, theme.TEXT if on or hot else theme.DIM, "center")
-            sx += w + gap
+        f = self.f
+        note = "Letters and digits; the dash goes in by itself." if self.kb.mode == "code" else \
+            "{START} saves · {B} leaves it as it was"
+        p = self.draw_keyboard(c, self.title, secret=self.secret, shown=self.shown(), note=note)
+        x, w = p.left + 24, p.width - 48
+        text(c, f.h3, self.title, (x, p.top + 20), theme.TEXT, maxw=w)
+        bottom = p.bottom - 24
+        if self.saved and self.kb.mode != "code":
+            marquee(c, f.small, mask(self.saved) if self.secret else self.saved, (x, bottom - 22), theme.DIM, maxw=w,
+                    bg=theme.PANEL, slot="text-input-saved")
+            text(c, f.small, "Saved now", (x, bottom - 44), theme.FAINT)
+            bottom -= 62
+            hline(c, theme.LINE, (x, bottom), (p.right - 24, bottom))
+            bottom -= 16
+        if self.help:
+            scroll_text(c, f.small, self.help, (x, p.top + 56, w, bottom - p.top - 56), theme.DIM, line_h=22,
+                        bg=theme.PANEL, slot="text-input-help")

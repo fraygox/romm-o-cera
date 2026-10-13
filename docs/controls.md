@@ -109,6 +109,7 @@ pick adds **Y Another**, to roll again.
 | Collections | Open | A collection's menu: open, surprise me, download every game | | A–Z (in a single list) |
 | Game lists | Download (a game on the box: its menu) | Menu: more like this, surprise me, download all, filters, sort, pick several | Search | A–Z |
 | Search keyboard | Type the key | Delete | Space | |
+| Text fields | Type the key | Delete | Shift | |
 | Downloads | That download's options (a finished game: Play now) | Menu: pause or resume all, clear finished, pick several | Clear finished | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |
@@ -130,14 +131,19 @@ to do with the picks.
 
 A few screens use more buttons:
 
-- **Search keyboard**: **Start** (or R) searches. Move right past the end of
-  a keyboard row (or left past its start) to reach the top matches beside
-  it; there up/down pick one, A opens it (a game already on the box opens
-  its menu: play now, delete or download again), and B or left/right go
-  back to the keyboard. On a keyboard, just type, and Enter searches.
-- **Text fields** (server address, API token, pairing code): A types the
-  key, X deletes, Y switches to capitals and symbols, **Start** saves and B
-  cancels.
+- **The on-screen keyboard** is the same everywhere: a digit row always on
+  top, letters, an action row (Shift, **#+=** for symbols, Space, Delete,
+  Clear and the screen's own verb) and, beside it, a column of keys for
+  that field (`https://` `:` `/` for an address, `rmm_` for a token,
+  punctuation for a search). **L** switches to the symbols, **Start** (or
+  R) does the screen's verb. A pairing code gets capitals and digits only.
+  On a keyboard, just type, and Enter does the verb.
+- **Search**: move right past the end of a keyboard row (or left past its
+  start) to reach the top matches beside it; there up/down pick one, A
+  opens it (a game already on the box opens its menu: play now, delete or
+  download again), and B or left/right go back to the keyboard.
+- **Text fields** (server address, API token, pairing code): Y is Shift,
+  **Start** saves and B cancels.
 - **Settings**: left/right step through a setting's choices, L/R jump six
   rows.
 - **Theme picker**: the D-pad moves round the cards, L/R go to the previous

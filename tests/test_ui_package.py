@@ -11,7 +11,8 @@ import sys
 import pytest
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SOURCES = sorted(glob.glob(os.path.join(APP, "rbui", "*.py")) + glob.glob(os.path.join(APP, "rbui", "screens", "*.py")))
+SOURCES = sorted(glob.glob(os.path.join(APP, "rbui", "*.py")) + glob.glob(os.path.join(APP, "rbui", "screens", "*.py"))
+                 + glob.glob(os.path.join(APP, "rbui", "widgets", "*.py")))
 # rebound or changed in place while the app runs (apply_theme, the scale, memory
 # budgets, the last input used, the button style), so read as theme.BG etc.
 LIVE = {"theme": ("K", "BG", "BG2", "PANEL", "PANEL_HI", "LINE", "TEXT", "DIM", "FAINT", "ACCENT", "ACCENT_HI",

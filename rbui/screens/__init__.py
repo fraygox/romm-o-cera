@@ -5,7 +5,7 @@
   collection   collections (RomM's own and the virtual ones)
   games        a game list, Search
   downloads    the download queue
-  text_input   the on-screen keyboard
+  text_input   a text setting, typed on the shared keyboard (rbui/widgets/keyboard.py)
   settings     Settings
   themes       Settings, Theme: the theme picker
   about        Documentation, Credits

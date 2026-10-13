@@ -1,5 +1,6 @@
 """Settings."""
 import os
+import re
 import shutil
 import time
 
@@ -156,7 +157,8 @@ class SettingsScreen(Screen):
             url, verify = cfg["url"], cfg["verify_tls"]
             app.bg(lambda: rommlib.exchange_pair_code(url, code, verify), paired,
                    lambda e: app.toast(str(e), theme.RED))
-        app.push(TextInputScreen(app, "Pairing code from RomM", "", submit))
+        app.push(TextInputScreen(app, "Pairing code from RomM", "", submit, mode="code", primary="Pair",
+                                 help=field_help("pair")))
 
     @staticmethod
     def section(title):
@@ -303,14 +305,15 @@ class SettingsScreen(Screen):
                 cur = cfg["url"] or "https://"
                 if rommlib.url_has_userinfo(cur):
                     cur = "https://"          # never pre-fill an embedded password
-                app.push(TextInputScreen(app, "RomM server URL", cur, save_url))
+                app.push(TextInputScreen(app, "RomM server URL", cur, save_url,
+                                         context="url", help=field_help("url")))
             elif key == "token" and a == "ok":
                 def save_tok(v):
                     cfg["token"] = v
                     app.apply_config(reconnect=True)
                     app.toast("Token saved — reconnecting", theme.GREEN)
-                app.push(TextInputScreen(app, "RomM client API token", cfg["token"] or "",
-                                         save_tok, secret=True))
+                app.push(TextInputScreen(app, "RomM client API token", cfg["token"] or "", save_tok, secret=True,
+                                         context="token", help=field_help("token")))
             elif key == "pair" and a == "ok":
                 self.pair()
             elif key == "tls":
@@ -702,6 +705,11 @@ class SettingsScreen(Screen):
         text(c, self.f.small, "%s · %d platforms" % (self.app.error or self.app.status, len(self.app.platforms)),
              (p.left + 28, a + 92), theme.FAINT, maxw=p.width - 56)
         rich_text(c, self.f, self.f.small, "Hotkey + {START} exits", (p.left + 28, a + 116), theme.FAINT)
+
+
+def field_help(key):
+    """A text setting's help, beside its keyboard (where {A} types, not edits)."""
+    return re.sub(r"\s*\{A\} edits it\.", "", SETTING_HELP[key])
 
 
 # Settings rows for a config.json key take their name, grey line and help from rommlib.SETTINGS

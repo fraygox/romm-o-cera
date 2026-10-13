@@ -8,9 +8,11 @@ import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, mix, SR
-from rbui.draw import (_wide, arc, button_glyph, circle, COVER_BOX, focus_box, hline, installed_mark, measure,
-                       progress_bar, rich_text, rom_title, rrect, scroll_text, smooth_scale, text, wrap)
-from rbui.screens.base import letter_of, ListScreen, Screen
+from rbui.draw import (_wide, arc, button_glyph, circle, COVER_BOX, focus_box, installed_mark, marquee,
+                       measure, progress_bar, rich_text, rom_title, rrect, scroll_text, smooth_scale, text, wrap)
+from rbui.screens.base import letter_of, ListScreen
+from rbui.screens.text_input import KeyboardScreen
+from rbui.widgets.keyboard import Keyboard
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
 
 
@@ -802,20 +804,28 @@ class GameListScreen(ListScreen):
         return cache[rom["id"]]
 
 
-class SearchScreen(Screen):
-    ROWS = ["1234567890", "QWERTYUIOP", "ASDFGHJKL'", "ZXCVBNM-:&"]
-    SPECIAL = [("Space", 3), ("Delete", 3), ("Clear", 2), ("Search", 2)]
+class SearchScreen(KeyboardScreen):
+    """Search on the shared keyboard, the Top matches beside it (live, a moment after typing)."""
+    MATCH_Y, MATCH_H = KeyboardScreen.PANEL.top + 56, 58
 
     def __init__(self, app, platform=None):
         super().__init__(app)
         self.platform = platform
-        self.query = ""
-        self.r, self.c = 1, 0
+        self.kb = Keyboard("Search", self.go, context="search", maxlen=60, y_key="space",
+                           on_change=self.typed, on_touch=self.unpick)
         self.preview = []
         self.preview_total = None
         self.preview_q = None
         self.pending_at = None
         self.pick = None                  # the focused Top match; None: the keyboard has focus
+
+    @property
+    def query(self):
+        return self.kb.value
+
+    @query.setter
+    def query(self, v):
+        self.kb.value = v
 
     def crumbs(self):
         out = ["Search"]
@@ -826,16 +836,12 @@ class SearchScreen(Screen):
     def hints(self):
         if self.pick is not None:
             return [("A", "Open"), ("B", "Keyboard")] + ([] if pads.INPUT_MODE["kb"] else [("START", "Search")])
-        if pads.INPUT_MODE["kb"]:
-            return [("TYPE", "Letters"), ("BKSP", "Delete"), ("A", "Search"), ("B", "Back")]
-        return [("A", "Type"), ("X", "Delete"), ("Y", "Space"), ("START", "Search"), ("B", "Back")]
+        return self.kb.hints() + [("B", "Back")]
 
-    def row_len(self, r):
-        return len(self.ROWS[r]) if r < len(self.ROWS) else len(self.SPECIAL)
-
-    def _type(self, s):
-        self.query = (self.query + s)[:60]
+    def typed(self):
         self.pending_at = time.time() + 0.45
+        if not self.query:
+            self.preview, self.preview_total = [], None
 
     @property
     def text_entry(self):
@@ -844,12 +850,10 @@ class SearchScreen(Screen):
 
     def type_text(self, s):
         self.pick = None
-        self._type(s)
+        self.kb.type_text(s)
 
-    def tap_key(self, r, c):
+    def unpick(self):
         self.pick = None                  # a key tapped after a match was open types, not reopens it
-        self.r, self.c = r, c
-        self.action("ok")
 
     def open(self, rom):
         """A Top match: the manage menu for a game on the box (as in a game list), else download."""
@@ -860,6 +864,9 @@ class SearchScreen(Screen):
         self.pick = None                  # a tap opens it; focus stays with the keyboard
         self.open(self.preview[i])
 
+    def match_y(self, i):
+        return self.MATCH_Y + i * self.MATCH_H
+
     def pick_action(self, a):
         """Focus on the Top matches: up/down among them, left/right back to the
         keyboard row beside the focused one, B too."""
@@ -867,8 +874,8 @@ class SearchScreen(Screen):
         if a in ("up", "down") and n:
             self.pick = max(0, min(n - 1, self.pick + (1 if a == "down" else -1)))
         elif a in ("left", "right", "back"):
-            self.r = max(0, min(len(self.ROWS), round((58 * self.pick - 35) / 64)))
-            self.c = 0 if a == "right" else self.row_len(self.r) - 1
+            row = self.kb.row_at(self.match_y(self.pick) + 22, self.kb_rect())
+            self.kb.enter("left" if a == "right" else "right", row)
             self.pick = None
         elif a == "ok" and n:
             self.open(self.preview[self.pick])
@@ -878,44 +885,14 @@ class SearchScreen(Screen):
     def action(self, a):
         if self.pick is not None:
             return self.pick_action(a)
-        nrows = len(self.ROWS) + 1
         n = len(self.preview[:8])
-        if a in ("left", "right") and n and self.c == (0 if a == "left" else self.row_len(self.r) - 1):
-            self.pick = min(n - 1, round((35 + 64 * self.r) / 58))   # past the keyboard's edge: the matches beside it
-        elif a == "up":
-            self.r = (self.r - 1) % nrows
-        elif a == "down":
-            self.r = (self.r + 1) % nrows
-        elif a == "left":
-            self.c = (self.c - 1) % self.row_len(self.r)
-        elif a == "right":
-            self.c = (self.c + 1) % self.row_len(self.r)
-        elif a == "x":
-            self.query = self.query[:-1]
-            self.pending_at = time.time() + 0.45
-        elif a == "y":
-            self._type(" ")
-        elif a == "ok":
-            if self.r < len(self.ROWS):
-                self._type(self.ROWS[self.r][self.c].lower() if self.r else self.ROWS[self.r][self.c])
-            else:
-                key = self.SPECIAL[self.c][0]
-                if key == "Space":
-                    self._type(" ")
-                elif key == "Delete":
-                    self.query = self.query[:-1]
-                    self.pending_at = time.time() + 0.45
-                elif key == "Clear":
-                    self.query = ""
-                    self.preview = []
-                    self.preview_total = None
-                else:
-                    self.go()
-        elif a in ("start", "r1"):
-            self.go()
+        if a in ("left", "right") and n and self.kb.at_edge(a):
+            # past the keyboard's edge: the match beside the focused row
+            self.pick = max(0, min(n - 1, round((self.kb.row_mid(self.kb_rect()) - 22 - self.MATCH_Y) / self.MATCH_H)))
         elif a == "back":
             self.app.pop()
-        self.c = min(self.c, self.row_len(self.r) - 1)
+        else:
+            self.kb.action(a)
 
     def go(self):
         q = self.query.strip()
@@ -946,65 +923,32 @@ class SearchScreen(Screen):
                 return page
             app.bg(call, done)
 
-    own_start = True   # Start = run the search here, not "go Home"
-
     def draw(self, c):
         self.live_preview()
-        # query field
-        qf = pygame.Rect(48, 88, 640, 60)
-        rrect(c, theme.PANEL, qf, 14)
-        rrect(c, theme.ACCENT, qf, 14, 2)
-        shown = self.query or ""
-        r = text(c, self.f.h2, shown, (qf.left + 22, qf.centery), theme.TEXT, "midleft", maxw=qf.width - 50)
-        if not shown:
-            text(c, self.f.h2, "Search " + ((self.platform.get("display_name") or self.platform["name"])
-                                            if self.platform else "all games"),
-                 (qf.left + 22, qf.centery), theme.FAINT, "midleft", maxw=qf.width - 50)
-            r = pygame.Rect(qf.left + 20, qf.top, 0, qf.height)
-        if int(self.app.t * 2) % 2 == 0:
-            hline(c, theme.ACCENT_HI, (r.right + 3, qf.top + 16), (r.right + 3, qf.bottom - 16), 2)
-        # keyboard
-        kx, ky, kw, kh, gap = 48, 172, 58, 58, 6
-        for ri, row in enumerate(self.ROWS):
-            for ci, ch in enumerate(row):
-                kr = pygame.Rect(kx + ci * (kw + gap), ky + ri * (kh + gap), kw, kh)
-                self.app.hit(kr, lambda ri=ri, ci=ci: self.tap_key(ri, ci))
-                on = (ri, ci) == (self.r, self.c) and self.pick is None
-                rrect(c, theme.ACCENT if on else theme.PANEL, kr, 10)
-                text(c, self.f.key, ch, kr.center, theme.TEXT if on else theme.DIM, "center")
-        sy = ky + len(self.ROWS) * (kh + gap)
-        sx = kx
-        for ci, (label, span) in enumerate(self.SPECIAL):
-            w = span * kw + (span - 1) * gap
-            kr = pygame.Rect(sx, sy, w, kh)
-            self.app.hit(kr, lambda ci=ci: self.tap_key(len(self.ROWS), ci))
-            on = (self.r, self.c) == (len(self.ROWS), ci) and self.pick is None
-            col = theme.ACCENT if on else (theme.PANEL_HI if label == "Search" else theme.PANEL)
-            rrect(c, col, kr, 10)
-            text(c, self.f.h3, label, kr.center, theme.TEXT if on or label == "Search" else theme.DIM, "center")
-            sx += w + gap
-        # live results
-        p = pygame.Rect(720, 88, 528, 568)
-        rrect(c, theme.PANEL, p, 16)
-        text(c, self.f.h3, "Top matches", (p.left + 24, p.top + 20), theme.DIM)
+        f = self.f
+        where = (self.platform.get("display_name") or self.platform["name"]) if self.platform else "all games"
+        p = self.draw_keyboard(c, "Search " + where, focused=self.pick is None, font=f.h2,
+                               note="{L} symbols · {R} or {START} searches")
+        x, w = p.left + 24, p.width - 48
+        text(c, f.h3, "Top matches", (x, p.top + 20), theme.DIM)
         if self.preview_total is not None:
-            text(c, self.f.small, "{:,} total".format(self.preview_total),
-                 (p.right - 24, p.top + 22), theme.FAINT, "topright")
-        y = p.top + 56
+            text(c, f.small, "{:,} total".format(self.preview_total), (p.right - 24, p.top + 22), theme.FAINT,
+                 "topright")
         if not self.preview:
-            msg = "Start typing — results appear here." if len(self.query.strip()) < 2 else \
+            msg = "Start typing and matches show up here." if len(self.query.strip()) < 2 else \
                 ("Searching…" if self.preview_total is None or self.pending_at else "No matches")
-            text(c, self.f.body, msg, (p.left + 24, y), theme.DIM)
+            scroll_text(c, f.body, msg, (x, self.MATCH_Y, w, 52), theme.DIM, line_h=26, bg=theme.PANEL,
+                        slot="search-empty")
         for i, rom in enumerate(self.preview[:8]):
-            self.app.hit((p.left + 12, y - 6, p.width - 24, 56), lambda i=i: self.tap_pick(i))
-            if i == self.pick:
-                focus_box(c, (p.left + 12, y - 6, p.width - 24, 56), 12)
+            y = self.match_y(i)
+            r = (p.left + 12, y - 6, p.width - 24, self.MATCH_H - 2)
+            self.app.hit(r, lambda i=i: self.tap_pick(i))
+            on = i == self.pick
+            if on:
+                focus_box(c, r, 12)
             pl = self.app.platform_by_id.get(rom.get("platform_id"))
-            text(c, self.f.row, rom_title(rom), (p.left + 24, y),
-                 theme.TEXT, maxw=p.width - 48)
-            sr = text(c, self.f.small, pl["_system"] if pl else "?", (p.left + 24, y + 26), theme.FAINT)
-            text(c, self.f.small, human_size(rom.get("fs_size_bytes")), (sr.right + 16, y + 26), theme.FAINT)
-            y += 58
+            marquee(c, f.row, rom_title(rom), (x, y), theme.TEXT, maxw=w, focused=on, key=rom.get("id"))
+            sr = text(c, f.small, pl["_system"] if pl else "?", (x, y + 26), theme.FAINT)
+            text(c, f.small, human_size(rom.get("fs_size_bytes")), (sr.right + 16, y + 26), theme.FAINT)
         if self.preview:
-            rich_text(c, self.f, self.f.small, "Press {START} to see all results",
-                      (p.left + 24, p.bottom - 34), theme.ACCENT_HI)
+            rich_text(c, f, f.small, "{START} shows all of them", (x, p.bottom - 34), theme.ACCENT_HI, maxw=w)
