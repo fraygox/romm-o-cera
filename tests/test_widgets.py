@@ -418,3 +418,21 @@ def test_panel_figure_legend_and_verb(rb, app, fonts):
     vr = p.verb("Download 14", "go", "13.5 GB", glyph="Y", fn=lambda: tapped.append(1))
     assert vr.width == p.w and vr.height == rb.VERB_H and p.y == vr.bottom + 14
     assert any(t[0] == vr for t in app.targets)
+# ------------------------------------------------------------------ Welcome's pieces
+
+def test_step_dot_notice_code_slots_and_row_chevron(rb, fonts):
+    import pygame
+    c = _canvas(rb)
+    for st in ("done", "now", "next"):
+        rb.step_dot(c, fonts, (40, 40), 2, st)
+    assert c.get_at((40, 40))[:3] != tuple(rb.BG)[:3]
+    r = rb.notice(c, fonts, (100, 100, 400, 120), "Couldn't verify", "why " * 80, slot="t-notice")
+    assert r == pygame.Rect(100, 100, 400, 120) and c.get_at((101 + 6, 160))[:3] != tuple(rb.BG)[:3]
+    row = rb.code_slots(c, fonts, 640, 300, "ABCD2")
+    assert row.centerx in (639, 640) and row.height == 68
+    n = rb.Keyboard("Check", mode="code", maxlen=8)
+    n.type_text("abcd-23 45zz")
+    assert n.value == "ABCD2345"                       # code mode: letters and digits, eight at most
+    lr = pygame.Rect(100, 500, 400, 64)
+    tx = rb.list_row(c, fonts, lr, True, "Type an API token instead", "x" * 200, chevron=True, slot="t-chev")
+    assert tx == lr.left + 22

@@ -9,13 +9,14 @@ from rommlib import human_size
 from rbui import APP_NAME, draw, pads, theme
 from rbui.theme import apply_theme, FPS, H, ink_on, S, set_custom, W
 from rbui.draw import (as_rgba, button_glyph, circle, COVER_DECODES, COVER_ENTRIES, cover_fit, Fonts, glyph_width,
-                       hline, marquee, measure, rich_width, rom_title, rrect, surface_bytes, text)
+                       hline, marquee, measure, rich_width, rom_title, rrect, shot_fit, surface_bytes, text)
 from rbui.pads import FACE, style_from_names, theme_for, TOKEN_ACTION, TOKEN_BACK
 from rbui.sfx import Sfx, SOUND_FOR
 from rbui.input import Input
 from rbui.screens.base import ListScreen
 from rbui.screens.home import HomeScreen
 from rbui.screens.downloads import DownloadsScreen
+from rbui.screens.welcome import WelcomeScreen, welcome_due, welcome_on_rejected
 from rbui.modals import ActionMenu, Confirm
 from rbui.startup import read_marker, write_marker
 
@@ -122,6 +123,7 @@ class App:
         self.api = rommlib.Api.from_config(self.cfg)
         self.api.cache_limit = rommlib.cache_limit_bytes(self.cfg)
         self.loaded = False
+        self.fetched = False          # the platform list was asked for once (a 401 then opens Welcome)
         self.junk = None              # filename tags hidden by "Hide prototypes, demos & hacks"
         self.player_counts = None     # RomM's player count values (the Players filter), asked for on first use
         self.recs = None              # Recommended for you: [(rom, why, seed name)], [] when RomM has none (Home asks once)
@@ -212,9 +214,13 @@ class App:
             self.error = None
             self.loaded = True
 
+        first, self.fetched = not self.fetched, True
+
         def err(e):
             self.status = "Offline"
             self.error = str(e)
+            if first and isinstance(e, rommlib.AuthRejected) and welcome_on_rejected(self):
+                self.push(WelcomeScreen(self, step=1 if self.cfg["url"] else 0))
         self.bg(self.api.platforms, done, err)
 
     def system_for(self, rom):
@@ -283,7 +289,22 @@ class App:
         return rommlib.disc_layout(d, system, self.cfg, self.downloader._accepts)
 
     def cover(self, rom):
-        rid = rom["id"]
+        large = theme.K > 1.5
+        return self.art(rom["id"], lambda: self.api.fetch_cover(rom, large=large), cover_fit)
+
+    def screenshot(self, rom, i):
+        """rom's i-th screenshot (Api.fetch_screenshot) in the covers' store and budget, under its
+        own key: the Surface, or None while it loads (or when there's none: art_missing)."""
+        return self.art(("shot", rom["id"], i), lambda: self.api.fetch_screenshot(rom, i), shot_fit)
+
+    def art_missing(self, key):
+        """True when RomM had no image for a key of art() (not merely still loading)."""
+        return key in self.covers and self.covers[key] is None
+
+    def art(self, rid, fetch, fit):
+        """An image from RomM's assets by key (a rom id: its cover; ("shot", id, i)...): fetch()
+        -> a cached file path or None (blocking, on the cover loader), fit(Surface) -> what's kept.
+        Kept least-recently-drawn under COVER_BUDGET with every other one. None while loading."""
         self.cover_loader.drawn(rid)
         c = self.covers.get(rid)
         if c is not None or rid in self.covers:
@@ -304,12 +325,12 @@ class App:
 
         def load():
             for _ in (1, 2):
-                path = self.api.fetch_cover(rom, large=theme.K > 1.5)
+                path = fetch()
                 if not path:
                     return None
                 try:
                     with COVER_DECODES:
-                        return cover_fit(as_rgba(pygame.image.load(path)))
+                        return fit(as_rgba(pygame.image.load(path)))
                 except (pygame.error, OSError):
                     # trimmed from the cache between finding and reading it
                     # (or unreadable): drop it and fetch once more
@@ -758,6 +779,11 @@ class App:
                 "server and token again." % (kept[-1] if kept else "config.json.bad-…"),
                 "Reset settings", self.reset_config, danger=True)
 
+    def welcome(self):
+        """The first-run Welcome over Home, when the box isn't set up yet."""
+        if welcome_due(self.cfg) and not self.modal:
+            self.push(WelcomeScreen(self))
+
     def reset_config(self):
         rommlib.reset_config()
         self.cfg.clear()
@@ -780,6 +806,7 @@ class App:
             self.bg(lambda: rommlib.newer_release(self.cfg), self._update_found, lambda e: None)
         self.fetch_tools()
         self.push(HomeScreen(self))
+        self.welcome()
         while self.running:
             dt = clock.tick(self.fps) / 1000.0
             self.t += dt

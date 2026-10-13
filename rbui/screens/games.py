@@ -10,13 +10,14 @@ from rbui import pads, theme
 from rbui.draw import (_wide, arc, circle, COVER_BOX, focus_box, installed_mark, marquee, measure, rich_text,
                        rom_title, rrect, scroll_text, text, wrap)
 from rbui.screens.base import letter_of, ListScreen
+from rbui.screens.game import GameScreen
 from rbui.screens.gamenight import GameNightScreen, Scope
 from rbui.screens.text_input import KeyboardScreen
 from rbui.widgets.keyboard import Keyboard
 from rbui.modals import ActionMenu, DownloadConfirm, InfoDialog, ManageMenu
 from rbui.widgets.chips import tag
 from rbui.widgets.factsheet import facts
-from rbui.widgets.hero import game_verb, verb_button, VERB_H
+from rbui.widgets.hero import game_verb, rom_year, verb_button, VERB_H
 from rbui.widgets.tiles import cover
 from rbui.widgets.layout import bubble_at, split
 
@@ -69,13 +70,8 @@ def surprise_about(rom):
     n = rommlib.max_players(md.get("player_count"))
     if n > 1:
         bits.append("up to %d players" % n)
-    ts = md.get("first_release_date")
-    if ts:
-        try:
-            bits.append(time.strftime("%Y", time.gmtime(int(ts) / (1000 if int(ts) > 10 ** 11 else 1))))
-        except (TypeError, ValueError, OverflowError):
-            pass
-    return " · ".join(bits) + "." if bits else ""
+    bits.append(rom_year(rom))
+    return " · ".join(b for b in bits if b) + "." if bits else ""
 
 
 def surprise(app, page=None, scope=None, keep=None, pool=None, where="this list"):
@@ -386,14 +382,23 @@ class GameListScreen(ListScreen):
                 self.ensure(self.sel + self.ROWS)
         elif a == "ok" and n and self.items[self.sel] is not None:
             rom = self.items[self.sel]
-            if self.rom_status(rom)[0] == "installed":
-                self.app.modal = ManageMenu(self.app, rom)
-            else:
-                self.app.modal = DownloadConfirm(self.app, rom)
+            self.app.push(GameScreen(self.app, rom, self.why.get(rom["id"]), source=self))
         elif a == "y":
             self.app.push(SearchScreen(self.app, platform=self.platform))
         else:
             super().action(a)
+
+    def panel_verb(self, rom):
+        """A tap on the panel's button: its dialog at once ({A} opens the game's page)."""
+        if self.picking:
+            return self.action("ok")
+        self.app.modal = ManageMenu(self.app, rom) if self.rom_status(rom)[0] == "installed" else \
+            DownloadConfirm(self.app, rom)
+
+    def page_rom(self, i):
+        """Row i's game for the game page's previous/next (None while its page loads)."""
+        self.ensure(i)
+        return self.items[i] if 0 <= i < len(self.items) else None
 
     def open_menu(self):
         self.menu_rom = self.items[self.sel] if self.items and self.sel < len(self.items) else None
@@ -603,7 +608,7 @@ class GameListScreen(ListScreen):
         app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
-        return self.list_hints(("A", "Download"), ("X", pads.ACTIONS), ("Y", "Search"))
+        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", "Search"))
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)
@@ -718,9 +723,7 @@ class GameListScreen(ListScreen):
             y += 25 + used.height
         md = rom.get("metadatum") or {}
         plat = app.platform_by_id.get(rom.get("platform_id"))
-        year = ""
-        if md.get("first_release_date"):
-            year = time.strftime("%Y", time.gmtime(md["first_release_date"] / 1000))
+        year = rom_year(rom)
         size, fmt = human_size(rom.get("fs_size_bytes")), ""
         lay = app.layout(rom)
         if lay:
@@ -731,7 +734,7 @@ class GameListScreen(ListScreen):
                 fmt += " (becomes %s)" % lay["convert"]        # Rubik has no arrow glyph
         # action area
         ar = pygame.Rect(p.left + 24, p.bottom - 76, p.width - 48, VERB_H)
-        self.app.hit(ar, lambda: self.action("ok"))
+        self.app.hit(ar, lambda: self.panel_verb(rom))
         st, j = self.rom_status(rom)
         system = app.system_for(rom)
         notes = (st == "failed") + bool(system and not self.picking and st not in ("installed", "active")
@@ -759,8 +762,9 @@ class GameListScreen(ListScreen):
             verb_button(c, self.f, ar, "Unpick" if on else "Pick", "quiet" if on else "go",
                         "%d picked" % self.pick_count())
             return
-        verb_button(c, self.f, ar, **game_verb(app, rom, (st, j), play="On this box", play_detail="roms/%s" % system,
-                                               go_detail="to roms/%s" % system))
+        verb_button(c, self.f, ar, glyph="", **game_verb(app, rom, (st, j), play="On this box",
+                                                         play_detail="roms/%s" % system,
+                                                         go_detail="to roms/%s" % system))
         if system and st not in ("installed", "active"):
             yy = ar.top - 22
             if st == "failed":

@@ -359,6 +359,31 @@ class RommError(Exception):
     pass
 
 
+class AuthRejected(RommError):
+    """RomM answered 401/403: the server is there, the token isn't good (or missing)."""
+
+
+class TlsRejected(RommError):
+    """The server's HTTPS certificate failed verification. why: "self-signed",
+    "unknown" (an authority this box doesn't trust), "expired", "hostname" or "other"."""
+
+    def __init__(self, msg, why="other"):
+        super().__init__(msg)
+        self.why = why
+
+
+def tls_why(exc):
+    """What an SSL error says about the certificate, as a TlsRejected.why word
+    (only the kind is kept: the error text itself never reaches the screen)."""
+    s = str(exc).lower()
+    for why, words in (("self-signed", ("self-signed", "self signed")),
+                       ("expired", ("expired",)),
+                       ("hostname", ("hostname", "doesn't match", "not valid for")),
+                       ("unknown", ("unable to get local issuer", "unknown ca", "unable to verify"))):
+        if any(w in s for w in words):
+            return why
+    return "other"
+
 
 class ConfigUnreadable(RommError):
     """config.json exists but can't be read: it's never saved over (that would

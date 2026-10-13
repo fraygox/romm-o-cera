@@ -4,6 +4,7 @@
   home         Home, the platform list
   collection   collections (RomM's own and the virtual ones)
   games        a game list, Search
+  game         a game's own page
   gamenight    Game night: a random game for tonight's players
   backlog      your RomM backlog and Download my backlog
   downloads    the download queue

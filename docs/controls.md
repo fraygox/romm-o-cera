@@ -62,7 +62,7 @@ Every list moves the same way:
   page. In Collections, left/right go to the previous or next group instead;
   on the tiles above Space's and Check games' lists they move between the
   tiles; and the platform cards and theme cards are grids, where left/right
-  move one card.
+  move one card. On a game's page they go to the previous or next game.
 - **L2/R2** (`[` `]`) jump to the previous or next letter in a list sorted
   by name, or to the previous or next system in a list grouped by system.
   Where you land goes to the top of the list. Lists you can sort (Free up
@@ -106,7 +106,8 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Home | Open | | Game night | |
 | Platforms | Open | Game night from this platform | Search this platform | |
 | Collections | Open | A collection's menu: open, Game night, download every game | | A–Z (in a single list) |
-| Game lists | Download (a game on the box: its menu) | Actions: more like this, Game night, download all, filters, sort, pick several | Search | A–Z |
+| Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search | A–Z |
+| A game's page | Download / Play now | Actions: more like this, Game night, delete (on the box) | | |
 | Game night | Play now or Download the pick | Actions: players, only what's on this box | Another | |
 | Backlog | Play now or Download | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
@@ -114,7 +115,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Downloads | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |
-| Games from RomM | The game's menu: play now, delete, download again, more like this | Actions: sort, pick several | Sort | A–Z (by name) |
+| Games from RomM | The game's page (play now; X: delete, download again, more like this) | Actions: sort, pick several | Sort | A–Z (by name) |
 | Space | Open / free up space in that system | | | |
 | Free up space | Pick | Actions: delete picked, pick enough to free 10–100 GB, sort | Sort | A–Z (by name) |
 | Leftovers | Delete it | Actions: delete all, pick several | Delete all | System |
