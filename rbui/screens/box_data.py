@@ -175,6 +175,9 @@ def space_bar(surf, fonts, rect, parts, total, free, keep, cols=2):
     usable = max(0, free - keep)
     items = [(lab, n, col) for key, col, lab, n in parts if n] + \
         [("Free for downloads", usable, None), ("Kept free", min(keep, total), "hatch")]
+    if cols > 1 and any(measure(fonts.small, lab) + measure(fonts.small, human_size(n)) + 64 > w // cols
+                        for lab, n, col in items):
+        cols = 1                                  # labels that don't fit beside each other go under each other
     colw = w // cols
     ly = y + h + 16
     for i, (lab, n, col) in enumerate(items):

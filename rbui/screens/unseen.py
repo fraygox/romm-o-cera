@@ -49,7 +49,7 @@ class UnseenScreen(ListScreen):
     def hints(self):
         if not self.items:
             return [("B", "Back")]
-        return self.list_hints(("A", "Options"), ("X", pads.ACTIONS))
+        return self.list_hints(("A", "Fix it"), ("X", pads.ACTIONS))
 
     def jump_label(self, it):
         return it["system"]

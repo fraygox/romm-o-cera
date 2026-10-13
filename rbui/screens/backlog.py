@@ -260,8 +260,7 @@ class BacklogScreen(ListScreen):
         pn.space(4)
         pn.rule()
         app = self.app
-        text(pn.c, self.f.h3, rom.get("name") or "", (pn.x, pn.y), theme.TEXT, maxw=pn.w)
-        pn.space(28)
+        pn.line(rom.get("name") or "", theme.TEXT, self.f.h3, h=28)
         st = app.rom_status(rom)[0]
         p = self.plan
         if not app.system_for(rom):

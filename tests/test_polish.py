@@ -114,6 +114,18 @@ def test_a_rows_grey_line_runs_under_a_bare_status(rb, fonts, monkeypatch):
     assert widths["bar-sub"] == widths["bar-label"]                      # a progress bar under it: both stop short
 
 
+def test_the_space_legend_goes_single_column_when_its_labels_dont_fit(rb, fonts):
+    parts = [(key, col, lab, n) for (key, col, lab), n in zip(rb.theme.SPACE_PARTS, (5 << 30, 7 << 30, 40 << 20))] + \
+        [("system", rb.SYSTEM_COL, "Batocera and saves", 1 << 40)]
+    kw = dict(total=1600 << 30, free=600 << 30, keep=20 << 30)
+    wide = rb.space_bar(_canvas(rb), fonts, (56, 128, 1168, 26), parts, cols=3, **kw)
+    narrow = rb.space_bar(_canvas(rb), fonts, (640, 166, 560, 26), parts, cols=2, **kw)
+    assert wide == 128 + 26 + 16 + 2 * 28                                # six items, three a row
+    assert narrow == 166 + 26 + 16 + 6 * 28                              # one under the other
+
+
+# ---- the game page
+
 def test_the_games_note_fits_under_its_verb(rb, app, monkeypatch):
     rom = {"id": 1, "name": "Lorem", "platform_id": 7, "fs_name": "Lorem.zip", "fs_extension": "zip",
            "fs_size_bytes": 1 << 20}
@@ -142,3 +154,21 @@ def test_the_your_romm_strip_follows_a_short_summary(rb, app, monkeypatch):
 
 
 # ---- Activity
+
+def test_a_failures_reason_reads_short_in_lately(rb):
+    assert rb.short_reason("Misplaced.iso: not a GameCube/Wii disc image (dolphin-tool verify failed)") == \
+        "not a GameCube/Wii disc image"
+    assert rb.short_reason("Checksum doesn't match RomM after 2 tries") == "Checksum doesn't match RomM after 2 tries"
+    assert rb.short_reason("Note: this one (keeps) its brackets") == "Note: this one (keeps) its brackets"
+    assert rb.short_reason("Lorem (USA).cue: no such track (track 2)") == "no such track"
+    assert rb.short_reason("") == ""
+
+
+def test_no_a_or_x_hint_is_called_options_or_menu(rb):
+    """Options is PlayStation's Start and Menu is Xbox's: a hint saying "A Options" reads as two
+    buttons. Every list's own A is named for what it does (Manage, Fix it, Open…)."""
+    pat = re.compile(r'\("[AX]",\s*"(Options|Menu)"\)')
+    root = os.path.dirname(rb.app.__file__)
+    bad = [p for p in glob.glob(os.path.join(root, "**", "*.py"), recursive=True)
+           if pat.search(open(p, encoding="utf-8").read())]
+    assert bad == []

@@ -579,7 +579,7 @@ class SettingsScreen(Screen):
             app.updating = False
             msg = str(e) if isinstance(e, (rommlib.UpdateError, rommlib.RommError)) else \
                 "Update failed (%s)" % e.__class__.__name__
-            app.toast(msg + ("; downloads are paused (Downloads, X resumes)" if closing else ""), theme.RED)
+            app.toast(msg + ("; downloads are paused (Activity, {X} Actions resumes)" if closing else ""), theme.RED)
         if prepare:
             app.toast("Downloading and checking the update…")
             app.bg(prepare, close, err)

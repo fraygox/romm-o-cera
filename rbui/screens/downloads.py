@@ -1,5 +1,6 @@
 """Activity: the downloads, and the conversions on this box, on one screen."""
 import math
+import re
 import time
 
 import pygame
@@ -22,6 +23,17 @@ SPEED_TAU = 5.0             # seconds: the headline's speed is smoothed over abo
 RESULT_WORDS = {"ok": ("done", "GREEN"), "failed": ("failed", "RED"), "stopped": ("stopped", "AMBER"),
                 "skipped": ("skipped", "AMBER"), "waiting": ("waiting", "AMBER")}
 PAUSED_WHY = {"hold": "paused by you", "game": "paused while you play", "es": "paused while ES is busy"}
+
+
+def short_reason(msg):
+    """A failure's reason for one narrow line: without its "file.ext: " prefix and a trailing
+    "(…)" aside, which the Conversions screen still shows whole."""
+    head, sep, rest = msg.partition(": ")
+    if sep and re.search(r"\.\w{1,5}$", head):          # "Lorem (USA).cue: …"
+        msg = rest
+    if msg.endswith(")") and " (" in msg:
+        msg = msg[:msg.rfind(" (")]
+    return msg
 
 
 class DownloadsScreen(ListScreen):
@@ -177,7 +189,7 @@ class DownloadsScreen(ListScreen):
             if self.view():
                 h.append(("LEFT RIGHT", "Downloads"))
             return h + [("L2 R2", "Conversions"), ("B", "Back")]
-        h = [("A", "Options"), ("X", pads.ACTIONS)] if d.jobs else []
+        h = [("A", "Manage"), ("X", pads.ACTIONS)] if d.jobs else []
         if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
             h.append(("Y", "Clear finished"))
         h += [] if self.picking else [("LEFT RIGHT", "Compressing")]
@@ -582,7 +594,7 @@ class DownloadsScreen(ListScreen):
                 sub = "to %s" % self.mode(r) + (" · %s -> %s" % tuple(human_size(n) for n in r["sizes"])
                                                  if r.get("sizes") else "")
             else:
-                sub = r.get("message") or ""
+                sub = short_reason(r.get("message") or "")
             box = pygame.Rect(p.x - 12, p.y, p.w + 24, 46)
             list_row(c, self.f, box, False, self.conv_title(r), sub, word, col, mark_w=40,
                      mark=lambda ctr, col=col: circle(c, col, (ctr[0] + 2, ctr[1] - 10), 5) or True,

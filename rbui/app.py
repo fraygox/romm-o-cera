@@ -732,7 +732,7 @@ class App:
         if not self.headless and rommlib.conversions_pending():
             self.spawn_helper("rb_chd.py")        # discs left waiting last time (flock'd: no-op if running)
         if n and self.downloader.hold:
-            self.toast("%d download%s waiting — paused (Downloads, X resumes)" % (n, "" if n == 1 else "s"), theme.AMBER)
+            self.toast("%d download%s waiting — paused (Activity, {X} Actions resumes)" % (n, "" if n == 1 else "s"), theme.AMBER)
         elif n:
             self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
                                                     " from the background" if was_running else ""), theme.BLUE)
@@ -1020,7 +1020,7 @@ class App:
         title = (j.group.get("title") or j.label) if j.group else j.label
         play = self.play_entry(j.rom, j.system, title)[2]
         if play:
-            self.toast("Ready: %s · Play now from {SELECT} Downloads" % j.label, theme.GREEN, tap=play)
+            self.toast("Ready: %s · Play now from {SELECT} Activity" % j.label, theme.GREEN, tap=play)
         else:
             self.toast("Ready: %s" % j.label, theme.GREEN)
 
@@ -1082,7 +1082,7 @@ class App:
         rx = W - 24
         r = text(c, self.fonts.small, "v" + rommlib.VERSION_LABEL, (rx, H - 23), theme.FAINT, "midright")
         rx = r.left - 28
-        globals_ = [("START", "Home"), ("SELECT", "Downloads")]
+        globals_ = [("START", "Home"), ("SELECT", "Activity")]
         if getattr(top, "own_start", False) or len(self.stack) == 1:
             globals_ = [g for g in globals_ if g[0] != "START"]     # Start means something else here
         if isinstance(top, DownloadsScreen):

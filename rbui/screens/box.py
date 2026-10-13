@@ -336,7 +336,7 @@ class OnThisBoxScreen(Screen):
             rrect(c, theme.BG2, r, 12)
             st, frac = conversion_status(run)
             text(c, self.f.row, run["title"], (r.left + 20, r.top + 12), theme.TEXT, maxw=r.width - 40)
-            text(c, self.f.small, "%s, %s" % (mode(run), st), (r.left + 20, r.top + 40), theme.BLUE, maxw=r.width - 40)
+            text(c, self.f.small, "%s · %s" % (mode(run), st), (r.left + 20, r.top + 40), theme.BLUE, maxw=r.width - 40)
             progress_bar(c, (r.left + 20, r.bottom - 22, r.width - 40, 8), frac, theme.BLUE)
             yy = r.bottom + 26
         else:
@@ -351,7 +351,7 @@ class OnThisBoxScreen(Screen):
                 if r["kind"] == "queued" and r.get("tool"):
                     s, col = "Waiting for %s" % r["tool"], theme.AMBER
                 elif r["kind"] == "queued":
-                    s, col = "%s, %s" % (mode(r), human_size(r["size"])), theme.FAINT
+                    s, col = "%s · %s" % (mode(r), human_size(r["size"])), theme.FAINT
                 else:
                     s = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(
                         r["kind"], r["kind"] or "")
@@ -359,7 +359,7 @@ class OnThisBoxScreen(Screen):
                 text(c, self.f.small, s, (p.right - 28, yy + 2), col, "topright", maxw=220)
                 yy += 32
             yy += 18
-        self.foot(c, p, "Also in Downloads: {L2 R2}")
+        self.foot(c, p, "Also in Activity: {L2 R2}")
 
     def panel_info(self, c, p):
         x = p.left + 28

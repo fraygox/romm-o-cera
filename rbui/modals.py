@@ -86,7 +86,8 @@ class ActionMenu:
         self.app.hit(r, None)                    # taps on the dialog itself don't close it
         rrect(c, theme.PANEL, r, 18)
         rrect(c, theme.LINE, r, 18, 1)
-        text(c, f.h2, self.title, (r.left + 28, r.top + 24), theme.TEXT, maxw=r.width - 56)
+        marquee(c, f.h2, self.title, (r.left + 28, r.top + 24), theme.TEXT, maxw=r.width - 56, bg=theme.PANEL,
+                slot=("menu-title", id(self)))
         view = r.height - 96                     # what the rows get
         off = getattr(self, "off", 0)
         if self.entries:                         # keep the selected row in view
@@ -218,7 +219,8 @@ class Confirm:
         self.app.hit(r, None)
         rrect(c, theme.PANEL, r, 18)
         rrect(c, theme.LINE, r, 18, 1)
-        text(c, f.h2, self.title, (r.left + 32, r.top + 28), theme.TEXT, maxw=r.width - 64)
+        marquee(c, f.h2, self.title, (r.left + 32, r.top + 28), theme.TEXT, maxw=r.width - 64, bg=theme.PANEL,
+                slot=("confirm-title", id(self)))
         # a body longer than its four lines scrolls by itself (never cut)
         scroll_text(c, f.body, self.body, (r.left + 32, r.top + 74, r.width - 64, 4 * 26 + 2), theme.DIM,
                     key=self.title, line_h=26, slot=("confirm", id(self)))
