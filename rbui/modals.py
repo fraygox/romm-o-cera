@@ -336,19 +336,31 @@ class DownloadConfirm(Confirm):
         if st[0] == "active":
             super().__init__(app, name, "Already downloading.", "OK", lambda: None)
             return
-        body = app.plan_text(rom, system)
-        if st[0] == "installed":
-            body = "Already on this box. Download again anyway?  " + body
-        var = app.library.variants(rom, system)
-        if var:
-            body += "  You already have %s%s." % (var[0], " and %d more" % (len(var) - 1) if len(var) > 1 else "")
+        self.app = app
+        body = self._body(rom, system, st)
         super().__init__(app, name, body, "Download", lambda: app.start_download(rom))
+        if rommlib.needs_listing(rom, system):       # an estimate until RomM tells what the zip holds
+            def listed(_):
+                if app.modal is self and not self.pending:
+                    about = self.body[:len(self.body) - len(body)] if self.body.endswith(body) else ""
+                    self.body = about + self._body(rom, system, st)
+            app.bg(lambda: rommlib.zip_listing(app.api, rom, system), listed, lambda e: None)
         if rommlib.disc_info(rom.get("fs_name_no_ext") or "") and st[0] != "installed":
             self.pending = True
             self.body = "Looking for the other discs in RomM…"
             app.bg(lambda: rommlib.find_disc_set(app.api, rom),
                    lambda res: self._found(rom, system, body, *res),
                    lambda e: self._lookup_failed(body, e))
+
+    def _body(self, rom, system, st):
+        app = self.app
+        body = app.plan_text(rom, system)
+        if st[0] == "installed":
+            body = "Already on this box. Download again anyway?  " + body
+        var = app.library.variants(rom, system)
+        if var:
+            body += "  You already have %s%s." % (var[0], " and %d more" % (len(var) - 1) if len(var) > 1 else "")
+        return body
 
     def _lookup_failed(self, body, e):
         self.pending = False

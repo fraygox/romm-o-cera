@@ -570,7 +570,7 @@ class App:
             return
         size = sum(r.get("fs_size_bytes") or 0 for r in roms)
         items = [(r, app.system_for(r)) for r in roms]
-        need = sum(rommlib.space_needed(r, sy) for r, sy in items)
+        need = rommlib.space_for(items)          # the queue's real peak, as Downloads forecasts it
         keep = rommlib.keep_free_bytes(app.cfg)
         free = app.free_after_queue()
 
