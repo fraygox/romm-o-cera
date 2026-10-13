@@ -140,6 +140,7 @@ Easiest to read on the **[documentation site](https://fraygox.github.io/romm-o-c
 | [On this box](docs/on-this-box.md) | installed games, space, compressing what's here, BIOS, Check games, conversions, game info |
 | [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, 3DS, Xbox 360, Wii U, converting a library you already have |
 | [PS3 games](docs/ps3.md) | `.ps3` game folders, encrypted discs, where disc keys go (`bios/ps3keys`), keys in RomM |
+| [Wii U games](docs/wiiu.md) | `.wud`, `.wux` and `.wua`, the two Wii U switches, disc keys, updates and DLC |
 | [Settings](docs/settings.md) | every setting and `config.json` key, resetting settings |
 | [Themes](docs/themes.md) | the theme picker, every theme, your own Custom theme, matching your controller |
 | [Connecting to RomM](docs/connecting.md) | HTTPS, certificates, network share, auth proxies |
