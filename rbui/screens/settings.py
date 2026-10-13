@@ -260,11 +260,12 @@ class SettingsScreen(Screen):
     def hints(self):
         items = self.items()
         key = items[min(self.sel, len(items) - 1)][0]
+        jump = [("L", "Page up"), ("R", "Page down")]      # L/R move six rows
         if key in self.STEPLESS:
-            return [("A", "Open" if key in ("bios", "credits", "docs") else "Select"), ("B", "Back")]
+            return [("A", "Open" if key in ("bios", "credits", "docs") else "Select")] + jump + [("B", "Back")]
         if key == "theme":
-            return [("A", "All themes"), ("LEFT RIGHT", "Choose"), ("B", "Back")]
-        return [("A", "Change"), ("LEFT RIGHT", "Choose"), ("B", "Back")]
+            return [("A", "All themes"), ("LEFT RIGHT", "Choose")] + jump + [("B", "Back")]
+        return [("A", "Change"), ("LEFT RIGHT", "Choose")] + jump + [("B", "Back")]
 
     def selectable(self):
         return [i for i, it in enumerate(self.items()) if it[0] != "§"]
