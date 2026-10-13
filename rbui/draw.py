@@ -242,7 +242,10 @@ def text(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
     return LR(r)
 
 
-def wrap(font, s, width, max_lines=None):
+def wrap(font, s, width, max_lines=None, whole_words=False):
+    """s wrapped to width by word; a word wider than the line is split where it stops fitting
+    (a CJK run has no spaces), or with whole_words kept whole and cut with "…" (a name in a
+    narrow box reads better short than broken mid-word). max_lines: the last line ends in "…"."""
     lines = []
     for para in (s or "").replace("\r", "").split("\n"):
         cur = ""
@@ -254,6 +257,12 @@ def wrap(font, s, width, max_lines=None):
             if cur:
                 lines.append(cur)
             cur = w
+            if whole_words:
+                if measure(font, cur) > width:
+                    while len(cur) > 1 and measure(font, cur + "…") > width:
+                        cur = cur[:-1]
+                    cur = cur.rstrip() + "…"
+                continue
             while measure(font, cur) > width and len(cur) > 1:   # unbreakable (CJK) run
                 k = len(cur)
                 while k > 1 and measure(font, cur[:k]) > width:
@@ -636,13 +645,14 @@ def _clip_to(surf, prect):
 SCROLL_BAR = 10             # logical px a scrolling box keeps free on its right for its position bar
 
 
-def scroll_box(surf, rect, total, paint, sig, slot=None, bg=None, t=None, edge=16):
+def scroll_box(surf, rect, total, paint, sig, slot=None, bg=None, t=None, edge=16, clean=False):
     """The scroller for any content: paint(top) draws `total` logical px of it from y=top, clipped
     to rect (logical). Taller than rect, it scrolls up by itself (scroll_offset) with its edges
     fading into bg (default PANEL) and a thin position bar in the rightmost SCROLL_BAR px (leave
     them free); otherwise it stays still. sig: what, when it changes, starts the scroll over.
-    slot: which scroller this is (default: the rect); edge: how deep the fades are (logical px).
-    Returns the rect the content took up."""
+    slot: which scroller this is (default: the rect); edge: how deep the fades are (logical px);
+    clean: the content's rest positions are clean cuts (whole lines), so the edges fade only
+    while it moves. Returns the rect the content took up."""
     bg = theme.PANEL if bg is None else bg
     rect = pygame.Rect(rect)
     over = max(0.0, total - rect.height)
@@ -652,9 +662,10 @@ def scroll_box(surf, rect, total, paint, sig, slot=None, bg=None, t=None, edge=1
     paint(rect.top - off)
     if over > 0.5:
         fh = max(2, S(min(edge, rect.height / 4)))
-        if off > 0.5:
+        moving = 0.5 < off < over - 0.5
+        if off > 0.5 and (moving or not clean):
             _fade(surf, bg, pygame.Rect(prect.left, prect.top, prect.width, fh), "top")
-        if off < over - 0.5:
+        if off < over - 0.5 and (moving or not clean):
             _fade(surf, bg, pygame.Rect(prect.left, prect.bottom - fh, prect.width, fh), "bottom")
         scrollbar(surf, (rect.right - 3, rect.top + 2, 3, rect.height - 4), rect.height / total, off / over,
                   theme.FAINT, 12, 1)
@@ -668,7 +679,8 @@ def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None,
     s: a string (\\n splits paragraphs; {TOKEN} glyphs work) or a list of paragraphs.
     key: anything else that should start the scroll over when it changes (the selection).
     bg: the colour behind it (default PANEL). slot: which scroller this is (default: the rect).
-    Returns the rect the text took up (its height is the text's, at most rect's); scroll_fits()
+    Returns the rect the text took up (its height is the text's, at most rect's; one that
+    scrolls shows whole lines at rest, so its height is a whole number of lines); scroll_fits()
     tells beforehand whether it will move."""
     color = theme.TEXT if color is None else color
     rect = pygame.Rect(rect)
@@ -677,6 +689,7 @@ def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None,
     lines = wrapped(font, s, rect.width)
     if len(lines) * lh - rect.height > 0.5:            # room for the position bar
         lines = wrapped(font, s, rect.width - SCROLL_BAR)
+        rect.height = max(1, int(rect.height // lh)) * lh      # whole lines at rest, never a cut one
     top_clip = SR(rect)
 
     def paint(top):
@@ -690,7 +703,7 @@ def scroll_text(surf, font, s, rect, color=None, key=None, line_h=None, bg=None,
                 rich_text(surf, FONTS["f"], font, ln, (rect.left, y), color)
             else:
                 text(surf, font, ln, (rect.left, y), color)
-    return scroll_box(surf, rect, len(lines) * lh, paint, (s, key, rect.width), slot, bg, t, lh * 0.7)
+    return scroll_box(surf, rect, len(lines) * lh, paint, (s, key, rect.width), slot, bg, t, lh * 0.7, clean=True)
 
 
 def doc_layout(fonts, lines, width):

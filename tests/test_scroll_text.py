@@ -81,7 +81,9 @@ def test_long_text_scrolls_inside_its_box_and_never_outside(rb, fonts):
     def draw(t):
         c = _canvas(rb)
         used = rb.scroll_text(c, fonts.body, LONG, rect, rb.TEXT, bg=rb.BG, t=t)
-        assert used.height == rect.height                                  # full: it uses the whole box
+        lh = fonts.body.get_height() / rb.theme.K + 4
+        assert rect.height - lh < used.height <= rect.height               # whole lines, as many as fit
+        assert abs(used.height - round(used.height / lh) * lh) < 1
         if t in (0.0, 0.5, 1.9, 3.5, 6.0):
             assert _outside_untouched(rb, c, rect), t
         return pygame.image.tobytes(c, "RGB")
