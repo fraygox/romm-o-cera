@@ -31,7 +31,7 @@ screen, tap a card to try it and tap it again to keep it; tap its OLED pill
 to switch it, and the panel's **Edit a copy** button does what X does.
 
 **OLED** versions use a pure black background, for OLED TVs and dark rooms.
-Default, PlayStation, Xbox and Kyoto have one; Red Visor comes only in OLED.
+Default, PlayStation, Xbox, Kyoto and Red Visor have one.
 If your theme is an OLED one, every card starts on its OLED version.
 
 ## Every theme
@@ -50,7 +50,7 @@ If your theme is an OLED one, every card starts on its OLED version.
 **Consoles**
 
 - **Brick**: the pea-green handheld screen, four greens.
-- **Red Visor OLED**: red on true black.
+- **Red Visor**: red on a red-black ground, like the 3D visor (OLED version: on true black).
 - **Red & White**: maroon and cream with a touch of gold.
 - **Lavender**: 16-bit greys with lavender and purple.
 - **Mega Drive**: black, chrome and red.

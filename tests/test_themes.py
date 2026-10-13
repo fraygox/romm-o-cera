@@ -32,7 +32,7 @@ def themed(rb):
 def test_every_theme_is_readable_and_keeps_status_apart_from_the_accent(themed):
     """Floors are the Default palette's own levels: no theme is harder to read."""
     rb = themed
-    assert list(rb.THEMES)[0] == "default" and len(rb.THEMES) == 31
+    assert list(rb.THEMES)[0] == "default" and len(rb.THEMES) == 32
     for name, (label, _) in rb.THEMES.items():
         assert "Nintendo" not in label, name                          # the Nintendo-inspired ones have own names
         assert rb.apply_theme(name) == name
@@ -104,8 +104,8 @@ def test_every_theme_has_a_card_or_is_a_cards_oled_version(rb):
     reach = set(cards) | {rb.theme_oled(k) for k in cards if rb.theme_oled(k)}
     assert reach == set(rb.THEMES)
     assert all(rb.THEME_DESC.get(k) for k in cards)
-    assert rb.theme_oled("virtualboy_oled") == "virtualboy_oled" and rb.theme_oled("dmg") is None
-    assert rb.theme_base("xbox_oled") == "xbox" and rb.theme_base("virtualboy_oled") == "virtualboy_oled"
+    assert rb.theme_oled("virtualboy") == "virtualboy_oled" and rb.theme_oled("dmg") is None
+    assert rb.theme_base("xbox_oled") == "xbox" and rb.theme_base("virtualboy_oled") == "virtualboy"
 
 
 def _picker(app, rb):
@@ -116,6 +116,16 @@ def _picker(app, rb):
     pk = app.stack[-1]
     assert isinstance(pk, rb.ThemePickerScreen) and pk.crumbs() == ["Settings", "Theme"]
     return st, pk
+
+
+def test_a_saved_red_visor_oled_opens_on_its_card_in_oled(ui, rb):
+    app = ui
+    app.cfg["theme"] = "virtualboy_oled"
+    rb.apply_theme("virtualboy_oled")
+    _, pk = _picker(app, rb)
+    assert pk.items[pk.sel] == "virtualboy" and pk.key() == "virtualboy_oled" and rb.BG == (0, 0, 0)
+    pk.action("y")                                                    # the regular one: a red-black ground
+    assert pk.key() == "virtualboy" and rb.BG == rb.THEMES["virtualboy"][1]["BG"] != (0, 0, 0)
 
 
 def test_moving_previews_b_puts_the_old_theme_back_a_keeps_it(ui, rb):
@@ -153,9 +163,11 @@ def test_the_grid_moves_by_row_column_and_group(ui, rb):
     assert pk.key() == "playstation"
     pk.action("down")
     pk.action("down")
-    assert pk.key() == "virtualboy_oled"                              # into Consoles, same column
-    pk.action("y")                                                    # only OLED: stays
+    assert pk.key() == "virtualboy"                                   # into Consoles, same column
+    pk.action("y")                                                    # its OLED version, and back
     assert pk.key() == "virtualboy_oled"
+    pk.action("y")
+    assert pk.key() == "virtualboy"
     pk.action("r1")
     assert pk.key() == "phosphor"
     pk.action("r1")

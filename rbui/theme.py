@@ -99,6 +99,10 @@ THEMES = {
         LINE=(48, 98, 48), TEXT=(224, 240, 184), DIM=(180, 210, 122), FAINT=(139, 172, 15),
         ACCENT=(139, 172, 15), ACCENT_HI=(200, 224, 112), GREEN=(111, 224, 208), AMBER=(240, 192, 64),
         RED=(255, 140, 120), BLUE=(140, 200, 255))),
+    "virtualboy": ("Red Visor", dict(BG=(18, 4, 5), BG2=(26, 7, 8), PANEL=(36, 10, 11), PANEL_HI=(96, 14, 16),
+        LINE=(86, 24, 24), TEXT=(255, 216, 216), DIM=(255, 154, 154), FAINT=(230, 112, 112),
+        ACCENT=(232, 16, 28), ACCENT_HI=(255, 112, 112), GREEN=(112, 224, 160), AMBER=(255, 192, 64),
+        RED=(255, 154, 64), BLUE=(128, 192, 255))),
     "virtualboy_oled": ("Red Visor OLED", dict(_OLED, BG2=(12, 0, 0), PANEL=(24, 3, 3), PANEL_HI=(90, 10, 10),
         LINE=(74, 16, 16), TEXT=(255, 216, 216), DIM=(255, 154, 154), FAINT=(224, 106, 106),
         ACCENT=(232, 16, 28), ACCENT_HI=(255, 112, 112), GREEN=(112, 224, 160), AMBER=(255, 192, 64),
@@ -177,10 +181,10 @@ _DEFAULT_PALETTE = {k: globals()[k] for k in PALETTE}
 
 
 # Settings → Theme's picker: the cards, in groups. A theme's "_oled" twin is its card's OLED switch,
-# not a card of its own (Red Visor exists only as OLED).
+# not a card of its own.
 THEME_GROUPS = (
     ("Built in", ("default", "playstation", "xbox", "nintendo", "high_contrast", "high_contrast_light")),
-    ("Consoles", ("dmg", "virtualboy_oled", "famicom", "snes", "megadrive", "dreamcast", "gamecube", "n64",
+    ("Consoles", ("dmg", "virtualboy", "famicom", "snes", "megadrive", "dreamcast", "gamecube", "n64",
                   "turbografx", "neogeo", "atari", "c64")),
     ("Screens and moods", ("phosphor", "amber", "synthwave", "sakura")),
     ("Classic palettes", ("nord", "solarized", "dracula", "paper")),
@@ -194,7 +198,7 @@ THEME_DESC = {
     "high_contrast": "Pure black and white with a yellow focus",
     "high_contrast_light": "Black on white with a blue focus, for bright rooms",
     "dmg": "The original handheld's pea-green screen: four greens, darkest as the ground",
-    "virtualboy_oled": "Red on true black, like the 3D visor",
+    "virtualboy": "Red on a red-black ground, like the 3D visor",
     "famicom": "The red-and-white machine: maroon and cream with the gold of the cartridge labels",
     "snes": "The 16-bit console's greys with the US pad's lavender and purple",
     "megadrive": "Black plastic, chrome text and the 16-BIT red",
