@@ -582,6 +582,19 @@ def es_art_files(sysdir, game_path, kind):
             if os.path.isfile(p)]
 
 
+ES_FILE_NAMES = {"thumbnail": "thumb", "boxart": "box"}     # its file name for these tags; the rest: the tag
+ES_MEDIA_FILE_EXTS = {"video": (".mp4", ".avi", ".mkv", ".webm"), "manual": (".pdf", ".cbz")}
+
+
+def es_media_file_here(sysdir, game_path, tag):
+    """The file ES names for a game's media tag is there: images/<stem>-<name>.<ext>
+    (videos/, manuals/ for those)."""
+    stem = os.path.splitext(os.path.basename(game_path))[0]
+    d = {"video": "videos", "manual": "manuals"}.get(tag, "images")
+    return any(os.path.isfile(os.path.join(sysdir, d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x)))
+               for x in ES_MEDIA_FILE_EXTS.get(tag, ART_EXTS))
+
+
 def same_file(a, b):
     try:
         if os.path.getsize(a) != os.path.getsize(b):

@@ -9,7 +9,8 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
 - POST /systems/<sys>/games/<id>/media/<tag>   bytes -> images/<stem>-<name>.ext, named as
                                     Batocera 43.1's ES does (thumbnail "thumb", boxart "box");
                                     another extension than before leaves the old file behind
-- GET  /systems/<sys>/games/<id>/media/<tag>   the file's bytes (404 when it has none)
+- GET  /systems/<sys>/games/<id>/media/<tag>   the file's bytes; 404 for a tag the game hasn't,
+                                    200 with nothing for a path to a file that's gone
 - GET  /reloadgames                 save in-memory lists, then reload from disk
 - GET  /runningGame                 {"msg": "NO GAME RUNNING"} unless .running set
 - GET  /systems                     systems with games (name, gamesystem, totalGames)
@@ -113,8 +114,10 @@ class FakeES:
                     with fake.lock:
                         rel = fake.mem[m.group(1)][path].get(m.group(3)) if path else None
                     f = os.path.normpath(os.path.join(fake.roms, m.group(1), rel)) if rel else None
-                    if not f or not os.path.isfile(f):
+                    if not f:
                         return self._send(404, b"404 media not found", "text/html")
+                    if not os.path.isfile(f):                   # a path to a file that's gone: 200, nothing
+                        return self._send(200, b"", "text/plain")
                     return self._send(200, open(f, "rb").read(), "image/" + os.path.splitext(f)[1][1:])
                 m = re.match(r"^/systems/([^/]+)/games(?:/([0-9a-f]+))?$", p)
                 if m:

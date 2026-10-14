@@ -558,7 +558,8 @@ def _listed_as(r):
 
 
 def _gamelist_info(sysdir):
-    """{relative path: set of filled tags} from roms/<sys>/gamelist.xml (read only)."""
+    """{relative path: set of filled tags} from roms/<sys>/gamelist.xml (read only); a
+    media tag counts when its file is there."""
     out = {}
     try:
         root = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot()
@@ -567,7 +568,9 @@ def _gamelist_info(sysdir):
     for g in root.findall("game"):
         p = g.findtext("path")
         if p:
-            out[p] = {t for t in OFFER_TEXT + OFFER_MEDIA if (g.findtext(t) or "").strip()}
+            out[p] = {t for t in OFFER_TEXT if (g.findtext(t) or "").strip()}
+            out[p] |= {t for t in OFFER_MEDIA if (g.findtext(t) or "").strip()
+                       and os.path.isfile(os.path.normpath(os.path.join(sysdir, g.findtext(t).strip())))}
     return out
 
 
@@ -649,7 +652,12 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
     have = _gamelist_info(sysdir)
     es_have, es_ids = _es_info(system, sysdir)
     for p, tags in es_have.items():
-        have.setdefault(p, set()).update(tags)
+        got = have.setdefault(p, set())
+        for t in tags - got:
+            if t in OFFER_MEDIA and p in es_ids and not _library.es_media_file_here(sysdir, p, t) \
+                    and _es.es_media_present(system, es_ids[p], t) is not True:
+                continue                    # a path to a file that's gone (a game deleted, downloaded again)
+            got.add(t)
     skips = _library.media_skips()
     in_m3u = set()
     for n in names:

@@ -6,6 +6,8 @@ full ScreenScraper media and Batocera 43.1 VMs (2026-10-13):
 - versions before 0.11 gave ES the cover as the image, and Fill in game info then added
   the same cover as the thumbnail: that image (the box art twice) gives way to the
   screenshot, and ES's old file of it goes; an image of the player's own never does;
+- a game deleted and downloaded again gets its old ES entry back, media paths and all,
+  to files that are gone (ES serves them as nothing): those count as missing;
 - the Settings panel's version line fits with a nightly's long label."""
 import os
 
@@ -27,6 +29,8 @@ def lorem():
 
 def give_es(es, path, tags, **files):
     """ES holds these tags for the game (in memory only: no gamelist.xml written)."""
+    os.makedirs(os.path.join(rommlib.ROMS_ROOT, "nes", "images"), exist_ok=True)
+    open(os.path.join(rommlib.ROMS_ROOT, "nes", "images", "x.png"), "wb").write(PNG)
     with es.lock:
         md = es.mem["nes"][path]
         for t in tags:
@@ -113,6 +117,33 @@ def test_an_image_of_the_players_own_is_never_replaced(served):
     e2["fill"] = True
     assert rb_finalize.apply([e2], None, {"nes": {".zip"}}, esapi, {}, cfg(es_image="boxart")) == []
     assert "image" not in {t for t, _, _ in esapi.media}
+
+
+def test_a_game_downloaded_again_gets_media_though_es_kept_paths_to_files_that_are_gone(served, fake_es, monkeypatch):
+    files, _ = served
+    rom = lorem()
+    files.update(all_files(rom))
+    path, _ = game_here()
+    sysdir = os.path.dirname(path)
+    es = fake_es({"nes": {".zip"}})
+    gone = {"image": "./images/Lorem Mages-image.png", "thumbnail": "./images/Lorem Mages-thumb.png",
+            "marquee": "./images/Lorem Mages-marquee.png", "video": "./videos/Lorem Mages-video.mp4"}
+    with es.lock:
+        es.mem["nes"][path].update(name="Lorem Mages", desc="Lorem ipsum.", **gone)
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert len(entries) == 1 and st["complete"] == 0
+    e = rommlib.gamelist_entry(rom, "nes", [path], cfg=cfg())
+    assert rb_finalize.apply([e], None, {"nes": {".zip"}}, rb_finalize.EsApi(es.url), {}, cfg()) == []
+    md = es.mem["nes"][path]
+    for t in gone:
+        assert os.path.isfile(os.path.normpath(os.path.join(sysdir, md[t]))), t
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert entries == [] and st["complete"] == 1
+    # gamelist.xml alone (ES can't be asked): a media path to a file that's gone doesn't count
+    es.save()
+    os.remove(os.path.normpath(os.path.join(sysdir, md["marquee"])))
+    monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
+    assert len(rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())[0]) == 1
 
 
 def test_the_version_line_fits_the_settings_panel_with_a_nightly_label(ui, rb, monkeypatch):  # noqa: F811

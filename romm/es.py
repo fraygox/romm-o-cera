@@ -303,6 +303,24 @@ def delete_game(system, path, library=None):
     return files, freed
 
 
+def es_media_present(system, gid, tag, base=None, timeout=15):
+    """Does ES have the file of one of a game's media tags? (GET .../media/<tag>, only its
+    headers read.) True: ES serves it; False: no such tag, or a path to a file that is gone
+    (ES answers 200 with nothing: a game deleted and downloaded again gets its old entry
+    back, media paths and all); None: ES can't be asked."""
+    import urllib.error
+    import urllib.request
+    url = "%s/systems/%s/games/%s/media/%s" % (base or ES_API, urllib.parse.quote(system), gid, tag)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return int(r.headers.get("Content-Length") or 0) > 0
+    except urllib.error.HTTPError as e:
+        e.close()
+        return False if e.code == 404 else None
+    except Exception:
+        return None
+
+
 def es_notify(msg):
     """Show a popup in EmulationStation (Batocera's ES API). Best effort."""
     try:

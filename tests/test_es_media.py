@@ -329,6 +329,8 @@ def _gamelist(sysdir, tags):
     body = "".join("<%s>%s</%s>" % (t, "./images/x.png" if t in audit.OFFER_MEDIA else "x", t) for t in tags)
     with open(os.path.join(sysdir, "gamelist.xml"), "w") as f:
         f.write("<gameList><game><path>./Lorem Mages.zip</path>%s</game></gameList>" % body)
+    os.makedirs(os.path.join(sysdir, "images"), exist_ok=True)       # media count when their file is there
+    open(os.path.join(sysdir, "images", "x.png"), "wb").close()
 
 
 def test_fill_in_doesnt_flag_a_game_for_media_romm_doesnt_have(isolated):

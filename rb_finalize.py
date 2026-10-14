@@ -154,6 +154,22 @@ class EsApi:
             return None
         return body if st == 200 else None
 
+    def media_present(self, system, gid, tag):
+        """ES has the file of this media tag (only the headers of GET .../media/<tag> are
+        read): False for a path to a file that is gone, which ES answers with nothing;
+        None when ES can't be asked."""
+        import urllib.error
+        import urllib.request
+        url = "%s/systems/%s/games/%s/media/%s" % (self.base, urllib.parse.quote(system), gid, tag)
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                return int(r.headers.get("Content-Length") or 0) > 0
+        except urllib.error.HTTPError as e:
+            e.close()
+            return False if e.code == 404 else None
+        except Exception:
+            return None
+
     def add_games(self, system, games):
         """List games ({absolute path: {tag: text}}) with POST /addgames/<system>:
         the status (see rommlib.es_add_games), or None when ES can't be asked.
@@ -276,9 +292,10 @@ def drop_stale_images(system, g, keep):
 
 
 def upload_media(api, esapi, system, g, e, cfg=None):
-    """Every media file the entry offers that the game has none of in ES yet
-    (what's there is never replaced, but for an image that is only the box art
-    again: image_is_box_art_again): the first of its RomM paths that comes.
+    """Every media file the entry offers that the game has none of in ES yet (a
+    path to a file that is gone counts as none; what's there is never replaced,
+    but for an image that is only the box art again: image_is_box_art_again):
+    the first of its RomM paths that comes.
     A tag none of them comes for is noted (library.record_media_skip), so Fill
     in game info stops asking for it; videos follow today's cap (cfg)."""
     media = entry_media(e)
@@ -297,7 +314,7 @@ def upload_media(api, esapi, system, g, e, cfg=None):
         if tag not in MEDIA_TAGS:
             continue
         again = False
-        if g.get(tag):
+        if g.get(tag) and getattr(esapi, "media_present", lambda *a: None)(system, g["id"], tag) is not False:
             again = tag == "image" and image_is_box_art_again(esapi, system, g, media)
             if not again:
                 continue

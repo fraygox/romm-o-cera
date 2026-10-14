@@ -192,7 +192,8 @@ very same file as the game's box art (what v0.10 and earlier left: the cover
 as the image, then again as the box art) gives way to RomM's screenshot when
 Game image in ES is Screenshot. What the game has is read from EmulationStation
 itself as well as `gamelist.xml`, which it writes only now and then, so a game
-just filled isn't listed again. A game counts as complete when it has
+just filled isn't listed again; a media path to a file that is gone (a game
+deleted and downloaded again gets its old entry back) counts as missing. A game counts as complete when it has
 everything RomM has for it that [Settings → Metadata](settings.md) asks for:
 one RomM has no video or logo for isn't listed for lacking them, nor is one
 whose video is over the size limit or whose file RomM couldn't serve (noted
