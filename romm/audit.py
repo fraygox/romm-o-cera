@@ -596,13 +596,30 @@ def _es_info(system, sysdir):
     return tags, ids
 
 
+def es_image_is_thumb(system, gid, base=None):
+    """ES's image of the game is byte for byte its thumbnail (GET .../media/<tag>);
+    None when ES can't say."""
+    got = []
+    for tag in ("image", "thumbnail"):
+        try:
+            r = _es.EsClient(base, timeout=15).get(
+                "/systems/%s/games/%s/media/%s" % (urllib.parse.quote(system), gid, tag), errors=False)
+        except Exception:
+            return None
+        if r.status != 200:
+            return None
+        got.append(r.body)
+    return got[0] == got[1]
+
+
 def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
     """Gamelist entries for games already in roms/<system> that RomM knows
     (matched by file name, like "already on this box") and whose ES entry
     lacks something RomM has for it: text, images, video, manual (offered(),
     as Settings' Metadata section asks: cfg). Media noted as never arriving
     (library.skipped_tags) doesn't count as lacking. What the game has is read from
-    gamelist.xml and from ES itself (it saves the file only now and then). Entries
+    gamelist.xml and from ES itself (it saves the file only now and then); an image that
+    is the box art again, as versions before 0.11 left it, counts as lacking. Entries
     carry "fill": the merge only sets what's missing. Returns (entries, stats)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
@@ -630,7 +647,7 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
             if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
                 sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
     have = _gamelist_info(sysdir)
-    es_have, _ = _es_info(system, sysdir)
+    es_have, es_ids = _es_info(system, sysdir)
     for p, tags in es_have.items():
         have.setdefault(p, set()).update(tags)
     skips = _library.media_skips()
@@ -675,6 +692,9 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
         e["fill"] = True
         if title:
             e["name"] = title
+        if "image" in got and _library.wants_own_image(e["media"]) and _library.image_is_thumb_again(sysdir, prim) \
+                and (rel not in es_ids or es_image_is_thumb(system, es_ids[rel]) is not False):
+            got = got - {"image"}            # the box art twice (an older version's image): the screenshot is due
         if offered(e) <= got | _library.skipped_tags(e, cfg, skips):
             stats["complete"] += 1
             continue

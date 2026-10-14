@@ -568,6 +568,43 @@ def clear_media_skip(system, rom_id, tag):
         _save_skips(d)
 
 
+# -- a game's ES image that is only its box art again: versions before 0.11 gave ES the cover
+# as the image, and Fill in game info then added the same cover as the thumbnail. ES names
+# the files it is sent images/<stem>-image.<ext> and <stem>-thumb.<ext> (Batocera's scraper
+# too); a new image under another extension leaves the old file behind.
+ART_EXTS = (".png", ".jpg", ".jpeg", ".gif")
+
+
+def es_art_files(sysdir, game_path, kind):
+    """ES's files of one kind ("image", "thumb") for a game: images/<stem>-<kind>.<ext>."""
+    stem = os.path.splitext(os.path.basename(game_path))[0]
+    return [p for p in (os.path.join(sysdir, "images", "%s-%s%s" % (stem, kind, x)) for x in ART_EXTS)
+            if os.path.isfile(p)]
+
+
+def same_file(a, b):
+    try:
+        if os.path.getsize(a) != os.path.getsize(b):
+            return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            return fa.read() == fb.read()
+    except OSError:
+        return False
+
+
+def image_is_thumb_again(sysdir, game_path):
+    """True when one of the game's image files is the same file as one of its thumbnails:
+    a sign ES's image is the box art twice (ES's own answer is the sure one)."""
+    thumbs = es_art_files(sysdir, game_path, "thumb")
+    return any(same_file(i, t) for i in es_art_files(sysdir, game_path, "image") for t in thumbs)
+
+
+def wants_own_image(media):
+    """The entry offers an image that isn't its box art (a screenshot, as Settings asks)."""
+    img, thumb = (media or {}).get("image"), (media or {}).get("thumbnail")
+    return bool(img) and bool(thumb) and img[0] != thumb[0]
+
+
 def skipped_tags(entry, cfg, skips=None):
     """The entry's media tags a recorded skip still covers: the same first path at RomM,
     and (for a video over the cap) still bigger than today's cap."""

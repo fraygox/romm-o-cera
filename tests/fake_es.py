@@ -6,7 +6,10 @@ modelled on what Batocera 43.1 was observed to do (2026-10-10 trial):
                                     bare (name = file stem) for new files
 - POST /systems/<sys>/games/<id>    JSON of string fields; only those change;
                                     200 if something changed, else 404 (sic)
-- POST /systems/<sys>/games/<id>/media/<tag>   bytes -> images/<stem>-<tag>.ext
+- POST /systems/<sys>/games/<id>/media/<tag>   bytes -> images/<stem>-<name>.ext, named as
+                                    Batocera 43.1's ES does (thumbnail "thumb", boxart "box");
+                                    another extension than before leaves the old file behind
+- GET  /systems/<sys>/games/<id>/media/<tag>   the file's bytes (404 when it has none)
 - GET  /reloadgames                 save in-memory lists, then reload from disk
 - GET  /runningGame                 {"msg": "NO GAME RUNNING"} unless .running set
 - GET  /systems                     systems with games (name, gamesystem, totalGames)
@@ -49,6 +52,7 @@ TEXT = ("name", "desc", "releasedate", "developer", "publisher", "genre", "playe
         "lang", "family", "hidden", "favorite", "playcount", "lastplayed", "gametime")
 MEDIA = ("image", "thumbnail", "marquee", "video", "fanart", "boxback", "bezel", "manual", "map",
          "titleshot", "wheel", "boxart", "cartridge", "magazine", "mix")
+FILE_NAME = {"thumbnail": "thumb", "boxart": "box"}          # ES's file names for these tags
 EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "video/mp4": ".mp4",
        "application/pdf": ".pdf"}
 
@@ -103,6 +107,15 @@ class FakeES:
                     fake.save()
                     fake.reload()
                     return self._send(200, b"")
+                m = re.match(r"^/systems/([^/]+)/games/([0-9a-f]+)/media/([a-z]+)$", p)
+                if m:
+                    path = fake.find(m.group(1), m.group(2))
+                    with fake.lock:
+                        rel = fake.mem[m.group(1)][path].get(m.group(3)) if path else None
+                    f = os.path.normpath(os.path.join(fake.roms, m.group(1), rel)) if rel else None
+                    if not f or not os.path.isfile(f):
+                        return self._send(404, b"404 media not found", "text/html")
+                    return self._send(200, open(f, "rb").read(), "image/" + os.path.splitext(f)[1][1:])
                 m = re.match(r"^/systems/([^/]+)/games(?:/([0-9a-f]+))?$", p)
                 if m:
                     with fake.lock:
@@ -147,7 +160,7 @@ class FakeES:
                                      "manuals" if m.group(3) == "manual" else "images")
                     os.makedirs(d, exist_ok=True)
                     stem = os.path.splitext(os.path.basename(path))[0]
-                    f = os.path.join(d, "%s-%s%s" % (stem, m.group(3), ext))
+                    f = os.path.join(d, "%s-%s%s" % (stem, FILE_NAME.get(m.group(3), m.group(3)), ext))
                     open(f, "wb").write(body)
                     with fake.lock:
                         fake.mem[m.group(1)][path][m.group(3)] = "./" + os.path.relpath(f, os.path.join(fake.roms, m.group(1)))

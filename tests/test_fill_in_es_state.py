@@ -2,12 +2,16 @@
 full ScreenScraper media and Batocera 43.1 VMs (2026-10-13):
 
 - ES keeps new game info in its journal and writes gamelist.xml only now and then
-  (quitting, a reload): a game just given everything must not be listed again."""
+  (quitting, a reload): a game just given everything must not be listed again;
+- versions before 0.11 gave ES the cover as the image, and Fill in game info then added
+  the same cover as the thumbnail: that image (the box art twice) gives way to the
+  screenshot, and ES's old file of it goes; an image of the player's own never does."""
 import os
 
 import rommlib
+import rb_finalize
 from romm import audit
-from test_es_media import game_here, rom_54
+from test_es_media import all_files, FakeEsApi, game_here, JPG, PNG, rom_54, served  # noqa: F401
 from test_metadata_settings import ListApi
 
 
@@ -28,6 +32,13 @@ def give_es(es, path, tags, **files):
         md.update(files)
 
 
+def art(sysdir, name, data):
+    os.makedirs(os.path.join(sysdir, "images"), exist_ok=True)
+    with open(os.path.join(sysdir, "images", name), "wb") as f:
+        f.write(data)
+    return "./images/" + name
+
+
 def test_fill_in_counts_what_es_holds_before_it_writes_gamelist_xml(isolated, fake_es, monkeypatch):
     rom = lorem()
     path, _ = game_here()
@@ -39,3 +50,64 @@ def test_fill_in_counts_what_es_holds_before_it_writes_gamelist_xml(isolated, fa
     monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")          # ES can't be asked: the file is all
     entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
     assert len(entries) == 1
+
+
+def test_fill_in_lists_a_game_whose_image_is_its_box_art_again(isolated, fake_es):
+    rom = lorem()
+    path, _ = game_here()
+    sysdir = os.path.dirname(path)
+    es = fake_es({"nes": {".zip"}})
+    tags = audit.offered(rommlib.gamelist_entry(rom, "nes", [path]))
+    give_es(es, path, tags, image=art(sysdir, "Lorem Mages-image.png", PNG),
+            thumbnail=art(sysdir, "Lorem Mages-thumb.png", PNG))
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert len(entries) == 1 and st["complete"] == 0
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg(es_image="boxart"))
+    assert entries == [] and st["complete"] == 1                           # the box art is what's asked for
+    # the screenshot came, as a JPEG: ES left the old PNG behind, but its answer counts
+    give_es(es, path, (), image=art(sysdir, "Lorem Mages-image.jpg", JPG))
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert entries == [] and st["complete"] == 1
+
+
+def test_finalize_gives_an_old_download_its_screenshot_in_one_go(served, fake_es):
+    files, _ = served
+    rom = lorem()
+    files.update(all_files(rom))                    # the cover (thumbnail) is PNG, the screenshot JPG
+    path, _ = game_here()
+    sysdir = os.path.dirname(path)
+    es = fake_es({"nes": {".zip"}})
+    give_es(es, path, ("name", "desc"), image=art(sysdir, "Lorem Mages-image.png", PNG))   # 0.10: cover as image
+    e = rommlib.gamelist_entry(rom, "nes", [path], cfg=cfg())
+    e["fill"] = True
+    assert rb_finalize.apply([e], None, {"nes": {".zip"}}, rb_finalize.EsApi(es.url), {}, cfg()) == []
+    md = es.mem["nes"][path]
+    assert md["thumbnail"] == "./images/Lorem Mages-thumb.png" and md["image"] == "./images/Lorem Mages-image.jpg"
+    assert open(os.path.join(sysdir, "images", "Lorem Mages-image.jpg"), "rb").read() == JPG
+    assert not os.path.exists(os.path.join(sysdir, "images", "Lorem Mages-image.png"))   # the cover's copy went
+    assert os.path.exists(os.path.join(sysdir, "images", "Lorem Mages-thumb.png"))
+
+
+def test_an_image_of_the_players_own_is_never_replaced(served):
+    files, asked = served
+    rom = lorem()
+    files.update(all_files(rom))
+    path, g = game_here(image="/systems/nes/games/a1/media/image", thumbnail="/systems/nes/games/a1/media/thumbnail")
+    esapi = FakeEsApi({path: g})
+    esapi.files.update({("a1", "image"): b"my own picture", ("a1", "thumbnail"): PNG})
+    e = rommlib.gamelist_entry(rom, "nes", [path], cfg=cfg())
+    e["fill"] = True
+    assert rb_finalize.apply([e], None, {"nes": {".zip"}}, esapi, {}, cfg()) == []
+    assert "image" not in {t for t, _, _ in esapi.media}
+    assert not any("screenshots" in p for p in asked)
+    # the box art twice: the screenshot replaces it; with Game image: Box art, nothing does
+    esapi = FakeEsApi({path: dict(g)})
+    esapi.files.update({("a1", "image"): PNG, ("a1", "thumbnail"): PNG})
+    assert rb_finalize.apply([dict(e)], None, {"nes": {".zip"}}, esapi, {}, cfg()) == []
+    assert ("image", "image/jpeg", len(JPG)) in esapi.media
+    esapi = FakeEsApi({path: dict(g)})
+    esapi.files.update({("a1", "image"): PNG, ("a1", "thumbnail"): PNG})
+    e2 = rommlib.gamelist_entry(rom, "nes", [path], cfg=cfg(es_image="boxart"))
+    e2["fill"] = True
+    assert rb_finalize.apply([e2], None, {"nes": {".zip"}}, esapi, {}, cfg(es_image="boxart")) == []
+    assert "image" not in {t for t, _, _ in esapi.media}

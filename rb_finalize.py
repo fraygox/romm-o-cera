@@ -52,6 +52,9 @@ VIDEO_MAX = 50 << 20     # a game's video clip: a bigger one is skipped (and log
 _video_max = getattr(rommlib, "es_video_max", None)
 _note_skip = getattr(rommlib, "record_media_skip", lambda *a: None)
 _forget_skip = getattr(rommlib, "clear_media_skip", lambda *a: None)
+_wants_own_image = getattr(rommlib, "wants_own_image", lambda m: False)
+_art_files = getattr(rommlib, "es_art_files", lambda *a: [])
+_same_file = getattr(rommlib, "same_file", lambda a, b: False)
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
           ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
@@ -142,6 +145,14 @@ class EsApi:
         st, _ = self._req("POST", "/systems/%s/games/%s/media/%s" % (urllib.parse.quote(system), gid, mtype),
                           data, ctype, timeout=120)
         return st == 200
+
+    def media_file(self, system, gid, tag):
+        """A game's media file as ES serves it (GET .../media/<tag>): bytes, or None."""
+        try:
+            st, body = self._req("GET", "/systems/%s/games/%s/media/%s" % (urllib.parse.quote(system), gid, tag))
+        except Exception:                      # ES can't be asked
+            return None
+        return body if st == 200 else None
 
     def add_games(self, system, games):
         """List games ({absolute path: {tag: text}}) with POST /addgames/<system>:
@@ -239,9 +250,35 @@ def fetch_media(api, tag, path, video_max=None, info=None):
     return (png, "image/png") if png else None
 
 
+def image_is_box_art_again(esapi, system, g, media):
+    """The game's image in ES is byte for byte its thumbnail while the entry offers an image
+    of its own (a screenshot): what versions before 0.11 left after a Fill in game info,
+    the cover twice. That image is replaced; any other never is."""
+    if not g.get("image") or not _wants_own_image(media) or not hasattr(esapi, "media_file"):
+        return False
+    img = esapi.media_file(system, g["id"], "image")
+    return img is not None and img == esapi.media_file(system, g["id"], "thumbnail")
+
+
+def drop_stale_images(system, g, keep):
+    """After the image was replaced under another extension, ES's old file is left in
+    images/: removed when it is the thumbnail's copy (and not the new image)."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+    thumbs = _art_files(sysdir, g["path"], "thumb")
+    for f in _art_files(sysdir, g["path"], "image"):
+        try:
+            with open(f, "rb") as fh:
+                data = fh.read()
+            if data != keep and any(_same_file(f, t) for t in thumbs):
+                os.remove(f)
+        except OSError:
+            pass
+
+
 def upload_media(api, esapi, system, g, e, cfg=None):
     """Every media file the entry offers that the game has none of in ES yet
-    (what's there is never replaced): the first of its RomM paths that comes.
+    (what's there is never replaced, but for an image that is only the box art
+    again: image_is_box_art_again): the first of its RomM paths that comes.
     A tag none of them comes for is noted (library.record_media_skip), so Fill
     in game info stops asking for it; videos follow today's cap (cfg)."""
     media = entry_media(e)
@@ -255,15 +292,23 @@ def upload_media(api, esapi, system, g, e, cfg=None):
     video_max = _video_max(cfg) if cfg is not None and _video_max else None
     if video_max == 0:
         media.pop("video", None)
-    for tag, paths in media.items():
-        if tag not in MEDIA_TAGS or g.get(tag):
+    # the thumbnail first, so an image that is only the box art again shows as such
+    for tag, paths in sorted(media.items(), key=lambda kv: kv[0] != "thumbnail"):
+        if tag not in MEDIA_TAGS:
             continue
+        again = False
+        if g.get(tag):
+            again = tag == "image" and image_is_box_art_again(esapi, system, g, media)
+            if not again:
+                continue
         info, came = {}, False
         for p in paths:
             got = fetch_media(api, tag, p, video_max, info)
             came = came or bool(got)
             if got and esapi.set_media(system, g["id"], tag, got[0], got[1]):
                 _forget_skip(system, e.get("rom_id"), tag)
+                if again:
+                    drop_stale_images(system, g, got[0])
                 break
         else:
             if not came:

@@ -152,6 +152,7 @@ class FakeEsApi:
     def __init__(self, games):
         self.g = games
         self.meta, self.media = [], []
+        self.files = {}                    # (game id, tag) -> bytes ES serves
 
     def games(self, system, refresh=False):
         return self.g
@@ -168,7 +169,11 @@ class FakeEsApi:
     def set_media(self, system, gid, mtype, data, ctype):
         self.media.append((mtype, ctype, len(data)))
         self.game(system, gid)[mtype] = "/systems/%s/games/%s/media/%s" % (system, gid, mtype)
+        self.files[(gid, mtype)] = data
         return True
+
+    def media_file(self, system, gid, tag):
+        return self.files.get((gid, tag))
 
 
 @pytest.fixture
