@@ -236,9 +236,6 @@ def set_version(new, today):
     src = re.sub(r'^VERSION = "[^"]+"', 'VERSION = "%s"' % new, src, count=1, flags=re.M)
     src = re.sub(r'^RELEASE_DATE = "[^"]+"', 'RELEASE_DATE = "%s"' % today, src, count=1, flags=re.M)
     open(p, "w", encoding="utf-8").write(src)
-    p = os.path.join(HERE, "README.md")
-    src = open(p, encoding="utf-8").read()
-    open(p, "w", encoding="utf-8").write(re.sub(r"\(v\d+\.\d+\.\d+\)", "(v%s)" % new, src, count=1))
 
 
 def add_changelog(tag, today, summary, notes):

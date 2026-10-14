@@ -5,11 +5,18 @@ A controller-driven app that runs **on a Batocera box**: browse and search a
 games straight into the right `/userdata/roms/<system>/` folder — extracted,
 optionally CHD-compressed, with EmulationStation metadata and cover art.
 
-**Early software (v0.10.0).** It works on the author's box every day, but it
-has one author and few users so far — expect rough edges, and please file
-issues. Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested
-against **RomM 5.4** (5.3 works too). Draws natively at any resolution, 720p
-to 4K.
+Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested against
+**RomM 5.4** (5.3 works too). Draws natively at any resolution, 720p to 4K.
+
+> **Use it with care.** RomM-o-Cera is a hobby project with one author and few
+> users so far. It downloads, unpacks, converts and deletes files on your box:
+> keep a backup of anything you can't replace, and please file issues.
+>
+> **Your own games only.** RomM-o-Cera does not include, link to or provide any
+> games, BIOS files, firmware or keys. It only talks to the RomM server you run,
+> with the games you put on it. Anything a system needs to run — BIOS files,
+> firmware, disc or title keys — you must provide yourself, from hardware and
+> games you own.
 
 ![Home: recently added shelf](screenshots/home.png)
 
