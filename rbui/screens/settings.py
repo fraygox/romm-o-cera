@@ -738,8 +738,10 @@ class SettingsScreen(Screen):
             self.draw_help_panel(c, p, a)
         hline(c, theme.LINE, (p.left + 28, a), (p.right - 28, a))
         text(c, self.f.h3, APP_NAME, (p.left + 28, a + 14), theme.TEXT)
-        text(c, self.f.small, "v%s · %s · by %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE, rommlib.AUTHOR),
-             (p.left + 28, a + 44), theme.ACCENT_HI)
+        ver = "v%s · %s · by %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE, rommlib.AUTHOR)
+        if measure(self.f.small, ver) > p.width - 56:          # a nightly's long label: the author gives way
+            ver = "v%s · %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE)
+        text(c, self.f.small, ver, (p.left + 28, a + 44), theme.ACCENT_HI, maxw=p.width - 56)
         upd = ("%s is out: Updates installs it." % self.app.update_tag) if self.app.update_tag else \
             rommlib.PROJECT_URL.replace("https://", "")
         text(c, self.f.small, upd, (p.left + 28, a + 68), theme.BLUE if self.app.update_tag else theme.FAINT,

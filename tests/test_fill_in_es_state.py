@@ -5,7 +5,8 @@ full ScreenScraper media and Batocera 43.1 VMs (2026-10-13):
   (quitting, a reload): a game just given everything must not be listed again;
 - versions before 0.11 gave ES the cover as the image, and Fill in game info then added
   the same cover as the thumbnail: that image (the box art twice) gives way to the
-  screenshot, and ES's old file of it goes; an image of the player's own never does."""
+  screenshot, and ES's old file of it goes; an image of the player's own never does;
+- the Settings panel's version line fits with a nightly's long label."""
 import os
 
 import rommlib
@@ -13,6 +14,7 @@ import rb_finalize
 from romm import audit
 from test_es_media import all_files, FakeEsApi, game_here, JPG, PNG, rom_54, served  # noqa: F401
 from test_metadata_settings import ListApi
+from test_text_fits import MARGIN, _spy, ui  # noqa: F401
 
 
 def cfg(**kw):
@@ -111,3 +113,14 @@ def test_an_image_of_the_players_own_is_never_replaced(served):
     e2["fill"] = True
     assert rb_finalize.apply([e2], None, {"nes": {".zip"}}, esapi, {}, cfg(es_image="boxart")) == []
     assert "image" not in {t for t, _, _ in esapi.media}
+
+
+def test_the_version_line_fits_the_settings_panel_with_a_nightly_label(ui, rb, monkeypatch):  # noqa: F811
+    from rbui.draw import measure
+    monkeypatch.setattr(rommlib, "VERSION_LABEL", "0.10.0+n20261013.2109.95f4f7a")
+    st = rb.SettingsScreen(ui)
+    ui.push(st)
+    calls = _spy(rb, monkeypatch, "text")
+    ui.draw()
+    line = [s for s, _, _ in calls if s.startswith("v0.10.0+n20261013") and " · " in s]     # About, not the hint bar
+    assert line and measure(ui.fonts.small, line[0]) <= rb.SettingsScreen.PANEL.width - 56 - MARGIN
