@@ -3,6 +3,23 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.11.0 (2026-10-14)
+
+Settings in sections, and a Metadata section: EmulationStation gets RomM's screenshots, logos, videos and more
+
+### Features
+- **feat:** Settings opens on a list of its sections, each showing its current state; A opens one and L/R jump between them.
+- **feat:** A new Metadata section in Settings picks what EmulationStation gets for a game: its screenshot or box art as the image, videos up to a size or none, extra art, region, language and series, and manuals; Fill in game info is one press away.
+- **feat:** Downloads and Fill in game info give EmulationStation everything RomM has stored for a game: its screenshot as the image, the box art, logo, title screen, 3D box, box back, fan art, cartridge and video, and its region, language and series. Games downloaded with an earlier version get their screenshot with Fill in game info; a picture of your own is never replaced.
+
+### Fixes
+- **fix:** Fill in game info no longer lists games it has just filled in, also when run again before leaving RomM-o-Cera.
+- **fix:** A game deleted and downloaded again gets its box art and the rest of its media again.
+- **fix:** A disc game converted to CHD keeps its media, also when EmulationStation hadn't saved it yet, and its alternative box art follows it.
+
+### Documentation
+- **docs:** The README asks you to use RomM-o-Cera with care, and says it provides no games, BIOS, firmware or keys: you bring your own.
+
 ## v0.10.0 (2026-10-13)
 
 a new Home with shelves, Collections as shelves of covers, a game page, Activity for downloads and compressing, a first-run Welcome, Game night, your RomM backlog, a live theme picker with 26 themes, and Wii U compression

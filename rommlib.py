@@ -33,12 +33,12 @@ from typing import Callable, Optional
 
 import requests
 
-VERSION = "0.10.0"            # changes only for a real GitHub release
+VERSION = "0.11.0"            # changes only for a real GitHub release
 BUILD = ""                   # internal builds: deploy.sh stamps the git commit here (empty in releases)
 VERSION_LABEL = VERSION + ("+" + BUILD if BUILD else "")
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-RELEASE_DATE = "2026-10-13"   # bump with VERSION (tools/build-release.sh refuses a stale one)
+RELEASE_DATE = "2026-10-14"   # bump with VERSION (tools/build-release.sh refuses a stale one)
 AUTHOR = "fraygox"
 PROJECT_URL = "https://github.com/fraygox/romm-o-cera"
 DOCS_URL = "https://fraygox.github.io/romm-o-cera/"     # the documentation site (Settings shows its QR code)
