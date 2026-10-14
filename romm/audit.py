@@ -623,9 +623,10 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
     (library.skipped_tags) doesn't count as lacking. What the game has is read from
     gamelist.xml and from ES itself (it saves the file only now and then); an image that
     is the box art again, as versions before 0.11 left it, counts as lacking. Entries
-    carry "fill": the merge only sets what's missing. Returns (entries, stats)."""
+    carry "fill": the merge only sets what's missing. A game whose info is still waiting to be
+    saved (pending_gamelist_paths) isn't offered again. Returns (entries, stats)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
-    stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
+    stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0, "waiting": 0}
     if not os.path.isdir(sysdir):
         return [], stats
     index, sets = {}, {}
@@ -659,6 +660,7 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
                 continue                    # a path to a file that's gone (a game deleted, downloaded again)
             got.add(t)
     skips = _library.media_skips()
+    pending = _core.pending_gamelist_paths(system)      # filled (or downloaded) already, saved on leaving
     in_m3u = set()
     for n in names:
         if n.lower().endswith(".m3u"):
@@ -693,6 +695,9 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
         stats["matched"] += 1
         prim = path if (not isdir or low.endswith(".m3u")) else _library.primary_path(system, [path], es)
         if not prim:
+            continue
+        if prim in pending:
+            stats["waiting"] += 1
             continue
         rel = "./" + os.path.relpath(prim, sysdir)
         got = have.get(rel, set())

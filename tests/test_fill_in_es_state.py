@@ -10,7 +10,9 @@ full ScreenScraper media and Batocera 43.1 VMs (2026-10-13):
   to files that are gone (ES serves them as nothing): those count as missing;
 - a game converted to CHD keeps the media ES holds only in its journal (gamelist.xml not
   written yet): they're found by the names ES gives its files;
-- the Settings panel's version line fits with a nightly's long label."""
+- the Settings panel's version line fits with a nightly's long label;
+- Fill in game info run twice before leaving: what the first queued (or a download queued)
+  is waiting to be saved, not listed again."""
 import os
 import shutil
 
@@ -185,3 +187,19 @@ def test_the_version_line_fits_the_settings_panel_with_a_nightly_label(ui, rb, m
     ui.draw()
     line = [s for s, _, _ in calls if s.startswith("v0.10.0+n20261013") and " · " in s]     # About, not the hint bar
     assert line and measure(ui.fonts.small, line[0]) <= rb.SettingsScreen.PANEL.width - 56 - MARGIN
+
+
+def test_fill_in_twice_before_leaving_leaves_the_queued_games_be(isolated, fake_es):
+    rom = lorem()
+    path, _ = game_here()
+    fake_es({"nes": {".zip"}})
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert len(entries) == 1 and st["waiting"] == 0
+    rommlib.queue_info(entries)                                            # Fill in, not saved yet
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert entries == [] and st["waiting"] == 1
+    open(rommlib.GAMELIST_QUEUE, "w").close()                              # rb_finalize applied it
+    with open(os.path.join(rommlib.DATA_DIR, "gamelist-deferred.jsonl"), "w") as f:
+        f.write("{torn\n" + __import__("json").dumps({"system": "nes", "rename": {"/old": path}}) + "\n")
+    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
+    assert entries == [] and st["waiting"] == 1                            # deferred for ES counts too

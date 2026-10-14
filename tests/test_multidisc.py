@@ -648,7 +648,7 @@ def test_fill_in_info_for_games_already_here(isolated, mock_url, fake_es):
     entries, st = rommlib.plan_info(api, "psx", [pid], es)
     paths = sorted(os.path.basename(e["paths"][0]) for e in entries)
     assert paths == ["Ipsum Saga (Japan) (Disc 1).chd", "Lorem Odyssey (USA).m3u"]   # m3u discs skipped
-    assert st == {"on_box": 3, "matched": 2, "complete": 0, "queued": 2}
+    assert st == {"on_box": 3, "matched": 2, "complete": 0, "queued": 2, "waiting": 0}
     m3u = next(e for e in entries if e["paths"][0].endswith(".m3u"))
     assert m3u["name"] == "Lorem Odyssey" and m3u["fill"] and m3u["manual"]
     fes = fake_es(es)

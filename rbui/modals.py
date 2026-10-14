@@ -261,7 +261,7 @@ class InfoDialog(Confirm):
         cfg = dict(app.cfg)
 
         def run():
-            tot = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
+            tot = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0, "waiting": 0}
             out = []
             for system, pids in systems:
                 if self.cancel.is_set():
@@ -270,7 +270,7 @@ class InfoDialog(Confirm):
                 ents, st = rommlib.plan_info(app.api, system, pids, es, cfg, self.cancel)
                 out += ents
                 for k in tot:
-                    tot[k] += st[k]
+                    tot[k] += st.get(k, 0)
             return out, tot
         app.bg(run, self._planned, self._failed)
 
@@ -284,17 +284,27 @@ class InfoDialog(Confirm):
         self.pending = False
         if not self.plan:
             self.title = "Nothing to fill in"
-            self.body = ("%d games here, %d found in RomM, all already have everything RomM has for them."
-                         % (st["on_box"], st["matched"]))
+            if st.get("waiting"):
+                self.body = ("%d games here, %d found in RomM: %d have everything RomM has for them, and %d "
+                             "already filled in are saved when you leave RomM-o-Cera."
+                             % (st["on_box"], st["matched"], st["complete"], st["waiting"]))
+            else:
+                self.body = ("%d games here, %d found in RomM, all already have everything RomM has for them."
+                             % (st["on_box"], st["matched"]))
             self.ok_label, self.on_ok = "OK", lambda: None
             return
         self.title = "Fill in info for %d game%s?" % (len(self.plan), "" if len(self.plan) == 1 else "s")
         self.body = ("%d games here, %d found in RomM, %d already complete. Only what's missing is added, and an image "
                      "that just repeats the box art becomes the screenshot; nothing else is replaced. "
                      "Saved when you leave RomM-o-Cera."
-                     % (st["on_box"], st["matched"], st["complete"]))
+                     % (st["on_box"], st["matched"], st["complete"])) + self._waiting(st)
         self.ok_label = "Fill in %d" % len(self.plan)
         self.on_ok = self._queue
+
+    @staticmethod
+    def _waiting(st):
+        n = st.get("waiting", 0)
+        return (" %d more %s already waiting to be saved when you leave." % (n, "is" if n == 1 else "are")) if n else ""
 
     def _queue(self):
         rommlib.queue_info(self.plan)
