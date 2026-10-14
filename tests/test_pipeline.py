@@ -38,7 +38,7 @@ def test_downloads_on_a_fresh_box(isolated, fast_mock_url):
     folder rom fetched file by file, nested single-file rom keeps its extension."""
     api, d, plats = _setup(isolated, fast_mock_url)
     assert not os.path.exists(rommlib.DATA_DIR)
-    cart = api.roms(platform_ids=[plats["gba"]], search="anguna")["items"][0]
+    cart = api.roms(platform_ids=[plats["gba"]], search="apotris")["items"][0]
     folder = _first(api, plats["dreamcast"], lambda r: r["has_multiple_files"])
     nested = _first(api, plats["ps2"], lambda r: r["has_nested_single_file"], limit=2000)
     jobs = [d.enqueue(cart, "gba"), d.enqueue(folder, "dreamcast"), d.enqueue(nested, "ps2")]
@@ -61,7 +61,7 @@ def test_downloads_on_a_fresh_box(isolated, fast_mock_url):
 def test_cancel_deletes_partial(isolated, mock_url):
     """Sweep A4: a cancelled download doesn't leave its .part behind."""
     api, d, plats = _setup(isolated, mock_url)
-    big = _first(api, plats["dreamcast"], lambda r: not r["has_multiple_files"])
+    big = _first(api, plats["dreamcast"], lambda r: not r["has_multiple_files"] and r["fs_size_bytes"] > 100 << 20)
     j = d.enqueue(big, "dreamcast")
     part = os.path.join(rommlib.ROMS_ROOT, "dreamcast", big["fs_name"] + ".part")
     t0 = time.time()
@@ -75,7 +75,7 @@ def test_cancel_deletes_partial(isolated, mock_url):
 
 def test_cancel_then_resume(isolated, mock_url):
     api, d, plats = _setup(isolated, mock_url)
-    big = _first(api, plats["dreamcast"], lambda r: not r["has_multiple_files"])
+    big = _first(api, plats["dreamcast"], lambda r: not r["has_multiple_files"] and r["fs_size_bytes"] > 100 << 20)
     j = d.enqueue(big, "dreamcast")
     t0 = time.time()
     while j.done_bytes < 20 << 20:
@@ -165,7 +165,7 @@ def test_queue_survives_restart_and_background_handover(isolated, mock_url):
     a queue in the background and hands it back when asked."""
     api, d, plats = _setup(isolated, mock_url)
     big = _first(api, plats["ps2"], lambda r: not r["has_nested_single_file"] and r["fs_size_bytes"] > 1 << 30)
-    small = api.roms(platform_ids=[plats["gba"]], search="butano")["items"][0]
+    small = api.roms(platform_ids=[plats["gba"]], search="solar guard")["items"][0]
     jb, js = d.enqueue(big, "ps2"), d.enqueue(small, "gba")
     while jb.done_bytes < 8 << 20:
         time.sleep(0.02)

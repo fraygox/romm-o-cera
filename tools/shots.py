@@ -84,20 +84,21 @@ def mk(rel, size):
 
 
 MB = 1 << 20
-mk("psx/Tempor Legends (USA)/Tempor Legends (USA) (Disc 1).chd", 520 * MB)
-mk("psx/Dolor Dash (USA).chd", 380 * MB)
+mk("psx/Copper Lighthouse (USA)/Copper Lighthouse (USA) (Disc 1).chd", 520 * MB)
+mk("psx/Cobalt Comet Rally (USA).chd", 380 * MB)
 mk("psx/images/crash.png", 40 * MB)
-mk("ps2/Amet Racing Pro (USA).iso", 4000 * MB)
-mk("gba/Anguna (USA).gba", 8 * MB)
-for _t in ("Veniam Quest (USA)", "Fugiat Racer (Europe)"):        # uncompressed cue/bin: Compress screens
+mk("ps2/Velvet Heron Racing (USA).iso", 4000 * MB)
+mk("gba/Apotris (World).gba", 4 * MB)
+for _t in ("Mossy Kite Quest (USA)", "Saffron Ferry Derby (Europe)"):        # uncompressed cue/bin: Compress screens
     mk("psx/%s/%s.bin" % (_t, _t), 460 * MB if "Quest" in _t else 610 * MB)
     with open(os.path.join(R, "psx", _t, _t + ".cue"), "w") as _f:
         _f.write('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % _t)
 mk("psx/Gone (USA).zip.part", 120 * MB)
-mk("psx/Dolor Dash (USA).7z", 300 * MB)                          # a copy of a game already here as CHD
+mk("psx/Cobalt Comet Rally (USA).7z", 300 * MB)                          # a copy of a game already here as CHD
 os.makedirs(os.path.join(R, "psx", "Empty Game"), exist_ok=True)
-es = FakeES(R, {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba": {".gba", ".zip"}})
-es.mem["psx"][os.path.join(R, "psx/Dolor Dash (USA).chd")].update(lastplayed="20261003T200000", playcount="4")
+es = FakeES(R, {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba": {".gba", ".zip"},
+                "gb": {".gb", ".zip"}, "nes": {".nes", ".zip"}})
+es.mem["psx"][os.path.join(R, "psx/Cobalt Comet Rally (USA).chd")].update(lastplayed="20261003T200000", playcount="4")
 rommlib.ES_API = es.url
 
 rb = uifacade.load(APP, "rb")             # rommbrowser.pygame, every UI name readable as rb.X
@@ -151,14 +152,14 @@ def fake_jobs():
             setattr(j, k, v)
         return j
     return [
-        job("Ipsum Infiltrator (USA) (Disc 1)", "psx", J.DOWNLOADING, done_bytes=420 * MB, speed=38 * MB,
+        job("Quill Archive Tactics (USA) (Disc 1)", "psx", J.DOWNLOADING, done_bytes=420 * MB, speed=38 * MB,
             total_bytes=700 * MB),
-        job("Amet Racing Pro (USA)", "ps2", J.EXTRACTING, message=""),
-        job("Fugiat Fighters (USA)", "psx", J.EXTRACTING, message="Waiting to unpack"),
-        job("Veniam Chronicles (USA) (Disc 1)", "psx", J.QUEUED, short_space=3 << 30, retry_at=LATER,
+        job("Velvet Heron Racing (USA)", "ps2", J.EXTRACTING, message=""),
+        job("Russet Badger Party (USA)", "psx", J.EXTRACTING, message="Waiting to unpack"),
+        job("Juniper Glacier Chronicles (USA) (Disc 1)", "psx", J.QUEUED, short_space=3 << 30, retry_at=LATER,
             message="Waiting for space"),
-        job("Sed Sprite (Europe)", "psx", J.QUEUED, retry_at=LATER),
-        job("Dolor Dash (USA)", "psx", J.DONE, verified=True, message="Ready to play, checksum OK"),
+        job("Pebble Otter (Europe)", "psx", J.QUEUED, retry_at=LATER),
+        job("Cobalt Comet Rally (USA)", "psx", J.DONE, verified=True, message="Ready to play, checksum OK"),
         job("Flaky Cart (USA)", "gba", J.FAILED, message="Checksum doesn't match RomM after 2 tries"),
     ]
 
@@ -168,21 +169,21 @@ def fake_conversions():
     rommlib.hold_conversions(False)
     q = rommlib.CHD_QUEUE_DIR
     os.makedirs(q, exist_ok=True)
-    mk("psx/Veniam Chronicles (USA) (Disc 1).cue", 2 * MB)
-    mk("gamecube/Commodo Cab (USA).iso", 1400 * MB)
+    mk("psx/Juniper Glacier Chronicles (USA) (Disc 1).cue", 2 * MB)
+    mk("gamecube/Tidal Caravan (USA).iso", 1400 * MB)
     for n, t in (("1-run.json", {"system": "psx", "mode": "createcd",
-                                 "sources": [os.path.join(R, "psx/Veniam Chronicles (USA) (Disc 1).cue")]}),
+                                 "sources": [os.path.join(R, "psx/Juniper Glacier Chronicles (USA) (Disc 1).cue")]}),
                  ("2-next.json", {"system": "gamecube", "mode": "rvz",
-                                  "sources": [os.path.join(R, "gamecube/Commodo Cab (USA).iso")]})):
+                                  "sources": [os.path.join(R, "gamecube/Tidal Caravan (USA).iso")]})):
         with open(os.path.join(q, n), "w") as f:
             _j.dump(t, f)
     with open(os.path.join(rommlib.DATA_DIR, "chd-current.json"), "w") as f:
-        _j.dump({"task": "1-run.json", "since": time.time() - 90, "file": "Veniam Chronicles (USA) (Disc 1).cue",
+        _j.dump({"task": "1-run.json", "since": time.time() - 90, "file": "Juniper Glacier Chronicles (USA) (Disc 1).cue",
                  "step": "Converting", "pct": 42.0}, f)
     with open(os.path.join(rommlib.DATA_DIR, "chd-results.jsonl"), "w") as f:
         f.write(_j.dumps({"time": time.time() - 600, "task": "0-a.json", "result": "ok",
-                          "message": "OK Elit Adventure 2 (USA).cue -> Elit Adventure 2 (USA).chd (0.43 GB -> 0.21 GB)",
-                          "sources": ["Elit Adventure 2 (USA).cue"], "mode": "createcd"}) + "\n")
+                          "message": "OK Indigo Pagoda 2 (USA).cue -> Indigo Pagoda 2 (USA).chd (0.43 GB -> 0.21 GB)",
+                          "sources": ["Indigo Pagoda 2 (USA).cue"], "mode": "createcd"}) + "\n")
         f.write(_j.dumps({"time": time.time() - 300, "task": "0-b.json", "result": "failed",
                           "message": "Misplaced.iso: not a GameCube/Wii disc image (dolphin-tool verify failed)",
                           "sources": ["Misplaced.iso"], "mode": "rvz", "retry": {"mode": "rvz"}}) + "\n")
@@ -202,11 +203,11 @@ def no_conversions():
 
 def fake_audit():
     """A finished quick check with one damaged and one differing game."""
-    stem = os.path.join(R, "psx/Tempor Legends (USA)/Tempor Legends (USA) (Disc 1).chd")
+    stem = os.path.join(R, "psx/Copper Lighthouse (USA)/Copper Lighthouse (USA) (Disc 1).chd")
     rommlib.save_audit([
         {"system": "psx", "path": stem, "severity": "damaged", "rom": None,
          "problem": "Disc image cut short: boot files missing"},
-        {"system": "psx", "path": os.path.join(R, "psx/Dolor Dash (USA).chd"), "severity": "differs", "rom": None,
+        {"system": "psx", "path": os.path.join(R, "psx/Cobalt Comet Rally (USA).chd"), "severity": "differs", "rom": None,
          "problem": "Smaller than RomM's copy (a trimmed image?)"}],
         {"checked": 412, "matched": 398, "unmatched": 14}, False)
     with open(rommlib.audit_path()) as f:              # a fixed time: screenshots don't change by the minute
@@ -221,14 +222,14 @@ def fake_unseen():
     disc = {".gcm", ".iso", ".gcz", ".ciso", ".wbfs", ".rvz", ".m3u"}
     app.downloader.es = {"psx": {".chd", ".cue", ".m3u"}, "ps2": {".iso", ".chd"}, "gba": {".gba", ".zip"},
                          "n64": {".z64", ".n64", ".v64", ".zip", ".7z"}, "gamecube": disc, "wii": set(disc)}
-    mk("ps2/Lorem Racer (Homebrew).zip", 1900 * MB)
-    mk("ps2/Ipsum Arena (Homebrew).7z", 2600 * MB)
-    mk("n64/Dolor Cube (Homebrew).rvz", 1100 * MB)
-    mk("n64/Sit Amet Demo (Homebrew).z64", 8 * MB)
-    mk("psx/Elit Notes.xyz", 1 * MB)
+    mk("ps2/Kettle Derby (Homebrew).zip", 1900 * MB)
+    mk("ps2/Nimbus Terrace (Homebrew).7z", 2600 * MB)
+    mk("n64/Marble Teapot (Homebrew).rvz", 1100 * MB)
+    mk("n64/Fennel Demo (Homebrew).z64", 8 * MB)
+    mk("psx/Notes.xyz", 1 * MB)
 
 
-ENC3DS = os.path.join(R, "3ds", "Lorem Cart (Encrypted).3ds")
+ENC3DS = os.path.join(R, "3ds", "Brass Windmill (Encrypted).3ds")
 
 
 def encrypted_3ds():
@@ -253,13 +254,20 @@ def paused_cancel():
     app.stack[-1].confirm_cancel(j)
 
 
-def install_some():
-    """A few games from the mock library 'on the box' (files + install records)."""
+CART_EXT = {"gb": ".gb", "gbc": ".gbc", "nes": ".nes", "gba": ".gba", "snes": ".sfc", "megadrive": ".md",
+            "n64": ".z64", "mastersystem": ".sms", "pcengine": ".pce", "zxspectrum": ".tzx"}
+
+
+def install_some(plat=None):
+    """A few games from the mock library 'on the box' (files + install records): PlayStation
+    ones as the app's CHDs, or a cartridge platform's as cart files."""
     lib = app.library
-    for r in app.api.roms(platform_ids=[first_platform()["id"]], limit=6)["items"][:4]:
-        p = os.path.join(R, "psx", r["fs_name_no_ext"] + ".chd")
-        mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // 2)
-        lib.mark(r, "psx", [p])
+    plat = plat or first_platform()
+    sy = plat["_system"]
+    for r in app.api.roms(platform_ids=[plat["id"]], limit=6)["items"][:4]:
+        p = os.path.join(R, sy, r["fs_name_no_ext"] + CART_EXT.get(sy, ".chd"))
+        mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // (1 if sy in CART_EXT else 2))
+        lib.mark(r, sy, [p])
     return r
 
 
@@ -331,7 +339,7 @@ def game_night(players=0, here=False, rolls=4, scope=None, then=None):
     import random
     random.seed(7)
     if here:
-        install_some()
+        install_some(show_platform())
     app.night_opts = {"players": players, "here": here}
     scr = rb.GameNightScreen(app, scope or rb.Scope.library(app))
     app.push(scr)
@@ -351,12 +359,24 @@ def game_night(players=0, here=False, rolls=4, scope=None, then=None):
 def search_ready():
     sc = rb.SearchScreen(app)
     app.push(sc)
-    sc.query = "lorem"
+    sc.query = "land"
     sc.pending_at = time.time() - 1          # run the live search now
 
 
 def first_platform():
     return next(p for p in app.platforms if p["_system"] == "psx")
+
+
+SHOW = "gb"          # game lists and pages: a platform full of real homebrew (tools/mock_assets)
+
+
+def show_platform(system=SHOW):
+    return next(p for p in app.platforms if p["_system"] == system)
+
+
+def show_list(plat=None):
+    plat = plat or show_platform()
+    return rb.GameListScreen(app, plat.get("display_name") or plat["name"], platform=plat)
 
 
 def collection_item():
@@ -367,13 +387,13 @@ def collection_item():
 
 
 def a_rom():
-    return app.api.roms(platform_ids=[first_platform()["id"]], limit=5)["items"][0]
+    return app.api.roms(platform_ids=[show_platform()["id"]], limit=5)["items"][0]
 
 
 def party_list(players=2, menu=False):
     """A game list with the party filter on (the menu open on it, with menu)."""
     app.player_counts = app.api.rom_filters().get("player_counts")
-    gl = rb.GameListScreen(app, "PlayStation", platform=first_platform())
+    gl = show_list(show_platform("nes"))
     gl.players = players
     gl.reset()
     app.push(gl)
@@ -385,21 +405,23 @@ def party_list(players=2, menu=False):
 
 
 def game_page(here=False, plain=False):
-    """A game's page from the PlayStation list: Lorem Odyssey (your status, note, RA, screenshots);
-    here: its first disc on the box, played 3 days ago; plain: a game RomM knows little about."""
-    gl = rb.GameListScreen(app, "PlayStation", platform=first_platform())
-    app.push(gl)
+    """A game's page from its platform's list: the featured homebrew (your status, note, RA,
+    manual, screenshots); here: on the box, played 3 days ago; plain: a game RomM knows little about."""
     if plain:
-        rom = a_rom()
+        gl = rb.GameListScreen(app, "PlayStation", platform=first_platform())
+        rom = next(r for r in app.api.roms(platform_ids=[first_platform()["id"]], limit=100)["items"]
+                   if not r.get("merged_screenshots"))
     else:
-        rom = next(r for r in app.api.roms(platform_ids=[first_platform()["id"]], search="Lorem Odyssey",
-                                           limit=50)["items"] if r["fs_name_no_ext"] == "Lorem Odyssey (USA) (Disc 1)")
+        rom = app.api.user_list("playing")["items"][0]
+        gl = show_list(app.platform_by_id[rom["platform_id"]])
+    app.push(gl)
     if here:
-        p = os.path.join(R, "psx", rom["fs_name_no_ext"] + ".chd")
-        mk(os.path.relpath(p, R), 257 * MB)
-        app.library.mark(rom, "psx", [p])
-        es.mem["psx"][p] = {"playcount": "4", "lastplayed": time.strftime("%Y%m%dT%H%M%S",
-                                                                          time.localtime(time.time() - 3 * 86400))}
+        sy = app.platform_by_id[rom["platform_id"]]["_system"]
+        p = os.path.join(R, sy, rom["fs_name_no_ext"] + CART_EXT.get(sy, ".chd"))
+        mk(os.path.relpath(p, R), int(rom.get("fs_size_bytes") or 257 * MB))
+        app.library.mark(rom, sy, [p])
+        es.mem.setdefault(sy, {})[p] = {"playcount": "4", "lastplayed": time.strftime("%Y%m%dT%H%M%S",
+                                                                       time.localtime(time.time() - 3 * 86400))}
         rommlib._PLAY.clear()
     app.push(rb.GameScreen(app, rom, source=gl))
 
@@ -496,7 +518,7 @@ class WidgetsGallery(rb.Screen):
         rb.text(c, f.h2, rb.rom_title(rom), (tx, 84), rb.TEXT, maxw=tw)
         rb.text(c, f.small, "PlayStation · 1998 · Racing", (tx, 118), rb.DIM, maxw=tw)
         rb.facts(c, f, [("Size", rb.human_size(rom.get("fs_size_bytes"))), ("Format", "CHD (from CUE/BIN)"),
-                        ("Region", "USA"), ("Developer", "Lorem Ipsum Soft"), ("Players", "1-2"),
+                        ("Region", "USA"), ("Developer", "Placeholder Soft"), ("Players", "1-2"),
                         ("Released", "1998"), ("Genre", "Racing, Arcade"), ("Manual", "Included")],
                  (tx, 148, tw, 112), cols=2, bg=rb.BG, slot="gallery-facts", strong=("Size",))
         vr = pygame.Rect(788, 290, 1232 - 788, rb.VERB_H)
@@ -522,7 +544,7 @@ def collections_box():
         roms = app.api.roms_all(collection=("collection_id", c["id"]))
         for r in roms[:len(roms) if k == 0 else len(roms) // 3]:
             sy = app.platform_by_id[r["platform_id"]]["_system"]
-            p = os.path.join(R, sy, r["fs_name_no_ext"] + ".chd")
+            p = os.path.join(R, sy, r["fs_name_no_ext"] + CART_EXT.get(sy, ".chd"))
             if not os.path.exists(p):
                 mk(os.path.relpath(p, R), 4 * MB)
             lib.mark(r, sy, [p])
@@ -573,10 +595,10 @@ SCENES = [
     ("collection-menu", lambda: collections_at(1, 4, menu=True)),
     ("collection-games", lambda: collections_at(1, 4, inside=True)),
     ("collection-games-away", lambda: collections_at(1, 4, inside="away")),
-    ("game-list", lambda: app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform()))),
-    ("list-menu", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
+    ("game-list", lambda: app.push(show_list())),
+    ("list-menu", lambda: (app.push(show_list()),
                            setattr(app, "_after", lambda: app.stack[-1].action("x")))),
-    ("list-picking", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
+    ("list-picking", lambda: (app.push(show_list()),
                               setattr(app, "_after", lambda: (setattr(app.stack[-1], "picking", True),
                                                               [app.dispatch(k) for k in ("r1", "ok", "down", "ok")])))),
     ("game-list-party", lambda: party_list(2)),
@@ -584,7 +606,7 @@ SCENES = [
     ("game-night", lambda: game_night()),
     ("game-night-here", lambda: game_night(players=2, here=True)),
     ("game-night-menu", lambda: game_night(rolls=1, then=lambda: app.dispatch("x"))),
-    ("game-night-empty", lambda: game_night(players=4, here=True, rolls=1, scope=rb.Scope("Lorem", pool=[]))),
+    ("game-night-empty", lambda: game_night(players=4, here=True, rolls=1, scope=rb.Scope("Weekend Favourites", pool=[]))),
     ("backlog", lambda: (install_backlog(), app.push(rb.BacklogScreen(app)),
                          setattr(app, "_after", lambda: [app.dispatch("down") for _ in range(3)]))),
     ("backlog-tight", lambda: (install_backlog(), app.cfg.update(keep_free_gb=636),
@@ -679,8 +701,9 @@ SCENES = [
                                      app.push(rb.CheckScreen(app)), app.push(rb.UnseenScreen(app)),
                                      setattr(app, "_after", lambda: [app.dispatch(k) for k in
                                                                      ("x", "ok", "down", "ok", "ok")]))),
-    ("manage", lambda: (app.push(rb.GameListScreen(app, "PlayStation", platform=first_platform())),
-                        setattr(app, "_after", lambda: setattr(app, "modal", rb.ManageMenu(app, install_some()))))),
+    ("manage", lambda: (app.push(show_list()),
+                        setattr(app, "_after", lambda: setattr(app, "modal", rb.ManageMenu(
+                            app, install_some(show_platform())))))),
     ("storage", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)))),
     ("free-up", lambda: app.push(rb.FreeUpScreen(app))),
     ("free-up-menu", lambda: (app.push(rb.FreeUpScreen(app)),
@@ -786,7 +809,7 @@ def step(app_):
         except Exception as e:
             failures.append((st, name, "after: %r" % e))
         return []
-    if state["frames"] < 50 and (args.fixed_wait or calm < SETTLE_FRAMES or app._after):
+    if state["frames"] < (50 if args.fixed_wait else 200) and (args.fixed_wait or calm < SETTLE_FRAMES or app._after):
         return []
     state["calm"] = 0
     try:

@@ -172,6 +172,13 @@ GPL-2.0-or-later), **pygame**/**SDL** (LGPL-2.1 / zlib), **Requests**
 **Rubik** font (OFL-1.1). It runs on **Batocera.linux** and talks to **RomM**
 (AGPL-3.0). The same list is in Settings → Credits and licenses.
 
+The screenshots show real homebrew games by their authors, published under open
+licenses (MIT, zlib, GPL, CC0, CC-BY and others): their names, title screens and
+screenshots, shown in a stand-in RomM library next to invented filler titles. Every game,
+its author, license and source is listed in
+[tools/mock_assets/CREDITS.md](tools/mock_assets/CREDITS.md). RomM-o-Cera itself
+provides no games.
+
 ## License
 
 GPL-3.0-or-later — see [LICENSE](LICENSE). The bundled Rubik font is © The

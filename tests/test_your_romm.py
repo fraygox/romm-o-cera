@@ -82,7 +82,7 @@ def test_user_lists_are_filtered_and_ordered_by_romm(isolated, fast_mock_url):
     api = rommlib.Api(fast_mock_url, "demo")
     playing = api.user_list("playing")
     names = [r["name"] for r in playing["items"]]
-    assert names == ["Anguna", "Lorem Odyssey", "Tobu Tobu Girl"]          # last played first
+    assert names == ["Super Tilt Bro.", "Apotris", "Tobu Tobu Girl Deluxe"]          # last played first
     assert playing["total"] == 3 and not playing["filtered"]
     back = api.user_list("backlog", offset=0, limit=8)
     assert back["total"] == 20 and len(back["items"]) == 8
@@ -92,7 +92,7 @@ def test_user_lists_are_filtered_and_ordered_by_romm(isolated, fast_mock_url):
     fin = api.user_list("finished", limit=100)
     assert {rommlib.user_status(r)["status"] for r in fin["items"]} == {"finished", "completed_100"}
     gba = api.user_list("playing", platform_ids=[3])
-    assert [r["name"] for r in gba["items"]] == ["Anguna"]
+    assert [r["name"] for r in gba["items"]] == ["Apotris"]
 
 
 def test_a_romm_that_ignores_the_status_filter_gives_no_false_list(isolated):
@@ -116,7 +116,7 @@ def test_me_is_kept_a_while_and_gives_ra_progress(isolated, fast_mock_url, monke
     monkeypatch.setattr(api, "get", lambda path, *a, **k: (calls.append(path), real(path, *a, **k))[1])
     me = api.me()
     assert me["username"] == "demo" and api.me() is me and calls == ["/api/users/me"]
-    rom = api.user_list("playing")["items"][1]                    # Lorem Odyssey: a RetroAchievements game
+    rom = api.user_list("playing")["items"][0]                    # Super Tilt Bro.: a RetroAchievements game
     prog = rommlib.ra_progress(me, rom)
     assert prog["earned"] == 2 and prog["total"] == 3 and prog["earned_hardcore"] == 1
     detail = api.rom(rom["id"])
@@ -135,7 +135,7 @@ def test_me_from_a_romm_without_the_route_is_empty(isolated):
 def test_screenshots_go_through_the_cover_cache(isolated, fast_mock_url, monkeypatch):
     api = rommlib.Api(fast_mock_url, "demo")
     rom = api.user_list("playing")["items"][0]
-    assert len(rommlib.screenshot_paths(rom)) == 3
+    assert len(rommlib.screenshot_paths(rom)) == 2
     path = api.fetch_screenshot(rom, 1)
     assert path and os.path.dirname(path) == rommlib.COVER_CACHE
     with open(path, "rb") as f:

@@ -12,9 +12,10 @@ plus GitHub's release-notes route for What's new
 (ROMM_BROWSER_GITHUB_API=<this url>).
 Any bearer token is accepted; the pairing code ABCD2345 works once.
 
-The library is made of freely distributed homebrew / open-source games (with
-descriptions written for this mock, not copied) plus invented "lorem ipsum"
-titles. Covers are generated, so nothing here is anyone's box art.
+The library starts with real open-license homebrew games (tools/mock_assets: names,
+covers made from their title screens, screenshots, short descriptions written for this
+mock; every asset's author, license and source in tools/mock_assets/CREDITS.md), then
+thousands of invented filler titles with generated covers so platforms look full.
 """
 import argparse
 import hashlib
@@ -29,6 +30,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MS_PER_YEAR = 365.25 * 24 * 3600 * 1000
 
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock_assets")
+
 PLATFORMS = [  # id, fs_slug, display name
     (1, "nes", "Nintendo Entertainment System"),
     (2, "gb", "Game Boy"),
@@ -42,58 +45,48 @@ PLATFORMS = [  # id, fs_slug, display name
     (10, "saturn", "Sega Saturn"),
     (11, "pc-fx", "PC-FX"),
     (12, "zxs", "ZX Spectrum"),
+    (13, "gbc", "Game Boy Color"),
+    (14, "mastersystem", "Sega Master System"),
+    (15, "turbografx16", "TurboGrafx-16/PC Engine"),
 ]
+PID = {slug: pid for pid, slug, _ in PLATFORMS}
 
-# Freely distributed homebrew / open-source games. Descriptions are our own.
-REAL = [
-    (1, "Alter Ego", 2011, "Shiru", "Puzzle, Platform", "1",
-     "Swap places with your phantom twin to collect every pixel on each screen. A small, "
-     "clever freeware puzzle-platformer for the NES."),
-    (1, "Lan Master", 2011, "Shiru", "Puzzle", "1",
-     "Rotate cable pieces until every computer on the network lights up. Freeware."),
-    (1, "Sir Ababol", 2013, "The Mojon Twins", "Platform", "1",
-     "A knight hunts poppies through a castle of flick-screen rooms. Free homebrew."),
-    (1, "Super Tilt Bro.", 2018, "sgadrat", "Fighting", "1-2",
-     "A fast platform fighter built for the NES and released as open source."),
-    (1, "Nova the Squirrel", 2018, "NovaSquirrel", "Platform", "1",
-     "A squirrel with copy abilities explores a colourful world. Open-source homebrew."),
-    (1, "Concentration Room", 2010, "Damian Yerrick", "Puzzle", "1-2",
-     "The classic memory card-matching game, with a lab-accident twist. Open source."),
-    (1, "Thwaite", 2011, "Damian Yerrick", "Action", "1-2",
-     "Defend your villages from falling missiles with two launchers. Open source."),
-    (2, "Tobu Tobu Girl", 2017, "Tangram Games", "Arcade, Platform", "1",
-     "Bounce ever higher on the heads of flying creatures to rescue a lost cat. "
-     "Open-source Game Boy homebrew."),
-    (2, "Libbet and the Magic Floor", 2018, "Damian Yerrick", "Puzzle", "1",
-     "Walk over every tile of each basement floor without getting stuck. Open source."),
-    (2, "uCity", 2017, "AntonioND", "Simulation", "1",
-     "A full city-building sim squeezed onto the Game Boy Color. Open source."),
-    (3, "Anguna", 2008, "Nathan Tolbert", "Adventure", "1",
-     "A top-down dungeon adventure released free for the GBA."),
-    (3, "Butano Fighter", 2020, "GValiente", "Shooter", "1",
-     "A vertical shooter that doubles as the showcase for an open-source GBA engine."),
-    (3, "Varooom 3D", 2022, "GValiente", "Racing", "1",
-     "Pseudo-3D racing on the GBA, released as open source."),
-]
 
-LOREM = ("lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor "
-         "incididunt ut labore et dolore magna aliqua enim minim veniam quis nostrud "
-         "exercitation ullamco laboris nisi aliquip commodo consequat").split()
-SUFFIX = ["", "", "", " II", " 3", " Racing", " Quest", " Arena", " Legends", " Deluxe",
-          " Kart", " Tactics", " Party", " Odyssey", " Chronicles", " Turbo", " Zero"]
+def load_real():
+    """The open-license homebrew games (tools/mock_assets/games.json; credits in CREDITS.md):
+    real names, years, developers, our own short descriptions, covers and screenshots."""
+    with open(os.path.join(ASSETS, "games.json")) as f:
+        return json.load(f)
+
+
+# Filler: invented titles from two plain word lists (none is a real game's name), so a
+# platform can hold thousands of games after its real ones.
+FILL_A = ["Amber", "Brass", "Cobalt", "Copper", "Velvet", "Paper", "Clockwork", "Marble", "Mossy", "Rusty",
+          "Tidal", "Willow", "Saffron", "Pebble", "Thistle", "Juniper", "Quartz", "Maple", "Cinder", "Drizzle",
+          "Fennel", "Gossamer", "Indigo", "Kettle", "Lilac", "Murmur", "Nimbus", "Oyster", "Pumice", "Quill",
+          "Russet", "Sorrel", "Tamarind", "Umber", "Vesper", "Wicker", "Yarrow", "Zephyr", "Tangerine", "Bramble"]
+FILL_B = ["Orchard", "Lighthouse", "Caravan", "Foundry", "Harbor", "Meadow", "Observatory", "Workshop", "Lagoon",
+          "Monastery", "Railway", "Glacier", "Bazaar", "Aviary", "Archive", "Ferry", "Quarry", "Terrace", "Kite",
+          "Comet", "Beacon", "Tortoise", "Heron", "Otter", "Badger", "Lantern", "Compass", "Pagoda", "Windmill",
+          "Teapot"]
+SUFFIX = ["", "", "", " II", " 3", " Racing", " Quest", " Rally", " Tactics", " Party", " Deluxe", " Derby",
+          " Odyssey", " Chronicles", " Turbo", " Puzzle", " Golf", " Pinball", " Adventure", " Saga"]
+FILL_DEVS = ["Placeholder Soft", "Filler Works", "Sample Studio"]
+FILL_TEXT = ["A {g} game about a {a} {b}.", "Explore the {a} {b} in this {g} game.",
+             "A {g} game: reach the {b} before the {a} season ends.",
+             "Build, fight and race your way around the {a} {b}.", "Puzzles and secrets in a {a} {b}."]
 GENRES = ["Action", "Adventure", "Platform", "Puzzle", "Racing", "Role-Playing", "Shooter",
           "Sports", "Fighting", "Strategy", "Simulation", "Arcade"]
 REGIONS = [["USA"], ["USA"], ["Europe"], ["Japan"], ["World"], ["USA", "Europe"]]
 COUNTS = {1: 1240, 2: 610, 3: 820, 4: 980, 5: 760, 6: 1460, 7: 420, 8: 1310, 9: 330,
-          10: 290, 11: 40, 12: 900}
+          10: 290, 11: 40, 12: 900, 13: 540, 14: 380, 15: 260}
 DISC = {6: (300, 700), 7: (900, 1200), 8: (1200, 4200), 10: (300, 650), 11: (300, 600)}  # MB
 CART = {1: (0.03, 0.5), 2: (0.03, 1), 3: (2, 16), 4: (0.5, 4), 5: (0.5, 4), 9: (4, 64),
-        12: (0.02, 0.1)}
+        12: (0.02, 0.1), 13: (0.1, 2), 14: (0.03, 0.5), 15: (0.1, 1)}
 
 
-def lorem_sentence(rng, n=24):
-    w = [rng.choice(LOREM) for _ in range(n)]
-    return (" ".join(w)).capitalize() + "."
+def is_real(r):
+    return bool(r.get("_slug"))
 
 
 def build_library(seed=7):
@@ -102,33 +95,34 @@ def build_library(seed=7):
     rid = 1
     plat = {p[0]: p for p in PLATFORMS}
 
-    def add(pid, name, year, dev, genre, players, summary, regions, size):
+    def add(pid, name, year, dev, genre, players, summary, regions, size, rating, slug=None):
         nonlocal rid
-        slug = plat[pid][1]
-        disc = pid in DISC
+        slug_ = plat[pid][1]
+        disc = pid in DISC and not slug
         tag = "(%s)" % ", ".join(regions)
-        fs_no_ext = "%s %s" % (name, tag)
+        fs_no_ext = "%s %s" % (name.replace(":", " -"), tag)
         multi = disc and pid in (6, 7) and rng.random() < 0.5    # some folder roms
         nested = disc and pid == 8 and rng.random() < 0.1        # folder holding one .iso
         fs_name = fs_no_ext if (multi or nested) else fs_no_ext + ".zip"
         r = {
-            "id": rid, "platform_id": pid, "platform_slug": slug, "platform_fs_slug": slug,
+            "id": rid, "platform_id": pid, "platform_slug": slug_, "platform_fs_slug": slug_,
             "platform_display_name": plat[pid][2],
             "name": name, "fs_name": fs_name, "fs_name_no_ext": fs_no_ext,
             "fs_extension": "" if multi else "zip", "fs_size_bytes": int(size),
             "regions": regions, "summary": summary,
-            "metadatum": {"genres": [g.strip() for g in genre.split(",")],
-                          "first_release_date": int((year - 1970) * MS_PER_YEAR),
+            "metadatum": {"genres": list(genre), "first_release_date": int((year - 1970 + 0.5) * MS_PER_YEAR),
                           "player_count": players, "developers": [dev], "publishers": [dev],
-                          "average_rating": rng.randint(55, 95)},
+                          "average_rating": rating},
             "path_cover_small": "/covers/%d.png?s=1" % rid,
             "path_cover_large": "/covers/%d.png?s=2" % rid,
             "has_multiple_files": multi, "has_nested_single_file": nested,
-            "tags": rng.choice([[], [], [], [], ["Proto"], ["Beta 1"], ["Demo"], ["Hack"]]),
-            "verified": rng.random() < 0.85,
+            "tags": [] if slug else rng.choice([[], [], [], [], ["Proto"], ["Beta 1"], ["Demo"], ["Hack"]]),
+            "verified": True if slug else rng.random() < 0.85,
             "updated_at": "2026-%02d-%02dT10:00:00Z" % (8 + rid % 3, 1 + rid % 28),
-            "full_path": "roms/%s/%s" % (slug, fs_name),
+            "full_path": "roms/%s/%s" % (slug_, fs_name),
         }
+        if slug:
+            r["_slug"] = slug
         if multi:
             ext = ".gdi" if pid == 7 else ".cue"
             sheet = "%s%s" % (fs_no_ext, ext)
@@ -149,24 +143,25 @@ def build_library(seed=7):
         roms.append(r)
         rid += 1
 
-    for pid, name, year, dev, genre, players, summary in REAL:
-        lo, hi = CART.get(pid, (0.1, 1))
-        add(pid, name, year, dev, genre, players, summary, ["World"],
-            rng.uniform(lo, hi) * 1024 * 1024)
-    seen = set()
+    for g in load_real():
+        rating = 70 + int(hashlib.md5(g["slug"].encode()).hexdigest()[:4], 16) % 26
+        add(PID[g["platform"]], g["name"], g["year"], g["developer"], g["genres"], g["players"], g["summary"],
+            ["World"], max(g["rom_size"], 16 * 1024), rating, slug=g["slug"])
+    seen = {(r["platform_id"], r["name"].lower()) for r in roms}
     for pid, n in COUNTS.items():
         made = sum(1 for r in roms if r["platform_id"] == pid)
         while made < n:
-            k = rng.choice([2, 2, 3, 3, 4])
-            name = " ".join(w.capitalize() for w in rng.sample(LOREM, k)) + rng.choice(SUFFIX)
-            if (pid, name) in seen:
+            a, b = rng.choice(FILL_A), rng.choice(FILL_B)
+            name = (rng.choice(["%s %s", "%s %s", "The %s %s"]) % (a, b)) + rng.choice(SUFFIX)
+            if (pid, name.lower()) in seen:
                 continue
-            seen.add((pid, name))
+            seen.add((pid, name.lower()))
             lo, hi = DISC.get(pid) or CART.get(pid, (0.1, 1))
-            add(pid, name, rng.randint(1985, 2008), "Lorem Ipsum Soft",
-                ", ".join(rng.sample(GENRES, rng.choice([1, 2]))), rng.choice(["1", "1-2", "1-4"]),
-                lorem_sentence(rng, rng.randint(18, 60)) + " " + lorem_sentence(rng),
-                rng.choice(REGIONS), rng.uniform(lo, hi) * 1024 * 1024)
+            genre = rng.sample(GENRES, rng.choice([1, 2]))
+            add(pid, name, rng.randint(1985, 2008), rng.choice(FILL_DEVS), genre,
+                rng.choice(["1", "1-2", "1-4"]),
+                rng.choice(FILL_TEXT).format(g=genre[0].lower(), a=a.lower(), b=b.lower()),
+                rng.choice(REGIONS), rng.uniform(lo, hi) * 1024 * 1024, rng.randint(55, 95))
             made += 1
     return roms
 
@@ -268,59 +263,58 @@ def add_special(roms):
     return made
 
 
-# Your RomM side, like 5.4's rom_user: a few homebrew games and lorem picks
-# playing, backlogged, finished...; everything else RomM's stand-in (id -1).
+# Your RomM side, like 5.4's rom_user: homebrew you're playing, finished, backlogged...;
+# everything else RomM's stand-in (id -1).
 USER_ID = 1
 BLANK_USER = {"id": -1, "user_id": -1, "rom_id": -1, "created_at": "2026-01-01T00:00:00Z",
               "updated_at": "2026-01-01T00:00:00Z", "last_played": None, "is_main_sibling": False,
               "backlogged": False, "now_playing": False, "hidden": False, "rating": 0, "difficulty": 0,
               "completion": 0, "status": None, "pinned_media": None}
+FEATURED = "Super Tilt Bro."        # playing, with a manual, RetroAchievements and your notes
 USER_REAL = {   # homebrew name -> rom_user fields
-    "Alter Ego": dict(status="finished", rating=9, completion=100, last_played="2026-09-28T20:15:00Z"),
-    "Anguna": dict(now_playing=True, status="incomplete", rating=8, completion=40,
+    FEATURED: dict(now_playing=True, status="incomplete", rating=8, completion=55,
                    last_played="2026-10-12T19:02:00Z"),
-    "Tobu Tobu Girl": dict(now_playing=True, completion=15, last_played="2026-10-10T18:30:00Z"),
-    "Thwaite": dict(backlogged=True),
-    "Libbet and the Magic Floor": dict(backlogged=True),
-    "Butano Fighter": dict(status="completed_100", rating=7, completion=100, last_played="2026-08-03T21:40:00Z"),
+    "Apotris": dict(now_playing=True, status="incomplete", completion=40, last_played="2026-10-11T22:10:00Z"),
+    "Tobu Tobu Girl Deluxe": dict(now_playing=True, completion=15, last_played="2026-10-10T18:30:00Z"),
+    "Thwaite": dict(status="finished", rating=9, completion=100, last_played="2026-09-28T20:15:00Z"),
+    "Skyland": dict(status="completed_100", rating=9, completion=100, last_played="2026-08-03T21:40:00Z"),
     "uCity": dict(status="retired", rating=6, last_played="2026-07-14T10:00:00Z"),
-    "Lan Master": dict(status="never_playing"),
+    "Adjustris": dict(status="never_playing"),
 }
-SHOT_NAMES = set(USER_REAL) | {"Sir Ababol", "Varooom 3D"}
+SEEDS = ("Thwaite", FEATURED)       # "Because you played ..."
+BACKLOG = 20
 
 
-def add_user_data(roms, seed=13):
-    """rom_user, notes and screenshots (its own random stream: the library stays the same)."""
-    rng = random.Random(seed)
-    lorem = [r for r in roms if r["metadatum"]["developers"][0] == "Lorem Ipsum Soft"
-             and r["platform_id"] in (1, 3, 4, 6, 8)]
-    picks = {}
-    for k, r in enumerate(rng.sample(lorem, 30)):
-        picks[r["id"]] = dict(backlogged=True) if k < 18 else \
-            dict(status=("finished", "completed_100", "incomplete", "retired")[k % 4], rating=rng.randint(4, 10),
-                 last_played="2026-%02d-%02dT20:00:00Z" % (rng.randint(3, 9), rng.randint(1, 28)))
-    odyssey = next(r for r in roms if r["fs_name_no_ext"] == "Lorem Odyssey (USA) (Disc 1)")
-    picks[odyssey["id"]] = dict(now_playing=True, status="incomplete", completion=55,
-                                last_played="2026-10-11T22:10:00Z")
+def add_user_data(roms):
+    """rom_user, notes, screenshots, a manual and RetroAchievements for the featured game."""
+    real = sorted((r for r in roms if is_real(r)), key=lambda r: (r["name"].lower(), r["id"]))
+    picks = {r["id"]: USER_REAL[r["name"]] for r in real if r["name"] in USER_REAL}
+    rest = [r for r in real if r["id"] not in picks]
+    for r in (rest[::2] + rest[1::2])[:BACKLOG]:
+        picks[r["id"]] = dict(backlogged=True)
+    shots = {g["slug"]: len(g["shots"]) for g in load_real()}
     for r in roms:
-        fields = USER_REAL.get(r["name"]) if r["metadatum"]["developers"][0] != "Lorem Ipsum Soft" \
-            else picks.get(r["id"])
+        fields = picks.get(r["id"])
         r["rom_user"] = dict(BLANK_USER, id=r["id"], user_id=USER_ID, rom_id=r["id"], **fields) \
             if fields else dict(BLANK_USER)
-        shots = 3 if r["name"] in SHOT_NAMES or r["id"] == odyssey["id"] else 0
         r["merged_screenshots"] = ["/assets/romm/resources/roms/%d/%d/screenshots/%d.png" % (
-            r["platform_id"], r["id"], i) for i in range(shots)]
+            r["platform_id"], r["id"], i) for i in range(shots.get(r.get("_slug"), 0))]
         notes = []
-        if r["name"] in ("Anguna", "Alter Ego") or r["id"] == odyssey["id"]:
+        if r["name"] in (FEATURED, "Thwaite"):
             notes = [{"id": r["id"], "title": "Where I am", "is_public": False, "tags": None,
-                      "content": "Lorem ipsum: **third** dungeon, key behind the waterfall.",
+                      "content": "Beat **arcade mode** on normal; next up, the hard stages.",
                       "created_at": "2026-10-01T10:00:00Z", "updated_at": "2026-10-11T22:12:00Z",
                       "user_id": USER_ID, "username": "demo"},
                      {"id": 10000 + r["id"], "title": "Tip", "is_public": True, "tags": None,
-                      "content": "Dolor sit amet: save before the boss.", "created_at": "2026-09-01T10:00:00Z",
+                      "content": "Practice the recovery jump in training first.", "created_at": "2026-09-01T10:00:00Z",
                       "updated_at": "2026-09-01T10:00:00Z", "user_id": 2, "username": "friend"}]
         r["has_notes"] = bool(notes)
         r["_notes"] = notes
+        if r["name"] == FEATURED and is_real(r):
+            r.update(has_manual=True, path_manual="roms/%d/%d/manual/%d.pdf" % (r["platform_id"], r["id"], r["id"]),
+                     ra_id=1000 + r["id"], merged_ra_metadata={"achievements": [
+                         {"title": t, "points": p} for t, p in (("First knockout", 5), ("Untouchable", 10),
+                                                                ("Arcade champion", 25))]})
 
 
 def users_me(roms):
@@ -364,49 +358,63 @@ RELEASE_NOTES = ("## Features\n\n- Lorem ipsum: **your RomM lists** on the box.\
 
 def build_collections(roms, seed=11):
     rng = random.Random(seed)
-    real = [r["id"] for r in roms if r["metadatum"]["developers"][0] != "Lorem Ipsum Soft"]
-    lorem = [r["id"] for r in roms if r["id"] not in real]
-    cols = [("Top 25: Homebrew Heroes", real + rng.sample(lorem, 12)),
-            ("Theme: Open Source Gems", real),
-            ("Theme: Lorem Ipsum Classics That Were Actually Good", rng.sample(lorem, 64)),
-            ("Theme: Couch Co-op & Party", rng.sample(lorem, 48)),
-            ("Theme: Hidden Gems", rng.sample(lorem, 70)),
-            ("Series: Dolor Sit", rng.sample(lorem, 9)),
-            ("Series: Magna Aliqua", rng.sample(lorem, 14)),
-            ("Top 100: PlayStation", [r["id"] for r in roms if r["platform_id"] == 6][:100]),
-            ("Lorem: Weekend Picks", rng.sample(lorem, 7)),     # one-off colon: not a tag
-            ("Weekend Favourites", rng.sample(lorem, 11))]
-    return [{"id": i + 1, "name": n, "rom_count": len(ids), "rom_ids": ids}
-            for i, (n, ids) in enumerate(cols)]
+    real = [r for r in roms if is_real(r)]
+
+    def ids(rs):
+        return [r["id"] for r in rs]
+
+    def genre(*gs):
+        return [r for r in real if set(gs) & set(r["metadatum"]["genres"])]
+
+    def by(dev):
+        return [r for r in real if r["metadatum"]["developers"][0] == dev]
+    ps1 = [r for r in roms if r["platform_id"] == 6]
+    cols = [("Top 25: Homebrew Heroes", ids(sorted(real, key=lambda r: -r["metadatum"]["average_rating"])[:25])),
+            ("Theme: Open Source Gems", ids(real)),
+            ("Theme: Puzzle Box", ids(genre("Puzzle"))),
+            ("Theme: Couch Co-op & Party", ids(r for r in real if r["metadatum"]["player_count"] != "1")),
+            ("Theme: Jump & Run", ids(genre("Platform", "Arcade"))),
+            ("Series: Damian Yerrick", ids(by("Damian Yerrick"))),
+            ("Series: AntonioND", ids(by("AntonioND"))),
+            ("Series: Sik", ids(by("Sik"))),
+            ("Top 100: PlayStation", ids([r for r in ps1 if is_real(r)] + [r for r in ps1 if not is_real(r)])[:100]),
+            ("Tonight: Weekend Picks", ids(rng.sample(real, 7))),     # one-off colon: not a tag
+            ("Weekend Favourites", ids(rng.sample(real, 11)))]
+    return [{"id": i + 1, "name": n, "rom_count": len(ids_), "rom_ids": ids_}
+            for i, (n, ids_) in enumerate(cols)]
 
 
-MORE_WORDS = ["Lorem", "Ipsum", "Dolor", "Amet", "Tempor", "Magna", "Aliqua", "Veniam", "Nostrud", "Fugiat",
-              "Mollit", "Cupidatat", "Pariatur", "Velit", "Nisi", "Minim", "Labore", "Sunt", "Culpa", "Quis"]
 MORE_MOODS = ["Nights", "Picks", "Favourites", "Gems", "Classics", "Rainy Days", "Long Weekends", "Party",
               "Cosy", "Speedruns", "Deep Cuts", "First Hours", "Comfort Games", "Late Shift"]
 
 
 def build_more(roms, n, first_id=100, seed=17):
-    """n more lorem-named collections, the mix of a curated server (mostly Series, then Themes,
-    Top-N lists and a few of a kind of its own): screenshots and tests at scale."""
+    """n more collections, the mix of a curated server (mostly Series, then Themes, Top-N lists
+    and a few of a kind of its own), homebrew first: screenshots and tests at scale."""
     rng = random.Random(seed)
-    lorem = [r["id"] for r in roms if r["metadatum"]["developers"][0] == "Lorem Ipsum Soft"]
-    plats = [name for _, _, name in PLATFORMS]
+    real = [r["id"] for r in roms if is_real(r)]
+    filler = [r["id"] for r in roms if not is_real(r)]
     out, seen = [], set()
     while len(out) < n:
         k = len(out) % 7
+        ids = None
         if k < 3:
-            name = "Series: %s %s" % (rng.choice(MORE_WORDS), rng.choice(MORE_WORDS + MORE_MOODS))
+            name = "Series: %s %s" % (rng.choice(FILL_A), rng.choice(FILL_B))
         elif k < 5:
-            name = "Theme: %s %s" % (rng.choice(MORE_WORDS), rng.choice(MORE_MOODS))
+            name = "Theme: %s %s" % (rng.choice(FILL_A), rng.choice(MORE_MOODS))
         elif k == 5:
-            name = "Top %d: %s" % (rng.choice([10, 25, 50, 100]), rng.choice(plats))
+            top, (pid, _, pname) = rng.choice([10, 25, 50, 100]), rng.choice(PLATFORMS)
+            name = "Top %d: %s" % (top, pname)
+            mine = [r for r in roms if r["platform_id"] == pid]
+            ids = [r["id"] for r in mine if is_real(r)] + [r["id"] for r in mine if not is_real(r)]
+            ids = ids[:top]
         else:
-            name = "Picks: %s %s" % (rng.choice(MORE_WORDS), rng.choice(MORE_MOODS))
+            name = "Picks: %s %s" % (rng.choice(FILL_A), rng.choice(MORE_MOODS))
         if name in seen:
             continue
         seen.add(name)
-        ids = rng.sample(lorem, rng.randint(4, 90))
+        if ids is None:
+            ids = rng.sample(real, rng.randint(4, 12)) + rng.sample(filler, rng.randint(0, 80))
         out.append({"id": first_id + len(out), "name": name, "rom_count": len(ids), "rom_ids": ids})
     return out
 
@@ -455,6 +463,25 @@ def _font(size):
                 _FONT = p
                 break
     return ImageFont.truetype(_FONT, size) if _FONT else ImageFont.load_default()
+
+
+_REAL = {}
+
+
+def asset(rom, shot=None):
+    """A homebrew game's cover (or its shot-th screenshot) from tools/mock_assets, as bytes."""
+    if not is_real(rom):
+        return None
+    if not _REAL:                         # built whole, then shared (threads serve covers)
+        _REAL.update({g["slug"]: g for g in load_real()})
+    g = _REAL[rom["_slug"]]
+    rel = g["cover"] if shot is None else g["shots"][shot]
+    with open(os.path.join(ASSETS, rel), "rb") as f:
+        return f.read()
+
+
+def image_type(data):
+    return "image/jpeg" if data[:2] == b"\xff\xd8" else "image/png"
 
 
 def make_cover(rom, scale):
@@ -529,7 +556,7 @@ for _i, (_pid, _name) in enumerate([(6, "scph5501.bin"), (6, "scph1001.bin")]):
                      "data": _data})
 
 
-HIDDEN = ("files", "_data", "sibling_roms", "_notes")      # never in list records
+HIDDEN = ("files", "_data", "sibling_roms", "_notes", "_slug")      # never in list records
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -598,21 +625,20 @@ class Handler(BaseHTTPRequestHandler):
         """Like RomM 5.4's feed: SimpleRomSchema roms with a score and why. Seeded
         by games "played" (two of the homebrew ones); cold: its best-rated games."""
         rng = random.Random(23)
-        pool = [r for r in cls.roms if r["metadatum"]["developers"][0] == "Lorem Ipsum Soft"
-                and r["platform_id"] in (1, 3, 4, 5, 6, 9)]
+        pool = [r for r in cls.roms if is_real(r) and r["name"] not in SEEDS]
         out = []
         for k, r in enumerate(rng.sample(pool, 18)):
             md = r["metadatum"]
             if cold:
                 why, seed = [{"facet": "top_rated", "value": ""}], None
             else:
-                seed = ("Alter Ego", "Anguna", None)[k % 3]
+                seed = (SEEDS + (None,))[k % 3]
                 year = time.gmtime(md["first_release_date"] / 1000).tm_year // 10 * 10
                 why = [{"facet": "genre", "value": md["genres"][0]}, {"facet": "decade", "value": str(year)}]
                 if seed is None:
                     why = [{"facet": "igdb", "value": ""}] + why[:1]
                 elif k % 4 == 1:
-                    why.insert(0, {"facet": "franchise", "value": "Dolor Sit"})
+                    why.insert(0, {"facet": "franchise", "value": md["developers"][0]})
             rom = {x: v for x, v in r.items() if x not in HIDDEN}
             out.append({"rom": rom, "score": round(0.95 - k * 0.03, 3), "reasons": why,
                         "seed_rom_id": None if seed is None else next(
@@ -672,10 +698,11 @@ class Handler(BaseHTTPRequestHandler):
                 if q.get(key):
                     ids = set(next((c["rom_ids"] for c in cols if c["id"] == int(q[key][0])), []))
                     items = [r for r in items if r["id"] in ids]
-            # the same picks in the same order every run (tests, screenshots)
+            # the same picks in the same order every run (tests, screenshots); homebrew first
             Handler.random_n = getattr(Handler, "random_n", 0) + 1
             if not items:
                 return self._json(None)
+            items = [r for r in items if is_real(r)] or items
             r = random.Random("%s#%d" % (u.query, Handler.random_n)).choice(items)
             return self._json({k: v for k, v in r.items() if k not in HIDDEN})
         if path == "/api/roms":
@@ -720,8 +747,10 @@ class Handler(BaseHTTPRequestHandler):
                 items = [r for r in items if all(t in r["name"].lower() for t in term.split())]
             order = (q.get("order_by") or ["name"])[0]
             rev = (q.get("order_dir") or ["asc"])[0] == "desc"
-            if order == "id":
-                items = sorted(items, key=lambda r: r["id"], reverse=rev)
+            if order in ("id", "name"):                # the homebrew first, then the filler
+                key = (lambda r: r["id"]) if order == "id" else (lambda r: r["name"].lower())
+                items = sorted([r for r in items if is_real(r)], key=key, reverse=rev) + \
+                    sorted([r for r in items if not is_real(r)], key=key, reverse=rev)
             elif order == "last_played":             # RomUser column: never played last either way
                 items = sorted(items, key=lambda r: r["name"].lower())
                 lp = {r["id"]: (r.get("rom_user") or BLANK_USER)["last_played"] for r in items}
@@ -746,14 +775,17 @@ class Handler(BaseHTTPRequestHandler):
         if m and int(m.group(1)) in self.by_id:
             me = self.by_id[int(m.group(1))]
             same = [r for r in self.roms if r["platform_id"] == me["platform_id"] and r["id"] != me["id"]]
-            pick = random.Random(me["id"]).sample(same, min(int((q.get("limit") or [12])[0]), len(same), 12))
+            n = min(int((q.get("limit") or [12])[0]), len(same), 12)
+            hb = [r for r in same if is_real(r)]
+            pick = random.Random(me["id"]).sample(hb, min(n, len(hb)))
+            pick += random.Random(me["id"]).sample([r for r in same if not is_real(r)], n - len(pick))
             return self._json([{"rom": {k: v for k, v in r.items() if k not in HIDDEN},
                                 "score": 0.9,
                                 "reasons": ["genre"]} for r in pick])
         m = re.match(r"^/api/roms/(\d+)$", path)
         if m and int(m.group(1)) in self.by_id:
             r = self.by_id[int(m.group(1))]
-            out = dict({k: v for k, v in r.items() if k not in ("_data", "_notes")},
+            out = dict({k: v for k, v in r.items() if k not in ("_data", "_notes", "_slug")},
                        sibling_roms=r.get("sibling_roms", []), all_user_notes=r.get("_notes", []))
             if "files" in r:
                 out["files"] = [{k: v for k, v in f.items() if k != "_data"} for f in r["files"]]
@@ -784,10 +816,10 @@ class Handler(BaseHTTPRequestHandler):
             if path in r.get("merged_screenshots", []):
                 key = (r["id"], "shot", int(m.group(2)))
                 if key not in self.covers:
-                    self.covers[key] = make_shot(r, int(m.group(2)))
+                    self.covers[key] = asset(r, int(m.group(2))) or make_shot(r, int(m.group(2)))
                 data = self.covers[key]
                 self.send_response(200)
-                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Type", image_type(data))
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -797,10 +829,10 @@ class Handler(BaseHTTPRequestHandler):
             s = int((q.get("s") or ["1"])[0])
             key = (int(m.group(1)), s)
             if key not in self.covers:
-                self.covers[key] = make_cover(self.by_id[key[0]], s)
+                self.covers[key] = asset(self.by_id[key[0]]) or make_cover(self.by_id[key[0]], s)
             data = self.covers[key]
             self.send_response(200)
-            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Type", image_type(data))
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -809,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
 
     zips = {}
     EXT = {"nes": ".nes", "gb": ".gb", "gba": ".gba", "snes": ".sfc", "genesis": ".md",
-           "n64": ".z64", "zxs": ".tzx"}
+           "n64": ".z64", "zxs": ".tzx", "gbc": ".gbc", "mastersystem": ".sms", "turbografx16": ".pce"}
 
     def _zip_for(self, r):
         """A real stored zip of exactly fs_size_bytes, so the app's zip/size
@@ -876,6 +908,7 @@ def main():
     ap.add_argument("--rate-mb", type=float, default=12, help="download speed, MB/s")
     ap.add_argument("--collections", type=int, default=0, help="this many more lorem-named collections (a curated server)")
     a = ap.parse_args()
+    _REAL.update({g["slug"]: g for g in load_real()})
     Handler.roms = build_library()
     add_special(Handler.roms)
     add_user_data(Handler.roms)
