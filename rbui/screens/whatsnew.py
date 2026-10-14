@@ -101,11 +101,13 @@ class WhatsNewScreen(Screen):
         r.actions([("X", "Full notes on your phone", self.full_notes)])
         r.verb("Continue", "go", fn=self.done)
         nightly = rommlib.config_value(self.app.cfg, "update_channel") == "nightly"
-        r.title("v" + rommlib.VERSION_LABEL, sub=("from v%s" % self.prev) if self.prev else None)
+        base, build = rommlib.version_parts(rommlib.VERSION_LABEL)     # a nightly's label won't fit a title
+        r.title("v" + base, sub=build or None)
         released = time.strptime(rommlib.RELEASE_DATE, "%Y-%m-%d")
         r.facts([("Channel", "Nightly" if nightly else "Stable"),
-                 ("Released", "%d %s %d" % (released.tm_mday, time.strftime("%b", released), released.tm_year))],
-                cols=2, lines=1)
+                 ("Released", "%d %s %d" % (released.tm_mday, time.strftime("%b", released), released.tm_year))]
+                + ([("Updated from", rommlib.short_version(self.prev))] if self.prev else []),
+                cols=2, lines=2 if self.prev else 1)
         r.rule()
         r.prose("Your games, saves and settings are as they were. Nothing to do.", color=theme.DIM)
 

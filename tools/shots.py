@@ -697,6 +697,8 @@ SCENES = [
     ("whats-new", lambda: whats_new()),
     ("whats-new-oled", lambda: whats_new("playstation_oled")),
     ("whats-new-light", lambda: whats_new("dreamcast", prev=None)),
+    ("whats-new-nightly", lambda: (setattr(rommlib, "VERSION_LABEL", rommlib.VERSION + "+n20261013.2109.95f4f7a"),
+                                   whats_new(prev=rommlib.VERSION + "+n20261012.1502.16147fb"))),
     ("whats-new-offline", lambda: (app.push(rb.WhatsNewScreen(app, None, None)), setattr(
         app, "_after", lambda: app.stack[-1].__dict__.update(rel=None, lines=[], failed=True)))),
     ("whats-new-full", lambda: (whats_new(), app.stack[-1].full_notes())),
@@ -727,8 +729,10 @@ def reset():
     app.downloader.hold = True
     app.cfg["keep_free_gb"] = KEEP_FREE
     app.cfg["collection_tiles"] = "medium"
+    rommlib.VERSION_LABEL = VERSION_LABEL         # a nightly's label (whats-new-nightly)
 
 
+VERSION_LABEL = rommlib.VERSION_LABEL
 KEEP_FREE = app.cfg.get("keep_free_gb", 20)
 bad_tokens = set()
 failures = []

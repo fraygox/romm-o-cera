@@ -200,3 +200,13 @@ def test_quitting_while_the_update_installs_waits_for_it(app):
     app.toast = lambda msg, color=None: said.append(msg)
     app.request_quit()
     assert app.running is True and "Finishing the update" in said[-1]
+
+
+def test_a_version_label_splits_into_its_version_and_build():
+    """What's new titles the version alone; a nightly's long label goes under it, short."""
+    import rommlib
+    assert rommlib.version_parts("0.10.0") == ("0.10.0", "")
+    assert rommlib.version_parts("0.10.0+n20261013.2109.95f4f7a") == ("0.10.0", "nightly of 13 Oct, 95f4f7a")
+    assert rommlib.version_parts("0.10.0+5433a7c-dirty") == ("0.10.0", "build 5433a7c-dirty")
+    assert rommlib.short_version("0.10.0+n20261012.1502.16147fb") == "v0.10.0 nightly"
+    assert rommlib.short_version("0.9.0") == "v0.9.0"

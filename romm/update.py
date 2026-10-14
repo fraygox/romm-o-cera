@@ -492,3 +492,20 @@ def release_note_lines(body):
         if s:
             out.append((kind, s))
     return out
+
+
+def version_parts(label):
+    """("0.10.0", what kind of build) for a version label: "" for a release, "nightly of 13 Oct,
+    95f4f7a" for a nightly ("0.10.0+n20261013.2109.95f4f7a"), "build 5433a7c" for any other."""
+    base, _, build = str(label or "").partition("+")
+    m = re.match(r"^n(\d{4})(\d{2})(\d{2})\.\d{4}\.(\w+)$", build)
+    if m:
+        day = time.strptime("%s%s%s" % m.groups()[:3], "%Y%m%d")
+        return base, "nightly of %d %s, %s" % (day.tm_mday, time.strftime("%b", day), m.group(4))
+    return base, ("build " + build) if build else ""
+
+
+def short_version(label):
+    """A version label short enough for a line: "v0.10.0", "v0.10.0 nightly", "v0.10.0 build"."""
+    base, build = version_parts(label)
+    return "v" + base + ((" " + build.split(" ")[0]) if build else "")
