@@ -1,0 +1,10 @@
+/* The screenshot gallery (mkdocs-glightbox): its caption bar in the site's own colours,
+   light or dark, instead of glightbox's white. */
+.glightbox-clean .gslide-description {
+  background: var(--md-default-bg-color);
+}
+.glightbox-clean .gslide-title,
+.glightbox-clean .gslide-desc {
+  color: var(--md-default-fg-color);
+  font-family: var(--md-text-font-family);
+}

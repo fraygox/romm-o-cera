@@ -55,6 +55,17 @@ theme:
     - search.highlight
     - content.code.copy
 
+extra_css:
+  - extra.css
+
+plugins:
+  - search
+  - glightbox:              # screenshots open full size: zoom, swipe/arrow through the page's others
+      zoomable: true
+      slide_effect: slide
+      auto_caption: true    # the image's alt text as its caption
+      caption_position: bottom
+
 markdown_extensions:
   - admonition
   - attr_list

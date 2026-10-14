@@ -84,6 +84,7 @@ def main():
                 f.write(LINK.sub(docs_link, text))
     shutil.copytree(os.path.join(HERE, "screenshots"), os.path.join(OUT, "screenshots"))
     shutil.copy(os.path.join(HERE, "icon.png"), os.path.join(OUT, "icon.png"))
+    shutil.copy(os.path.join(HERE, "tools", "docs-extra.css"), os.path.join(OUT, "extra.css"))
     print("site source in", os.path.relpath(OUT, HERE))
 
 
