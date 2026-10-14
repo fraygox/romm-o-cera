@@ -82,9 +82,9 @@ If your theme is an OLED one, every card starts on its OLED version.
 
 | | |
 |---|---|
-| ![Synthwave theme](../screenshots/themes/synthwave.png) | ![Brick theme](../screenshots/themes/brick.png) |
-| ![PlayStation OLED theme](../screenshots/themes/playstation-oled.png) | ![Xbox theme](../screenshots/themes/xbox.png) |
-| ![Kyoto theme](../screenshots/themes/kyoto.png) | ![High contrast light theme](../screenshots/themes/high-contrast-light.png) |
+| ![Synthwave theme: Home](../screenshots/themes/synthwave.png) | ![Brick theme: Collections](../screenshots/themes/brick.png) |
+| ![PlayStation OLED theme: a game's page](../screenshots/themes/playstation-oled.png) | ![Xbox theme: Activity](../screenshots/themes/xbox.png) |
+| ![Kyoto theme: Game night](../screenshots/themes/kyoto.png) | ![High contrast light theme: Settings](../screenshots/themes/high-contrast-light.png) |
 
 ## Custom
 

@@ -737,6 +737,19 @@ SCENES = [
         "Delete 3", lambda: None, danger=True))),
 ]
 wanted = set(filter(None, args.scenes.split(",")))
+# The Themes page's examples: a theme each, on one of the main screens (screenshots/themes/).
+THEME_SCENES = {"synthwave": ("synthwave", "home"), "brick": ("dmg", "collections"),
+                "playstation-oled": ("playstation_oled", "game-page"), "xbox": ("xbox", "downloads"),
+                "kyoto": ("nintendo", "game-night"), "high-contrast-light": ("high_contrast_light", "settings")}
+
+
+def themed(theme_key, scene):
+    rb.apply_theme(theme_key)              # reset() puts the app's own theme back for the next scene
+    ALL_SCENES[scene]()
+
+
+SCENES += [("theme-" + name, lambda t=t, sc=sc: themed(t, sc)) for name, (t, sc) in THEME_SCENES.items()]
+ALL_SCENES = dict(SCENES)
 SCENES = [s for s in SCENES if not wanted or s[0] in wanted]
 
 
@@ -864,6 +877,10 @@ if args.readme:
         src = os.path.join(args.out, "xbox", scene + ".png")
         if os.path.exists(src):
             shutil.copy(src, os.path.join(dst, name + ".png"))
+    for name in THEME_SCENES:
+        src = os.path.join(args.out, "xbox", "theme-%s.png" % name)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(dst, "themes", name + ".png"))
     print("README screenshots updated in", dst)
 print("%d screenshots in %s (%d scenes x %d styles)" % (sum(len(v) for v in results.values()), args.out,
                                                         len(SCENES), len(styles)))
