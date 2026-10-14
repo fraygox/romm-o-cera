@@ -187,7 +187,9 @@ Game info and media from RomM for games already on the box, matched by file
 name: descriptions and details, region, language, screenshot, box art, logo,
 title screen, video, manual… ([what goes where](browsing-and-downloading.md#game-info-in-emulationstation)).
 Only what's empty is filled — your own scrapes and edits are never replaced,
-and a game's existing image stays. A game counts as complete when it has
+and a game's existing image stays. What the game has is read from EmulationStation
+itself as well as `gamelist.xml`, which it writes only now and then, so a game
+just filled isn't listed again. A game counts as complete when it has
 everything RomM has for it that [Settings → Metadata](settings.md) asks for:
 one RomM has no video or logo for isn't listed for lacking them, nor is one
 whose video is over the size limit or whose file RomM couldn't serve (noted

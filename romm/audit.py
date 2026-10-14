@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -570,13 +571,39 @@ def _gamelist_info(sysdir):
     return out
 
 
+def _es_info(system, sysdir):
+    """({relative path: set of filled tags}, {relative path: ES game id}) from ES's own list
+    of the system (GET /systems/<sys>/games): what ES holds now. It keeps new info in a
+    journal and writes gamelist.xml only now and then (on quitting, a reload), so a game
+    just given its info can look bare in the file. ({}, {}) when ES can't be asked."""
+    try:
+        games = _es.EsClient(timeout=15).json("/systems/%s/games" % urllib.parse.quote(system)) or []
+    except Exception:
+        return {}, {}
+    tags, ids = {}, {}
+    for g in games if isinstance(games, list) else []:
+        if not isinstance(g, dict) or not isinstance(g.get("path"), str):
+            continue
+        got = set()
+        for t in OFFER_TEXT + OFFER_MEDIA:          # a name counts as it does in gamelist.xml (the file's, too)
+            v = str(g.get(t) or "").strip()
+            if v and v not in ("0", "0.000000", "not-a-date-time", "false"):
+                got.add(t)
+        rel = "./" + os.path.relpath(g["path"], sysdir)
+        tags[rel] = got
+        if g.get("id"):
+            ids[rel] = g["id"]
+    return tags, ids
+
+
 def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
     """Gamelist entries for games already in roms/<system> that RomM knows
     (matched by file name, like "already on this box") and whose ES entry
     lacks something RomM has for it: text, images, video, manual (offered(),
     as Settings' Metadata section asks: cfg). Media noted as never arriving
-    (library.skipped_tags) doesn't count as lacking. Entries carry "fill":
-    the merge only sets what's missing. Returns (entries, stats)."""
+    (library.skipped_tags) doesn't count as lacking. What the game has is read from
+    gamelist.xml and from ES itself (it saves the file only now and then). Entries
+    carry "fill": the merge only sets what's missing. Returns (entries, stats)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     stats = {"on_box": 0, "matched": 0, "complete": 0, "queued": 0}
     if not os.path.isdir(sysdir):
@@ -603,6 +630,9 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
             if d and (d[0].lower() not in sets or d[1] < sets[d[0].lower()][0]):
                 sets[d[0].lower()] = (d[1], r)          # a set's .m3u gets disc 1's info
     have = _gamelist_info(sysdir)
+    es_have, _ = _es_info(system, sysdir)
+    for p, tags in es_have.items():
+        have.setdefault(p, set()).update(tags)
     skips = _library.media_skips()
     in_m3u = set()
     for n in names:
@@ -639,7 +669,8 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
         prim = path if (not isdir or low.endswith(".m3u")) else _library.primary_path(system, [path], es)
         if not prim:
             continue
-        got = have.get("./" + os.path.relpath(prim, sysdir), set())
+        rel = "./" + os.path.relpath(prim, sysdir)
+        got = have.get(rel, set())
         e = _library.gamelist_entry(rom, system, [prim], cfg=cfg)
         e["fill"] = True
         if title:
