@@ -586,13 +586,20 @@ ES_FILE_NAMES = {"thumbnail": "thumb", "boxart": "box"}     # its file name for 
 ES_MEDIA_FILE_EXTS = {"video": (".mp4", ".avi", ".mkv", ".webm"), "manual": (".pdf", ".cbz")}
 
 
-def es_media_file_here(sysdir, game_path, tag):
-    """The file ES names for a game's media tag is there: images/<stem>-<name>.<ext>
-    (videos/, manuals/ for those)."""
+def es_media_file(sysdir, game_path, tag):
+    """The file ES names for a game's media tag, when it's there: images/<stem>-<name>.<ext>
+    (videos/, manuals/ for those); None otherwise."""
     stem = os.path.splitext(os.path.basename(game_path))[0]
     d = {"video": "videos", "manual": "manuals"}.get(tag, "images")
-    return any(os.path.isfile(os.path.join(sysdir, d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x)))
-               for x in ES_MEDIA_FILE_EXTS.get(tag, ART_EXTS))
+    for x in ES_MEDIA_FILE_EXTS.get(tag, ART_EXTS):
+        p = os.path.join(sysdir, d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x))
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def es_media_file_here(sysdir, game_path, tag):
+    return es_media_file(sysdir, game_path, tag) is not None
 
 
 def same_file(a, b):

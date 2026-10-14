@@ -55,6 +55,7 @@ _forget_skip = getattr(rommlib, "clear_media_skip", lambda *a: None)
 _wants_own_image = getattr(rommlib, "wants_own_image", lambda m: False)
 _art_files = getattr(rommlib, "es_art_files", lambda *a: [])
 _same_file = getattr(rommlib, "same_file", lambda a, b: False)
+_es_media_file = getattr(rommlib, "es_media_file", lambda *a: None)
 CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
           ".mp4": "video/mp4", ".avi": "video/avi", ".mkv": "video/mkv", ".webm": "video/webm",
           ".pdf": "application/pdf", ".cbz": "application/cbz"}
@@ -402,9 +403,14 @@ def richness(info):
     return len(info["text"]) + len(info["media"]) + len(info["usage"])
 
 
-def api_info(g):
-    """An ES API game dict as node_info() shape (no media paths: ES gives URLs)."""
+def api_info(g, sysdir=None):
+    """An ES API game dict as node_info() shape. ES gives its media as URLs: with sysdir,
+    the files ES names for them (images/<stem>-image.png...) that are there."""
     info = {"text": {}, "usage": {}, "hidden": str(g.get("hidden")) == "true", "media": {}}
+    for k in MEDIA_TAGS if sysdir else ():
+        f = _es_media_file(sysdir, g.get("path") or "", k) if g.get(k) else None
+        if f:
+            info["media"][k] = f
     for k in TEXT_FIELDS:
         if has(g, k):
             info["text"][k] = str(g[k])
@@ -417,8 +423,8 @@ def api_info(g):
 def snapshot_renames(entries, esapi=None):
     """Before ES reloads: the info of every path a CHD conversion is renaming,
     keyed by the new path — from gamelist.xml (with media) and from ES's
-    memory (fresher: may not be saved yet), richest wins; a deferred entry
-    brings the snapshot it took the first time."""
+    memory (fresher: may not be saved yet; its media by the files ES names),
+    richest wins; a deferred entry brings the snapshot it took the first time."""
     carry, cache, live = {}, {}, {}
     for e in entries:
         if "remove" in e:
@@ -448,7 +454,7 @@ def snapshot_renames(entries, esapi=None):
                         carry[new] = info
             for path, g in (live.get(e["system"]) or {}).items():
                 if path == old or path.startswith(old.rstrip("/") + "/"):
-                    info = api_info(g)
+                    info = api_info(g, sysdir)       # media ES has only in its journal too
                     base = carry.get(new)
                     if base is None:
                         if richness(info):
@@ -457,6 +463,8 @@ def snapshot_renames(entries, esapi=None):
                         base["text"].update(info["text"])
                         base["usage"].update(info["usage"])
                         base["hidden"] = base["hidden"] or info["hidden"]
+                        for k, f in info["media"].items():
+                            base["media"].setdefault(k, f)
     return carry
 
 

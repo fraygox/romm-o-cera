@@ -8,8 +8,11 @@ full ScreenScraper media and Batocera 43.1 VMs (2026-10-13):
   screenshot, and ES's old file of it goes; an image of the player's own never does;
 - a game deleted and downloaded again gets its old ES entry back, media paths and all,
   to files that are gone (ES serves them as nothing): those count as missing;
+- a game converted to CHD keeps the media ES holds only in its journal (gamelist.xml not
+  written yet): they're found by the names ES gives its files;
 - the Settings panel's version line fits with a nightly's long label."""
 import os
+import shutil
 
 import rommlib
 import rb_finalize
@@ -144,6 +147,33 @@ def test_a_game_downloaded_again_gets_media_though_es_kept_paths_to_files_that_a
     os.remove(os.path.normpath(os.path.join(sysdir, md["marquee"])))
     monkeypatch.setattr(rommlib, "ES_API", "http://127.0.0.1:9")
     assert len(rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())[0]) == 1
+
+
+def test_a_converted_games_media_follow_it_though_es_had_them_only_in_its_journal(isolated, fake_es):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "pcenginecd")
+    folder = os.path.join(sysdir, "Lorem (USA)")
+    os.makedirs(folder)
+    cue = os.path.join(folder, "Lorem (USA).cue")
+    open(cue, "w").write('FILE "Lorem (USA).bin" BINARY\n')
+    es = fake_es({"pcenginecd": {".cue", ".chd"}})
+    media = {"image": ("images/Lorem (USA)-image.png", PNG), "thumbnail": ("images/Lorem (USA)-thumb.png", PNG + b"t"),
+             "boxart": ("images/Lorem (USA)-box.png", PNG + b"b"), "video": ("videos/Lorem (USA)-video.mp4", b"vid")}
+    for rel, data in media.values():
+        os.makedirs(os.path.dirname(os.path.join(sysdir, rel)), exist_ok=True)
+        open(os.path.join(sysdir, rel), "wb").write(data)
+    with es.lock:
+        es.mem["pcenginecd"][cue].update(name="Lorem", desc="Lorem ipsum.", **{t: "./" + r for t, (r, _) in media.items()})
+    assert not os.path.exists(os.path.join(sysdir, "gamelist.xml"))      # ES hasn't written it
+    chd = os.path.join(sysdir, "Lorem (USA).chd")                          # the conversion
+    open(chd, "wb").write(b"MComprHD")
+    shutil.rmtree(folder)
+    entry = {"system": "pcenginecd", "rename": {folder: chd}}
+    left = rb_finalize.process([entry], None, {"pcenginecd": {".cue", ".chd"}}, rb_finalize.EsApi(es.url), cfg())
+    assert left == []
+    md = es.mem["pcenginecd"][chd]
+    assert md["name"] == "Lorem" and md["desc"] == "Lorem ipsum."
+    for t, (_, data) in media.items():
+        assert open(os.path.normpath(os.path.join(sysdir, md[t])), "rb").read() == data, t
 
 
 def test_the_version_line_fits_the_settings_panel_with_a_nightly_label(ui, rb, monkeypatch):  # noqa: F811
