@@ -1327,3 +1327,24 @@ def test_x_is_actions_not_menu_on_every_pad():
     from rbui import pads
     assert pads.ACTIONS == "Actions"
     assert pads.OTHER["xbox"]["START"] == "Menu" and pads.ACTIONS not in pads.OTHER["xbox"].values()
+
+
+def test_compress_list_survives_one_unreadable_cue(isolated, monkeypatch):
+    """One cue sheet that can't be read (bad permissions, an I/O error, deleted mid-scan)
+    is listed as can't convert; the other games still are offered."""
+    import rb_chd_plan
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    for n in ("Good (USA)", "Bad (USA)"):
+        os.makedirs(os.path.join(sysdir, n))
+        open(os.path.join(sysdir, n, n + ".cue"), "w").write("x")
+    real = rommlib.sheet_sources
+
+    def sheet(p, strict=False):
+        if "Bad" in p:
+            raise PermissionError(13, "Permission denied")
+        return real(p, strict=strict)
+    monkeypatch.setattr(rommlib, "sheet_sources", sheet)
+    skipped = []
+    cands = rb_chd_plan.candidates(["psx"], skipped=skipped)
+    assert [os.path.basename(c["files"][0]) for c in cands] == ["Good (USA).cue"]
+    assert skipped and "Bad (USA).cue" in skipped[0][1] and "Permission denied" in skipped[0][2]

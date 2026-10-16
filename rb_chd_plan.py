@@ -186,7 +186,12 @@ def candidates(systems=None, cfg=None, skipped=None):
                     continue
             if any(f in queued for f in files):
                 continue
-            size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f) if os.path.isfile(p))
+            try:
+                size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f) if os.path.isfile(p))
+            except OSError as e:                 # a sheet unreadable (or gone) since the walk: skip just this game
+                if skipped is not None:
+                    skipped.append((system, files[0], "can't read it: %s" % (e.strerror or e)))
+                continue
             enabled = conv.chd or conv.enabled(cfg, system)
             prep = not enabled and bool(xiso or cut)          # bootable without squashfs: just the prep
             out.append({"system": system, "root": root, "files": files, "name": name, "mode": conv.mode,
