@@ -210,7 +210,7 @@ class GameNightScreen(Screen):
 
     def hints(self):
         h = [("A", "Open")] if self.current() is not None else []
-        return h + [("Y", "Another"), ("X", pads.ACTIONS), ("LEFT RIGHT", "Players"), ("B", "Back")]
+        return h + [("Y", "Roll again"), ("X", pads.ACTIONS), ("LEFT RIGHT", "Players"), ("B", "Back")]
 
     def action(self, a):
         rom = self.current()

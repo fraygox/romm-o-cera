@@ -388,7 +388,7 @@ class LeftoversScreen(ListScreen):
             list_row(c, self.f, r, on, *row(it), mark=lambda ctr, it=it: self.draw_pick(c, it, ctr), slot="leftover")
         it = self.items[self.sel]
         p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="leftover-panel")
-        p.foot("{Y} deletes all %d: frees %s" % (len(self.items), human_size(tot)))
+        p.actions(hint_actions(self))       # the same buttons as every list + panel screen
         p.title(it["kind"], human_size(it["size"]) if it["size"] else "Takes no space")
         p.prose(self.where(it), label="Where", lines=2)
         why, gone = self.WHY.get(it["kind"], ("", "Deleting it frees the space."))
