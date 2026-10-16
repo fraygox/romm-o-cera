@@ -104,14 +104,14 @@ class SpaceScreen(ListScreen):
             if on:
                 focus_box(c, r)
             text(c, self.f.row, r_["system"], (r.left + 22, r.top + 4), theme.TEXT if on else theme.DIM)
+            bx, bw = r.left + 600, r.width - 760
             x, ty = r.left + 22, r.top + 28      # each part's dot is its colour in the bar: the legend
             for key, col, lab in theme.SPACE_PARTS:
-                if r_[key] and x < r.left + 560:
+                room = bx - 20 - (x + 13)        # the legend ends short of the bar
+                if r_[key] and room > 60:
                     circle(c, col, (x + 5, ty + 9), 5)
                     lab = "%s %s" % (lab, human_size(r_[key]))
-                    text(c, self.f.small, lab, (x + 13, ty), theme.FAINT)
-                    x += 13 + measure(self.f.small, lab) + 18
-            bx, bw = r.left + 600, r.width - 760
+                    x = text(c, self.f.small, lab, (x + 13, ty), theme.FAINT, maxw=room).right + 18
             x = bx
             for key, col, _ in theme.SPACE_PARTS:
                 w = int(bw * r_[key] / big)

@@ -250,3 +250,26 @@ def test_breadcrumbs_never_run_into_the_queue_status(app, rb, monkeypatch):
     assert len(crumbs) == 3 and all(r.right <= queue.left - 12 for _, r in crumbs)
     assert crumbs[-1][0].startswith("A Rather")               # the current screen's name keeps its place
 
+
+def test_space_legend_ends_short_of_its_bar(app, rb, monkeypatch):
+    """A system with all three kinds of space and big numbers: its legend line stops
+    before the bar instead of running into it."""
+    drawn = []
+    real = rb.draw.text
+
+    def spy(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
+        r = real(surf, font, s, pos, color, anchor, maxw)
+        drawn.append((s, r))
+        return r
+    rb.patch(monkeypatch, "text", spy)
+    scr = rb.SpaceScreen(app)
+    GB = 1 << 30
+    scr.rows = [{"system": "psx", "ours": 725 * GB, "other": 2300 * GB, "media": 40 * GB,
+                 "total": 3065 * GB}]
+    scr.leftovers = []
+    app.stack.append(scr)
+    scr.draw(app.canvas)
+    row = next(r for s, r in drawn if s == "psx")
+    bar_x = row.left - 22 + 600
+    legend = [(s, r) for s, r in drawn if r.top > row.top and r.top < row.top + 40 and r.left < bar_x]
+    assert legend and all(r.right <= bar_x - 20 for _, r in legend)
