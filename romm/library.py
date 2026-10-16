@@ -541,7 +541,7 @@ def _save_skips(d):
     while len(d) > SKIPS_MAX:
         del d[next(iter(d))]
     os.makedirs(_core.DATA_DIR, exist_ok=True)
-    _core.atomic_write_json(media_skips_path(), d)
+    _core.atomic_write_json(media_skips_path(), d, sync=False)   # a note: lost, it costs one retry
 
 
 def record_media_skip(system, rom_id, tag, path, size=None):

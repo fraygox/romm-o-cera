@@ -109,7 +109,8 @@ def test_a_file_romm_cant_serve_is_noted_and_one_that_comes_clears_the_note(serv
     assert set(rommlib.media_skips()["nes/3"]) == {"manual"}
 
 
-def test_the_notes_are_bounded(isolated):
+def test_the_notes_are_bounded(isolated, monkeypatch):
+    monkeypatch.setattr(rommlib, "SKIPS_MAX", 40)      # the bound, not 2,000 rewrites of the file
     for i in range(rommlib.SKIPS_MAX + 5):
         rommlib.record_media_skip("nes", i, "video", "/v/%d.mp4" % i, 1)
     d = rommlib.media_skips()
