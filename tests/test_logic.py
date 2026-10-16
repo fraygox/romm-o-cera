@@ -807,6 +807,25 @@ def test_chd_one_folder_two_releases_two_playlists(isolated, monkeypatch, fake_e
     assert not os.path.exists(os.path.join(sysdir, "RE2 (USA)"))       # folder gone once both are done
 
 
+def test_chd_loose_discs_playlist_takes_the_planners_name(isolated, monkeypatch, fake_es):
+    """Discs lying straight in the system folder (no game folder): the playlist is named
+    as the planner said, not from disc 1's name cut at "(Disc", which drops "(Rev 1)"."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(sysdir, exist_ok=True)
+    fs = [os.path.join(sysdir, "Saga (USA) (Disc %d) (Rev 1).cue" % n) for n in (1, 2)]
+    for f in fs:
+        open(f, "w").write("x")
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")
+    monkeypatch.setattr(rb_chd, "chdman", lambda mode, *a: (
+        mode == "verify" or open(a[a.index("-o") + 1], "w").write("chd")) and (0, ""))
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": fs,
+                           "roots": fs, "name": "Saga (USA) (Rev 1)"}) is True
+    assert os.path.exists(os.path.join(sysdir, "Saga (USA) (Rev 1).m3u"))
+    assert not os.path.exists(os.path.join(sysdir, "Saga (USA).m3u"))
+
+
 def test_chd_refuses_two_sources_with_one_output_name(isolated, monkeypatch):
     import rb_chd
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")

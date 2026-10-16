@@ -1010,8 +1010,9 @@ def convert(task):
         if outside:
             primary = outside[0]
         else:
-            name = task.get("name") or os.path.basename(folder_root) if folder_root else \
-                re.sub(r"\s*\(Disc \d+\).*$", "", os.path.splitext(os.path.basename(srcs[0]))[0])
+            name = task.get("name") or (os.path.basename(folder_root) if folder_root else
+                                        re.sub(r"\s*\(Disc \d+\).*$", "",
+                                               os.path.splitext(os.path.basename(srcs[0]))[0]))
             primary = os.path.join(out_dir, name + ".m3u")
             if os.path.exists(primary):
                 # a playlist of that name belongs to another copy of the game:
