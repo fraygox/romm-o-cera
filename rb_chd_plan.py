@@ -88,6 +88,10 @@ def games_for(system):
                 files = sorted({f for _, fs, _ in parts for f in fs})
                 if t is not None and len(files) > 1:
                     out.append((root, files, parts[0][2]))
+                elif t is None and len(files) > 1 and \
+                        not all(DISC_DIR.search(os.path.basename(f)) for f in files):
+                    for f in files:              # the folder's own unrelated games: one each
+                        out.append((f, [f], None))
                 else:
                     for d, fs, _ in parts:
                         out.append((d, sorted(set(fs)), None))

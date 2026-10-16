@@ -807,6 +807,23 @@ def test_chd_one_folder_two_releases_two_playlists(isolated, monkeypatch, fake_e
     assert not os.path.exists(os.path.join(sysdir, "RE2 (USA)"))       # folder gone once both are done
 
 
+def test_planner_keeps_unrelated_games_apart_beside_disc_folders(isolated):
+    """A "TOP 100" folder with two loose games beside another title's disc folders: the
+    two loose ones stay two games (no shared playlist), the disc folders one set."""
+    import rb_chd_plan
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    rels = ["TOP 100/Alpha (USA).cue", "TOP 100/Beta (USA).cue",
+            "TOP 100/Gamma (USA) (Disc 1)/Gamma (USA) (Disc 1).cue",
+            "TOP 100/Gamma (USA) (Disc 2)/Gamma (USA) (Disc 2).cue"]
+    for rel in rels:
+        os.makedirs(os.path.dirname(os.path.join(sysdir, rel)), exist_ok=True)
+        open(os.path.join(sysdir, rel), "w").write("x")
+    plan = rb_chd_plan.games_for("psx")
+    sets = sorted(sorted(os.path.basename(f) for f in fs) for _, fs, _ in plan)
+    assert sets == [["Alpha (USA).cue"], ["Beta (USA).cue"],
+                    ["Gamma (USA) (Disc 1).cue", "Gamma (USA) (Disc 2).cue"]]
+
+
 def test_chd_loose_discs_playlist_takes_the_planners_name(isolated, monkeypatch, fake_es):
     """Discs lying straight in the system folder (no game folder): the playlist is named
     as the planner said, not from disc 1's name cut at "(Disc", which drops "(Rev 1)"."""
