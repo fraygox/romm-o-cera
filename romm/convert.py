@@ -1118,6 +1118,12 @@ def publish_queue_task(task, name, exclusive=False):
                 os.link(tmp, path)
             except FileExistsError:
                 return None
+            except OSError:
+                # no hard links (exFAT, FAT32 userdata): check, then rename in;
+                # two planners would have to pick the same millisecond to clash
+                if os.path.exists(path):
+                    return None
+                os.rename(tmp, path)
         else:
             os.replace(tmp, path)
         return path

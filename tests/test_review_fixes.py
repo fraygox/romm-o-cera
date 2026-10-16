@@ -341,6 +341,15 @@ def test_queue_tasks_are_never_visible_half_written(isolated, monkeypatch):
     assert first and rommlib.publish_queue_task({"a": 2}, "1-00-00000.json", exclusive=True) is None
     assert json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-00-00000.json"))) == {"a": 1}
     assert not [n for n in os.listdir(rommlib.CHD_QUEUE_DIR) if not n.endswith(".json")]   # no temp left
+    # userdata without hard links (exFAT, FAT32): the planner still queues, still never overwrites
+
+    def no_links(src, dst):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(os, "link", no_links)
+    assert rommlib.publish_queue_task({"a": 3}, "1-00-00001.json", exclusive=True)
+    assert rommlib.publish_queue_task({"a": 4}, "1-00-00001.json", exclusive=True) is None
+    assert json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-00-00001.json"))) == {"a": 3}
+    assert not [n for n in os.listdir(rommlib.CHD_QUEUE_DIR) if not n.endswith(".json")]
 
 
 def test_worker_records_each_task_as_itself(chd, monkeypatch):
