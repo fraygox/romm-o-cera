@@ -4,3 +4,4 @@ FEATURES.md
 build/
 .env
 local/
+.claude/
