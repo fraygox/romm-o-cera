@@ -543,7 +543,7 @@ def apply(entries, api, es, esapi, carry, cfg=None):
                         pass
                 continue
             if "rename" in e or "hide" in e:
-                targets = list(e.get("rename", {}).values()) if "rename" in e else []
+                targets = list(dict.fromkeys(e.get("rename", {}).values())) if "rename" in e else []   # once each: every track maps to the same file
                 ok = True
                 for new in targets:
                     g = find(system, rommlib.primary_path(system, [new], es) or new)

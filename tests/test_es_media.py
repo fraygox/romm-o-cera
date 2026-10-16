@@ -384,3 +384,26 @@ def test_fetch_bytes_reports_a_file_over_the_limit_without_reading_it():
     assert rb_finalize.fetch_bytes(api, RES + "roms/1/1/video/video.mp4", 50 << 20) == MP4
     assert rb_finalize.fetch_bytes(api, "https://scraper.invalid/video.mp4") is None   # never off RomM
     assert api.s.got == ["http://romm.invalid" + RES + "roms/1/1/video/video.mp4"]
+
+
+def test_a_converted_games_media_is_carried_once_however_many_tracks(isolated):
+    """A CHD rename maps every track (and the folder) to the one new file: its media goes
+    to ES once, not once per track. The ES game list is read once and doesn't show what
+    was just uploaded, as the real one doesn't."""
+    import copy
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "images"))
+    art = os.path.join(sysdir, "images", "Lorem-image.png")
+    open(art, "wb").write(PNG)
+    chd = os.path.join(sysdir, "Lorem.chd")
+    open(chd, "wb").close()
+
+    class StaleList(FakeEsApi):
+        def games(self, system, refresh=False):
+            return copy.deepcopy(self.g)
+    esapi = StaleList({chd: {"id": "c1", "path": chd, "name": "Lorem"}})
+    tracks = {os.path.join(sysdir, "Lorem", "Lorem (Track %d).bin" % n): chd for n in range(1, 11)}
+    e = {"system": "psx", "rename": dict(tracks, **{os.path.join(sysdir, "Lorem.cue"): chd})}
+    carry = {chd: {"text": {"desc": "words"}, "usage": {}, "hidden": False, "media": {"image": art}}}
+    assert rb_finalize.apply([e], None, {"psx": {".chd"}}, esapi, carry) == []
+    assert [m[0] for m in esapi.media] == ["image"] and len(esapi.meta) == 1
