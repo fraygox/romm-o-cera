@@ -480,15 +480,6 @@ def convert_z3ds(src, tmp, threads):
     return 0, "CRC32 %s" % want
 
 
-def _sync_file(path):
-    """Make a file's data durable (a rename to a new name doesn't flush it on ext4)."""
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
 def _sync_dir(path):
     """Make a directory's entries (renames, new files) durable."""
     try:
@@ -717,7 +708,7 @@ def convert_ps3(src, tmp):
         return 1, str(e)
     for dp, _, fns in os.walk(tmp):                 # on disk before the image is deleted
         for fn in fns:
-            _sync_file(os.path.join(dp, fn))
+            rommlib.sync_file(os.path.join(dp, fn))
         _sync_dir(dp)
     if key:
         note("chd: decrypted %s with the disc key %s" % (os.path.basename(src), key))
@@ -918,7 +909,7 @@ def convert(task):
     for src, out in plan:
         if out in resume:
             note("chd: using %s, made before an interruption" % os.path.basename(out))
-            _sync_file(out)
+            rommlib.sync_file(out)
             made.append(out)
             continue
         tmp = out + ".part"                    # not a name ES lists as a game while it's written
@@ -977,7 +968,7 @@ def convert(task):
         # the output must be on disk before any original is deleted: after a power
         # cut a renamed-but-unflushed file comes back empty (seen on ext4)
         os.replace(tmp, out)
-        _sync_file(out)
+        rommlib.sync_file(out)
         _sync_dir(out_dir)
         made.append(out)
         note("chd: disc done %s (%.0fs)" % (os.path.basename(out), time.time() - t0))

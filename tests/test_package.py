@@ -135,7 +135,7 @@ PREVIOUS_RELEASE_NAMES = frozenset((
     "dolphin_tool_path", "es_add_games", "es_busy", "es_running_game", "fix_m3us", "free_bytes",
     "human_size", "keep_free_bytes", "load_config", "load_es_systems", "log", "make_xiso",
     "migrate_saves", "path_size", "planner_order", "primary_path", "ps3_to_folder", "publish_queue_task",
-    "queue_lock", "sheet_sources", "spawn_detached", "tmp_dir", "try_lock", "write_png", "x360_tools",
+    "queue_lock", "sheet_sources", "spawn_detached", "sync_file", "tmp_dir", "try_lock", "write_png", "x360_tools",
     "xbox_partition", "xiso_listing", "xiso_to_iso", "z3ds_compress", "z3ds_info", "z3ds_verify",
     "zar_check",
     "DL_LOCK", "DL_STATUS", "DL_STOP", "Downloader", "Job", "es_messagebox", "es_notify",
