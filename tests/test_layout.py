@@ -221,3 +221,32 @@ def test_panel_cards_stack_down_and_footer_cards_sit_at_the_bottom(app, rb):
     b, _ = p.card("Ipsum (USA)", "to RVZ", tap=lambda: None)
     assert a.bottom + 8 == b.top and room.top == a.top + 62 and room.height == 52
     assert hits == [foot, a, b] and a.left == b.left == foot.left and a.width == pan.width - 2 * p.PAD + 24
+
+
+def test_breadcrumbs_never_run_into_the_queue_status(app, rb, monkeypatch):
+    """A deep trail with long names while downloads run: the crumbs stop short of
+    "5 in queue, …" (earliest ones give way to "…"), and the current screen's stays."""
+    drawn = []
+    real = rb.draw.text
+
+    def spy(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
+        r = real(surf, font, s, pos, color, anchor, maxw)
+        drawn.append((s, r))
+        return r
+    rb.patch(monkeypatch, "text", spy)
+
+    class Deep(rb.Screen):
+        def crumbs(self):
+            return ["Platforms", "Nintendo Entertainment System", "A Rather Long Game Title (USA) (Rev 2)"]
+
+        def draw(self, c):
+            pass
+    app.stack.append(Deep(app))
+    monkeypatch.setattr(app.downloader, "active_count", lambda: 5)
+    app.draw()
+    queue = next(r for s, r in drawn if s.startswith("5 in queue"))
+    names = Deep(app).crumbs()
+    crumbs = [(s, r) for s, r in drawn if r.top < 64 and (s == "…" or any(n.startswith(s.rstrip("…")) for n in names))]
+    assert len(crumbs) == 3 and all(r.right <= queue.left - 12 for _, r in crumbs)
+    assert crumbs[-1][0].startswith("A Rather")               # the current screen's name keeps its place
+

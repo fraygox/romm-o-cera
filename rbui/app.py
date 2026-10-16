@@ -1092,12 +1092,7 @@ class App:
         self.hit((16, 8, x - 16, 50), lambda: self.dispatch("start") if len(self.stack) > 1 else None)
         if len(self.stack) > 1:
             self.hit((x, 8, 520, 50), lambda: self.dispatch("back"))
-        for crumb in top.crumbs():
-            text(c, self.fonts.h3, "›", (x, 32), theme.FAINT, "midleft")
-            x += 18
-            r = text(c, self.fonts.h3, crumb, (x, 33), theme.DIM, "midleft", maxw=380)
-            x = r.right + 12
-        # right side status
+        # right side status, first: the crumbs get the room it leaves
         n = self.downloader.active_count()
         rx = W - 24
         dot = theme.GREEN if self.status == "Online" else (theme.AMBER if self.status.startswith("Conn") else theme.RED)
@@ -1108,6 +1103,20 @@ class App:
             j = next((j for j in self.downloader.jobs if j.state == rommlib.Job.DOWNLOADING), None)
             label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed else "")
             r = text(c, self.fonts.small, label, (rx, 33), theme.BLUE, "midright")
+            rx = r.left
+        crumbs = list(top.crumbs())
+
+        def width(cs):
+            return sum(18 + min(380, int(measure(self.fonts.h3, cr))) + 12 for cr in cs)
+        for i in range(len(crumbs) - 1):          # too long: the earliest crumbs give way first
+            if x + width(crumbs) <= rx - 24:
+                break
+            crumbs[i] = "…"
+        for crumb in crumbs:
+            text(c, self.fonts.h3, "›", (x, 32), theme.FAINT, "midleft")
+            x += 18
+            r = text(c, self.fonts.h3, crumb, (x, 33), theme.DIM, "midleft", maxw=max(0, min(380, rx - 24 - x)))
+            x = r.right + 12
         top.draw(c)
         if isinstance(top, ListScreen):
             top.draw_bubble(c)                 # the letter (or system) an L2/R2 jump landed on
