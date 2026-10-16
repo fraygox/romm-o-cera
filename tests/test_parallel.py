@@ -219,7 +219,8 @@ def test_roms_all_cancelled_and_failing():
 
 def test_roms_all_against_the_mock_romm(mock_url):
     api = rommlib.Api(mock_url, "t")
-    pid = max(api.platforms(), key=lambda p: p.get("rom_count") or 0)["id"]
+    # the smallest platform that still takes several pages: the same check, a few dozen requests
+    pid = min((p for p in api.platforms() if (p.get("rom_count") or 0) > 9), key=lambda p: p["rom_count"])["id"]
     assert api.roms_all(limit=3, platform_ids=[pid]) == _one_at_a_time(api, 3, platform_ids=[pid])
     assert len(api.roms_all(limit=3, platform_ids=[pid])) > 6
 

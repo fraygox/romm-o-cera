@@ -148,16 +148,20 @@ pip install -r tests/requirements.txt
 python -m pytest tests                       # logic + downloads/UI vs the mock RomM
 docker build -t rb-test:local tests/         # or in a container (tests/Dockerfile):
 docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v $PWD:$PWD -w $PWD rb-test:local \
-  python -m pytest -q -p no:cacheprovider -n 6 tests
+  python -m pytest -q -p no:cacheprovider -n 6 --dist worksteal tests
 ROMM_CONTRACT_URL=https://romm.example.com ROMM_CONTRACT_TOKEN=rmm_… \
   python -m pytest tests/test_contract.py    # your RomM still has the API the app uses
 python tests/contract/disposable.py --tag 5.4.0   # same, against a throwaway RomM (needs docker)
 ```
 
 The suite runs in parallel with the optional `pytest-xdist`
-(`python -m pytest tests -n 6`, about 70 s; the `rb-test:local` image has
-it), bound by the screenshot harness; without it the tests run one after
-another and take a few minutes. The tests are independent of order and of each other, and
+(`python -m pytest tests -n 6 --dist worksteal`, about 70 s; `-n 12`, about
+45 s; the `rb-test:local` image has it); without it the tests run one after
+another and take a few minutes. `--dist worksteal` matters: the screenshot
+harness is four ~30 s tests (one per controller style), and `tests/conftest.py`
+puts one at the head of each worker's share (`SLOW_FIRST`) so idle workers take
+over the rest instead of waiting on one worker running them back to back. A new
+test that takes more than ~10 s belongs in `SLOW_FIRST`. The tests are independent of order and of each other, and
 each xdist worker starts its own mock RomM. Some read the docs: the
 `config.json` table in [Settings](settings.md) must list every key with its
 default.

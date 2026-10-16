@@ -166,3 +166,24 @@ def fake_es(monkeypatch):
     yield make
     for es in made:
         es.close()
+
+
+SLOW_FIRST = ("test_screenshot_harness_every_screen_every_style", "test_settings_screen_matches_the_golden_record")
+
+
+def pytest_collection_modifyitems(config, items):
+    """The few long tests start first, one at the head of each parallel worker's share
+    (pytest -n hands each worker a contiguous run of tests), so no worker is left
+    running two of them back to back while the others wait."""
+    slow = [it for it in items if it.originalname in SLOW_FIRST]
+    rest = [it for it in items if it.originalname not in SLOW_FIRST]
+    n = max(1, int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1")))
+    if n == 1:
+        items[:] = slow + rest
+        return
+    share = -(-len(items) // n)                 # each worker's run of tests, rounded up
+    out = []
+    for w in range(n):
+        out += slow[w::n] + rest[:max(0, share - len(slow[w::n]))]
+        rest = rest[max(0, share - len(slow[w::n])):]
+    items[:] = out + rest

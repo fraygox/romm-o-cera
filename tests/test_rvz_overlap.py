@@ -297,18 +297,20 @@ def test_glyph_helper_tokens_and_wrapping(rb, monkeypatch):
     assert r.width < rb.measure(fonts.body, "then {X} to delete") + 30
 
 
-def test_screenshot_harness_every_screen_every_style(tmp_path, rb):
+@pytest.mark.parametrize("style", ["xbox", "playstation", "nintendo", "kb"])
+def test_screenshot_harness_every_screen_every_style(tmp_path, rb, style):
     """tools/shots.py renders every screen and dialog in every control style and
-    fails on a draw error or a hint that bypasses the glyph helper."""
+    fails on a draw error or a hint that bypasses the glyph helper. One style per
+    test, so parallel workers share the work (it's the suite's longest)."""
+    import re
     import subprocess
     pytest.importorskip("PIL")
     from conftest import APP
-    r = subprocess.run([sys.executable, os.path.join(APP, "tools", "shots.py"), str(tmp_path)],
+    r = subprocess.run([sys.executable, os.path.join(APP, "tools", "shots.py"), str(tmp_path), "--styles", style],
                        capture_output=True, text=True, timeout=900)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
-    styles = ("xbox", "playstation", "nintendo", "kb")
-    n = len(os.listdir(tmp_path / "xbox"))
-    assert n >= 26 and all(len(os.listdir(tmp_path / s)) == n for s in styles)
+    scenes = int(re.search(r"\((\d+) scenes x 1 styles\)", r.stdout).group(1))
+    assert scenes >= 26 and len(os.listdir(tmp_path / style)) == scenes
     assert (tmp_path / "index.html").exists()
 
 
