@@ -29,6 +29,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -267,6 +268,208 @@ def fetch_media(api, tag, path, video_max=None, info=None):
     return (png, "image/png") if png else None
 
 
+TRACE = bool(os.environ.get("ROMM_BROWSER_FETCH_TRACE"))    # log each width decision
+
+
+def _cpu_times():
+    """(idle, total) CPU time of the whole box so far, from /proc/stat (iowait counts as
+    idle: the CPU could run something), or None where there's no such file."""
+    try:
+        with open("/proc/stat") as f:
+            v = [int(x) for x in f.readline().split()[1:]]
+    except (OSError, ValueError):
+        return None
+    return v[3] + (v[4] if len(v) > 4 else 0), sum(v[:8])
+
+
+class AdaptiveFetcher:
+    """Runs fetches on a few threads ahead of the one that uses them, finding its own width:
+    it starts at START, adds one while files come about as fast as the quickest seen and the
+    process has CPU to spare, and cuts back by a third when they slow down (the server, the
+    link or this box queueing them), when this process nearly fills a core (Python runs one
+    thread at a time: more would only wait for each other) or when the box is loaded. Heavy
+    jobs (videos) run one at a time. Memory: what's fetched but not taken yet, plus what's
+    on its way (reserved at the typical size, VIDEO_MAX for a video), stays under BUDGET.
+    take() moves the job it wants to the front and waits for it; a key never submitted, or
+    one that can't start until later results are taken, is None (the caller fetches it)."""
+    START, LO, HI = 2, 1, 16
+    BUDGET = 64 << 20
+    CPU_HOT = 0.85                          # this process's share of one core: Python's lock is full
+    IDLE_GROW, IDLE_CUT = 0.15, 0.05        # the box's idle CPU share: room to grow / none left
+    SLOW, QUICK = 2.0, 1.3                  # a window's typical time vs the quickest seen
+
+    def __init__(self, hi=None, budget=None):
+        self.hi = hi or self.HI
+        self.budget = budget or self.BUDGET
+        self.limit = min(self.START, self.hi)
+        self.cv = threading.Condition()
+        self.jobs = []                      # [key, fn, heavy], in the order they'll be used
+        self.done, self.on = {}, {}         # key -> (result, size); key -> bytes reserved
+        self.held, self.typical_size = 0, 1 << 20
+        self.window, self.best, self.closed = [], None, False
+        self.t0, self.cpu0, self.box0 = time.monotonic(), time.process_time(), _cpu_times()
+        self.threads = []
+        self._grow()
+
+    def _grow(self):
+        """Threads for the width allowed now (never more than hi; idle ones wait)."""
+        while len(self.threads) < self.limit:
+            t = threading.Thread(target=self._work, daemon=True)
+            self.threads.append(t)
+            t.start()
+
+    def submit(self, key, fn, heavy=False):
+        with self.cv:
+            self.jobs.append([key, fn, heavy])
+            self.cv.notify_all()
+
+    def backlog(self):
+        with self.cv:
+            return len(self.jobs) + len(self.on) + len(self.done)
+
+    def _fits(self, heavy):
+        """The bytes a job would reserve if memory allows it now (else None)."""
+        want = VIDEO_MAX if heavy else self.typical_size
+        used = self.held + sum(self.on.values())
+        return want if used + want <= self.budget or not used else None
+
+    def _room(self, heavy):
+        """The bytes a job would reserve, if it may start now (else None): memory, and one
+        video at a time."""
+        if heavy and any(v == VIDEO_MAX for v in self.on.values()):
+            return None
+        return self._fits(heavy)
+
+    def take(self, key):
+        with self.cv:
+            while not self.closed:
+                if key in self.done or key not in self.on and not any(j[0] == key for j in self.jobs):
+                    break
+                i = next((i for i, j in enumerate(self.jobs) if j[0] == key), None)
+                if i is not None:
+                    if self._fits(self.jobs[i][2]) is None:
+                        del self.jobs[i]        # only later results hold the memory it needs
+                        break
+                    self.jobs.insert(0, self.jobs.pop(i))      # wanted now: next to start
+                    self.cv.notify_all()
+                self.cv.wait(0.5)
+            out = self.done.pop(key, None)
+            if out is not None:
+                self.held -= out[1]
+                self.cv.notify_all()
+            return out[0] if out is not None else None
+
+    def close(self):
+        with self.cv:
+            self.closed = True
+            self.jobs.clear()
+            self.done.clear()
+            self.cv.notify_all()
+
+    def _next(self):
+        """The first job that may start now, with what it reserves; or None."""
+        if len(self.on) >= self.limit:
+            return None
+        for i, (key, fn, heavy) in enumerate(self.jobs):
+            room = self._room(heavy)
+            if room is not None:
+                return self.jobs.pop(i), room
+            if not heavy:
+                return None                 # in order: a light job waits for room like the rest
+        return None
+
+    def _work(self):
+        while True:
+            with self.cv:
+                nxt = None
+                while not self.closed and nxt is None:
+                    nxt = self._next()
+                    if nxt is None:
+                        self.cv.wait(0.5)
+                if self.closed:
+                    return
+                (key, fn, heavy), room = nxt
+                self.on[key] = room
+            t = time.monotonic()
+            try:
+                out, size = fn()
+            except Exception:
+                out, size = None, 0
+            took = time.monotonic() - t
+            with self.cv:
+                self.on.pop(key, None)
+                if not self.closed:
+                    self.done[key] = (out, size)
+                    self.held += size
+                if not heavy and out is not None:
+                    self.typical_size = max(64 << 10, int(0.8 * self.typical_size + 0.2 * size))
+                    self._learn(took)
+                self.cv.notify_all()
+
+    def _learn(self, took):
+        """Called with the lock held, for each light job that came."""
+        self.window.append(took)
+        if len(self.window) < max(4, int(self.limit)):
+            return
+        typical = sorted(self.window)[len(self.window) // 2]
+        self.window = []
+        now, cpu, box = time.monotonic(), time.process_time(), _cpu_times()
+        busy = (cpu - self.cpu0) / max(1e-3, now - self.t0)
+        idle = 1.0
+        if box and self.box0 and box[1] > self.box0[1]:
+            idle = (box[0] - self.box0[0]) / (box[1] - self.box0[1])
+        self.t0, self.cpu0, self.box0 = now, cpu, box
+        self.best = typical if self.best is None else min(self.best * 1.02, typical)   # forgets slowly
+        was = self.limit
+        if busy >= self.CPU_HOT or idle < self.IDLE_CUT or typical > self.SLOW * self.best:
+            self.limit = max(self.LO, int(self.limit * 2 / 3))
+        elif typical < self.QUICK * self.best and idle >= self.IDLE_GROW:
+            self.limit = min(self.hi, self.limit + 1)
+            self._grow()
+        if TRACE:
+            rommlib.log("finalize: fetch width %d -> %d (typical %.0f ms, quickest %.0f ms, cpu %.2f, box idle %.2f)"
+                        % (was, self.limit, 1000 * typical, 1000 * self.best, busy, idle))
+
+
+def media_wanted(e, cfg=None):
+    """([(tag, RomM paths)] an entry offers, the thumbnail first, as upload_media goes
+    through them; the video cap): one rule for upload_media and the prefetch ahead of it."""
+    media = entry_media(e)
+    if e.get("image_local") and os.path.isfile(e["image_local"]):
+        media.pop("image", None)
+    if e.get("manual"):
+        media["manual"] = [e["manual"]]
+    video_max = _video_max(cfg) if cfg is not None and _video_max else None
+    if video_max == 0:
+        media.pop("video", None)
+    order = sorted(media.items(), key=lambda kv: kv[0] != "thumbnail")
+    return [(t, ps) for t, ps in order if t in MEDIA_TAGS], video_max
+
+
+def fetch_first(api, tag, paths, video_max=None):
+    """([(path, fetch_media's answer)] tried in order up to the first that came, info)."""
+    info, tried = {}, []
+    for p in paths:
+        got = fetch_media(api, tag, p, video_max, info)
+        tried.append((p, got))
+        if got:
+            break
+    return tried, info
+
+
+def prefetch(pre, api, e, g, cfg=None):
+    """Ask the fetcher for the media upload_media will want for this game (what ES's game
+    list says it lacks); the rest (an image that may only be the box art again) is fetched
+    when it's needed."""
+    wanted, video_max = media_wanted(e, cfg)
+    for tag, paths in wanted:
+        if not g.get(tag):
+            def job(tag=tag, paths=paths):
+                tried, info = fetch_first(api, tag, paths, video_max)
+                return (tried, info), sum(len(got[0]) for _, got in tried if got)
+            pre.submit((id(e), tag), job, heavy=tag == "video")
+
+
 def image_is_box_art_again(esapi, system, g, media):
     """The game's image in ES is byte for byte its thumbnail while the entry offers an image
     of its own (a screenshot): what versions before 0.11 left after a Fill in game info,
@@ -292,45 +495,46 @@ def drop_stale_images(system, g, keep):
             pass
 
 
-def upload_media(api, esapi, system, g, e, cfg=None):
+def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     """Every media file the entry offers that the game has none of in ES yet (a
     path to a file that is gone counts as none; what's there is never replaced,
     but for an image that is only the box art again: image_is_box_art_again):
     the first of its RomM paths that comes.
     A tag none of them comes for is noted (library.record_media_skip), so Fill
-    in game info stops asking for it; videos follow today's cap (cfg)."""
-    media = entry_media(e)
-    if e.get("image_local") and os.path.isfile(e["image_local"]):
-        media.pop("image", None)
-        if not g.get("image"):
-            with open(e["image_local"], "rb") as f:
-                esapi.set_media(system, g["id"], "image", f.read(), "image/png")
-    if e.get("manual"):
-        media["manual"] = [e["manual"]]
-    video_max = _video_max(cfg) if cfg is not None and _video_max else None
-    if video_max == 0:
-        media.pop("video", None)
+    in game info stops asking for it; videos follow today's cap (cfg).
+    pre: an AdaptiveFetcher that may have fetched them already (prefetch())."""
+    if e.get("image_local") and os.path.isfile(e["image_local"]) and not g.get("image"):
+        with open(e["image_local"], "rb") as f:
+            esapi.set_media(system, g["id"], "image", f.read(), "image/png")
+    wanted, video_max = media_wanted(e, cfg)
+    media = dict(wanted)
     # the thumbnail first, so an image that is only the box art again shows as such
-    for tag, paths in sorted(media.items(), key=lambda kv: kv[0] != "thumbnail"):
-        if tag not in MEDIA_TAGS:
-            continue
+    for tag, paths in wanted:
         again = False
         if g.get(tag) and getattr(esapi, "media_present", lambda *a: None)(system, g["id"], tag) is not False:
             again = tag == "image" and image_is_box_art_again(esapi, system, g, media)
             if not again:
                 continue
-        info, came = {}, False
-        for p in paths:
+        ahead = pre.take((id(e), tag)) if pre is not None else None
+        tried, info = ahead if ahead is not None else ([], {})
+        came, done = False, False
+        for p, got in tried:                   # what the fetcher got, then the paths it didn't try
+            came = came or bool(got)
+            if got and esapi.set_media(system, g["id"], tag, got[0], got[1]):
+                done = True
+                break
+        for p in paths[len(tried):] if not done else ():
             got = fetch_media(api, tag, p, video_max, info)
             came = came or bool(got)
             if got and esapi.set_media(system, g["id"], tag, got[0], got[1]):
-                _forget_skip(system, e.get("rom_id"), tag)
-                if again:
-                    drop_stale_images(system, g, got[0])
+                done = True
                 break
-        else:
-            if not came:
-                _note_skip(system, e.get("rom_id"), tag, paths[0], info.get("too_big"))
+        if done:
+            _forget_skip(system, e.get("rom_id"), tag)
+            if again:
+                drop_stale_images(system, g, got[0])
+        elif not came:
+            _note_skip(system, e.get("rom_id"), tag, paths[0], info.get("too_big"))
 
 
 def as_png(data):
@@ -521,8 +725,16 @@ def upload_file(esapi, system, gid, tag, path):
 
 # ------------------------------------------------------------------ apply
 
-def apply(entries, api, es, esapi, carry, cfg=None):
-    """Hand entries to ES. Returns the entries ES couldn't take yet."""
+def _primary(e, es):
+    paths = e.get("paths") or []
+    return (paths[0] if len(paths) == 1 and paths[0].lower().endswith(".m3u")
+            else rommlib.primary_path(e["system"], paths, es))
+
+
+def apply(entries, api, es, esapi, carry, cfg=None, parallel=True):
+    """Hand entries to ES. Returns the entries ES couldn't take yet. RomM's media for the
+    games coming up is fetched ahead, a few at a time (AdaptiveFetcher), while ES gets
+    them one game after another, in order."""
     left = []
     games_of = {}
 
@@ -532,8 +744,34 @@ def apply(entries, api, es, esapi, carry, cfg=None):
         g = (games_of[system] or {}).get(path)
         return g
 
+    media = [e for e in entries if api is not None and "paths" in e and "remove" not in e
+             and "rename" not in e and "hide" not in e and media_wanted(e, cfg)[0]]
+    pre = AdaptiveFetcher() if parallel and len(media) > 1 else None
+    fed = [0]
+
+    def feed():
+        """Keep the fetcher a few games ahead of ES (3x its width, a dozen at least)."""
+        while pre is not None and fed[0] < len(media) and pre.backlog() < max(12, 3 * pre.limit):
+            e = media[fed[0]]
+            fed[0] += 1
+            try:
+                prim = _primary(e, es)
+                g = find(e["system"], prim) if prim else None
+            except Exception:
+                g = None
+            if g is not None:
+                prefetch(pre, api, e, g, cfg)
+    try:
+        return _apply(entries, api, es, esapi, carry, cfg, find, pre, feed, left)
+    finally:
+        if pre is not None:
+            pre.close()
+
+
+def _apply(entries, api, es, esapi, carry, cfg, find, pre, feed, left):
     for e in entries:
         system = e["system"]
+        feed()
         try:
             if "remove" in e:
                 for f in carry.get(("media-of-removed", id(e)), []):   # ES itself drops the games
@@ -570,9 +808,7 @@ def apply(entries, api, es, esapi, carry, cfg=None):
                 if not ok:
                     left.append(e)
                 continue
-            paths = e.get("paths") or []
-            prim = (paths[0] if len(paths) == 1 and paths[0].lower().endswith(".m3u")
-                    else rommlib.primary_path(system, paths, es))
+            prim = _primary(e, es)
             if not prim:
                 continue                            # nothing ES would list (files gone)
             g = find(system, prim)
@@ -587,7 +823,7 @@ def apply(entries, api, es, esapi, carry, cfg=None):
             if not esapi.set_meta(system, g["id"], want):
                 left.append(e)
                 continue
-            upload_media(api, esapi, system, g, e, cfg)
+            upload_media(api, esapi, system, g, e, cfg, pre)
         except Exception as ex:                    # one bad entry never sinks the batch
             rommlib.log("finalize: entry for %s failed (%r)" % (system, ex))
             left.append(e)

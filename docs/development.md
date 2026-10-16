@@ -280,6 +280,16 @@ through `plain_get()`; both are `net.http_session()`s. Don't make a new
   user wait it out four times), and a `Retry-After` longer than
   `NET_WAIT_MAX` goes back to the caller.
 
+rb_finalize fetches RomM's media for the games coming up ahead of the one ES is
+being given (`AdaptiveFetcher` in `rb_finalize.py`): it starts 2 at a time and
+finds its own width, up to 16. It adds one while files come about as fast as
+the quickest seen and the box has CPU to spare (over 15% idle in
+`/proc/stat`). It cuts back by a third when they slow down, when its own
+process nearly fills a core (Python runs one thread at a time), or when the
+box has under 5% idle. Videos come one at a time, and what's fetched but not
+yet handed to ES stays under 64 MB. ES still gets the games one after another,
+in order. `ROMM_BROWSER_FETCH_TRACE=1` logs each width decision.
+
 Only the request and the response head hold a place at the gate: a long
 download's body doesn't. A cover that couldn't be fetched (`CoverError`)
 shows "…" and is asked for again when drawn, after 5 s, 15 s, then every
