@@ -249,6 +249,12 @@ class App:
         """The connection as the header and Settings say it: "Online · RomM 5.4.0"."""
         return rommlib.online_label(self.romm_version) if self.status == "Online" else self.status
 
+    def system_name(self, system):
+        """What a system folder is called on screen: RomM's name for its platform, as
+        Platforms shows it, else ES's ("psx" -> "PlayStation")."""
+        p = next((p for p in self.platforms if p.get("_system") == system), None)
+        return p["name"] if p and p.get("name") else rommlib.system_name(system)
+
     def system_for(self, rom):
         p = self.platform_by_id.get(rom.get("platform_id"))
         return p["_system"] if p else None

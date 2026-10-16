@@ -269,7 +269,7 @@ def test_space_legend_ends_short_of_its_bar(app, rb, monkeypatch):
     scr.leftovers = []
     app.stack.append(scr)
     scr.draw(app.canvas)
-    row = next(r for s, r in drawn if s == "psx")
+    row = next(r for s, r in drawn if s == app.system_name("psx"))
     bar_x = row.left - 22 + 600
     legend = [(s, r) for s, r in drawn if r.top > row.top and r.top < row.top + 40 and r.left < bar_x]
     assert legend and all(r.right <= bar_x - 20 for _, r in legend)

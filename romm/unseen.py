@@ -12,14 +12,6 @@ from . import (core as _core, discs as _discs, es as _es, ps3 as _ps3, convert a
 # EmulationStation lists only files whose extension is in the system's
 # <extension> list (es_systems.cfg); anything else in roms/<system>/ is
 # silently ignored. find_unseen() names those files and why.
-SYSTEM_LABELS = {"psx": "PlayStation", "ps2": "PS2", "ps3": "PS3", "psp": "PSP", "psvita": "PS Vita",
-                 "gamecube": "GameCube", "wii": "Wii", "wiiu": "Wii U", "n64": "N64", "nds": "DS",
-                 "3ds": "3DS", "switch": "Switch", "gb": "Game Boy", "gbc": "Game Boy Color",
-                 "gba": "GBA", "nes": "NES", "snes": "SNES", "megadrive": "Mega Drive",
-                 "mastersystem": "Master System", "megacd": "Mega-CD", "saturn": "Saturn",
-                 "dreamcast": "Dreamcast", "xbox": "Xbox", "xbox360": "Xbox 360",
-                 "pcengine": "PC Engine", "pcenginecd": "PC Engine CD", "neogeocd": "Neo Geo CD",
-                 "triforce": "Triforce"}
 # never games, whatever folder they sit in: notes, pictures, saves, Batocera's pad configs
 UNSEEN_IGNORE = (".txt", ".nfo", ".diz", ".md", ".pdf", ".xml", ".htm", ".html", ".jpg", ".jpeg",
                  ".png", ".gif", ".bmp", ".webp", ".srm", ".sav", ".state", ".ini", ".log", ".db",
@@ -33,10 +25,6 @@ UNSEEN_CATCH_ALL = {"ports", "pygame", "windows", "windows_installers", "steam",
                     "epic", "heroic"}
 UNSEEN_MAX_TO = 3      # .rvz: GameCube/Triforce/Wii; more (.bin, .iso) doesn't say which system
 GC_MAGIC, WII_MAGIC = b"\xc2\x33\x9f\x3d", b"\x5d\x1c\x9e\xa3"
-
-
-def system_label(system):
-    return SYSTEM_LABELS.get(system, system)
 
 
 def gc_or_wii(path):
@@ -64,13 +52,13 @@ def _unseen_why(kind, system, ext, to, path=None):
         return "PS3 disc in a zip: Unpack makes it a game folder%s" % (
             "" if need["plain"] else " (its disc key is here)")
     if kind == "archive":
-        return "%s doesn't list %s — ES can't see it" % (system_label(system), ext)
+        return "%s doesn't list %s — ES can't see it" % (_es.system_name(system), ext)
     if kind == "wrong":
-        names = "/".join([system_label(s) for s in to[:3]] + (["…"] if len(to) > 3 else []))
+        names = "/".join([_es.system_name(s) for s in to[:3]] + (["…"] if len(to) > 3 else []))
         what = "image" if ext in _core.DISC_EXTS else "game"
         return "%s %s %s in %s/" % ("an" if names[:1] in "AEIOU" else "a", names, what, system)
     if to:                               # "unknown" but other systems list it: too generic to pick one
-        return "%s doesn't list %s — ES can't list it here" % (system_label(system), ext)
+        return "%s doesn't list %s — ES can't list it here" % (_es.system_name(system), ext)
     return "ES can't list this file: no system takes %s" % ext
 
 

@@ -79,7 +79,7 @@ def test_scan_classifies_what_es_cant_see(isolated):
                        "n64/Mystery.xyz"}
     assert [f["system"] for f in found] == sorted(f["system"] for f in found)
     zipf = by["ps2/Lorem Racer.zip"]
-    assert zipf["kind"] == "archive" and zipf["why"] == "PS2 doesn't list .zip — ES can't see it"
+    assert zipf["kind"] == "archive" and zipf["why"] == "PlayStation 2 doesn't list .zip — ES can't see it"
     assert by["psp/Ipsum Quest.7z"]["kind"] == "archive"
     rvz = by["n64/Dolor Cube.rvz"]
     assert rvz["kind"] == "wrong" and rvz["to"] == ["gamecube", "wii"]
@@ -322,7 +322,7 @@ def test_check_games_tile_and_screen(ui, rb):
     assert [os.path.basename(i["path"]) for i in sc.items] == ["Dolor Cube.rvz", "Mystery.xyz", "Lorem Racer.zip"]
     sc.draw(app.canvas)
     sc.action("ok")                                           # the .rvz: one choice per system, then Leave it
-    assert [e[0] for e in app.modal.entries] == ["Move to gamecube/", "Move to wii/", "Delete", "Leave it"]
+    assert [e[0] for e in app.modal.entries] == ["Move to GameCube", "Move to Wii", "Delete", "Leave it"]
     app.modal.action("ok")
     assert app.modal is None and os.path.exists(os.path.join(rommlib.ROMS_ROOT, "gamecube", "Dolor Cube.rvz"))
     assert [os.path.basename(i["path"]) for i in sc.items] == ["Mystery.xyz", "Lorem Racer.zip"]
@@ -416,3 +416,15 @@ def test_pick_several_then_delete_them_all(ui, rb):
     assert sorted(os.listdir(os.path.join(rommlib.ROMS_ROOT, "n64"))) == []
     assert os.listdir(os.path.join(rommlib.ROMS_ROOT, "ps2")) == ["Keep.zip"] and os.path.exists(keep)
     assert app.toasts[-1][0].startswith("Deleted 2, freed")
+
+
+def test_system_names_come_from_es_then_the_table(monkeypatch, tmp_path):
+    """A system is named as ES's es_systems.cfg calls it; one ES doesn't list falls back to the
+    table, then to its folder name."""
+    cfg = tmp_path / "es_systems.cfg"
+    cfg.write_text("<systemList><system><name>psx</name><fullname>Sony PlayStation</fullname>"
+                   "<path>/userdata/roms/psx</path><extension>.cue</extension></system></systemList>")
+    monkeypatch.setenv("ROMM_BROWSER_ES_SYSTEMS", str(cfg))
+    assert rommlib.system_name("psx") == "Sony PlayStation"
+    assert rommlib.system_name("ps2") == "PlayStation 2"
+    assert rommlib.system_name("odd-folder") == "odd-folder"

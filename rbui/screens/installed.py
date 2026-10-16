@@ -201,7 +201,7 @@ class InstalledScreen(ListScreen):
         list_head(c, self.f, GAME_LIST, head, dict(self.SORTS)[self.sort])
         for i, r, on in self.row_rects(ROWS_TOP, x=lx, w=lw):
             it = self.items[i]
-            sub = (it["system"] or "?") + ("  ·  added %s" % it["when"][:10] if it.get("when") else "")
+            sub = (self.app.system_name(it["system"]) if it["system"] else "?") + (" · added %s" % it["when"][:10] if it.get("when") else "")
             list_row(c, self.f, r, on, it["name"], sub, human_size(it["size"]),
                      mark=lambda ctr, it=it: self.draw_pick(c, it, ctr), slot="installed")
         it = self.items[self.sel]
@@ -216,7 +216,7 @@ class InstalledScreen(ListScreen):
         """The panel from what's on the box, while RomM's record isn't here."""
         p = Panel(c, self.f, GAME_PANEL, slot="local")
         p.title(it["name"])
-        p.fact("System", it["system"])
+        p.fact("System", self.app.system_name(it["system"]) if it["system"] else "?")
         p.fact("Size", human_size(it["size"]))
         p.fact("Added", it.get("when", "")[:10])
         p.prose(note, color=theme.FAINT, lines=3)

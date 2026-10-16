@@ -103,7 +103,7 @@ class SpaceScreen(ListScreen):
             r_ = self.rows[i]
             if on:
                 focus_box(c, r)
-            text(c, self.f.row, r_["system"], (r.left + 22, r.top + 4), theme.TEXT if on else theme.DIM)
+            text(c, self.f.row, self.app.system_name(r_["system"]), (r.left + 22, r.top + 4), theme.TEXT if on else theme.DIM)
             bx, bw = r.left + 600, r.width - 760
             x, ty = r.left + 22, r.top + 28      # each part's dot is its colour in the bar: the legend
             for key, col, lab in theme.SPACE_PARTS:
@@ -256,7 +256,7 @@ class FreeUpScreen(ListScreen):
             text(c, self.f.h3, head, (56, 86), theme.TEXT)
             text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
             return
-        row = lambda g: (g["name"], "%s · %s" % (g["system"], _lastplayed_label(g["lastplayed"])),  # noqa: E731
+        row = lambda g: (g["name"], "%s · %s" % (self.app.system_name(g["system"]), _lastplayed_label(g["lastplayed"])),  # noqa: E731
                          human_size(g["size"]))
         lst, pan = split(need_width(self.f, [row(g) for g in self.items[:200]], mark=True))
         self.BUBBLE_AT = bubble_at(lst)

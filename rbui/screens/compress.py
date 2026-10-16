@@ -183,7 +183,7 @@ class CompressScreen(ListScreen):
         r = self.rows[self.sel]
         if r.get("cant"):
             return self.list_hints(("A", "Why"))
-        return self.list_hints(("A", "Games"), *[("X", "Compress all %s" % r["system"])] if r["enabled"] else [])
+        return self.list_hints(("A", "Games"), *[("X", "Compress all %s" % self.app.system_name(r["system"]))] if r["enabled"] else [])
 
     def action(self, a):
         if not self.rows:
@@ -202,7 +202,7 @@ class CompressScreen(ListScreen):
             if not r["enabled"]:
                 self.app.toast(needs_toast(self.app, r), theme.AMBER)
             else:
-                compress_confirm(self.app, "Compress every %s game here?" % r["system"],
+                compress_confirm(self.app, "Compress every %s game here?" % self.app.system_name(r["system"]),
                                  [c for c in self.cands if c["system"] == r["system"]], self.enter)
         else:
             super().action(a)
@@ -228,7 +228,7 @@ class CompressScreen(ListScreen):
                         line_h=26, slot="compress-empty")
             return
         subs = ["%s, %s" % (plural(r["n"], "game"), human_size(r["size"])) for r in self.rows]
-        lst, pan = split(need_width(self.f, [(r["system"], sub, self.status(r)[0]) for r, sub in zip(self.rows, subs)]))
+        lst, pan = split(need_width(self.f, [(self.app.system_name(r["system"]), sub, self.status(r)[0]) for r, sub in zip(self.rows, subs)]))
         ok = [r for r in self.rows if r["enabled"]]
         if ok:
             list_head(c, self.f, lst, "%s could be smaller" % plural(sum(r["n"] for r in ok), "game"),
@@ -238,14 +238,14 @@ class CompressScreen(ListScreen):
         for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             row = self.rows[i]
             st, col = self.status(row)
-            list_row(c, self.f, r, on, row["system"], subs[i], st, col,
+            list_row(c, self.f, r, on, self.app.system_name(row["system"]), subs[i], st, col,
                      label_color=None if row["enabled"] or row.get("cant") else theme.FAINT, slot="compress")
         self.draw_panel(c, pan, self.rows[self.sel])
 
     def draw_panel(self, c, pan, row):
         p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="compress-panel")
         p.actions(hint_actions(self))
-        p.title(row["system"], "%s, %s" % (plural(row["n"], "game"), human_size(row["size"])))
+        p.title(self.app.system_name(row["system"]), "%s, %s" % (plural(row["n"], "game"), human_size(row["size"])))
         if row.get("cant"):
             p.prose("A converter takes these, but they can't be converted as they are, so they're left alone.",
                     lines=3)
@@ -286,7 +286,7 @@ class CantConvertScreen(ListScreen):
         self.rows = [(os.path.basename(f), why[:1].upper() + why[1:], self.size(f)) for f, why in self.items]
 
     def crumbs(self):
-        return self.trail("%s: can't convert" % self.system)
+        return self.trail("%s: can't convert" % self.app.system_name(self.system))
 
     def hints(self):
         return [("L", "Page up"), ("R", "Page down"), ("B", "Back")] if len(self.items) > self.ROWS \
@@ -352,7 +352,7 @@ class CompressSystemScreen(ListScreen):
         return self.cands or []
 
     def crumbs(self):
-        return self.trail(self.system)
+        return self.trail(self.app.system_name(self.system))
 
     def title_of(self, c):
         return c["name"] or os.path.splitext(os.path.basename(c["root"]))[0]
@@ -373,7 +373,7 @@ class CompressSystemScreen(ListScreen):
     def list_actions(self):
         return [("Compress all %d" % len(self.cands), "%s · asks first: it can take hours" % human_size(
             sum(x["size"] for x in self.cands)), lambda: compress_confirm(
-                self.app, "Compress all %s here?" % plural(len(self.cands), "%s game" % self.system),
+                self.app, "Compress all %s here?" % plural(len(self.cands), "%s game" % self.app.system_name(self.system)),
                 list(self.cands), self.enter))]
 
     def pick_entries(self, cands):

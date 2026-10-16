@@ -510,6 +510,28 @@ def load_es_systems():
     return {name: set((s.findtext("extension") or "").lower().split()) for name, s in _es_system_elements()}
 
 
+# what a system is called when ES's own es_systems.cfg can't say (no Batocera, or not listed)
+SYSTEM_NAMES = {"psx": "PlayStation", "ps2": "PlayStation 2", "ps3": "PlayStation 3", "psp": "PSP",
+                "psvita": "PS Vita", "gamecube": "GameCube", "wii": "Wii", "wiiu": "Wii U", "n64": "Nintendo 64",
+                "nds": "Nintendo DS", "3ds": "Nintendo 3DS", "switch": "Switch", "gb": "Game Boy",
+                "gbc": "Game Boy Color", "gba": "Game Boy Advance", "nes": "NES", "snes": "Super Nintendo",
+                "megadrive": "Mega Drive", "mastersystem": "Master System", "megacd": "Mega-CD",
+                "saturn": "Saturn", "dreamcast": "Dreamcast", "xbox": "Xbox", "xbox360": "Xbox 360",
+                "pcengine": "PC Engine", "pcenginecd": "PC Engine CD", "neogeocd": "Neo Geo CD",
+                "triforce": "Triforce", "zxspectrum": "ZX Spectrum", "pcfx": "PC-FX", "fbneo": "FinalBurn Neo",
+                "mame": "MAME"}
+_FULLNAMES = {}        # es_systems.cfg in use -> {system: its full name}, read once
+
+
+def system_name(system):
+    """A system's name for people ("PlayStation 2", not "ps2"): ES's own full name for it,
+    else SYSTEM_NAMES, else the folder name."""
+    src = os.environ.get("ROMM_BROWSER_ES_SYSTEMS", "")
+    if src not in _FULLNAMES:
+        _FULLNAMES[src] = {name: (s.findtext("fullname") or "").strip() for name, s in _es_system_elements()}
+    return _FULLNAMES[src].get(system) or SYSTEM_NAMES.get(system) or system
+
+
 def batocera_conf():
     """batocera.conf as {key: value} (comments and blank lines skipped); {} when unreadable."""
     out = {}

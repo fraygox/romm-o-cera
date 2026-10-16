@@ -156,7 +156,7 @@ class UnseenScreen(ListScreen):
             entries = [("Unpack", "Shows what's inside first; unpacked here as after a download",
                         lambda: self.ask_unpack(it)), delete, leave]
         elif it["kind"] == "wrong":
-            entries = [("Move to %s/" % s, "%s · roms/%s/%s" % (rommlib.system_label(s), s,
+            entries = [("Move to %s" % app.system_name(s), "roms/%s/%s" % (s,
                         "" if os.path.isdir(os.path.join(rommlib.ROMS_ROOT, s)) else " (new folder)"),
                         lambda s=s: self.move_to(it, s)) for s in it["to"][:self.MOVE_CHOICES]] + [delete, leave]
         else:
@@ -266,7 +266,7 @@ class UnseenScreen(ListScreen):
                 lines=3)
         p.prose(self.FIX.get(it["kind"], ""), label="What you can do", lines=4)
         if it["kind"] == "wrong" and it.get("to"):
-            p.fact("Systems that take it", ", ".join(it["to"][:self.MOVE_CHOICES]))
+            p.fact("Systems that take it", ", ".join(self.app.system_name(s) for s in it["to"][:self.MOVE_CHOICES]))
 
     FIX = {"archive": "Unpack it here, as after a download: ES then lists the game. Or delete it.",
            "wrong": "Move it to a system folder that takes it, or delete it.",

@@ -222,8 +222,8 @@ class OnThisBoxScreen(Screen):
             yy += 34
             big = self.storage[0]["total"] or 1
             for r in self.storage[:3]:
-                text(c, self.f.body, r["system"], (x, yy), theme.DIM, maxw=110)
-                meter(c, (x + 120, yy + 8, w - 230, 8), [(r[k] / big, col) for k, col, _ in theme.SPACE_PARTS],
+                text(c, self.f.body, self.app.system_name(r["system"]), (x, yy), theme.DIM, maxw=170)
+                meter(c, (x + 180, yy + 8, w - 290, 8), [(r[k] / big, col) for k, col, _ in theme.SPACE_PARTS],
                       track=theme.PANEL, least=4)
                 text(c, self.f.small, human_size(r["total"]), (p.right - 28, yy + 1), theme.DIM, "topright")
                 yy += 30
@@ -304,7 +304,7 @@ class OnThisBoxScreen(Screen):
         yy = p.top + 70
         for r in rows[:7]:
             col = theme.DIM if r["enabled"] else theme.FAINT
-            text(c, self.f.row, r["system"], (x, yy), col, maxw=170)
+            text(c, self.f.row, self.app.system_name(r["system"]), (x, yy), col, maxw=170)
             text(c, self.f.small, "%s, %s" % (plural(r["n"], "game"), human_size(r["size"])), (x + 180, yy + 3),
                  theme.FAINT, maxw=220)
             text(c, self.f.small, ("to " + r["label"]) if r["enabled"] else "needs a setting",
