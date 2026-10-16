@@ -110,7 +110,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Collections | Open the collection (or a Browse by door) | A collection's Actions: open, Compare with RomM, Game night, download the rest | The kind as a wall, and back | |
 | Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search (a collection: the On this box / Not here pills) | A–Z |
 | A game's page | Download / Play now | Actions: more like this, Game night, delete (on the box) | | |
-| Game night | The pick's page | Actions: players, only what's on this box | Another | |
+| Game night | The pick's page | Actions: players, only what's on this box | Roll again | |
 | Backlog | The game's page | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
