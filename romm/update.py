@@ -72,6 +72,9 @@ def _latest_on(channel):
     return out
 
 
+CHECK_RETRY = 3600     # seconds before a daily check that couldn't reach GitHub asks again
+
+
 def newer_release(cfg, force=False):
     """The newest version on the configured channel (update_channel) if it is
     newer than this one, else None: a release tag ("v0.8.2"), or a nightly's
@@ -95,9 +98,11 @@ def newer_release(cfg, force=False):
         try:
             found = _latest_on(channel)
             latest = max(found, key=version_key) if found else cache.get("latest", "")
+            when = now if found else now - 86400 + CHECK_RETRY    # an error answer (rate limit, 5xx): soon too
         except Exception:
             latest = cache.get("latest", "") if cache.get("channel", "stable") == channel else ""
-        cache = {"checked": now, "latest": latest, "channel": channel}      # offline: try again tomorrow
+            when = now - 86400 + CHECK_RETRY              # couldn't ask (offline, GitHub slow): again soon, not tomorrow
+        cache = {"checked": when, "latest": latest, "channel": channel}
         try:
             os.makedirs(_core.DATA_DIR, exist_ok=True)
             _core.atomic_write_json(UPDATE_CACHE, cache)
@@ -125,7 +130,7 @@ class UpdateError(Exception):
 
 
 def _gh_get(url, **kw):
-    kw.setdefault("timeout", 20)
+    kw.setdefault("timeout", (6, 20))      # GitHub unreachable: say so in 6 s, not after the 20 s a read may take
     headers = {"User-Agent": _core.UA, "Accept": "application/vnd.github+json"}
     try:
         r = _net.plain_get(url, headers=headers, **kw)

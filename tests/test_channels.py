@@ -8,6 +8,7 @@ import os
 import subprocess
 
 import pytest
+import requests
 
 import rommlib
 from conftest import APP
@@ -148,3 +149,37 @@ def test_the_update_button_installs_what_it_offered(isolated, rb, github, monkey
     scr = rb.SettingsScreen(app)
     scr._do_update()
     assert asked == ["v0.8.1+n20261012.1903.abc1234"]
+
+
+def test_a_check_that_couldnt_reach_github_asks_again_within_the_hour(isolated, github, monkeypatch):
+    """A daily check that failed (GitHub slow or unreachable at start-up, a rate-limit answer)
+    used to count as done for a day, hiding a new release. It asks again after CHECK_RETRY."""
+    import time
+    monkeypatch.setattr(rommlib, "VERSION_LABEL", "0.8.1")
+    github(stable="v0.8.2")
+    real = rommlib.plain_get
+
+    def down(*a, **k):
+        raise requests.exceptions.ConnectTimeout("no route")
+    monkeypatch.setattr(rommlib, "plain_get", down)
+    assert rommlib.newer_release(_cfg("stable")) is None
+    monkeypatch.setattr(rommlib, "plain_get", real)
+    assert rommlib.newer_release(_cfg("stable")) is None                    # not again at once
+    now = time.time()
+    monkeypatch.setattr(time, "time", lambda: now + rommlib.CHECK_RETRY + 5)
+    assert rommlib.newer_release(_cfg("stable")) == "v0.8.2"                # within the hour, not tomorrow
+
+
+def test_github_requests_give_up_connecting_quickly(isolated, monkeypatch):
+    seen = {}
+
+    class R:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"tag_name": "v9.9.9", "assets": [{"name": "romm-o-cera.zip", "browser_download_url": "z"},
+                                                     {"name": "SHA256SUMS", "browser_download_url": "s"}]}
+    monkeypatch.setattr(rommlib, "plain_get", lambda url, **kw: seen.update(kw) or R())
+    rommlib.release_info()
+    assert seen["timeout"] == (6, 20)                                       # connect 6 s, read 20 s
