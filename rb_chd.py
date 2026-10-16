@@ -39,6 +39,7 @@ JUNK_EXTS = {".txt", ".nfo", ".md5", ".sfv", ".sha1", ".jpg", ".jpeg", ".png", "
              ".dat", ".url", ".log", ".xml", ".pdf", ".cfg", ".ini", ".lic"}
 FINALIZE_EVERY = 15   # merge gamelist renames + reload ES after this many games
 TOOL_POLL = 3         # seconds between progress / running-game / memory checks while a converter runs
+MEMORY_RETRY = 60     # seconds before a conversion stopped for a game's memory is tried again
 
 
 def running_game():
@@ -178,7 +179,7 @@ def memory_check(pid, busy):
 
 
 RESULTS_KEEP = 200
-_state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "paused": "", "last": ""}
+_state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "paused": "", "last": "", "wait": ""}
 
 
 def status(**kw):
@@ -891,11 +892,12 @@ def convert(task):
             note("chd: SKIP exists %s" % out)
             return False
     cfg = rommlib.load_config()
-    need = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
+    todo = [s for s, o in plan if o not in resume]  # outputs an earlier run made already take no more room
+    need = sum(os.path.getsize(p) for s in todo for p in sources_of(s) if os.path.isfile(p))
     need *= conv.space_factor if conv else 1     # e.g. .zar: extracted files + archive beside the image
     if conv and conv.space:
         try:
-            need = max(need, sum(conv.space(s) for s in srcs))    # e.g. .cso: the decoded ISO + the CHD
+            need = max(need, sum(conv.space(s) for s in todo))    # e.g. .cso: the decoded ISO + the CHD
         except rommlib.CHECK_ERRORS:
             pass                                  # checked above; the converter reports it
     free, keep = rommlib.free_bytes(out_dir), rommlib.keep_free_bytes(cfg)
@@ -904,6 +906,7 @@ def convert(task):
         note("chd: WAIT for space %s (needs ~%s, %s free, keeping %s free)" % (
             os.path.basename(srcs[0]), rommlib.human_size(need), rommlib.human_size(free),
             rommlib.human_size(keep)))
+        _state["wait"] = "space"
         return None
     # what the sources are now: if one is replaced (a fresh download landing) or
     # deleted (Free up space) while this runs, nothing may be committed on top
@@ -952,6 +955,7 @@ def convert(task):
             for m in made + [tmp]:
                 _drop(m)
             if g.retry:
+                _state["wait"] = "memory"
                 return None
             return False
         except BaseException:
@@ -1098,7 +1102,8 @@ def main():
         with rommlib.try_lock(rommlib.chd_lock_path()) as fd:
             if fd is None:
                 return                          # another worker has it
-            work(fd, waiting)
+            if work(fd, waiting):
+                return                          # gave up for now (no room, no chdman): tasks stay queued
         # a task queued while we were giving up the lock would find it taken
         # and not start a worker: look once more after releasing it (the app
         # starts one again once a missing tool is here)
@@ -1163,6 +1168,7 @@ def work(fd, waiting=None):
                    step="Starting", pct=None, paused="")
             if _new("stop_requested", tasks[0]):
                 raise Stopped()
+            _state["wait"] = ""
             res = convert(task)
             if res is None:                   # memory needed by a game, or no room: keep it, try later
                 record(tasks[0], task, "waiting")
@@ -1170,7 +1176,10 @@ def work(fd, waiting=None):
                     os.remove(cur)
                 except OSError:
                     pass
-                break
+                if _state["wait"] == "memory":
+                    time.sleep(MEMORY_RETRY)  # a game needs the memory: look again in a while
+                    continue
+                return True                   # no room: the app starts us again once space is freed
             record(tasks[0], task, "ok" if res else ("skipped" if "SKIP" in _state["last"] or
                                                      "skip" in _state["last"].lower() else "failed"))
             if res:
@@ -1195,7 +1204,7 @@ def work(fd, waiting=None):
                 os.remove(cur)
             except OSError:
                 pass
-            break
+            return True
         except Exception as e:
             note("chd: error on %s: %r" % (tasks[0], e))
             record(tasks[0], task if isinstance(task, dict) else {}, "failed")

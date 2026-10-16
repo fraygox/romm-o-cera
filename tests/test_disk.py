@@ -196,6 +196,56 @@ def test_chd_waits_for_space(isolated, monkeypatch):
     assert os.path.exists(src) and "WAIT for space" in open(rommlib.LOG_PATH).read()
 
 
+def test_chd_worker_stops_when_no_room(isolated, monkeypatch):
+    """No room for the next conversion: the worker leaves its task queued and exits (the app
+    starts it again once space is freed) instead of trying again at once, over and over."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    src = _cue(os.path.join(sysdir, "Big (USA)"), "Big (USA)", 400, 400)
+    monkeypatch.setattr(rb_chd, "busy_reason", lambda: "")
+    monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("no room: must wait"))
+    monkeypatch.setattr(rommlib, "free_bytes", lambda p=None: 5 * GiB)
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG))   # keeps 20 GB free
+    rommlib.publish_queue_task({"system": "psx", "mode": "createcd", "sources": [src],
+                                "roots": [os.path.dirname(src)]}, "0001-big.json")
+    tries = []
+    real = rb_chd.convert
+    monkeypatch.setattr(rb_chd, "convert", lambda t: (tries.append(1), real(t))[1])
+    rb_chd.main()
+    assert tries == [1] and rommlib.conversions_pending() and os.path.exists(src)
+
+
+def test_chd_space_check_skips_outputs_already_made(isolated, monkeypatch):
+    """A killed run left disc 1's verified CHD in place: finishing the job needs room for
+    disc 2 only, so it isn't kept waiting by the space disc 1 already takes."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    d1 = _cue(os.path.join(sysdir, "Two (USA)"), "Two (USA) (Disc 1)", 400, 400)
+    d2 = _cue(os.path.join(sysdir, "Two (USA)"), "Two (USA) (Disc 2)", 40, 40)
+    out1 = os.path.join(sysdir, "Two (USA) (Disc 1).chd")
+    open(out1, "wb").write(b"chd")
+    os.utime(out1, (time.time() + 60, time.time() + 60))           # newer than its sources
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")
+    monkeypatch.setattr(rommlib, "disc_incomplete", lambda p: False)
+    calls = []
+
+    def fake(*a):
+        calls.append(a[0])
+        if a[0] == "verify":
+            return 0, ""
+        out = a[a.index("-o") + 1]
+        open(out, "wb").write(b"chd")
+        return 0, ""
+    monkeypatch.setattr(rb_chd, "chdman", fake)
+    free = 20 * GiB + 300 * 1024               # room for disc 2 (94 KB) over the 20 GB kept free, not disc 1 (940 KB)
+    monkeypatch.setattr(rommlib, "free_bytes", lambda p=None: free)
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG))
+    res = rb_chd.convert({"system": "psx", "mode": "createcd", "sources": [d1, d2],
+                          "roots": [os.path.dirname(d1)]})
+    assert res is not None and "WAIT for space" not in open(rommlib.LOG_PATH).read()
+
+
 def test_psp_iso_to_chd_with_ppsspp_hunks():
     import rb_chd
     import rb_chd_plan
