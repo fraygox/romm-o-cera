@@ -114,17 +114,14 @@ def test_qualified_names_exist():
                     assert node.attr in vars(rommlib), (p, node.lineno, node.attr)
 
 
-# rommlib names the lazily loaded workers use, pinned to v0.10.0: the release
-# being cut, which these workers adopted with it (v0.9.0 lacks some of them:
-# its users are asked to reopen the app after updating, and from v0.10.0 on
-# updating closes the app by itself). An old process reaches the NEW worker
-# files after an in-app update swapped the folder under it: a still-open UI
-# imports rb_chd_plan on the Compress screen (which imports rb_chd) and rb_dl
-# to take over downloads, and rb_dl imports rb_finalize. All of it runs
-# against the OLD rommlib already in memory. From now on add a name here only
-# after checking v0.10.0 defines it (`git show v0.10.0:romm/<module>.py`); a
-# name new since waits for the next release. Bump the tag with each stable
-# release.
+# rommlib names the lazily loaded workers use, pinned to v0.11.0, the release
+# before the one being cut. An old process reaches the NEW worker files after an
+# in-app update swapped the folder under it: a still-open UI imports rb_chd_plan
+# on the Compress screen (which imports rb_chd) and rb_dl to take over
+# downloads, and rb_dl imports rb_finalize. All of it runs against the OLD
+# rommlib already in memory. Add a name here only after checking v0.11.0
+# defines it (`git show v0.11.0:romm/<module>.py`); a name new since waits for
+# the next release. Bump the tag after each stable release.
 PREVIOUS_RELEASE_NAMES = frozenset((
     "Api", "CHD_QUEUE_DIR", "CHECK_ERRORS", "CONVERTER", "CONVERTERS", "CSO_TEMP_SUFFIX", "CsoError",
     "DATA_DIR", "DEFAULT_CONFIG", "ES_API", "EsClient", "GAMELIST_MEDIA_DIRS", "GAMELIST_QUEUE", "Library",
