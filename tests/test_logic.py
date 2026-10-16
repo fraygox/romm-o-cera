@@ -824,6 +824,33 @@ def test_planner_keeps_unrelated_games_apart_beside_disc_folders(isolated):
                     ["Gamma (USA) (Disc 1).cue", "Gamma (USA) (Disc 2).cue"]]
 
 
+def test_chd_failed_second_disc_drops_the_first_discs_output(isolated, monkeypatch):
+    """Disc 2 hits an error (a full drive mid-write): disc 1's finished CHD goes too, so ES
+    never lists it beside the cue/bin it didn't replace. The originals stay."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "Duo (USA)"))
+    fs = [os.path.join(sysdir, "Duo (USA)", "Duo (USA) (Disc %d).cue" % n) for n in (1, 2)]
+    for f in fs:
+        open(f, "w").write("x")
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")
+
+    def chdman(mode, *a):
+        if mode == "verify":
+            return 0, ""
+        if "Disc 2" in a[a.index("-i") + 1]:
+            raise OSError(28, "No space left on device")
+        open(a[a.index("-o") + 1], "w").write("chd")
+        return 0, ""
+    monkeypatch.setattr(rb_chd, "chdman", chdman)
+    with pytest.raises(OSError):
+        rb_chd.convert({"system": "psx", "mode": "createcd", "sources": fs,
+                        "roots": [os.path.dirname(fs[0])]})
+    assert not [n for n in os.listdir(sysdir) if n.endswith((".chd", ".part"))]
+    assert all(os.path.exists(f) for f in fs)
+
+
 def test_chd_loose_discs_playlist_takes_the_planners_name(isolated, monkeypatch, fake_es):
     """Discs lying straight in the system folder (no game folder): the playlist is named
     as the planner said, not from disc 1's name cut at "(Disc", which drops "(Rev 1)"."""

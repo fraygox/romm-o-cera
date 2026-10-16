@@ -961,11 +961,13 @@ def convert(task):
         except BaseException:
             # stopped (SIGTERM raises SystemExit; the tool itself is stopped by
             # run_tool), a converter missing, or anything else: the half-written
-            # output goes, never the sources
-            try:
-                _drop(tmp)
-            except OSError:
-                pass
+            # output goes, never the sources; earlier discs' outputs too, or ES
+            # would list them beside the originals they never replaced
+            for m in made + [tmp]:
+                try:
+                    _drop(m)
+                except OSError:
+                    pass
             raise
         if rc != 0:
             note("chd: FAIL %s rc=%d %s" % (src, rc, err))
