@@ -364,6 +364,7 @@ _LAUNCHER = r"""
 import json, os, sys, time, urllib.parse, urllib.request
 es, path, system, name, wait = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], float(sys.argv[5])
 lock, queue = (sys.argv[6], sys.argv[7]) if len(sys.argv) > 7 else ("", "")
+pace = float(os.environ.get("ROMM_BROWSER_LAUNCH_PACE") or 1)   # tests: the same waits, shorter
 def get(p, timeout=10):
     with urllib.request.urlopen(es + p, timeout=timeout) as r:
         return r.read()
@@ -408,8 +409,8 @@ def finalizing():
     return bool(queue) and pending() and locked()
 end = time.time() + 60
 while time.time() < end and running() != "":
-    time.sleep(0.3)
-time.sleep(1.5)                       # ES back in its menus
+    time.sleep(0.3 * pace)
+time.sleep(1.5 * pace)                # ES back in its menus
 if time.time() >= end or running() != "":
     sys.exit()
 if system:
@@ -420,14 +421,14 @@ if system:
         if time.time() >= end:
             say("%s isn't in EmulationStation's list yet: start it from %s once it shows." % (name, system))
             sys.exit()
-        time.sleep(2)
+        time.sleep(2 * pace)
     while finalizing():               # rb_finalize still writing game info: never under a running game
         if running():
             sys.exit()
         if time.time() >= end:
             say("%s is ready: start it from %s." % (name, system))
             sys.exit()
-        time.sleep(1)
+        time.sleep(1 * pace)
     if running():
         sys.exit()
 post("/launch", path)

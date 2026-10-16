@@ -17,11 +17,13 @@ def es(isolated, monkeypatch):
     e = FakeES(rommlib.ROMS_ROOT, {"gba": {".gba", ".zip"}})
     e.launch_any = False                     # like Batocera's ES: only paths it lists
     monkeypatch.setattr(rommlib, "ES_API", e.url)
+    monkeypatch.setenv("ROMM_BROWSER_LAUNCH_PACE", str(PACE))   # the waiter's pauses, shorter
     yield e
     e.close()
 
 
 APP = "/userdata/roms/pygame/rommbrowser.pygame"
+PACE = 0.4      # the waiter's pauses (and these tests' waits on them) at this fraction of real time
 
 
 def _game(name="Lorem Quest (USA).gba"):
@@ -42,9 +44,9 @@ def test_the_game_starts_once_es_lists_it(es):
     game = _game()
     es.running = APP                                   # the app still open
     assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
-    time.sleep(0.6)
+    time.sleep(0.6 * PACE)
     es.running = None                                  # it quits
-    time.sleep(2.6)
+    time.sleep(2.6 * PACE)
     assert es.launched == []                           # ES doesn't list the new file yet: no blind /launch
     es.reload()                                        # rb_finalize hands it to ES
     assert _until(lambda: es.running == game)
@@ -57,16 +59,16 @@ def test_a_game_es_lists_already_starts_right_after_the_app_quits(es):
     t0 = time.time()
     assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
     assert _until(lambda: es.running == game)
-    assert time.time() - t0 < 4                        # the 1.5 s pause, then at once
+    assert time.time() - t0 < 4 * PACE + 1             # the 1.5 s pause, then at once
 
 
 def test_nothing_starts_over_a_game_the_player_started(es):
     game = _game()
     assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
-    time.sleep(2.2)                                    # waiting for ES to list it
+    time.sleep(2.2 * PACE)                                    # waiting for ES to list it
     es.running = "/userdata/roms/gba/Ipsum.gba"        # the player starts another game meanwhile
     es.reload()
-    time.sleep(2.5)
+    time.sleep(2.5 * PACE)
     assert es.launched == [] and es.running == "/userdata/roms/gba/Ipsum.gba"
 
 
@@ -86,7 +88,7 @@ def test_once_listed_it_is_launched_once_and_left_to_es(es):
     es.launch_works = False
     assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=2)
     assert _until(lambda: es.launched)
-    time.sleep(3)
+    time.sleep(3 * PACE)
     assert es.launched == [game] and es.notes == []
 
 
@@ -111,7 +113,7 @@ def test_the_game_starts_only_once_rb_finalize_is_done(es):
     with _finalizing() as fd:
         assert fd is not None
         assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
-        time.sleep(3.5)
+        time.sleep(3.5 * PACE)
         assert es.launched == []                       # listed, but rb_finalize is still writing
         os.remove(rommlib.GAMELIST_QUEUE + ".work")    # its batch is done
         assert _until(lambda: es.running == game)
@@ -144,11 +146,11 @@ def test_while_finalize_writes_a_game_the_player_starts_wins(es):
     es.reload()
     with _finalizing():
         assert rommlib.launch_when_closed(game, "gba", "Lorem Quest", wait=30)
-        time.sleep(2.2)
+        time.sleep(2.2 * PACE)
         es.running = "/userdata/roms/gba/Ipsum.gba"    # the player starts another game meanwhile
-        time.sleep(2)
+        time.sleep(2 * PACE)
         os.remove(rommlib.GAMELIST_QUEUE + ".work")
-        time.sleep(1.5)
+        time.sleep(1.5 * PACE)
     assert es.launched == [] and es.running == "/userdata/roms/gba/Ipsum.gba"
 
 
