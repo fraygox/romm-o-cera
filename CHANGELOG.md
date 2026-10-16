@@ -3,6 +3,20 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.11.1 (2026-10-16)
+
+Safer disc compression (multi-disc playlists, LibCrypt .sbi files, exFAT drives), update checks that retry, and systems called by their names
+
+### Fixes
+- **fix:** Compressing games already here is safer with disc games: two different games in one folder are no longer joined into one playlist, a conversion that fails on a later disc removes the discs it had already made (so EmulationStation doesn't list the game twice), and a multi-disc game lying straight in the system folder gets its playlist under its full name.
+- **fix:** A PS1 game with a LibCrypt .sbi file keeps working after CHD compression: the .sbi moves beside the CHD.
+- **fix:** Compression that waits for space no longer keeps the box busy retrying; it starts again once space is freed.
+- **fix:** Compress games already here works on a box whose userdata drive is exFAT or FAT32, and one game whose cue sheet can't be read is listed with the reason instead of emptying the list.
+- **fix:** A compressed disc game's art and info go to EmulationStation once, not once for every track file, and Fill in game info's first big run is quicker on SD cards.
+- **fix:** A daily update check that couldn't reach GitHub tries again within the hour instead of the next day, and Updates says GitHub can't be reached after 6 seconds, not 20.
+- **fix:** Compress, Space, Free up space and Games from RomM call each system by its name (PlayStation 2, not ps2); the breadcrumb at the top no longer runs into the download count, and Space no longer draws over its bars.
+- **fix:** Game night's Y is called Roll again everywhere, and Leftovers shows its buttons in its panel like the other lists.
+
 ## v0.11.0 (2026-10-14)
 
 Settings in sections, and a Metadata section: EmulationStation gets RomM's screenshots, logos, videos and more
