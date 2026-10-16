@@ -1037,6 +1037,11 @@ def convert(task):
 
     # record the rename before deleting anything: a crash after this leaves
     # duplicates at worst, never a CHD whose game info can't follow it
+    for s, o in plan:
+        # a PS1 LibCrypt patch (Game.sbi) works only beside the image, under its name
+        sbi, to = os.path.splitext(s)[0] + ".sbi", os.path.splitext(o)[0] + ".sbi"
+        if os.path.isfile(sbi) and not os.path.lexists(to):
+            os.replace(sbi, to)
     rename = {}
     gone = set()
     for src in srcs:
@@ -1051,7 +1056,8 @@ def convert(task):
     if folder_goes:
         rename[folder_root] = primary            # the whole game folder becomes this file
     rommlib.append_gamelist({"system": system, "rename": rename, "hide": hide})
-    rommlib.Library().rename_paths(rename, hide)
+    # our record of the game points at the new file even when its folder stays for other files
+    rommlib.Library().rename_paths(dict(rename, **{folder_root: primary}) if folder_root else rename, hide)
     for src in srcs:
         for p in sources_of(src):
             if os.path.isfile(p):

@@ -851,6 +851,32 @@ def test_chd_failed_second_disc_drops_the_first_discs_output(isolated, monkeypat
     assert all(os.path.exists(f) for f in fs)
 
 
+def test_chd_keeps_libcrypt_sbi_and_the_library_record(isolated, monkeypatch, fake_es):
+    """A downloaded PS1 game folder with a LibCrypt .sbi and a readme: the .sbi moves beside
+    the CHD under its name, and our record of the game points at the CHD even though the
+    folder stays (it still holds the readme)."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    game = os.path.join(sysdir, "Lock (Europe)")
+    os.makedirs(game)
+    cue = os.path.join(game, "Lock (Europe).cue")
+    open(cue, "w").write("x")
+    open(os.path.join(game, "Lock (Europe).sbi"), "wb").write(b"SBI\0")
+    open(os.path.join(game, "readme.docx"), "w").write("keep me")
+    lib = rommlib.Library()
+    lib.update(lambda inst: inst.update({"9": {"system": "psx", "paths": [game]}}))
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")
+    monkeypatch.setattr(rb_chd, "chdman", lambda mode, *a: (
+        mode == "verify" or open(a[a.index("-o") + 1], "w").write("chd")) and (0, ""))
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": [cue],
+                           "roots": [game]}) is True
+    chd = os.path.join(sysdir, "Lock (Europe).chd")
+    assert os.path.exists(chd) and open(os.path.join(sysdir, "Lock (Europe).sbi"), "rb").read() == b"SBI\0"
+    assert os.path.exists(os.path.join(game, "readme.docx"))
+    assert rommlib.Library().snapshot()["9"]["paths"] == [chd]
+
+
 def test_chd_loose_discs_playlist_takes_the_planners_name(isolated, monkeypatch, fake_es):
     """Discs lying straight in the system folder (no game folder): the playlist is named
     as the planner said, not from disc 1's name cut at "(Disc", which drops "(Rev 1)"."""
