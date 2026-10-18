@@ -102,13 +102,13 @@ def test_game_night_screen(live, rb, monkeypatch):
     assert app.night_opts["here"] is True and m.entries[m.sel][3] is True
     _pump(app, lambda: not gn.rolling)
     assert gn.why == "empty" and gn.nothing()[0] == "No game on this box for 2+ players"
+    assert gn.current() is None                          # the cards rolled under the old rules went
     app.modal = None
     app.draw()
     played = []
     _install(app, [newest])
     monkeypatch.setattr(app, "play_now", lambda path, system, title: played.append(path))
-    gn.sel = len(gn.picks) - 1
-    gn.picks[gn.sel] = newest
+    gn.picks, gn.sel = [newest], 0
     assert gn.hints()[0] == ("A", "Open")
     app.dispatch("ok")                                   # its page: Play now is the big button there
     page = app.stack[-1]
@@ -218,3 +218,23 @@ def test_backlog_from_collections(live, rb):
     app.dispatch("ok")
     assert isinstance(app.stack[-1], rb.BacklogScreen)
     assert app.stack[-1].crumbs() == ["Collections", "Browse by", "Backlog"]
+
+
+
+def test_new_rules_drop_the_games_rolled_under_the_old_ones(live, rb, monkeypatch):
+    """Lab, 2026-10-17: a roll for 4+ players on this box found nothing, but the card from an earlier
+    roll (any number of players, not on the box, with Download) stayed. Changing who's playing or
+    "only what's here" starts over: nothing found shows the empty state."""
+    app = live
+    app.night_opts = {"players": 0, "here": False}
+    found = iter([{"id": 1, "name": "Lorem", "platform_id": 1}])
+    from rbui.screens import gamenight
+    monkeypatch.setattr(gamenight, "roll", lambda *a, **k: (next(found, None), "empty", 3))
+    monkeypatch.setattr(app, "bg", lambda fn, done=None, err=None: done(fn()))
+    gn = rb.GameNightScreen(app, rb.Scope.library(app))
+    app.push(gn)
+    assert gn.current()["id"] == 1
+    gn.set_players(4)
+    assert gn.current() is None and gn.why == "empty"
+    gn.toggle_here()
+    assert gn.current() is None

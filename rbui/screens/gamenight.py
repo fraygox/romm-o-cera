@@ -183,7 +183,7 @@ class GameNightScreen(Screen):
     def set_players(self, n):
         if n != self.opts["players"]:
             self.opts["players"] = n
-            self.roll()
+            self.start_over()
 
     def step_players(self, d=1):
         ns = [n for n, _ in PARTY]
@@ -191,6 +191,12 @@ class GameNightScreen(Screen):
 
     def toggle_here(self):
         self.opts["here"] = not self.opts["here"]
+        self.start_over()
+
+    def start_over(self):
+        """New rules (who's playing, only what's here): the games rolled under the old ones go, so
+        a roll that finds nothing never leaves one that doesn't fit on screen."""
+        self.picks, self.sel = [], 0
         self.roll()
 
     def current(self):
