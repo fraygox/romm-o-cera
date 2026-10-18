@@ -312,9 +312,9 @@ def test_check_games_tile_and_screen(ui, rb):
     ck = rb.CheckScreen(app)
     app.push(ck)
     assert ck.unseen == 3
-    ck.action("right")
-    ck.action("right")
-    assert ck.sel == 2 and ck.hints()[0] == ("A", "Look")
+    assert ck.hints()[0] == ("A", "Quick check")            # never checked: the first row starts one
+    ck.action("down")
+    assert ck.sel == 1 and ck.hints()[0] == ("A", "Open")   # Games ES can't see
     ck.draw(app.canvas)
     ck.action("ok")
     sc = app.stack[-1]
@@ -340,23 +340,23 @@ def test_check_games_tile_and_screen(ui, rb):
     assert any(t[0].startswith("Unpacked Lorem Racer.zip") for t in app.toasts)
 
 
-def test_three_tiles_keep_the_findings_below(ui, rb):
+def test_findings_then_the_door_to_games_es_cant_see(ui, rb):
     app = ui
-    rommlib.save_audit([{"system": "psx", "path": _w("psx/A.chd"), "severity": "damaged", "rom": None,
+    rommlib.save_audit([{"system": "psx", "path": _w("psx/A.chd"), "severity": "damaged", "rom": {"id": 1, "name": "A"},
                          "problem": "Disc image cut short"}], {"checked": 1}, False)
     ck = rb.CheckScreen(app)
     app.push(ck)
     assert ck.unseen == 0 and len(ck.findings) == 1
-    ck.action("right")
+    assert ck.sel == 0 and ck.hints()[:3] == [("A", "Download again"), ("X", "Actions"), ("Y", "Check again")]
     ck.action("down")
-    assert ck.sel == 3 and ck.hints()[0] == ("A", "Download again")
+    assert ck.sel == 1 and ck.hints()[0] == ("A", "Open")
     ck.action("down")
-    assert ck.sel == 3                                        # the last finding: stays
+    assert ck.sel == 1                                        # the last row: stays
     ck.action("up")
     assert ck.sel == 0
-    ck.action("left")
-    assert ck.sel == 0
     ck.draw(app.canvas)
+    ck.action("x")
+    assert [e[0] for e in app.modal.entries][:3] == ["Quick check", "Full check", "Download all damaged again"]
 
 
 def test_pick_several_then_unpack_them_all(ui, rb):

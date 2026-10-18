@@ -7,8 +7,9 @@ import pygame
 import rommlib
 from rbui import pads, theme
 from rbui.theme import W
-from rbui.draw import circle, focus_box, hline, measure, rrect, scroll_text, text
-from rbui.widgets.layout import list_row
+from rbui.draw import circle, measure, state_stripe, text
+from rommlib import human_size
+from rbui.widgets.layout import Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width, split
 from rbui.screens.base import ListScreen, Screen
 from rbui.screens.box_data import plural
 from rbui.screens.unseen import UnseenScreen
@@ -52,6 +53,13 @@ class AuditScreen(ListScreen):
                     rommlib.save_audit(self.findings, self.stats, deep)
                 except OSError as e:
                     rommlib.log("audit save: %s" % e)
+            st = app.stack
+            if not self.cancel.is_set() and len(st) > 1 and st[-1] is self and isinstance(st[-2], CheckScreen):
+                n = len(self.findings)
+                app.toast("Checked %s: %s" % (plural((self.stats or {}).get("checked", 0), "game"),
+                                               plural(n, "game needs", "games need") + " a look" if n
+                                               else "every game looks right"), theme.AMBER if n else theme.GREEN)
+                app.pop()                                # Check games shows what was found
         app.bg(run, done, self.load_failed("findings"))
 
     base = 0            # sel of the first finding (CheckScreen puts three tiles above them)
@@ -215,15 +223,23 @@ class AuditScreen(ListScreen):
                      mark=lambda ctr, f=f, col=col: self.draw_pick(c, f, ctr) or circle(c, col, ctr, 5) or True)
 
 
+DOOR = {"door": "unseen"}            # the row under the findings: Games ES can't see
+CHECK = {"door": "check"}            # never checked: the first row starts one
+
+KIND = {"damaged": ("Damaged", "RED"), "differs": ("Differs from RomM", "AMBER")}
+WHY = {"damaged": "It's broken or cut short, so it may not start or may stop partway. Downloading it again "
+                  "replaces it; saves and states follow.",
+       "differs": "It isn't RomM's copy: another dump or a trimmed image. It may well play. Downloading it "
+                  "again replaces it with RomM's; saves and states follow."}
+
+
 class CheckScreen(AuditScreen):
-    """Check games, from On this box: start a quick or full check, look for
-    games ES can't see, and the last finished check's findings (files changed
-    since drop out), each one downloadable again from here."""
-    ROWS = 7
-    TILES = (("Quick check", "Missing tracks, bad zips, short discs"),
-             ("Full check", "Also checksums every file (slow)"),
-             ("Games ES can't see", "Archives and games in the wrong folder"))
-    base = 3
+    """Check games, from On this box: the last finished check's findings as a list beside a detail
+    panel (damaged first; files changed since drop out), each one downloadable again, and under
+    them the way into Games ES can't see. Y runs a quick check; X Actions has the full check and
+    downloads every damaged game again."""
+    ROWS, ROW_H = 8, 58
+    base = 0
 
     def __init__(self, app):
         Screen.__init__(self, app)
@@ -244,86 +260,145 @@ class CheckScreen(AuditScreen):
         self.app.bg(lambda: len(rommlib.find_unseen(es)), lambda n: setattr(self, "unseen", n),
                     lambda e: setattr(self, "unseen", None))
 
+    def listed(self):
+        return ([] if self.last else [CHECK]) + list(self.findings) + [DOOR]
+
+    def current(self):
+        items = self.listed()
+        return items[min(self.sel, len(items) - 1)]
+
     def crumbs(self):
         return self.trail("Check games")
 
+    def pickable(self, f):
+        return f not in (DOOR, CHECK) and AuditScreen.pickable(self, f)
+
+    def pick_key(self, f):
+        return f.get("path") or ("door", f["door"])      # the two door rows have no file
+
+    def jump_label(self, f):
+        return "ES" if f is DOOR else "Check" if f is CHECK else self.app.system_name(f["system"])
+
+    def unpickable_why(self, f):
+        return "Games ES can't see opens on its own" if f is DOOR else AuditScreen.unpickable_why(self, f)
+
     def hints(self):
-        y = [("Y", "Download all damaged again")] if self.redownloadable() else []
-        if self.sel >= self.base:
-            return AuditScreen.hints(self)
-        return [("A", "Look" if self.sel == 2 else "Start")] + ([("X", pads.ACTIONS)] if self.findings else []) + y + \
-            [("B", "Stop picking" if self.picking else "Back")]
+        it = self.current()
+        if it is DOOR:
+            first = [("A", "Open")]
+        elif it is CHECK:
+            first = [("A", "Quick check")]
+        elif not it.get("rom") or it["path"] in self.queued:
+            first = []
+        else:
+            first = [("A", "Download again")]
+        y = [] if it is CHECK else [("Y", "Check again" if self.last else "Quick check")]
+        return self.list_hints(*(first + [("X", pads.ACTIONS)] + y))
+
+    def list_actions(self):
+        out = [("Quick check", "Missing tracks, damaged zips, cut-short discs, sizes against RomM",
+                lambda: self.start(False)),
+               ("Full check", "Also checksums every file and verifies CHDs: hours for a big library",
+                lambda: self.start(True))]
+        return out + AuditScreen.list_actions(self)
+
+    def start(self, deep):
+        app = self.app
+        if not app.platforms:                      # offline: a check would find nothing and say all is well
+            app.load_platforms()
+            app.toast(app.error or "Still loading platforms…", theme.AMBER)
+            return
+        app.push(AuditScreen(app, deep=deep))
 
     def action(self, a):
         app = self.app
-        n = len(self.findings)
-        if self.tile_nav(a):
+        if self.nav(a) or self.pick_action(a):
             return
-        if a in ("l2", "r2"):
-            if self.sel >= self.base and n:
-                self.jump(a == "r2")
-        elif (a != "ok" or self.sel >= self.base) and (a != "x" or n) and self.pick_action(a):
-            return
-        elif a == "ok":
-            if self.sel == 2:
+        it = self.current()
+        if a == "ok":
+            if it is DOOR:
                 app.push(UnseenScreen(app))
-            elif self.sel < 2:
-                if not app.platforms:              # offline: a check would find nothing and say all is well
-                    app.load_platforms()
-                    app.toast(app.error or "Still loading platforms…", theme.AMBER)
-                    return
-                app.push(AuditScreen(app, deep=self.sel == 1))
-            elif n:
-                self.open_finding(self.findings[self.sel - self.base])
-        elif a == "y" and self.redownloadable():
-            self.redownload_all()
+            elif it is CHECK:
+                self.start(False)
+            else:
+                self.open_finding(it)
+        elif a == "y":
+            self.start(False)
         else:
             Screen.action(self, a)
 
-    def tap_tile(self, i):
-        self.sel = i
-        self.action("ok")
+    def name(self, f):
+        return (f.get("rom") or {}).get("name") or os.path.splitext(os.path.basename(f["path"]))[0]
 
     def draw(self, c):
-        k = len(self.TILES)
-        tw = (W - 96 - 16 * (k - 1)) // k
-        for i, (label, sub) in enumerate(self.TILES):
-            r = pygame.Rect(48 + i * (tw + 16), 80, tw, 64)
-            self.app.hit(r, lambda i=i: self.tap_tile(i))
-            on = self.sel == i
-            if on:
-                focus_box(c, r, 12)
-            else:
-                rrect(c, theme.PANEL, r, 12)
-            col = theme.FAINT
-            if i == 2 and self.unseen is not None:
-                sub, col = ("%s ES can't see" % plural(self.unseen, "file"), theme.AMBER) if self.unseen else \
-                    ("ES sees every game file", theme.GREEN)
-            text(c, self.f.h3, label, (r.left + 20, r.top + 10), theme.TEXT if on else theme.DIM, maxw=r.width - 40)
-            text(c, self.f.small, sub, (r.left + 20, r.top + 37), col, maxw=r.width - 40)
-        hline(c, theme.LINE, (56, 160), (W - 56, 160))
+        items = self.listed()
         a = self.last
-        if not a:
-            text(c, self.f.h3, "Not checked yet.", (56, 176), theme.TEXT)
-            text(c, self.f.body, "A quick check takes minutes; findings stay here until you check again.",
-                 (56, 212), theme.DIM, maxw=W - 112)
-            return
-        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(a.get("time", 0)))
-        head = "Last %s, %s: " % ("full check" if a.get("deep") else "quick check", when)
         st = self.stats
-        dmg = sum(1 for f in self.findings if f["severity"] == "damaged")
-        dif = len(self.findings) - dmg
-        r = text(c, self.f.h3, head, (56, 176), theme.TEXT)
-        if not self.findings:
-            text(c, self.f.h3, "everything looks right.", (r.right + 4, 176), theme.GREEN)
-            scroll_text(c, self.f.body, "%d checked, %d matched to RomM. Games not in RomM under the same file "
-                        "name aren't checked (%d)." % (st.get("checked", 0), st.get("matched", 0),
-                                                       st.get("unmatched", 0)),
-                        (56, 212, W - 112, 3 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="check-none")
+        rows = ([] if a else [("Check now", "A quick check takes a few minutes", "")]) + \
+            [(self.name(f), f["problem"].split(" · ")[0], self.app.system_name(f["system"]))
+             for f in self.findings] + [("Games ES can't see", "Archives a system doesn't take, games in "
+                                         "the wrong folder", "")]
+        lst, pan = split(need_width(self.f, rows, mark=self.showing_picks()))
+        self.BUBBLE_AT = bubble_at(lst)
+        if not a:
+            list_head(c, self.f, lst, "Not checked yet")
+        elif self.findings:
+            list_head(c, self.f, lst, "%s a look" % plural(len(self.findings), "game needs", "games need"),
+                      "%s, %s · %s checked" % ("Full check" if a.get("deep") else "Quick check",
+                                               time.strftime("%-d %b %H:%M", time.localtime(a.get("time", 0))),
+                                               "{:,}".format(st.get("checked", 0))))
+        else:
+            list_head(c, self.f, lst, "Every game here looks right", color=theme.GREEN)
+        for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
+            f = items[i]
+            if f is CHECK:
+                list_row(c, self.f, r, on, rows[i][0], rows[i][1], slot="check-now", chevron=True, box=theme.BG2)
+                continue
+            if f is DOOR:
+                n = self.unseen
+                st_, col = ("%s" % plural(n, "file"), theme.AMBER) if n else (("None", theme.GREEN) if n == 0
+                                                                              else ("", None))
+                list_row(c, self.f, r, on, rows[i][0], rows[i][1], st_, col, slot="check-door", chevron=True,
+                         box=theme.BG2)
+                continue
+            col = getattr(theme, KIND.get(f["severity"], ("", "AMBER"))[1])
+            queued = f["path"] in self.queued
+            list_row(c, self.f, r, on, rows[i][0], rows[i][1], sub_color=col, slot="check",
+                     tag="queued" if queued else rows[i][2], tag_color=theme.GREEN if queued else theme.DIM,
+                     mark=(lambda ctr, f=f: self.draw_pick(c, f, ctr)) if self.showing_picks() else None)
+            state_stripe(c, r, col)                  # red or amber, as Activity marks its rows
+        self.draw_panel(c, pan, self.current())
+
+    def draw_panel(self, c, pan, it):
+        p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="check-panel")
+        p.actions(hint_actions(self))
+        if it is DOOR:
+            n = self.unseen
+            p.title("Games ES can't see", "Looking…" if n is None else plural(n, "file") if n else
+                    "ES sees every game file here", theme.AMBER if n else theme.GREEN if n == 0 else None)
+            p.prose("Archives in a system that doesn't take them, and games in another system's folder. "
+                    "Unpack them, move them where they belong, or delete them.", lines=4)
             return
-        x = r.right + 4
-        if dmg:
-            x = text(c, self.f.h3, "%d damaged" % dmg, (x, 176), theme.RED).right + 16
-        if dif:
-            text(c, self.f.h3, "%d differ from RomM" % dif, (x, 176), theme.AMBER)
-        self.draw_rows(c, 212, self.ROWS)
+        if it is CHECK:
+            p.title("Check games", "Not checked yet")
+            p.prose("Quick check looks for missing tracks, damaged zips and cut-short discs, and compares "
+                    "sizes with RomM: a few minutes. Full check (in Actions) also checksums every file: hours "
+                    "for a big library.", lines=5)
+            p.prose("What it finds stays here until the next check. Damaged games can be downloaded again; "
+                    "saves follow.", lines=3)
+            return
+        if it is None or not self.findings:
+            return
+        kind, col = KIND.get(it["severity"], ("Needs a look", "AMBER"))
+        p.title(self.name(it), "Queued to download again" if it["path"] in self.queued else kind,
+                theme.GREEN if it["path"] in self.queued else getattr(theme, col))
+        try:
+            here = human_size(os.path.getsize(it["path"]))
+        except OSError:
+            here = ""
+        p.facts([("System", self.app.system_name(it["system"])), ("On this box", here)], lines=1)
+        p.facts([("File", "roms/%s/%s" % (it["system"], os.path.relpath(
+            it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))))], cols=1, lines=2)
+        p.prose(it["problem"].replace(" · ", ". ") + ".", label="What's wrong", lines=3)
+        p.prose(WHY.get(it["severity"], "") if it.get("rom") else
+                "RomM has no game under this file name, so it can't be downloaded again from here.", lines=4)

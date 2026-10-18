@@ -62,7 +62,7 @@ Every list moves the same way:
 - **Up/down** move a row; **L/R** (PgUp/PgDn) and **left/right** move a
   page. In Collections, up/down move between shelves and left/right along
   one (on a wall, up/down move a row of tiles);
-  on the tiles above Space's and Check games' lists they move between the
+  on the tiles above Space's list they move between the
   tiles; and the platform cards and theme cards are grids, where left/right
   move one card. On a game's page they go to the previous or next game.
 - **L2/R2** (`[` `]`) jump to the previous or next letter in a list sorted
@@ -125,7 +125,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Compress | That system's games (a can't-convert row: why) | Compress the whole system | | |
 | Compress › a system | Compress this one | Actions: compress all, pick several | | A–Z |
 | BIOS files | Get from RomM | Get all from RomM | | A–Z |
-| Check games | Start a check / look / download again | Actions: download all damaged again, pick several | Download all damaged again | System |
+| Check games | Download again / open Games ES can't see | Actions: quick check, full check, download all damaged again, pick several | Check again | System |
 | Games ES can't see | Its options: unpack, move, delete | Actions: pick several, pick all | | System |
 | Settings | Change / open | | | |
 | Theme picker | Keep this theme (Custom: open it) | Edit a copy | OLED on/off | |

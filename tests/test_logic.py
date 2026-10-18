@@ -1219,7 +1219,7 @@ def test_on_this_box_sections(isolated, rb, monkeypatch):
     # Check games: kept findings below the two tiles
     ck = rb.CheckScreen(app)
     app.push(ck)
-    assert ck.findings == [] and ck.hints()[0] == ("A", "Start")
+    assert ck.findings == [] and ck.hints()[0] == ("A", "Quick check")
     ck.action("ok")
     assert isinstance(app.stack[-1], rb.AuditScreen) and not app.stack[-1].deep
     app.stack[-1].cancel.set()
@@ -1251,10 +1251,10 @@ def test_check_needs_romm_and_empty_lists_stay_put(isolated, rb, monkeypatch):
     monkeypatch.setattr(app, "load_platforms", lambda: None)
     ck = rb.CheckScreen(app)
     app.push(ck)
-    ck.action("down")
-    assert ck.sel == 0
     ck.action("ok")
     assert app.stack[-1] is ck                      # no check started
+    ck.action("y")
+    assert app.stack[-1] is ck
     sp = rb.SpaceScreen(app)
     sp.rows = []
     sp.action("down")

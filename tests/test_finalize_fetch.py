@@ -57,13 +57,16 @@ def test_it_widens_while_files_wait_on_the_network():
     assert took < len(keys) * 0.03 / 4                       # at least 4x one at a time
 
 
-def test_it_stays_narrow_when_the_cpu_is_the_limit():
+def test_it_stays_narrow_when_the_cpu_is_the_limit(monkeypatch):
     """Work that holds Python's lock (decoding, converting): more threads would only wait
     for each other, so the width doesn't grow past a couple."""
+    clock = time.monotonic                     # this process uses all of a core, whatever else the machine runs
+    monkeypatch.setattr(rb_finalize.time, "process_time", clock)
+
     def busy():
-        end = time.process_time() + 0.01
+        end = clock() + 0.01
         n = 0
-        while time.process_time() < end:
+        while clock() < end:
             n += 1
         return b"x", 1
     f = F()

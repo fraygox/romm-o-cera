@@ -85,9 +85,13 @@ A platform's game list offers the same for its system (X › Get BIOS).
 
 ## Check games
 
-Three tiles at the top: **Quick check**, **Full check** and
-[Games ES can't see](#games-es-cant-see); A starts or opens one, and B stops
-a check that's running. Below them are the last check's results.
+The last check's findings, damaged ones first, beside a panel that says what's
+wrong with the focused game and what downloading it again does. **Y** runs a
+quick check; **X** Actions has **Quick check**, **Full check** and
+**Download all damaged again**. Under the findings,
+[Games ES can't see](#games-es-cant-see) opens with A. Before the first check,
+the list starts with **Check now**. B stops a check that's running; when it
+finishes, Check games shows what it found.
 
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files
@@ -121,7 +125,7 @@ The last check's results stay here until you check again. A game whose file
 has changed since (replaced or deleted) drops off the list.
 
 Damaged games can be downloaded again, one at a time (**A**) or all at once
-(**Y**); a fresh copy replaces a cut-short CHD. To download several findings
+(X › **Download all damaged again**); a fresh copy replaces a cut-short CHD. To download several findings
 again, amber ones included, pick them (X › Pick several) and choose
 **Download … again** from the X Actions menu. A damaged game RomM names differently is found
 by its RetroAchievements hash, else by the matching title, disc and region;
@@ -133,7 +137,7 @@ a trimmed image is smaller than RomM's copy).
 
 ### Games ES can't see
 
-The third tile. EmulationStation only lists files whose extension the system
+The row under the findings. EmulationStation only lists files whose extension the system
 takes (its list in `es_systems.cfg`: PS2 and PSP take no `.zip`, N64 takes no
 `.rvz`…) and silently skips the rest. This looks through every system folder
 — no RomM needed, nothing is checksummed — and lists, by system:

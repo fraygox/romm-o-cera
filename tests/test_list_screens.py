@@ -356,7 +356,7 @@ def _check(rb, app, n, monkeypatch):
 
 
 # name: (tiles, ROWS, first row's y, ROW_H, gap)
-TILED = {"SpaceScreen": (2, 6, 326, 54, 4), "CheckScreen": (3, 7, 212, 62, 6)}
+TILED = {"SpaceScreen": (2, 6, 326, 54, 4)}
 
 # (sel, scroll) after each step of _tile_script, on 3 * ROWS + 2 rows
 TRACE_TILED = {

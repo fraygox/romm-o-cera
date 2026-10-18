@@ -201,11 +201,20 @@ def no_conversions():
             pass
 
 
+def no_audit():
+    try:
+        os.remove(rommlib.audit_path())
+    except OSError:
+        pass
+
+
 def fake_audit():
     """A finished quick check with one damaged and one differing game."""
     stem = os.path.join(R, "psx/Copper Lighthouse (USA)/Copper Lighthouse (USA) (Disc 1).chd")
     rommlib.save_audit([
-        {"system": "psx", "path": stem, "severity": "damaged", "rom": None,
+        {"system": "psx", "path": stem, "severity": "damaged",
+         "rom": {"id": 901, "name": "Copper Lighthouse (USA) (Disc 1)", "fs_name": "Copper Lighthouse (USA) (Disc 1).zip",
+                 "fs_name_no_ext": "Copper Lighthouse (USA) (Disc 1)", "platform_id": 7},
          "problem": "Disc image cut short: boot files missing"},
         {"system": "psx", "path": os.path.join(R, "psx/Cobalt Comet Rally (USA).chd"), "severity": "differs", "rom": None,
          "problem": "Smaller than RomM's copy (a trimmed image?)"}],
@@ -692,6 +701,12 @@ SCENES = [
                                       setattr(app, "_after", lambda: app.dispatch("ok")))),
     ("check-games", lambda: (fake_audit(), fake_unseen(), app.push(rb.OnThisBoxScreen(app)),
                              app.push(rb.CheckScreen(app)))),
+    ("check-games-door", lambda: (fake_audit(), fake_unseen(), app.push(rb.OnThisBoxScreen(app)),
+                                  app.push(rb.CheckScreen(app)), setattr(app.stack[-1], "sel", 2))),
+    ("check-games-actions", lambda: (fake_audit(), fake_unseen(), app.push(rb.OnThisBoxScreen(app)),
+                                     app.push(rb.CheckScreen(app)),
+                                     setattr(app, "_after", lambda: app.dispatch("x")))),
+    ("check-games-never", lambda: (no_audit(), fake_unseen(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)))),
     ("check-unseen", lambda: (fake_unseen(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)),
                               app.push(rb.UnseenScreen(app)))),
     ("check-unseen-menu", lambda: (fake_unseen(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.CheckScreen(app)),
