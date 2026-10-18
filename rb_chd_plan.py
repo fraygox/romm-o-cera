@@ -22,6 +22,7 @@ order. Then start rb_chd.py (it waits for ES to be idle by itself).
 import argparse
 import json
 import os
+import time
 import re
 import sys
 
@@ -32,6 +33,7 @@ import rb_chd  # noqa: E402
 # the order games are queued in (and --systems' default): each converter's
 # priority, from the converter table (tests/test_logic.py pins it)
 ORDER = rommlib.planner_order()
+STILL_WRITTEN = 60          # seconds: a file changed this recently is still being unpacked or copied
 DISC_DIR = re.compile(r"\(Disc \d+\)", re.I)
 
 
@@ -185,6 +187,14 @@ def candidates(systems=None, cfg=None, skipped=None):
                         skipped.append((system, files[0], str(e)))
                     continue
             if any(f in queued for f in files):
+                continue
+            try:
+                fresh = max(os.path.getmtime(f) for f in files) > time.time() - STILL_WRITTEN
+            except OSError:
+                continue
+            if fresh:                            # still being unpacked or copied: the worker would
+                if skipped is not None:          # only find it changed when it's done
+                    skipped.append((system, files[0], "it's still being written; try again in a minute"))
                 continue
             try:
                 size = sum(os.path.getsize(p) for f in files for p in rb_chd.sources_of(f) if os.path.isfile(p))

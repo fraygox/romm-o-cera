@@ -1348,3 +1348,21 @@ def test_compress_list_survives_one_unreadable_cue(isolated, monkeypatch):
     cands = rb_chd_plan.candidates(["psx"], skipped=skipped)
     assert [os.path.basename(c["files"][0]) for c in cands] == ["Good (USA).cue"]
     assert skipped and "Bad (USA).cue" in skipped[0][1] and "Permission denied" in skipped[0][2]
+
+
+def test_compress_never_offers_a_disc_still_being_unpacked(isolated, monkeypatch):
+    """Box, 2026-10-17: Siren was unpacked from Games ES can't see and Compress pressed while the
+    .iso was still being written; the worker spent minutes converting a growing file, then threw
+    it away. A file changed in the last minute is listed as can't convert, with the reason."""
+    import rb_chd_plan
+    monkeypatch.setattr(rb_chd_plan, "STILL_WRITTEN", 60)
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "ps2")
+    os.makedirs(sysdir)
+    iso = os.path.join(sysdir, "Lorem (USA).iso")
+    open(iso, "wb").write(b"\0" * 4096)
+    skipped = []
+    assert rb_chd_plan.candidates(["ps2"], skipped=skipped) == []
+    assert "still being written" in skipped[0][2]
+    old = time.time() - 120
+    os.utime(iso, (old, old))
+    assert [os.path.basename(c["files"][0]) for c in rb_chd_plan.candidates(["ps2"])] == ["Lorem (USA).iso"]

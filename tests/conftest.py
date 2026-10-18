@@ -35,8 +35,10 @@ def _fast_polls(monkeypatch):
     every TOOL_POLL s. Production keeps 1 s / 3 s; tests run the same loops,
     just without idling up to a second or three per wait."""
     import rb_chd
+    import rb_chd_plan
     monkeypatch.setattr(rommlib, "WORKER_POLL", 0.05)
     monkeypatch.setattr(rb_chd, "TOOL_POLL", 0.05)
+    monkeypatch.setattr(rb_chd_plan, "STILL_WRITTEN", 0)     # test files are always fresh
 
 
 @pytest.fixture(autouse=True)
