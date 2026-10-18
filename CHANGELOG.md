@@ -3,6 +3,20 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.11.2 (2026-10-17)
+
+Faster game info away from home, and clearer words, counts and buttons on every screen
+
+### Performance
+- **perf:** Game info and media reach EmulationStation up to 7 times faster when RomM is far away: they're fetched several at a time, as many as the box's CPU and the connection allow. A small box stays at two at a time.
+
+### Fixes
+- **fix:** Compressing shows what happened in words: "to CHD · 22.0 MB, now 147 KB", or the reason it was skipped, never the worker's log line; a queued disc shows its real size, tracks included.
+- **fix:** Activity counts the queue the way the header does, says how many are paused, and downloads held by Pause all say On hold.
+- **fix:** Counts of one read as one ("Delete 1 game?"), a one-game collection on the box says On this box, platform tiles always say games, and a shelf's position reads 4 / 46 so it isn't mistaken for what's on the box.
+- **fix:** Deleting asks Keep or Delete; Leftovers, Free up space and Conversions show where they are (On this box › Space › …); the address and token editors are named as their Settings rows; Settings only shows "Now:" for rows that hold a setting.
+- **fix:** Picking several labels X with what it does (Act on 2), Game night only offers another roll when one could find a game, the Search keyboard has no keys twice, game facts have room between them, and no screen draws a character the font lacks.
+
 ## v0.11.1 (2026-10-16)
 
 Safer disc compression (multi-disc playlists, LibCrypt .sbi files, exFAT drives), update checks that retry, and systems called by their names
