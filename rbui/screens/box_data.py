@@ -166,15 +166,17 @@ def space_parts(rows, total, free):
     return parts + [("system", theme.SYSTEM_COL, "Batocera and saves", rest)]
 
 
-def space_bar(surf, fonts, rect, parts, total, free, keep, cols=2):
+def space_bar(surf, fonts, rect, parts, total, free, keep, cols=2, legend=True):
     """The whole drive as one bar: each used part in its colour, the free
     space as an empty track whose last stretch, the keep-free reserve
-    downloads never use, is striped. Then the legend; returns its bottom."""
+    downloads never use, is striped. Then the legend (unless legend is False); returns its bottom."""
     x, y, w, h = rect
     if total <= 0:
         return y
     meter(surf, rect, [(n / total, col) for key, col, lab, n in parts], track=theme.BG2, least=3,
           reserve=min(keep, total) / total)
+    if not legend:
+        return y + h
     usable = max(0, free - keep)
     items = [(lab, n, col) for key, col, lab, n in parts if n] + \
         [("Free for downloads", usable, None), ("Kept free", min(keep, total), "hatch")]

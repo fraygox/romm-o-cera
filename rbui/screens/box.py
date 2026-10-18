@@ -6,8 +6,10 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import theme
-from rbui.draw import (circle, focus_box, hline, meter, progress_bar, rich_text, rrect, scroll_text,
+from rbui.draw import (card, circle, focus_box, hline, meter, progress_bar, rich_text, rrect, scroll_text,
                        state_stripe, text)
+from rbui.theme import W
+from rbui.widgets.layout import list_row
 from rbui.widgets.chips import status_chip, tag
 from rbui.screens.base import Screen
 from rbui.screens.box_data import (RESULT_LABELS, bios_pill, bios_rows, conversion_rows, conversion_status,
@@ -91,14 +93,14 @@ class OnThisBoxScreen(Screen):
                 return "Measuring…", None
             if not self.games:
                 return "None yet", None
-            return "%s, %s" % (plural(len(self.games), "game"), human_size(sum(g["size"] for g in self.games))), None
+            return "%s in all" % human_size(sum(g["size"] for g in self.games)), None
         if key == "space":
             total, free, keep = disk_space(app.cfg)
             if not total:
                 return "Can't read the drive", theme.AMBER
             if free < keep:
                 return "%s free: under the %s kept free" % (human_size(free), human_size(keep)), theme.AMBER
-            return "%s free, %s for downloads" % (human_size(free), human_size(free - keep)), None
+            return "%s for downloads, %s kept free" % (human_size(free - keep), human_size(keep)), None
         if key == "bios":
             if self.bios is None:
                 return "Checking…", None
@@ -125,14 +127,14 @@ class OnThisBoxScreen(Screen):
             if not a["findings"]:
                 return "All good on %s" % when, None
             bits = (["%d damaged" % dmg] if dmg else []) + (["%d differ from RomM" % dif] if dif else [])
-            return "%s, checked %s" % (", ".join(bits), when), theme.RED if dmg else theme.AMBER
+            return ", ".join(bits), theme.RED if dmg else theme.AMBER
         if key == "compress":
             if self.compress is None:
                 return "Looking…", None
             ok = [c for c in self.compress if c["enabled"]]
             if not ok:
                 return "Nothing left to compress", None
-            return "%s could be smaller (%s)" % (plural(len(ok), "game"), human_size(sum(c["size"] for c in ok))), None
+            return "%s could be smaller" % human_size(sum(c["size"] for c in ok)), None
         if key == "conv":
             run = next((r for r in self.convs if r["kind"] == "running"), None)
             nq = sum(1 for r in self.convs if r["kind"] == "queued")
@@ -146,26 +148,81 @@ class OnThisBoxScreen(Screen):
             return "Nothing waiting", None
         return "Art, videos, descriptions from RomM", None
 
+    # -- the short value at the right of each row: (text, colour when it needs you, or None)
+    def glance(self, key):
+        if key == "games":
+            return ("" if self.games is None else plural(len(self.games), "game")), None
+        if key == "space":
+            total, free, keep = disk_space(self.app.cfg)
+            return (human_size(free) + " free" if total else ""), (theme.AMBER if total and free < keep else None)
+        if key == "compress":
+            ok = [c for c in (self.compress or []) if c["enabled"]]
+            return (plural(len(ok), "game") if ok else ""), None
+        if key == "bios":
+            offer = sum(len(r["offers"]) for r in (self.bios or []) if r.get("here"))
+            return ("Fetch %d" % offer, theme.ACCENT_HI) if offer else ("", None)
+        if key == "check":
+            a = self.audit
+            dmg = sum(1 for f in (a or {}).get("findings", []) if f["severity"] == "damaged")
+            dif = len((a or {}).get("findings", [])) - dmg
+            if dmg:
+                return "%d damaged" % dmg, theme.RED
+            if dif:
+                return "%d differ" % dif, theme.AMBER
+            return "", None
+        if key == "conv":
+            run = next((r for r in self.convs if r["kind"] == "running"), None)
+            if run:
+                return "%d%%" % (conversion_status(run)[1] * 100), theme.BLUE
+            failed = sum(1 for r in self.convs if r["kind"] == "failed")
+            return ("%d failed" % failed, theme.RED) if failed else ("", None)
+        return "", None
+
+    def summary(self):
+        """The card's headline: what needs you, else what's running, else all's well."""
+        need = [(k, self.glance(k)) for k, _ in self.ITEMS]
+        dmg = next((g for k, g in need if k == "check" and g[1] == theme.RED), None)
+        if dmg:
+            n = int(dmg[0].split()[0])
+            return "%s you" % plural(n, "game needs", "games need"), theme.RED
+        if any(g[1] in (theme.AMBER, theme.ACCENT_HI) or (g[1] == theme.RED) for k, g in need):
+            return "A few things to look at", theme.AMBER
+        if any(r["kind"] == "running" for r in self.convs):
+            return "Compressing in the background", theme.TEXT
+        return "Everything here looks fine", theme.TEXT
+
+    HEAD = pygame.Rect(32, 80, W - 64, 76)
+    LIST = pygame.Rect(32, 168, 584, 0)
+    ROW_H = 70
+
     def draw(self, c):
         if time.time() - self.conv_at > 1.0:
             self.convs, self.conv_at = conversion_rows(), time.time()
-        y = 84
+        hr = self.HEAD
+        card(c, hr)
+        line, col = self.summary()
+        total, free, keep = disk_space(self.app.cfg)
+        run = sum(1 for r in self.convs if r["kind"] == "running")
+        meta = ("%s free of %s" % (human_size(free), human_size(total)) if total else "") + \
+            (" · %d converting" % run if run else "")
+        mr = text(c, self.f.small, meta, (hr.right - 20, hr.top + 20), theme.DIM, "topright", maxw=hr.width // 2)
+        text(c, self.f.h2, line, (hr.left + 20, hr.top + 12), col, maxw=mr.left - 40 - hr.left)
+        if total and self.storage is not None:
+            space_bar(c, self.f, (hr.left + 20, hr.bottom - 22, hr.width - 40, 8),
+                      space_parts(self.storage, total, free), total, free, keep, legend=False)
         for i, (key, label) in enumerate(self.ITEMS):
-            r = pygame.Rect(48, y, 520, self.TILE_H)
+            r = pygame.Rect(self.LIST.left, self.LIST.top + i * self.ROW_H, self.LIST.width, self.ROW_H - 6)
             self.app.hit(r, lambda i=i: self.tap_now(i))
             on = i == self.sel
-            if on:
-                focus_box(c, r, 14)
-            else:
-                rrect(c, theme.PANEL, r, 14)
-            text(c, self.f.h2, label, (r.left + 28, r.top + 9), theme.TEXT if on else theme.DIM)
-            line, col = self.verdict(key)
-            if col:
-                circle(c, col, (r.left + 33, r.top + 50), 5)
-            text(c, self.f.small, line, (r.left + (44 if col else 28), r.top + 40),
-                 col or (theme.DIM if on else theme.FAINT), maxw=r.width - 60)
-            y += self.STEP
-        p = pygame.Rect(616, 84, 616, self.STEP * (len(self.ITEMS) - 1) + self.TILE_H)
+            sub, scol = self.verdict(key)
+            val, vcol = self.glance(key)
+            stripe = scol or vcol
+            list_row(c, self.f, r, on, label, sub, val, vcol or theme.DIM, sub_color=scol, slot="box-row",
+                     box=theme.PANEL, chevron=True)
+            if val and vcol:                          # what needs you: the value as a chip, over the plain one
+                status_chip(c, self.f.small, val, (r.right - 38, r.centery), vcol, "midright", h=26)
+            state_stripe(c, r, stripe or theme.LINE)
+        p = pygame.Rect(640, self.LIST.top, W - 32 - 640, self.ROW_H * len(self.ITEMS) - 6)
         rrect(c, theme.PANEL, p, 16)
         getattr(self, "panel_" + self.ITEMS[self.sel][0])(c, p)
 
@@ -190,7 +247,7 @@ class OnThisBoxScreen(Screen):
 
     def panel_games(self, c, p):
         x = p.left + 28
-        self.head(c, p, "Biggest first", self.verdict("games")[0] if self.games else "")
+        self.head(c, p, "Games from RomM", "biggest first")
         if self.games is None:
             return self.waiting(c, p, "Measuring…")
         if not self.games:
@@ -200,7 +257,7 @@ class OnThisBoxScreen(Screen):
         yy = p.top + 72
         for g in self.games[:7]:
             text(c, self.f.row, g["name"], (x, yy), theme.DIM, maxw=p.width - 240)
-            tag(c, self.f.tiny, g["system"] or "?", (p.right - 128, yy + 3), "topright", color=theme.DIM)
+            tag(c, self.f.tiny, self.app.system_name(g["system"]) if g["system"] else "?", (p.right - 128, yy + 3), "topright", color=theme.DIM)
             text(c, self.f.small, human_size(g["size"]), (p.right - 28, yy + 3), theme.DIM, "topright")
             yy += 44
         if len(self.games) > 7:
@@ -211,7 +268,7 @@ class OnThisBoxScreen(Screen):
         x, w = p.left + 28, p.width - 56
         total, free, keep = disk_space(self.app.cfg)
         if not total:
-            return self.head(c, p, "Can't read the drive")
+            return self.head(c, p, "Space", "can't read the drive")
         text(c, self.f.h1, human_size(free) + " free", (x, p.top + 20), theme.AMBER if free < keep else theme.TEXT)
         text(c, self.f.small, "of " + human_size(total), (p.right - 28, p.top + 36), theme.FAINT, "topright")
         if self.storage is None:
@@ -223,6 +280,8 @@ class OnThisBoxScreen(Screen):
             yy += 34
             big = self.storage[0]["total"] or 1
             for r in self.storage[:3]:
+                if yy + 30 > p.bottom - (84 if self.leftovers else 20):   # stops above the foot's rule
+                    break
                 text(c, self.f.body, self.app.system_name(r["system"]), (x, yy), theme.DIM, maxw=170)
                 meter(c, (x + 180, yy + 8, w - 290, 8), [(r[k] / big, col) for k, col, _ in theme.SPACE_PARTS],
                       track=theme.PANEL, least=4)
@@ -236,7 +295,7 @@ class OnThisBoxScreen(Screen):
 
     def panel_bios(self, c, p):
         x = p.left + 28
-        self.head(c, p, "Systems with games here", "" if self.app.platforms else "RomM offline")
+        self.head(c, p, "BIOS files", "systems with games here" if self.app.platforms else "RomM offline")
         if self.bios is None:
             return self.waiting(c, p, "Checking BIOS files…")
         here = [r for r in self.bios if r.get("here")]
@@ -262,11 +321,11 @@ class OnThisBoxScreen(Screen):
     def panel_check(self, c, p):
         x, a = p.left + 28, self.audit
         if not a:
-            self.head(c, p, "Not checked yet")
+            self.head(c, p, "Check games", "not checked yet")
             yy = p.top + 72
         else:
             when = time.strftime("%Y-%m-%d %H:%M", time.localtime(a.get("time", 0)))
-            self.head(c, p, "Last check", "%s, %s" % ("Full check" if a.get("deep") else "Quick check", when))
+            self.head(c, p, "Check games", "%s, %s" % ("full check" if a.get("deep") else "quick check", when))
             yy = p.top + 66
             for f in a["findings"][:3]:
                 col = theme.RED if f["severity"] == "damaged" else theme.AMBER
@@ -276,25 +335,22 @@ class OnThisBoxScreen(Screen):
                 name = (f.get("rom") or {}).get("name") or os.path.basename(f["path"])
                 text(c, self.f.row, name, (r.left + 20, r.top + 10), theme.TEXT, maxw=r.width - 120)
                 text(c, self.f.small, f["problem"], (r.left + 20, r.top + 40), col, maxw=r.width - 40)
-                text(c, self.f.tiny, f["system"], (r.right - 16, r.top + 14), theme.DIM, "topright")
+                text(c, self.f.tiny, self.app.system_name(f["system"]), (r.right - 16, r.top + 14), theme.DIM, "topright")
                 yy += 82
             st = a.get("stats") or {}
             more = len(a["findings"]) - 3
             line = ("and %d more. " % more if more > 0 else "") + \
                 "%d checked, %d matched to RomM." % (st.get("checked", 0), st.get("matched", 0))
             text(c, self.f.body, line, (x, yy + 4), theme.GREEN if not a["findings"] else theme.DIM)
-            yy += 50
-        text(c, self.f.h3, "Quick check", (x, yy), theme.TEXT)
-        text(c, self.f.small, "Missing tracks, damaged zips, cut-short discs, sizes against RomM.", (x, yy + 26),
-             theme.FAINT, maxw=p.width - 56)
-        text(c, self.f.h3, "Full check", (x, yy + 62), theme.TEXT)
-        text(c, self.f.small, "Also checksums every file and verifies CHDs. Hours for a big library.",
-             (x, yy + 88), theme.FAINT, maxw=p.width - 56)
+            yy += 40
+        if not a:
+            self.prose(c, p, "A quick check looks for missing tracks, damaged zips and cut-short discs, and "
+                             "compares sizes with RomM. It takes a few minutes.", yy)
         self.foot(c, p, "Damaged games can be downloaded again; saves follow.")
 
     def panel_compress(self, c, p):
         x = p.left + 28
-        self.head(c, p, "Not compressed yet", "by system")
+        self.head(c, p, "Compress", "not compressed yet, by system")
         if self.compress is None:
             return self.waiting(c, p, "Looking through every system…")
         rows = compress_by_system(self.compress)
@@ -322,13 +378,13 @@ class OnThisBoxScreen(Screen):
         done = [r for r in self.convs if r["kind"] not in ("running", "queued")]
         mode = lambda r: ConversionsScreen.MODES.get((r.get("task") or {}).get("mode") or r.get("mode"), "")  # noqa: E731
         if not self.convs:
-            self.head(c, p, "Nothing to convert")
+            self.head(c, p, "Conversions", "nothing to convert")
             self.prose(c, p, "Disc games are compressed in the background after they "
                                         "download, while nothing is playing.", p.top + 72)
             return
         yy = p.top + 66
         if run:
-            self.head(c, p, "Converting now", "runs while nothing is playing")
+            self.head(c, p, "Conversions", "runs while nothing is playing")
             r = pygame.Rect(x, yy, p.width - 56, 92)
             rrect(c, theme.BG2, r, 12)
             st, frac = conversion_status(run)
@@ -359,7 +415,7 @@ class OnThisBoxScreen(Screen):
 
     def panel_info(self, c, p):
         x = p.left + 28
-        self.head(c, p, "Systems RomM can fill in")
+        self.head(c, p, "Fill in game info", "systems RomM can fill in")
         yy = p.top + 70
         counts = self.counts or {}
         romm = {pl["_system"] for pl in self.app.platforms}

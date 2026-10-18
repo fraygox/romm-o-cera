@@ -1178,7 +1178,7 @@ def test_on_this_box_sections(isolated, rb, monkeypatch):
     hub = rb.OnThisBoxScreen(app)
     app.push(hub)
     hub.games = [{"id": 1, "name": "A", "system": "psx", "when": "", "size": 2 << 30}]
-    assert hub.verdict("games") == ("1 game, 2.0 GB", None)
+    assert hub.verdict("games") == ("2.0 GB in all", None) and hub.glance("games") == ("1 game", None)
     hub.bios = []
     assert hub.verdict("bios") == ("No BIOS needed", None)
     hub.bios = [{"name": "Saturn", "offers": [({}, {})], "missing": [{}], "required": [{}], "fetched": {}, "here": True},

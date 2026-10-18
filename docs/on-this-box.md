@@ -1,9 +1,12 @@
 # On this box
 
-**On this box** (home menu) opens a menu of seven sections. The line under each
-one shows its state right now, so you can see how the box is doing without
-opening anything. It's only coloured when something needs a look. The panel
-on the right previews the selected section; press A to open it.
+**On this box** (home menu) opens with one line about the whole box ("1 game
+needs you", or "Everything here looks fine") over the drive's space bar, then
+its seven sections, always in the same order. Each section shows how it is
+right now: a short value on the right, and a line under its name that is only
+coloured, with a mark at its edge, when something needs a look (red: a damaged
+game; amber or violet: something to fetch or fix; blue: compressing now). The
+panel on the right previews the selected section; press A to open it.
 
 ## Games from RomM
 
