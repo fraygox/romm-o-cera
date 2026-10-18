@@ -122,7 +122,7 @@ def test_disc_incomplete_cue_and_iso(isolated):
     good = _cue(os.path.join(d, "Good"), "Good", 400, 400)
     cut = _cue(os.path.join(d, "Cut"), "Cut", 100, 1000)
     assert rommlib.disc_sectors(good) == (400, 400, False) and rommlib.disc_incomplete(good) is None
-    assert rommlib.disc_incomplete(cut) == (100, 1000, False)
+    assert rommlib.disc_incomplete(cut) == (100, 1000, True)            # 90% missing: header and files agree
     # audio first track (no ISO9660): can't tell, never flagged
     os.makedirs(os.path.join(d, "Audio"))
     open(os.path.join(d, "Audio", "a.bin"), "wb").write(b"\x01" * 2352 * 50)
@@ -131,7 +131,7 @@ def test_disc_incomplete_cue_and_iso(isolated):
     iso_ok, iso_cut = os.path.join(d, "ok.iso"), os.path.join(d, "cut.iso")
     _iso(iso_ok, 1000, 1000)
     _iso(iso_cut, 500, 1000)
-    assert rommlib.disc_incomplete(iso_ok) is None and rommlib.disc_incomplete(iso_cut) == (500, 1000, False)
+    assert rommlib.disc_incomplete(iso_ok) is None and rommlib.disc_incomplete(iso_cut) == (500, 1000, True)
     # the header's volume size can claim more than the disc has (Fugiat Fantasy
     # VI, Tempor Raider II): only where the files end counts
     ff6 = _cue(os.path.join(d, "FF6"), "FF6", 1000, 990, header=1200)
@@ -154,7 +154,7 @@ def test_audit_flags_incomplete_disc_image(isolated, mock_url):
     got = {os.path.basename(os.path.dirname(x["path"])): (x["severity"], x["problem"]) for x in findings
            if "cut short" in x["problem"] or x["problem"].startswith("Incomplete")}
     # a file past the end: maybe (dummy files exist) -> amber; a directory past the end: certain -> red
-    assert got["Cut Game (USA)"][0] == "differs" and got["Cut Game (USA)"][1].startswith("May be cut short")
+    assert got["Cut Game (USA)"][0] == "damaged" and got["Cut Game (USA)"][1].startswith("Incomplete disc image: 98% missing")
     assert got["Gap Game (USA)"] == ("damaged", "Incomplete disc image: 100% missing (18 of 4,000 sectors)")
 
 
@@ -609,3 +609,13 @@ def test_a_copy_stays_when_its_converted_game_looks_broken(isolated, monkeypatch
     os.makedirs(os.path.join(R, "ps3", "Ipsum (USA).ps3", "PS3_GAME"))          # no EBOOT.BIN in it
     monkeypatch.setattr(rommlib, "disc_incomplete", lambda p, *a: (10, 100, True))   # the CHD is cut short
     assert rommlib.find_leftovers(chd_busy=False) == []
+
+
+def test_a_copy_missing_a_quarter_of_its_disc_is_certainly_cut_short():
+    """Siren (PS2), 2026-10: 1,323,744 of 2,259,312 sectors, its header and files both past the end;
+    the old rule called that a hint and compressed it. Final Fantasy VI on the same box: 13% past
+    the end, plays: still only a hint. Dummy files alone (the header fits): never certain."""
+    from romm import discs
+    assert discs._verdict(1323744, (2259299, 30000), 2259312) == (1323744, 2259312, True)
+    assert discs._verdict(122058, (138092, 400), 138242) == (122058, 138092, False)
+    assert discs._verdict(500000, (900000, 400), 500000)[2] is False

@@ -83,6 +83,9 @@ def _files_end(read, limit=4_300_000, have=None):
     return end, boot_end
 
 
+CUT_SHORT = 1.25        # header and files both this far past the image's end: a cut copy, certainly
+
+
 def _verdict(have, r, vol=None):
     """(have, need, certain) from _files_end's (end, boot_end): certain only
     when what the game needs to start lies past the end of the image. Then
@@ -91,7 +94,12 @@ def _verdict(have, r, vol=None):
     if not r:
         return None
     end, boot_end = r
-    sure = boot_end > have
+    # certain: what the game needs to start is past the end, or the disc's own header and its
+    # files both say it is a quarter bigger than this copy (Siren, 2026-10: 41% missing). Complete
+    # discs measured on a real box overshoot less (Final Fantasy VI: 13%; dummy files: past the
+    # files only), so smaller gaps stay a hint
+    far = int(have * CUT_SHORT) + 16
+    sure = boot_end > have or (vol or 0) > far and end > far
     need = max(end, boot_end, vol or 0) if sure else max(end, boot_end)
     return (have, need, sure)
 
