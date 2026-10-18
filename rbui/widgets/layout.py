@@ -15,7 +15,7 @@ from rbui.theme import H, mix, W
 from rbui.draw import (card, chevron as draw_chevron, circle, doc_layout, focus_box, hline, installed_mark,
                        marquee, measure, meter, progress_bar, rich_text, rrect, scroll_doc, scroll_text, text, wrap)
 from rbui.widgets.chips import button_chip, button_chip_width, status_chip, tag as draw_tag
-from rbui.widgets.factsheet import facts
+from rbui.widgets.factsheet import FACT_ROW, facts
 from rbui.widgets.hero import verb_button, VERB_H
 from rbui.widgets.tiles import cover, placeholder
 
@@ -274,7 +274,7 @@ class Panel:
     def facts(self, pairs, cols=2, lines=None, strong=(), colors=None):
         """factsheet.facts in the panel's width: label-over-value cells in cols columns, scrolling
         when they're taller than `lines` fact rows (default: all the room left)."""
-        h = self.room() if lines is None else min(self.room(), lines * 42)
+        h = self.room() if lines is None else min(self.room(), lines * FACT_ROW)
         if h < 40:
             return
         used = facts(self.c, self.f, pairs, (self.x, self.y, self.w, h), cols, key=self.key, slot=self._slot(),

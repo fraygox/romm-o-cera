@@ -141,9 +141,9 @@ def test_facts_lay_out_in_columns_and_drop_empty_ones(rb, fonts):
     cells, total = rb.facts_layout(fonts, PAIRS[:4] + [("Achievements", "")], 400, cols=2)
     assert [c[0] for c in cells] == ["Size", "Format", "Region", "Developer"]
     assert [c[2] for c in cells] == [0, 208, 0, 208]          # (400 - 16) / 2 + 16
-    assert total == 2 * 42
+    assert total == 2 * rb.FACT_ROW
     cells, total = rb.facts_layout(fonts, PAIRS[:2], 150, cols=2)
-    assert len(cells[1][1]) > 1 and total > 42                 # a long value wraps in its column
+    assert len(cells[1][1]) > 1 and total > rb.FACT_ROW        # a long value wraps in its column
 
 
 def test_facts_that_fit_stay_still_and_overflow_scrolls_in_the_box(rb, fonts, monkeypatch):
@@ -155,7 +155,7 @@ def test_facts_that_fit_stay_still_and_overflow_scrolls_in_the_box(rb, fonts, mo
         seen.append((pygame.Rect(rect), total))
         return real(surf, rect, total, paint, sig, *a, **kw)
     rb.patch(monkeypatch, "scroll_box", spy)
-    box = pygame.Rect(600, 200, 400, 84)
+    box = pygame.Rect(600, 200, 400, 2 * rb.FACT_ROW)
 
     def shot(pairs, t):
         monkeypatch.setattr(rb.draw, "NOW", t)
@@ -341,7 +341,7 @@ def test_a_dialogs_buttons_are_verb_buttons(rb, app, monkeypatch):
     rb.patch(monkeypatch, "verb_button", spy)
     d = rb.Confirm(app, "Delete?", "Gone for good.", "Delete", lambda: None, danger=True)
     d.draw(app.canvas)
-    assert kinds == [("Delete", "danger", "A"), ("Back", "quiet", "B")]
+    assert kinds == [("Delete", "danger", "A"), ("Keep", "quiet", "B")]       # deleting: B keeps it
 
 
 # ------------------------------------------------------------------ wave 2: Game night, Backlog

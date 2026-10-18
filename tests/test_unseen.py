@@ -376,7 +376,7 @@ def test_pick_several_then_unpack_them_all(ui, rb):
     app.modal.action("ok")                                    # pick all (and go on picking), then drop the .xyz
     assert sc.picking and len(sc.picks) == 4
     sc.action("ok")                                           # A unpicks and moves on
-    assert sc.pick_count() == 3 and sc.sel == 1 and sc.hints()[:2] == [("A", "Pick"), ("X", "3 picked")]
+    assert sc.pick_count() == 3 and sc.sel == 1 and sc.hints()[:2] == [("A", "Pick"), ("X", "Act on 3")]
     sc.draw(app.canvas)
     sc.action("x")
     assert [e[0] for e in app.modal.entries if e] == ["Unpack 3 archives", "Delete 3 files", "Stop picking",

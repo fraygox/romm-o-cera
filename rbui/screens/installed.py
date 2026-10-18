@@ -10,7 +10,8 @@ from rbui.draw import progress_bar, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.game import GameScreen
 from rbui.screens.games import GAME_LIST, GAME_PANEL, GameListScreen
-from rbui.screens.box_data import conversion_rows, conversion_status, installed_games, plural
+from rbui.screens.box_data import (RESULT_LABELS, conversion_rows, conversion_status, installed_games, plural,
+                                   reason, result_line)
 from rbui.modals import ActionMenu, Confirm, ManageMenu
 from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_head, list_row, split
 
@@ -222,9 +223,6 @@ class InstalledScreen(ListScreen):
         p.prose(note, color=theme.FAINT, lines=3)
 
 
-RESULT_LABELS = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting", "stopped": "Stopped"}
-
-
 def _lastplayed_label(lp):
     return "never played" if not lp else "played %s-%s-%s" % (lp[:4], lp[4:6], lp[6:8])
 
@@ -348,8 +346,12 @@ class ConversionsScreen(ListScreen):
         if r["kind"] in ("queued", "running"):
             p.prose(self.NEXT.get(r["kind"]) if not r.get("tool") else
                     "It starts once %s is installed (Settings)." % r["tool"], lines=3)
+        elif r["kind"] == "ok":
+            sizes = " (%s, now %s)" % tuple(human_size(n) for n in r["sizes"]) if r.get("sizes") else ""
+            p.prose("Compressed to %s%s. The original went once the copy checked out."
+                    % (self.mode(r) or "a smaller file", sizes), lines=3)
         elif r.get("message"):
-            p.prose(r["message"], label="What happened", color=col if r["kind"] != "ok" else None)
+            p.prose(reason(r["message"]), label="What happened", color=col)
 
     NEXT = {"queued": "It starts when nothing is playing and there's room. The original stays until the copy "
                       "checks out.",
@@ -375,4 +377,4 @@ class ConversionsScreen(ListScreen):
             return ("Waiting for %s" % r["tool"] if r.get("tool") else "Queued"), col, \
                 "%s · %s" % (mode, human_size(r["size"])), 0
         st = RESULT_LABELS.get(k, k)
-        return st, col, r.get("message") or "", 0
+        return st, col, result_line(r, mode), 0

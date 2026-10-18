@@ -87,7 +87,7 @@ def needs_text(app, c):
         if getattr(app, spec.setting + "_busy", False):
             return "%s is downloading…" % spec.slug
         if not spec.installed():
-            return "%s isn't installed yet: Settings → %s" % (spec.slug, conv.setting_name)
+            return "%s isn't installed yet: Settings › %s" % (spec.slug, conv.setting_name)
     return "turn on %s in Settings" % c["setting"]
 
 

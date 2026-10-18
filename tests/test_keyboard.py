@@ -64,7 +64,7 @@ def test_focus_wraps_and_moves_to_the_key_below(rb):
     kb = rb.Keyboard("Search", context="search")
     assert kb.focus.label == "q"
     kb.action("left")
-    assert kb.focus.label == "&"                      # left from the first key: the row's context key
+    assert kb.focus.label == ":"                      # left from the first key: the row's context key
     kb.action("right")
     assert kb.focus.label == "q"
     kb.action("up")
@@ -82,13 +82,14 @@ def test_focus_wraps_and_moves_to_the_key_below(rb):
 
 def test_context_keys_type_whole_strings(rb):
     kb = rb.Keyboard("Save", context="url")
-    assert [row[-1].label for row in kb.keys()] == ["https://", ":", "/", ".", "-"]
+    assert [row[-1].label for row in kb.keys()] == ["https://", "http://", ":", "/", "Save"]
     _press(kb, "https://")
     _press(kb, "r")
     _press(kb, ".")
     assert kb.value == "https://r."
-    custom = rb.Keyboard("Go", context=["a", "b", "c", "d", "e", "f"])
+    custom = rb.Keyboard("Go", context=["@", "#", "$", "%", "^", "~"])
     assert sum(k.kind == "context" for row in custom.keys() for k in row) == 5
+    assert rb.Keyboard("Go", context=["-", "x", "@", "'"]).context == ["@"]     # never a key the rows have
     assert rb.Keyboard("Save").units == 10            # no context: the grid alone
 
 
@@ -165,16 +166,16 @@ def test_keys_fill_the_rect_and_taps_press_them(app, rb):
 
 def test_url_field_types_saves_and_cancels(app, rb, monkeypatch):
     saved = []
-    sc = rb.TextInputScreen(app, "RomM server URL", "https://", saved.append, context="url", help="Where it is.")
+    sc = rb.TextInputScreen(app, "Server address", "https://", saved.append, context="url", help="Where it is.")
     app.push(sc)
     sc.type_text("romm.lan ")
     _press(sc.kb, ":")
     sc.type_text("8080")
     app.draw()
-    assert sc.text_entry and sc.crumbs() == ["Settings", "RomM server URL"]
+    assert sc.text_entry and sc.crumbs() == ["Settings", "Server address"]
     app.dispatch("start")
     assert saved == ["https://romm.lan :8080".strip()] and app.stack[-1] is not sc
-    sc = rb.TextInputScreen(app, "RomM server URL", "x", saved.append)
+    sc = rb.TextInputScreen(app, "Server address", "x", saved.append)
     app.push(sc)
     sc.action("x")
     sc.action("back")
@@ -186,7 +187,7 @@ def test_token_field_never_draws_the_token(app, rb, monkeypatch):
     drawn = []
     real = rb.text
     rb.patch(monkeypatch, "text", lambda surf, font, s, *a, **k: drawn.append(s) or real(surf, font, s, *a, **k))
-    sc = rb.TextInputScreen(app, "RomM client API token", tok, lambda v: None, secret=True, context="token")
+    sc = rb.TextInputScreen(app, "API token", tok, lambda v: None, secret=True, context="token")
     app.push(sc)
     app.draw()
     assert not any(tok in (s or "") for s in drawn)

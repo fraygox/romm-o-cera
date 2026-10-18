@@ -633,7 +633,7 @@ SCENES = [
                                   app.push(rb.DownloadsScreen(app)),
                                   setattr(app, "_after", lambda: (setattr(app.stack[-1], "picking", True),
                                                                   [app.dispatch(k) for k in ("ok", "ok", "x")])))),
-    ("conversions", lambda: (fake_conversions(), app.push(rb.ConversionsScreen(app)))),
+    ("conversions", lambda: (fake_conversions(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.ConversionsScreen(app)))),
     ("downloads-cancel", paused_cancel),
     ("downloads-empty", lambda: (app.downloader.jobs.clear(), no_conversions(), app.push(rb.DownloadsScreen(app)))),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
@@ -668,9 +668,9 @@ SCENES = [
     ("welcome-tls-error", lambda: welcome_at(url="https://romm.example.com", view="cert", cert="unknown")),
     ("welcome-token", lambda: welcome_at(url="https://romm.example.com", field="token")),
     ("welcome-pair", lambda: welcome_at(step=1, url="https://romm.example.com", code="ABCD2")),
-    ("url-edit", lambda: app.push(rb.TextInputScreen(app, "RomM server URL", "https://romm.example.com",
+    ("url-edit", lambda: app.push(rb.TextInputScreen(app, "Server address", "https://romm.example.com",
                                                      lambda v: None, context="url", help=rb.field_help("url")))),
-    ("token-edit", lambda: app.push(rb.TextInputScreen(app, "RomM client API token", "rmm_" + "7f3a9c2e" * 5,
+    ("token-edit", lambda: app.push(rb.TextInputScreen(app, "API token", "rmm_" + "7f3a9c2e" * 5,
                                                        lambda v: None, secret=True, context="token",
                                                        help=rb.field_help("token")))),
     ("on-this-box", lambda: (install_some(), fake_audit(), fake_conversions(), app.push(rb.OnThisBoxScreen(app)))),
@@ -705,10 +705,10 @@ SCENES = [
                         setattr(app, "_after", lambda: setattr(app, "modal", rb.ManageMenu(
                             app, install_some(show_platform())))))),
     ("storage", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)))),
-    ("free-up", lambda: app.push(rb.FreeUpScreen(app))),
+    ("free-up", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)), app.push(rb.FreeUpScreen(app)))),
     ("free-up-menu", lambda: (app.push(rb.FreeUpScreen(app)),
                               setattr(app, "_after", lambda: app.stack[-1].open_menu()))),
-    ("leftovers", lambda: app.push(rb.LeftoversScreen(app))),
+    ("leftovers", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)), app.push(rb.LeftoversScreen(app)))),
     ("bios", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.BiosScreen(app)))),
     ("compare", lambda: compare_at()),
     ("compare-newer", lambda: compare_at("newer")),
@@ -733,7 +733,7 @@ SCENES = [
     ("game-page-actions", lambda: (game_page(here=True), setattr(app, "_after", lambda: app.dispatch("x")))),
     ("toast", lambda: app.toast("Picked 3 games (4.2 GB) — check the list, then {X} to delete them")),
     ("confirm-danger", lambda: setattr(app, "modal", rb.Confirm(
-        app, "Delete 3 games?", "Frees about 4.2 GB. Saves are kept. Press {A} to delete or {B} to keep them.",
+        app, "Delete 3 games?", "Frees about 4.2 GB. Saves and states are kept.",
         "Delete 3", lambda: None, danger=True))),
 ]
 wanted = set(filter(None, args.scenes.split(",")))

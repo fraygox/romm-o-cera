@@ -4,7 +4,8 @@ import pygame
 from rbui import theme
 from rbui.draw import scroll_box, SCROLL_BAR, text, wrapped
 
-LABEL_H, LINE_H, CELL_GAP, COL_GAP = 17, 20, 5, 16
+LABEL_H, LINE_H, CELL_GAP, COL_GAP = 17, 20, 10, 16
+FACT_ROW = LABEL_H + LINE_H + CELL_GAP           # a row of one-line facts
 
 
 def facts_layout(f, pairs, width, cols=2):

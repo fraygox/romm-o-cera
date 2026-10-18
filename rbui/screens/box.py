@@ -10,8 +10,9 @@ from rbui.draw import (circle, focus_box, hline, meter, progress_bar, rich_text,
                        state_stripe, text)
 from rbui.widgets.chips import status_chip, tag
 from rbui.screens.base import Screen
-from rbui.screens.box_data import (bios_pill, bios_rows, conversion_rows, conversion_status, disk_space,
-                                   installed_games, pending_roms, plural, space_bar, space_parts, storage_by_system)
+from rbui.screens.box_data import (RESULT_LABELS, bios_pill, bios_rows, conversion_rows, conversion_status,
+                                   disk_space, installed_games, pending_roms, plural, space_bar, space_parts,
+                                   storage_by_system)
 from rbui.screens.compress import compress_by_system, compress_scan, CompressScreen
 from rbui.screens.installed import ConversionsScreen, InstalledScreen
 from rbui.screens.space import SpaceScreen
@@ -349,13 +350,12 @@ class OnThisBoxScreen(Screen):
                 elif r["kind"] == "queued":
                     s, col = "%s · %s" % (mode(r), human_size(r["size"])), theme.FAINT
                 else:
-                    s = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting"}.get(
-                        r["kind"], r["kind"] or "")
+                    s = RESULT_LABELS.get(r["kind"], r["kind"] or "")
                     col = {"ok": theme.GREEN, "failed": theme.RED}.get(r["kind"], theme.AMBER)
                 text(c, self.f.small, s, (p.right - 28, yy + 2), col, "topright", maxw=220)
                 yy += 32
             yy += 18
-        self.foot(c, p, "Also in Activity: {L2 R2}")
+        self.foot(c, p, "Activity shows them too, beside the downloads.")
 
     def panel_info(self, c, p):
         x = p.left + 28

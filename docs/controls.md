@@ -83,7 +83,7 @@ in Compress, Downloads, Check games' findings and Games ES can't see.
 
 1. **X** › **Pick several …** (or **Pick all**) starts picking.
 2. While picking, **A** picks or unpicks the row and moves to the next one.
-3. **X** opens the menu with what you can do with the picks at the top
+3. **X** (the hint says **Act on 3**) opens the menu with what you can do with the picks at the top
    ("Download 3 picked", "Delete 3 picked", "Cancel 2"…), then Pick all,
    Clear picks and Stop picking.
 4. **B** stops picking. The picks stay ticked (and in the menu) until you

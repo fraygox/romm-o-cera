@@ -496,7 +496,7 @@ class CollectionScreen(Screen):
         if not here:
             return "{:,} game{}".format(n, "" if n == 1 else "s")
         if here >= n:
-            return "All {:,} here".format(n)
+            return "All {:,} here".format(n) if n > 1 else "On this box"
         s = "{:,} of {:,} here".format(here, n)
         return s if measure(self.f.tiny, s) <= width else s[:-5]        # the bar says "here" already
 
@@ -535,7 +535,7 @@ class CollectionScreen(Screen):
                 continue
             on = r_i == self.row
             n = len(k["items"])
-            note = "{:,} of {:,}".format(self.col + 1, n) if on and n > per else "{:,}".format(n)
+            note = "{:,} / {:,}".format(self.col + 1, n) if on and n > per else "{:,}".format(n)   # where you are: not "N of M here"
             list_head(c, self.f, pygame.Rect(COLUMN.left - 8, y - 6, COLUMN.width + 16, SHELF_HEAD), k["label"], note,
                       color=theme.TEXT if on else theme.DIM)
             sh = self.shelf_of.setdefault(k["key"], Shelf((side, th), TILE_GAP))

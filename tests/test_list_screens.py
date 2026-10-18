@@ -587,7 +587,7 @@ def test_every_list_picks_several_the_same_way(app, rb, name, monkeypatch):
     assert h[:2] == [("A", "Pick"), ("X", "Actions")] and h[-1] == ("B", "Stop picking")
     scr.action("ok")
     scr.action("ok")
-    assert scr.pick_count() == 2 and scr.sel == 2 and scr.hints()[1] == ("X", "2 picked")
+    assert scr.pick_count() == 2 and scr.sel == 2 and scr.hints()[1] == ("X", "Act on 2")
     _frame(app, scr)                                      # tick boxes drawn
     scr.action("x")
     assert app.modal.title.startswith("2 picked") or name == "GameListScreen"

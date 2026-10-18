@@ -164,7 +164,7 @@ class ListScreen(Screen):
         own = list(own)
         if self.picking or self.PICK_ALWAYS:
             n = self.pick_count()
-            own = [("A", "Pick"), ("X", "%d picked" % n if n else pads.ACTIONS)] + \
+            own = [("A", "Pick"), ("X", "Act on %d" % n if n else pads.ACTIONS)] + \
                 [h for h in own if h[0] not in ("A", "X")]
             if not self.PICK_ALWAYS:
                 back = "Stop picking"

@@ -368,4 +368,5 @@ class GameNightScreen(Screen):
         y = scroll_text(c, f.h2, head, (x, y, w, 2 * 32), col, line_h=32, bg=bg, slot="night-empty").bottom + 10
         if line:
             scroll_text(c, f.body, line, (x, y, w, 3 * 26), theme.DIM, line_h=26, bg=bg, slot="night-empty-line")
-        rich_text(c, f, f.body, "{Y} rolls again", (x, p.bottom - 44), theme.DIM, "midleft")
+        if self.error or self.why == "skipped":     # only then can another roll find one
+            rich_text(c, f, f.body, "{Y} rolls again", (x, p.bottom - 44), theme.DIM, "midleft")

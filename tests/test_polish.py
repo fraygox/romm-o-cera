@@ -191,3 +191,189 @@ def test_game_night_actions_offer_the_page_and_say_where_the_switch_is(rb, app, 
     gn.picks, gn.why = [], "empty"
     assert "Open the game page" not in [e[0] for e in gn.menu_entries() if e]
     assert gn.nothing()[1] == "Turn off %s in {X} Actions, or download a few first." % rb.gamenight.HERE
+
+
+# ---- v0.11.2 wording and counts
+
+def _drawn(rb, monkeypatch):
+    out = []
+    real = rb.draw.text
+
+    def spy(surf, font, s, pos, color=None, anchor="topleft", maxw=None):
+        out.append(s)
+        return real(surf, font, s, pos, color, anchor, maxw)
+    rb.patch(monkeypatch, "text", spy)
+    return out
+
+
+def test_a_finished_conversion_reads_as_a_sentence_never_the_workers_log_line(rb):
+    from rbui.screens.box_data import result_line
+    ok = {"kind": "ok", "message": "OK a.cue -> a.chd (0.43 GB -> 0.21 GB)", "sizes": (440 << 20, 215 << 20)}
+    assert result_line(ok, "CHD") == "to CHD · 440.0 MB, now 215.0 MB"
+    assert result_line(dict(ok, sizes=None), "CHD") == "to CHD"
+    bad = {"kind": "failed", "message": "Misplaced.iso: not a GameCube/Wii disc image (dolphin-tool verify failed)"}
+    assert result_line(bad, "RVZ") == "not a GameCube/Wii disc image"
+
+
+def test_conversions_rows_say_what_happened_in_words(app, rb):
+    scr = rb.ConversionsScreen(app)
+    rows = [{"kind": "ok", "title": "Indigo", "discs": 1, "mode": "createcd", "message": "OK x -> y (1 GB -> 0.5 GB)",
+             "sizes": (1 << 30, 1 << 29)},
+            {"kind": "failed", "title": "Misplaced", "discs": 1, "mode": "rvz",
+             "message": "Misplaced.iso: not a disc image (verify failed)"}]
+    for r in rows:
+        st, _, sub, _ = scr.state(r)
+        assert st in ("Done", "Failed") and "OK " not in sub and "->" not in sub
+
+
+def test_activity_counts_the_queue_as_the_header_does(app, rb, monkeypatch):
+    import rommlib
+
+    class Downloads:                       # the header's count, and the jobs behind it
+        hold = False
+        jobs = [type("J", (), {"state": s})() for s in (rommlib.Job.DOWNLOADING, rommlib.Job.QUEUED,
+                                                         rommlib.Job.PAUSED)]
+
+        @staticmethod
+        def active_count():
+            return 2
+    scr = rb.DownloadsScreen(app)
+    monkeypatch.setattr(app, "downloader", Downloads)
+    drawn = _drawn(rb, monkeypatch)
+    scr.draw_head(app.canvas, {"live": 3, "convs": 1, "secs": None, "dl_secs": None, "frac": 0.0})
+    assert "2 in the queue · 1 paused · 1 compressing" in drawn
+    assert not any("downloading" in s for s in drawn)
+
+
+def test_settings_help_shows_now_only_for_rows_that_hold_a_value(app, rb, monkeypatch):
+    scr = rb.SettingsScreen(app)
+    app.push(scr)
+    for key, wants_now in (("credits", False), ("pair", False), ("docs", False), ("sounds", True)):
+        scr.sel = next(i for i, it in enumerate(scr.items()) if it[0] == key)
+        drawn = _drawn(rb, monkeypatch)
+        app.draw()
+        assert any(s.startswith("Now: ") for s in drawn) == wants_now, key
+
+
+def test_a_platform_tile_keeps_games_and_shortens_its_folder_tag(app, rb, monkeypatch):
+    app.platforms = [{"id": 1, "name": "Sega Master System", "_system": "mastersystem", "rom_count": 1380},
+                     {"id": 2, "name": "ZX Spectrum", "_system": "zxspectrum", "rom_count": 1},
+                     {"id": 3, "name": "PC-FX", "_system": "pcfx", "rom_count": 40}]
+    drawn = _drawn(rb, monkeypatch)
+    app.push(rb.PlatformScreen(app))
+    app.draw()
+    assert "1,380 games" in drawn and "1 game" in drawn and "40 games" in drawn
+    assert "roms/pcfx" in drawn                                  # room for the whole folder name
+
+
+def test_deleting_asks_keep_or_delete(app, rb, monkeypatch):
+    drawn = _drawn(rb, monkeypatch)
+    rb.Confirm(app, "Delete it?", "Frees 1 GB.", "Delete", lambda: None, danger=True).draw(app.canvas)
+    assert "Keep" in drawn and "Back" not in drawn
+    drawn.clear()
+    rb.Confirm(app, "Download it?", "1 GB.", "Download", lambda: None).draw(app.canvas)
+    assert "Back" in drawn and "Keep" not in drawn
+
+
+def test_the_editing_screens_are_named_as_their_settings_rows(app, rb):
+    import inspect
+    src = inspect.getsource(rb.SettingsScreen)
+    assert '"Server address", cur' in src and '"API token", cfg["token"]' in src
+
+
+def test_game_night_offers_another_roll_only_when_one_could_find_a_game(app, rb, monkeypatch):
+    monkeypatch.setattr(app, "bg", lambda *a, **k: None)      # no roll: the state is set here
+    scr = rb.GameNightScreen(app, rb.Scope.library(app))
+    app.push(scr)
+    scr.rolling, scr.error, scr.rom = False, None, None
+    for why, offered in (("empty", False), ("skipped", True)):
+        scr.why = why
+        drawn = _drawn(rb, monkeypatch)
+        app.draw()
+        assert any("rolls again" in s for s in drawn) == offered, why
+
+
+def test_collection_tiles_and_shelf_positions_read_apart(app, rb):
+    from rbui.screens.collection import CollectionScreen as CollectionsScreen
+    scr = CollectionsScreen.__new__(CollectionsScreen)
+    scr.f = app.fonts
+    scr.state = lambda it: {"here": it["here"]}
+    assert scr.box_line({"count": 1, "here": 1}, 200) == "On this box"
+    assert scr.box_line({"count": 61, "here": 61}, 200) == "All 61 here"
+    assert scr.box_line({"count": 61, "here": 4}, 200) == "4 of 61 here"
+    import inspect
+    assert '"{:,} / {:,}".format(self.col + 1, n)' in inspect.getsource(CollectionsScreen)
+
+
+def test_credits_name_extract_xisos_author_plainly(rb):
+    from rbui.screens import about
+    src = open(about.__file__, encoding="utf-8").read()
+    assert "by \\u201cin\\u201d and XboxDev" in src
+    assert "developed by in <in@fishtank.com>" in src          # the license's own wording stays, word for word
+
+
+def test_search_keys_never_appear_twice(rb):
+    for ctx in ("search", "url", "token"):
+        kb = rb.Keyboard("Go", context=ctx)
+        labels = [k.label for row in kb.keys() for k in row if k.kind in ("char", "context")]
+        assert len(labels) == len(set(labels)), ctx
+
+
+def test_every_character_the_ui_draws_is_in_its_font(rb, fonts):
+    """Every non-ASCII character in a string the UI or the engine's messages carry (not
+    docstrings) is one Rubik has: a missing one is drawn from a fallback font in another face
+    on the box, or as an empty box where there is none ("→" was, in Compress). CJK and Hangul
+    have their own fallback; U+0378 is draw.py's missing-glyph probe."""
+    import ast
+    import glob
+    import pygame
+    from conftest import APP
+    f = pygame.font.Font(os.path.join(APP, "fonts", "Rubik-Regular.ttf"), 20)
+
+    def img(ch):
+        return pygame.image.tobytes(f.render(ch, True, (255, 255, 255)), "RGB")
+    missing = img("\ue000")
+    seen = {}
+    for path in glob.glob(os.path.join(APP, "rbui", "**", "*.py"), recursive=True) + \
+            glob.glob(os.path.join(APP, "romm", "*.py")):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        docs = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs:
+                for ch in set(n.value):
+                    if ord(ch) > 127 and ch != "\u0378" and not ("\u3000" <= ch <= "\u9fff" or
+                                                                  "\uac00" <= ch <= "\ud7af"):
+                        seen.setdefault(ch, os.path.relpath(path, APP))
+    bad = {ch: where for ch, where in seen.items() if img(ch) == missing}
+    assert not bad, bad
+
+
+def test_a_conversions_reason_leaves_the_workers_tags_out(rb):
+    from rbui.screens.box_data import reason, short_reason
+    msg = "SKIP z3ds Runbow Pocket (USA).3ds: an encrypted dump (Azahar runs decrypted ones only)"
+    assert reason(msg) == "An encrypted dump (Azahar runs decrypted ones only)"
+    assert short_reason(msg) == "an encrypted dump"
+    assert reason("FAIL /x/y.cue rc=1 boom") == "/x/y.cue rc=1 boom"
+    assert reason("Misplaced.iso: not a disc image") == "Not a disc image"
+
+
+def test_counts_of_one_read_as_one(app, rb):
+    import inspect
+    from rbui.screens import space
+    src = inspect.getsource(space)
+    assert "Delete %d games?" not in src and '"%d games · %s free"' not in src
+    assert "plural(len(todo), \"game\")" in src
+
+
+def test_a_queued_discs_size_counts_its_tracks(isolated, rb):
+    """A queued cue/bin conversion showed the cue sheet's 101 B, not the disc's size."""
+    import rommlib
+    from rbui.screens.box_data import conversion_rows
+    d = os.path.join(rommlib.ROMS_ROOT, "psx", "Lorem (USA)")
+    os.makedirs(d)
+    open(os.path.join(d, "Lorem (USA).bin"), "wb").write(b"\0" * 4096)
+    cue = os.path.join(d, "Lorem (USA).cue")
+    open(cue, "w").write('FILE "Lorem (USA).bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n')
+    rommlib.publish_queue_task({"system": "psx", "mode": "createcd", "sources": [cue], "roots": [d]}, "1-lorem.json")
+    row = next(r for r in conversion_rows() if r["kind"] == "queued")
+    assert row["size"] == 4096 + os.path.getsize(cue)

@@ -1,5 +1,6 @@
 """On this box: shared data and the space bar, for its screens."""
 import os
+import re
 import time
 
 import pygame
@@ -103,11 +104,13 @@ def conversion_rows():
             continue
         srcs = t.get("sources") or []
         size = 0
-        for x in srcs:
-            try:
-                size += os.path.getsize(x)
-            except OSError:
-                pass
+        for x in srcs:                               # a cue/gdi: the sheet and every track it names
+            parts = [x] + (rommlib.sheet_sources(x) if x.lower().endswith((".cue", ".gdi")) else [])
+            for f in parts:
+                try:
+                    size += os.path.getsize(f)
+                except OSError:
+                    pass
         rows.append({"kind": "running" if n == cur.get("task") else "queued", "name": n, "task": t,
                      "tool": rommlib.waits_for_tool(t),          # "wiiu-tools": waiting for it, not failed
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0] if srcs else n,
@@ -238,3 +241,43 @@ def bios_pill(it):
 
 def plural(n, word, many=None):
     return "%d %s" % (n, word if n == 1 else (many or word + "s"))
+
+
+# a finished conversion's state, as every screen says it
+RESULT_LABELS = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting", "stopped": "Stopped"}
+
+
+_TAG = re.compile(r"^(?:SKIP|FAIL|STOPPED|WAIT)\s+(?:(?:%s)\s+)?" % "|".join(
+    re.escape(m) for m in sorted(rommlib.CONVERT_LABELS, key=len, reverse=True)))
+
+
+def reason(msg):
+    """A conversion's note as people read it: the worker's own tag ("SKIP z3ds ", "FAIL ")
+    and the "file.ext: " in front of the reason left out, the rest whole, a capital first."""
+    msg = _TAG.sub("", (msg or "").strip())
+    head, sep, rest = msg.partition(": ")
+    if sep and re.search(r"\.\w{1,5}$", head):
+        msg = rest
+    return msg[:1].upper() + msg[1:]
+
+
+def short_reason(msg):
+    """A failure's reason for one narrow line: reason() without a trailing "(…)" aside, which
+    the Conversions screen's panel still shows whole."""
+    msg = _TAG.sub("", (msg or "").strip())
+    head, sep, rest = msg.partition(": ")
+    if sep and re.search(r"\.\w{1,5}$", head):          # "Lorem (USA).cue: …"
+        msg = rest
+    if msg.endswith(")") and " (" in msg:
+        msg = msg[:msg.rfind(" (")]
+    return msg
+
+
+def result_line(r, mode):
+    """A finished conversion's grey line: what it became and how much smaller, or why not
+    (never the worker's own log line)."""
+    if r.get("kind") == "ok":
+        sizes = r.get("sizes")
+        return ("to %s" % mode if mode else "Compressed") + (
+            " · %s, now %s" % (human_size(sizes[0]), human_size(sizes[1])) if sizes else "")
+    return short_reason(r.get("message") or "")

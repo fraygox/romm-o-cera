@@ -177,9 +177,9 @@ def test_panel_facts_fill_columns_and_move_down(app, rb):
     p = rb.Panel(app.canvas, app.fonts, rb.split(None)[1], app=app)
     y = p.y
     p.facts([("Size", "1.0 GB"), ("Format", "CHD"), ("Region", "USA")], cols=2)
-    assert p.y == y + 2 * 42 + 6
+    assert p.y == y + 2 * rb.FACT_ROW + 6
     p.fact("Where", "")                                     # nothing to say: nothing drawn
-    assert p.y == y + 2 * 42 + 6
+    assert p.y == y + 2 * rb.FACT_ROW + 6
 
 
 def test_a_row_with_an_aside_puts_its_status_on_the_label_line_and_a_bar_under_it(app, rb, monkeypatch):

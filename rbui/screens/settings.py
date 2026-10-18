@@ -295,6 +295,7 @@ class SettingsScreen(Screen):
                "fillinfo")
     STEPLESS = ACTIONS + ("resetcfg",)        # rows left/right don't step through
     OPENS = ("bios", "credits", "docs", "whatsnew", "fillinfo")
+    ACTIONS = OPENS + ("pair", "resetcfg", "test")     # rows that do something: no "Now:" state to show
 
     def hints(self):
         if self.current() is None:
@@ -349,10 +350,10 @@ class SettingsScreen(Screen):
                 cur = cfg["url"] or "https://"
                 if rommlib.url_has_userinfo(cur):
                     cur = "https://"          # never pre-fill an embedded password
-                app.push(TextInputScreen(app, "RomM server URL", cur, lambda v: server.save_url(app, v),
+                app.push(TextInputScreen(app, "Server address", cur, lambda v: server.save_url(app, v),
                                          context="url", help=field_help("url")))
             elif key == "token" and a == "ok":
-                app.push(TextInputScreen(app, "RomM client API token", cfg["token"] or "",
+                app.push(TextInputScreen(app, "API token", cfg["token"] or "",
                                          lambda v: server.save_token(app, v), secret=True, context="token",
                                          help=field_help("token")))
             elif key == "pair" and a == "ok":
@@ -762,7 +763,7 @@ class SettingsScreen(Screen):
                          theme.DIM, key=key, line_h=26, slot="settings-help").bottom
         if key == "docs":
             draw_qr(c, docs_qr(), pygame.Rect(p.left + 28, yy + 10, p.width - 56, a - yy - 22))
-        elif value:
+        elif value and key not in self.ACTIONS:
             yy += 8
             text(c, self.f.small, "Now: " + value, (p.left + 28, yy), theme.ACCENT_HI, maxw=p.width - 56)
 

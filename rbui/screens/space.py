@@ -167,7 +167,8 @@ class FreeUpScreen(ListScreen):
         self.clamp()
 
     def crumbs(self):
-        return self.trail("Free up space" + (" · " + ", ".join(self.systems) if self.systems else ""))
+        return self.trail("Free up space" + (" · " + ", ".join(self.app.system_name(x) for x in self.systems)
+                                             if self.systems else ""))
 
     def hints(self):
         if not self.items:
@@ -187,8 +188,8 @@ class FreeUpScreen(ListScreen):
                 break
             self.picks[g["path"]] = g
             tot += g["size"]
-        self.app.toast("Picked %d games (%s) — check the list, then {X} to delete them"
-                       % (len(self.picks), human_size(tot)))
+        self.app.toast("Picked %s (%s) — check the list, then {X} to delete them"
+                       % (plural(len(self.picks), "game"), human_size(tot)))
 
     def delete_marked(self):
         app, todo = self.app, self.picked()
@@ -203,10 +204,10 @@ class FreeUpScreen(ListScreen):
         def done(freed):
             self.busy = False
             self.picks.clear()
-            app.toast("Deleted %d games — %s freed. Saves are kept." % (len(todo), human_size(freed)), theme.GREEN)
+            app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(todo), "game"), human_size(freed)), theme.GREEN)
             app.space_freed()
             self.load()
-        app.modal = Confirm(app, "Delete %d games?" % len(todo),
+        app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "game"),
                             "Frees about %s. Their files go (playlist discs and tracks too); saves, states and "
                             "screenshots are kept. EmulationStation drops them from its lists when you leave "
                             "RomM-o-Cera." % human_size(size), "Delete %d" % len(todo),
@@ -251,7 +252,7 @@ class FreeUpScreen(ListScreen):
         free = rommlib.free_bytes()
         picked = self.picked()
         n, size = len(picked), sum(g["size"] for g in picked)
-        head = "%d games · %s free" % (len(self.items), human_size(free))
+        head = "%s · %s free" % (plural(len(self.items), "game"), human_size(free))
         if not self.items:
             text(c, self.f.h3, head, (56, 86), theme.TEXT)
             text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
@@ -331,7 +332,7 @@ class LeftoversScreen(ListScreen):
     def ask_delete_all(self):
         tot = sum(i["size"] for i in self.items)
         copies = sum(1 for i in self.items if i.get("note"))
-        self.app.modal = Confirm(self.app, "Delete all %d leftovers?" % len(self.items),
+        self.app.modal = Confirm(self.app, ("Delete all %d leftovers?" % len(self.items)) if len(self.items) > 1 else "Delete the leftover?",
                                  "Frees %s.%s Partial downloads that are still queued or paused are not "
                                  "listed and are kept." % (human_size(tot), (
                                      " Includes %s of games already here converted; the converted ones "

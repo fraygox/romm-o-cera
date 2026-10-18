@@ -11,7 +11,7 @@ from rbui.modals import ActionMenu, ManageMenu
 from rbui.screens.about import draw_qr
 from rbui.screens.base import Screen
 from rbui.widgets.chips import stars, status_chip
-from rbui.widgets.factsheet import facts
+from rbui.widgets.factsheet import FACT_ROW, facts
 from rbui.widgets.hero import (backdrop, game_note, game_verb, meta_line, press_verb, time_ago, verb_button, verb_note,
                                VERB_H)
 from rbui.widgets.tiles import cover, placeholder, shot
@@ -242,7 +242,7 @@ class GameScreen(Screen):
             qr = pygame.Rect(SIDE.left, SIDE.bottom - 80, 80, 80)
             cap = pygame.Rect(qr.right + 14, qr.top, SIDE.right - qr.right - 14, qr.height)
         pairs = [p for p in self.facts(rec) if p[1]]
-        y = facts(c, f, pairs, (TX, y, TW, max(42, min(2 * 42, bottom - y - 40))), cols=3 if len(pairs) > 4 else 2,
+        y = facts(c, f, pairs, (TX, y, TW, max(FACT_ROW, min(2 * FACT_ROW, bottom - y - 40))), cols=3 if len(pairs) > 4 else 2,
                   key=rom["id"], slot="game-facts", bg=theme.BG,
                   strong=("On this box", "In RomM")).bottom + 6
         summ = rec.get("summary") or ""

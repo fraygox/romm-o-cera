@@ -9,9 +9,9 @@ from rbui.draw import hline, measure, polyline, rrect, text
 UNIT_GAP = 0.2          # the space between the grid and the context column, in key pitches
 CONTEXT_SPAN = 1.6      # a context key's width, in key pitches
 
-CONTEXT = {"url": ["https://", ":", "/", ".", "-"],
-           "search": ["'", "&", "-", ":", "!"],
-           "token": ["rmm_", "-", "_", ".", "/"]}
+CONTEXT = {"url": ["https://", "http://", ":", "/"],
+           "search": ["&", ":", "!", "(", ")"],
+           "token": ["rmm_", "_"]}
 
 
 class Key:
@@ -42,7 +42,8 @@ class Keyboard:
         self.on_submit, self.on_change, self.on_touch = on_submit, on_change, on_touch
         self.mode, self.maxlen, self.y_key = mode, maxlen, y_key
         context = CONTEXT.get(context, context) if isinstance(context, str) else context
-        self.context = [] if mode == "code" else list(context or [])[:5]
+        on_rows = set("".join(self.LETTERS))           # a key already on the rows isn't offered twice
+        self.context = [] if mode == "code" else [k for k in (context or []) if k not in on_rows][:5]
         self.value = ""
         self.shift = self.sym = False
         self.r, self.c = 1, 0

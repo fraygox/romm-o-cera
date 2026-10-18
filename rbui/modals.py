@@ -223,7 +223,8 @@ class Confirm:
         by = r.bottom - 58
         okr = verb_button(c, f, (bx, by, 260, 40), self.ok_label, "danger" if self.danger else "go")
         self.app.hit(okr, lambda: self.action("ok"))
-        nr = verb_button(c, f, (okr.right + 16, by, 180, 40), "Back", "quiet", glyph="B")
+        nr = verb_button(c, f, (okr.right + 16, by, 180, 40), "Keep" if self.danger else "Back", "quiet",
+                         glyph="B")                  # deleting: B keeps it
         self.app.hit(nr, lambda: self.action("back"))
 
 

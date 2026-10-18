@@ -616,11 +616,13 @@ class PlatformScreen(Screen):
             lines = wrap(self.f.h3, name, r.width - 36, 2)
             for k, ln in enumerate(lines):
                 text(c, self.f.h3, ln, (r.left + 18, r.top + 14 + k * 24), theme.TEXT if on else theme.DIM)
-            tr = tag(c, self.f.tiny, "roms/" + p["_system"], (r.right - 14, r.bottom - 30), "topright")
-            room = tr.left - 10                   # the left side never runs into the tag
-            games = "{:,} games".format(p["rom_count"])
-            if r.left + 18 + measure(self.f.small, games) > room:
-                games = "{:,}".format(p["rom_count"])
+            games = "{:,} game{}".format(p["rom_count"], "" if p["rom_count"] == 1 else "s")
+            used = r.left + 18 + measure(self.f.small, games) + 10
+            room = r.right - 14
+            for label in ("roms/" + p["_system"], p["_system"]):    # the folder gives way, never "games"
+                if used + measure(self.f.tiny, label) + 12 <= room:
+                    room = tag(c, self.f.tiny, label, (r.right - 14, r.bottom - 30), "topright").left - 10
+                    break
             text(c, self.f.small, games, (r.left + 18, r.bottom - 28), theme.DIM if on else theme.FAINT)
             here = self.app.es_count.get(p["_system"])
             hx = r.left + 18 + measure(self.f.small, games) + 16

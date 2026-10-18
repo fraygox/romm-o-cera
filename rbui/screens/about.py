@@ -17,7 +17,7 @@ CREDITS = [
      "GPL-2.0-or-later", "dolphin-emu.org · source: github.com/dolphin-emu/dolphin (commit %s)"
      % rommlib.TOOL_DOLPHIN.pin["commit"][:10],
      "Optional download for GameCube and Wii to RVZ. Its source, COPYING and LICENSES/ are on the same release."),
-    ("extract-xiso", "by in <in@fishtank.com>, XboxDev (commit %s)" % rommlib.TOOL_X360.pin["extract_xiso"][:7],
+    ("extract-xiso", "by \u201cin\u201d and XboxDev (commit %s)" % rommlib.TOOL_X360.pin["extract_xiso"][:7],
      "BSD-style license", "github.com/XboxDev/extract-xiso",
      "This product includes software developed by in <in@fishtank.com>. Optional download for Xbox 360 to .zar."),
     ("ZArchive", "zarchive, by Exzap (commit %s)" % rommlib.TOOL_X360.pin["zarchive"][:7], "MIT-0",

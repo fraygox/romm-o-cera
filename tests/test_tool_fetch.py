@@ -138,7 +138,7 @@ def test_compress_says_what_it_waits_for(tools, rb, monkeypatch):
     from rbui.screens.compress import needs_text, needs_toast
     app = _app(rb, monkeypatch)
     cand = {"mode": "wux", "setting": "Wii U to .wux"}
-    assert needs_text(app, cand) == "wiiu-tools isn't installed yet: Settings → Wii U to .wux"
+    assert needs_text(app, cand) == "wiiu-tools isn't installed yet: Settings › Wii U to .wux"
     app.wua_busy = True
     assert needs_toast(app, cand) == "wiiu-tools is downloading…"
     app.wua_busy = False

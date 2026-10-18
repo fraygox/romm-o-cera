@@ -9,7 +9,8 @@ from rommlib import human_size
 from rbui import pads, theme
 from rbui.draw import card, circle, installed_mark, progress_bar, state_stripe, text
 from rbui.screens.base import ListScreen
-from rbui.screens.box_data import conversion_left, conversion_rows, conversion_status, plural, time_left
+from rbui.screens.box_data import (RESULT_LABELS, conversion_left, conversion_rows, conversion_status, plural,
+                                   result_line, time_left)
 from rbui.screens.compress import CompressScreen
 from rbui.screens.installed import ConversionsScreen
 from rbui.modals import ActionMenu, Confirm
@@ -20,20 +21,8 @@ from rbui.widgets.tiles import cover
 ACT_HEAD = pygame.Rect(CONTENT.left, CONTENT.top, CONTENT.width, 76)       # the one line for everything
 ACT_BODY = pygame.Rect(CONTENT.left, ACT_HEAD.bottom + 16, CONTENT.width, CONTENT.bottom - ACT_HEAD.bottom - 16)
 SPEED_TAU = 5.0             # seconds: the headline's speed is smoothed over about this long
-RESULT_WORDS = {"ok": ("done", "GREEN"), "failed": ("failed", "RED"), "stopped": ("stopped", "AMBER"),
-                "skipped": ("skipped", "AMBER"), "waiting": ("waiting", "AMBER")}
+RESULT_COLOURS = {"ok": "GREEN", "failed": "RED", "stopped": "AMBER", "skipped": "AMBER", "waiting": "AMBER"}
 PAUSED_WHY = {"hold": "paused by you", "game": "paused while you play", "es": "paused while ES is busy"}
-
-
-def short_reason(msg):
-    """A failure's reason for one narrow line: without its "file.ext: " prefix and a trailing
-    "(…)" aside, which the Conversions screen still shows whole."""
-    head, sep, rest = msg.partition(": ")
-    if sep and re.search(r"\.\w{1,5}$", head):          # "Lorem (USA).cue: …"
-        msg = rest
-    if msg.endswith(")") and " (" in msg:
-        msg = msg[:msg.rfind(" (")]
-    return msg
 
 
 class DownloadsScreen(ListScreen):
@@ -358,7 +347,7 @@ class DownloadsScreen(ListScreen):
             return ("Waiting to unpack" if j.message.startswith("Waiting") else "Unpacking"), theme.AMBER
         if j.state == J.QUEUED:
             if d.hold:
-                return "Paused (all)", theme.AMBER
+                return "On hold", theme.AMBER
             if not j.force and not rommlib.in_download_hours(self.app.cfg):
                 return "Waits for download hours", theme.AMBER
             if j.short_space:
@@ -479,7 +468,10 @@ class DownloadsScreen(ListScreen):
         f = self.f
         rr = pygame.Rect(ACT_HEAD)
         card(c, rr)
-        parts = (["%d downloading" % o["live"]] if o["live"] else []) + \
+        jobs = self.app.downloader.jobs
+        queued = self.app.downloader.active_count()          # as the header counts them
+        paused = sum(1 for j in jobs if j.state == rommlib.Job.PAUSED)
+        parts = (["%d in the queue" % queued] if queued else []) + (["%d paused" % paused] if paused else []) + \
             (["%d compressing" % o["convs"]] if o["convs"] else [])
         n = self.pick_count()
         if n:
@@ -583,7 +575,7 @@ class DownloadsScreen(ListScreen):
         self.draw_lately(c, p)
 
     def draw_lately(self, c, p):
-        done = [r for r in self.convs if r["kind"] in RESULT_WORDS]
+        done = [r for r in self.convs if r["kind"] in RESULT_COLOURS]
         if not done or p.room() < 24 + 48:
             return
         p.space(4)
@@ -591,13 +583,8 @@ class DownloadsScreen(ListScreen):
         for r in done:
             if p.room() < 48:
                 break
-            word, col = RESULT_WORDS[r["kind"]]
-            col = getattr(theme, col)
-            if r["kind"] == "ok":
-                sub = "to %s" % self.mode(r) + (" · %s -> %s" % tuple(human_size(n) for n in r["sizes"])
-                                                 if r.get("sizes") else "")
-            else:
-                sub = short_reason(r.get("message") or "")
+            word, col = RESULT_LABELS[r["kind"]], getattr(theme, RESULT_COLOURS[r["kind"]])
+            sub = result_line(r, self.mode(r))
             box = pygame.Rect(p.x - 12, p.y, p.w + 24, 46)
             list_row(c, self.f, box, False, self.conv_title(r), sub, word, col, mark_w=40,
                      mark=lambda ctr, col=col: circle(c, col, (ctr[0] + 2, ctr[1] - 10), 5) or True,

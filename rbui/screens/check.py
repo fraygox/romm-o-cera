@@ -169,7 +169,7 @@ class AuditScreen(ListScreen):
                 self.redownload(f)
             self.picks.clear()
             self.picking = False
-            app.toast("Queued %d games" % len(uniq), theme.GREEN)
+            app.toast("Queued %s" % plural(len(uniq), "game"), theme.GREEN)
         app.modal = Confirm(app, title, body, "Download %d" % len(uniq), go)
 
     def draw(self, c):

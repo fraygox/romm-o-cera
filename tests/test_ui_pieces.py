@@ -69,9 +69,9 @@ def test_search_keyboard_types_deletes_clears_and_wraps(app, rb):
     sc.action("x")
     assert sc.query == "q1"
     sc.action("left")
-    assert kb.focus.label == "'"                   # left from the first key wraps, to the context column
+    assert kb.focus.label == "&"                   # left from the first key wraps, to the context column
     sc.action("up")
-    assert kb.r == 4 and kb.focus.label == "!"     # up from the top wraps to the action row, the key below
+    assert kb.r == 4 and kb.focus.label == ")"     # up from the top wraps to the action row, the key below
     kb.c = [k.kind for k in kb.keys()[4]].index("clear")
     sc.preview, sc.preview_total = [_rom()], 1
     sc.action("ok")
