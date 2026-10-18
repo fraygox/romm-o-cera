@@ -8,7 +8,7 @@ import rommlib
 from rommlib import human_size
 from rbui import draw, theme
 from rbui.theme import mix, SR
-from rbui.draw import _fade, button_glyph, marquee, measure, progress_bar, rrect, smooth_scale, text
+from rbui.draw import _fade, button_glyph, circle, marquee, measure, progress_bar, rrect, smooth_scale, text
 from rbui.widgets.tiles import cover_variant
 
 VERB_H = 52                 # the verb button's height
@@ -45,6 +45,41 @@ def verb_button(c, f, rect, label, kind="go", detail="", glyph="A", frac=0.0):
              "midright")
     text(c, f.h3, label, (gx, rect.centery), theme.GREEN if play else theme.DIM if kind == "quiet" else ink,
          "midleft", maxw=lw + 1)
+    return rect
+
+
+def game_state(app, rom, status=None):
+    """Where a game stands, for a panel that browses (Home, Game night), whose A opens the game's
+    page and its button is there: (label, colour, detail, progress or None)."""
+    st, j = status or app.rom_status(rom)
+    system = app.system_for(rom)
+    if not system:
+        return "No Batocera system for this platform", theme.FAINT, "", None
+    if st == "installed":
+        return "On this box", theme.GREEN, "roms/%s" % system, None
+    if st == "active":
+        frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+        return ("Downloading %d%%" % (frac * 100) if j.state == rommlib.Job.DOWNLOADING else j.state), \
+            theme.BLUE, "", frac
+    if st == "failed":
+        return "Download failed", theme.RED, "", None
+    return "Not on this box", theme.FAINT, human_size(rom.get("fs_size_bytes")), None
+
+
+def state_line(c, f, rect, label, color, detail="", frac=None):
+    """game_state() in a recessed bar the size of a verb button, never drawn as one: a dot in its
+    colour, the label, the detail at the right; a download's progress under it."""
+    rect = pygame.Rect(rect)
+    rrect(c, theme.BG2, rect, 12)
+    circle(c, color, (rect.left + 22, rect.centery - (6 if frac is not None else 0)), 5)
+    y = rect.centery - (6 if frac is not None else 0)
+    lw = min(measure(f.body, label), rect.width - 80)
+    text(c, f.body, label, (rect.left + 36, y), theme.TEXT if color == theme.GREEN else theme.DIM, "midleft",
+         maxw=lw + 1)
+    if detail and measure(f.small, detail) <= rect.right - 20 - (rect.left + 36 + lw + 16):
+        text(c, f.small, detail, (rect.right - 20, rect.centery), theme.FAINT, "midright")
+    if frac is not None:
+        progress_bar(c, (rect.left + 18, rect.bottom - 14, rect.width - 36, 6), frac, theme.BLUE)
     return rect
 
 

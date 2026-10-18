@@ -285,7 +285,7 @@ class ThemePickerScreen(Screen):
             if rr.bottom < area.top or rr.top > area.bottom:
                 continue
             if title:
-                text(c, self.f.small, title.upper(), (rr.left + 4, rr.top + 12), theme.ACCENT_HI)
+                text(c, self.f.small, title, (rr.left + 4, rr.top + 12), theme.ACCENT_HI)
                 continue
             self.draw_card(c, i, rr, area)
         c.set_clip(clip)
@@ -349,7 +349,7 @@ class ThemePickerScreen(Screen):
         rrect(c, theme.PANEL, p, 16)
         group, name, desc = self.describe()
         x, w = p.left + 24, p.width - 48
-        text(c, self.f.small, group.upper(), (x, p.top + 22), theme.ACCENT_HI)
+        text(c, self.f.small, group, (x, p.top + 22), theme.ACCENT_HI)
         text(c, self.f.h2, name, (x, p.top + 44), theme.TEXT, maxw=w)
         y = scroll_text(c, self.f.body, desc, (x, p.top + 84, w, 3 * 25), theme.DIM, key=self.key(), line_h=25,
                         slot="theme-desc").bottom + 14
@@ -571,7 +571,7 @@ class CustomThemeScreen(Screen):
         p = self.PANEL
         rrect(c, theme.PANEL, p, 16)
         x, w = p.left + 24, p.width - 48
-        text(c, self.f.small, "PREVIEW" if not self.source else "FROM %s" % self.source.upper(), (x, p.top + 22),
+        text(c, self.f.small, "Preview" if not self.source else "From %s" % self.source, (x, p.top + 22),
              theme.ACCENT_HI, maxw=w)
         text(c, self.f.h2, "Custom", (x, p.top + 44), theme.TEXT)
         scroll_text(c, self.f.body, custom_summary(*self.values()), (x, p.top + 84, w, 2 * 25), theme.DIM,

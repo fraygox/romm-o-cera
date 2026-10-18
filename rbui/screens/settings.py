@@ -700,8 +700,8 @@ class SettingsScreen(Screen):
             if y < self.TOP - 2 or y + h > self.BOTTOM:
                 continue                              # whole rows only
             if key == "§" and not hub:
-                text(c, self.f.small, label.upper(), (52, y + 16), theme.ACCENT_HI)
-                hline(c, theme.LINE, (60 + measure(self.f.small, label.upper()), y + 26), (748, y + 26))
+                text(c, self.f.small, label, (52, y + 16), theme.ACCENT_HI)
+                hline(c, theme.LINE, (60 + measure(self.f.small, label), y + 26), (748, y + 26))
                 continue
             if hub:
                 sub, value = self.SECTIONS[label][0], self.headline(label, sec_rows(self.sections(), i))
@@ -755,7 +755,7 @@ class SettingsScreen(Screen):
         """A row's section, name, help and current value."""
         items = self.items()
         key, label, value, sub = items[self.sel]
-        text(c, self.f.small, self.current()[1].upper(), (p.left + 28, p.top + 24), theme.ACCENT_HI)
+        text(c, self.f.small, self.current()[1], (p.left + 28, p.top + 24), theme.ACCENT_HI)
         text(c, self.f.h2, label, (p.left + 28, p.top + 46), theme.TEXT, maxw=p.width - 56)
         yy = p.top + 92
         room = 4 * 26 if key == "docs" else a - 40 - yy            # the QR code needs the room; else up to "Now:"

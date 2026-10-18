@@ -48,8 +48,8 @@
 
 Can't decide? Game night rolls a random game and shows it big: cover, name,
 platform, year, genre, how many can play and its description. **A** opens its
-page (Play now or Download is the big button there; a tap on the pick's own
-button does it at once), **Y** rolls another, **B** goes back. The rolls you pass on stay down the left (the last four, until you
+page (Play now or Download is the big button there; the pick's own panel only
+says whether it's on the box), **Y** rolls another, **B** goes back. The rolls you pass on stay down the left (the last four, until you
 leave): **up/down** brings one back.
 
 Across the top: who's playing tonight (**Anyone, 2, 3 or 4 players**, changed
@@ -100,8 +100,9 @@ fits in the space left, and its platforms (the size and platforms appear a
 moment after a tile gets the focus, once its games have been read).
 
 - **A** opens the collection: its games as a list, with pills across the
-  top, **All / On this box / Not here**, each with its count (**Y** switches
-  them, or tap one). **A** on a game opens its page.
+  top, **All / On this box / Not here**, each with its count (tap one, or
+  **X** › Show). **A** on a game opens its page, and **Y** searches, as in
+  every list of games.
 - **X Actions**: Open, [Compare with RomM](#compare-with-romm), Game night
   from this collection, and **Download the rest** (how many and how big,
   skipping what's here already; a collection of more than 1,000 games: open

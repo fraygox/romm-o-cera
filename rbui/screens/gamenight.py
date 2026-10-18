@@ -10,7 +10,7 @@ from rbui.draw import card, hline, measure, rich_text, rom_title, scroll_text, t
 from rbui.screens.base import Screen
 from rbui.modals import ActionMenu
 from rbui.widgets.chips import PILL_GAP, PILL_PAD, pill_row, player_dots, switch_pill, switch_pill_width
-from rbui.widgets.hero import game_verb, meta_line, press_verb, verb_button, VERB_H
+from rbui.widgets.hero import game_state, game_verb, meta_line, press_verb, state_line, verb_button, VERB_H
 from rbui.screens.game import GameScreen
 from rbui.widgets.tiles import cover, cover_tile
 
@@ -343,8 +343,8 @@ class GameNightScreen(Screen):
         if summary and vb.top - 16 - y >= 40:
             scroll_text(c, f.small, summary, (tx, y, tw, vb.top - 16 - y), theme.DIM, key=rom["id"], line_h=20,
                         bg=bg, slot="night-summary")
-        app.hit(vb, lambda: press_verb(app, rom))
-        verb_button(c, f, vb, glyph=None, **game_verb(app, rom))     # a tap: the verb; A opens the page
+        app.hit(vb, self.open_page)                                  # where the game stands; A (or a tap): its page
+        state_line(c, f, vb, *game_state(app, rom))
         self.draw_foot(c, p, cov.bottom + 20)
 
     def draw_foot(self, c, p, y):

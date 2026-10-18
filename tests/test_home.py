@@ -203,14 +203,13 @@ def test_the_verb_and_the_actions_menu(home, rb, monkeypatch):
     app.pop()
     app.on_box.add(1)
     app.draw()
-    assert rb.game_verb(app, home.focused()[2])["label"] == "Play now"    # the panel's button still plays
-    played = []
-    monkeypatch.setattr(app, "play_entry", lambda rom, *a: ("Play now", "", lambda: played.append(rom["id"])))
+    assert rb.game_state(app, home.focused()[2])[0] == "On this box"   # the panel says where it stands
     app.targets = []
     app.draw()
-    verb = next(r for r, fn in app.targets if r.width > 300 and r.left > rb.HOME_PANEL.left)
-    app.tap(verb.center)
-    assert played == [1] and app.modal is None
+    state = next(r for r, fn in app.targets if r.width > 300 and r.left > rb.HOME_PANEL.left)
+    app.tap(state.center)                                         # a tap does what A does: the game's page
+    assert isinstance(app.stack[-1], rb.GameScreen) and app.modal is None
+    app.pop()
     app.dispatch("x")
     labels = [e[0] for e in app.modal.entries if e]
     assert labels[0] == "Play now" and "More like this" in labels and "See the whole shelf" in labels

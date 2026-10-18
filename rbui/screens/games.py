@@ -394,9 +394,7 @@ class GameListScreen(ListScreen):
         elif a == "ok" and n and self.items[self.sel] is not None:
             rom = self.items[self.sel]
             self.app.push(GameScreen(self.app, rom, self.why.get(rom["id"]), source=self))
-        elif a == "y" and self.pills:
-            self.cycle_box_filter()
-        elif a == "y":
+        elif a == "y":                              # Search, in every list of games
             self.app.push(SearchScreen(self.app, platform=self.platform))
         else:
             super().action(a)
@@ -475,6 +473,8 @@ class GameListScreen(ListScreen):
                       "Newest first" if self.order_by == "id_desc" else "A to Z", "choice"))
         if self.static is None:
             e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1], "choice"))
+        if self.pills:                              # a whole collection: what's here, what isn't (the pills too)
+            e.append(("Show", "", lambda d=1: self.cycle_box_filter(), dict(BOX_FILTERS)[self.box_filter], "choice"))
         e.append(("Players", "", self._cycle_players, self.player_label(), "choice"))
         if not self.pills:                          # the pills do this on a whole collection
             e.append(("Hide games on this box", "", self._toggle_hide, self.hide_installed, "switch"))
@@ -613,7 +613,7 @@ class GameListScreen(ListScreen):
         app.bg(lambda: rommlib.fetch_bios(app.api, offers, system), done)
 
     def hints(self):
-        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", "Filter" if self.pills else "Search"))
+        return self.list_hints(("A", "Open"), ("X", pads.ACTIONS), ("Y", "Search"))
 
     def rom_status(self, rom):
         return self.app.rom_status(rom)

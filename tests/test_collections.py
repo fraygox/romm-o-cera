@@ -147,10 +147,12 @@ def test_opening_a_collection_lists_all_of_it_with_the_box_pills(app, rb, monkey
     assert isinstance(gl, rb.GameListScreen) and gl.whole and gl.pills and gl.static is roms
     assert gl.counts == {"all": 3, "here": 1, "away": 2} and gl.crumbs() == ["Collections", "Top lists"]
     assert gl.ROWS == 11 and gl.lst.top == 130                            # under the pills: 11 rows, to the foot
-    assert ("Y", "Filter") in gl.hints()
-    gl.action("y")
+    assert ("Y", "Search") in gl.hints()                                  # Y searches in every game list
+    show = next(e for e in gl.list_controls() if e[0] == "Show")          # the filter: X Actions, and the pills
+    assert show[3] == "All"
+    show[2]()
     assert gl.box_filter == "here" and [r["id"] for r in gl.items] == [1]
-    gl.action("y")
+    gl.set_box_filter(2)
     assert gl.box_filter == "away" and [r["id"] for r in gl.items] == [2, 3]
     labels = [e[0] for e in gl.list_actions()]
     assert "Download the rest" in labels and "Compare with RomM" in labels
