@@ -71,6 +71,11 @@ def _cue(folder, stem, sectors, volume, header=None):
 
 # ------------------------------------------------------------ keep free / forecast
 
+def test_keep_free_absurd_values_fall_back_to_default():
+    for v in (float("inf"), float("-inf"), float("nan"), 1e308, 10 ** 400, "inf", "nan", "1e308"):
+        assert rommlib.keep_free_bytes({"keep_free_gb": v}) == 20 * GiB, v
+
+
 def test_keep_free_setting_and_forecast(monkeypatch):
     assert rommlib.keep_free_bytes({}) == 20 * GiB                      # default 20 GB
     assert rommlib.keep_free_bytes({"keep_free_gb": 0}) == 0
@@ -278,6 +283,18 @@ def test_delete_game_playlist_tracks_folders_library(isolated):
     assert "5" not in inst and "6" in inst
     q = [json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)]
     assert q[-1]["system"] == "psx" and m3u in q[-1]["remove"]
+
+
+def test_delete_game_forgets_filename_match(isolated):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    os.makedirs(sysdir)
+    f = os.path.join(sysdir, "Tempor.zip")
+    open(f, "w").write("x")
+    lib = rommlib.Library()
+    rom = {"id": 9, "fs_name": "Tempor.zip", "fs_name_no_ext": "Tempor"}
+    assert lib.is_installed(rom, "gba")                     # matched by filename, cached
+    rommlib.delete_game("gba", f, lib)
+    assert not lib.is_installed(rom, "gba")
 
 
 def test_es_game_list(isolated, fake_es):
@@ -619,3 +636,11 @@ def test_a_copy_missing_a_quarter_of_its_disc_is_certainly_cut_short():
     assert discs._verdict(1323744, (2259299, 30000), 2259312) == (1323744, 2259312, True)
     assert discs._verdict(122058, (138092, 400), 138242) == (122058, 138092, False)
     assert discs._verdict(500000, (900000, 400), 500000)[2] is False
+
+
+def test_keep_free_setting_rejects_values_that_cant_be_bytes():
+    import rommlib
+    s = next(s for s in rommlib.SETTINGS if s.key == "keep_free_gb")
+    assert s.valid(20) and s.valid(0) and s.valid("") and s.valid(None) and s.valid("1.5")
+    for bad in (float("inf"), float("nan"), "inf", 1e308, "x"):
+        assert not s.valid(bad), bad

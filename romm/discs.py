@@ -464,7 +464,32 @@ def cso_decode(src, dst, pause=None, progress=None):
 # ----------------------------------------------------------- audit
 
 # a cue's FILE line: quoted, or a bare name without spaces (both are valid)
-CUE_FILE_RE = re.compile(r'FILE\s+(?:"([^"]+)"|(\S+))', re.I)
+# (FILE must start the line: a TITLE or REM that says "file" is not a track)
+CUE_FILE_RE = re.compile(r'^[ \t]*FILE[ \t]+(?:"([^"]+)"|(\S+))', re.I | re.M)
+
+
+def _cue_path(d, name):
+    """A cue's track name as a path under d: Windows backslashes read as
+    separators, and a name that differs from the file on disk only in letter
+    case resolves to that file. Never leaves d; unresolved names stay as written."""
+    name = name.replace("\\", "/")
+    parts = [x for x in name.split("/") if x not in ("", ".")]
+    if not parts or ".." in parts or name.startswith("/") or re.match(r"[A-Za-z]:", name):
+        return os.path.join(d, name)
+    cur = d
+    for i, part in enumerate(parts):
+        nxt = os.path.join(cur, part)
+        if not os.path.lexists(nxt):
+            try:
+                low = part.lower()
+                hit = sorted(n for n in os.listdir(cur) if n.lower() == low)
+            except OSError:
+                hit = []
+            if not hit:
+                return os.path.join(d, *parts)
+            nxt = os.path.join(cur, hit[0])
+        cur = nxt
+    return cur
 
 
 def sheet_sources(sheet, strict=False):
@@ -480,7 +505,7 @@ def sheet_sources(sheet, strict=False):
             raise
         return out
     if sheet.lower().endswith(".cue"):
-        out = [os.path.join(d, m.group(1) or m.group(2)) for m in CUE_FILE_RE.finditer(text)]
+        out = [_cue_path(d, m.group(1) or m.group(2)) for m in CUE_FILE_RE.finditer(text)]
     else:
         for line in text.splitlines()[1:]:
             m = re.match(r'\s*\d+\s+\d+\s+\d+\s+\d+\s+("([^"]+)"|(\S+))', line)

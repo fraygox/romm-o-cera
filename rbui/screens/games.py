@@ -149,9 +149,9 @@ class GameListScreen(ListScreen):
         self.box_filter = BOX_FILTERS[i][0]
         self.reset()
 
-    def cycle_box_filter(self):
+    def cycle_box_filter(self, step=1):
         keys = [k for k, _ in BOX_FILTERS]
-        self.set_box_filter((keys.index(self.box_filter) + 1) % len(keys))
+        self.set_box_filter((keys.index(self.box_filter) + step) % len(keys))
 
     @property
     def regions(self):
@@ -395,7 +395,7 @@ class GameListScreen(ListScreen):
             rom = self.items[self.sel]
             self.app.push(GameScreen(self.app, rom, self.why.get(rom["id"]), source=self))
         elif a == "y":                              # Search, in every list of games
-            self.app.push(SearchScreen(self.app, platform=self.platform))
+            self.app.push(SearchScreen(self.app, platform=self.platform, collection=self.collection))
         else:
             super().action(a)
 
@@ -474,7 +474,7 @@ class GameListScreen(ListScreen):
         if self.static is None:
             e.append(("Region", "", self._cycle_region, self.REGION_CHOICES[self.region_i][1], "choice"))
         if self.pills:                              # a whole collection: what's here, what isn't (the pills too)
-            e.append(("Show", "", lambda d=1: self.cycle_box_filter(), dict(BOX_FILTERS)[self.box_filter], "choice"))
+            e.append(("Show", "", lambda d=1: self.cycle_box_filter(d), dict(BOX_FILTERS)[self.box_filter], "choice"))
         e.append(("Players", "", self._cycle_players, self.player_label(), "choice"))
         if not self.pills:                          # the pills do this on a whole collection
             e.append(("Hide games on this box", "", self._toggle_hide, self.hide_installed, "switch"))
@@ -551,10 +551,11 @@ class GameListScreen(ListScreen):
             def done(f):
                 self._asking_players = False
                 app.player_counts = [c for c in f.get("player_counts") or [] if isinstance(c, str)]
+                if app.stack[-1] is not self:
+                    return                   # the list was closed meanwhile: no fetch for it
                 self.players = want
                 self.reset()
-                if app.stack[-1] is self:
-                    self.refresh_menu()
+                self.refresh_menu()
 
             def failed(e):
                 self._asking_players = False
@@ -803,9 +804,10 @@ class SearchScreen(KeyboardScreen):
     """Search on the shared keyboard, the Top matches beside it (live, a moment after typing)."""
     MATCH_Y, MATCH_H = KeyboardScreen.PANEL.top + 56, 58
 
-    def __init__(self, app, platform=None):
+    def __init__(self, app, platform=None, collection=None):
         super().__init__(app)
         self.platform = platform
+        self.collection = collection      # search inside this collection only
         self.kb = Keyboard("Search", self.go, context="search", maxlen=60, y_key="space",
                            on_change=self.typed, on_touch=self.unpick)
         self.preview = []
@@ -826,7 +828,17 @@ class SearchScreen(KeyboardScreen):
         out = ["Search"]
         if self.platform:
             out.append(self.platform.get("display_name") or self.platform["name"])
+        elif self.collection:
+            out.append(self.where())
         return out
+
+    def where(self):
+        """What is searched, for the crumbs and the keyboard's title."""
+        if self.platform:
+            return self.platform.get("display_name") or self.platform["name"]
+        if self.collection:
+            return self.collection.get("full") or self.collection.get("name") or "this collection"
+        return "all games"
 
     def hints(self):
         if self.pick is not None:
@@ -893,7 +905,8 @@ class SearchScreen(KeyboardScreen):
         if len(q) < 2:
             self.app.toast("Type at least 2 characters", theme.AMBER)
             return
-        self.app.push(GameListScreen(self.app, "Search", platform=self.platform, search=q))
+        self.app.push(GameListScreen(self.app, "Search", platform=self.platform, collection=self.collection,
+                                     search=q))
 
     def live_preview(self):
         if self.pending_at and time.time() >= self.pending_at:
@@ -904,6 +917,7 @@ class SearchScreen(KeyboardScreen):
                 return
             app = self.app
             pids = [self.platform["id"]] if self.platform else [p["id"] for p in app.platforms]
+            col = (self.collection["param"], self.collection["id"]) if self.collection else None
 
             def done(page, q=q):
                 if q == self.query.strip():
@@ -912,7 +926,7 @@ class SearchScreen(KeyboardScreen):
                     if self.pick is not None:
                         self.pick = min(self.pick, len(self.preview[:8]) - 1) if self.preview else None
             def call():
-                page = app.api.roms(platform_ids=pids, search=q, limit=250)
+                page = app.api.roms(platform_ids=pids, search=q, limit=250, collection=col)
                 page["items"] = rank_search(q, page.get("items", []))[:8]
                 return page
             app.bg(call, done)
@@ -920,7 +934,7 @@ class SearchScreen(KeyboardScreen):
     def draw(self, c):
         self.live_preview()
         f = self.f
-        where = (self.platform.get("display_name") or self.platform["name"]) if self.platform else "all games"
+        where = self.where()
         p = self.draw_keyboard(c, "Search " + where, focused=self.pick is None, font=f.h2,
                                note="{L} symbols · {R} or {START} searches")
         x, w = p.left + 24, p.width - 48

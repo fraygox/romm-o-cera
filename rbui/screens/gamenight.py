@@ -10,7 +10,7 @@ from rbui.draw import card, hline, measure, rich_text, rom_title, scroll_text, t
 from rbui.screens.base import Screen
 from rbui.modals import ActionMenu
 from rbui.widgets.chips import PILL_GAP, PILL_PAD, pill_row, player_dots, switch_pill, switch_pill_width
-from rbui.widgets.hero import game_state, game_verb, meta_line, press_verb, state_line, verb_button, VERB_H
+from rbui.widgets.hero import game_state, meta_line, state_line, VERB_H
 from rbui.screens.game import GameScreen
 from rbui.widgets.tiles import cover, cover_tile
 

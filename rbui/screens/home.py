@@ -18,7 +18,7 @@ from rbui.screens.game import GameScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
 from rbui.widgets.chips import pill_row, tag
-from rbui.widgets.hero import VERB_H, game_state, game_verb, meta_line, press_verb, state_line, time_ago
+from rbui.widgets.hero import game_state, game_verb, meta_line, state_line, time_ago
 from rbui.widgets.layout import list_head, Panel, split
 from rbui.widgets.tiles import collection_card, cover, cover_capacity, mosaic, Shelf, tile_size
 
@@ -513,9 +513,7 @@ class HomeScreen(Screen):
     def panel_game(self, p, key, rom):
         app = self.app
         self.want_played(rom)
-        vr = pygame.Rect(p.x, p.bottom - VERB_H, p.w, VERB_H)   # where the game stands; A (or a tap): its page
-        p.bottom = vr.top - 16
-        app.hit(vr, lambda: self.open_page(rom, key))
+        vr = p.reserve(lambda: self.open_page(rom, key))           # where the game stands; A (or a tap): its page
         state_line(p.c, self.f, vr, *game_state(app, rom))
         ch = max(120, min(COVER_BOX[1], p.room() - 162))        # leaves a line of title, meta, status, 2 of summary
         cw = ch * 3 // 4

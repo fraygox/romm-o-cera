@@ -763,7 +763,7 @@ class App:
         self.bg(self.downloader.repair_groups, lambda n: None, lambda e: None)
         try:
             import rb_dl
-            was_running = rb_dl.handover()
+            was_running = rb_dl.handover(waiting=None if self.headless else self._waiting_for_unpack)
         except Exception as e:
             rommlib.log("handover: %r" % e)
             was_running = False
@@ -775,6 +775,20 @@ class App:
         elif n:
             self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
                                                     " from the background" if was_running else ""), theme.BLUE)
+
+    def _waiting_for_unpack(self, name):
+        """One frame while a background unpack finishes before the app opens."""
+        pygame.event.pump()
+        c = self.canvas
+        c.fill(theme.BG)
+        cx, cy = c.get_width() // 2, c.get_height() // 2
+        text(c, self.fonts.body, "Finishing an unpack from the background", (cx, cy - S(18)), theme.TEXT, "center")
+        text(c, self.fonts.small, "The app opens when it's done", (cx, cy + S(22)), theme.DIM, "center")
+        if self.screen is not None:
+            sw, sh = self.screen.get_size()
+            self.screen.fill(theme.BG)
+            self.screen.blit(c, ((sw - c.get_width()) // 2, (sh - c.get_height()) // 2))
+            pygame.display.flip()
 
     def fetch_tools(self, systems=None):
         """Fetch, quietly in the background, a tool a turned-on setting needs when

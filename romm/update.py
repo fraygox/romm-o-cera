@@ -250,10 +250,42 @@ def stage_release(info, staging=None):
 
 
 def _move(src, dst):
+    """Move a folder. A rename where it can be (atomic on one filesystem).
+    Across filesystems it copies to dst + ".partial" first and renames that
+    into place, and only then removes src: a copy that fails (disk full, an
+    I/O error) leaves src whole and takes its partial copy away with it."""
     try:
         os.rename(src, dst)                 # atomic on the same filesystem
+        return
     except OSError:
-        shutil.move(src, dst)
+        pass
+    part = dst + ".partial"
+    shutil.rmtree(part, ignore_errors=True)
+    try:
+        if os.path.isdir(src):
+            shutil.copytree(src, part, symlinks=True)
+        else:
+            shutil.copy2(src, part)
+        os.rename(part, dst)
+    except BaseException:
+        if os.path.isdir(part):
+            shutil.rmtree(part, ignore_errors=True)
+        elif os.path.lexists(part):
+            os.remove(part)
+        raise
+    gone = src + ".moved"                   # off src's path in one step, then deleted
+    try:
+        shutil.rmtree(gone, ignore_errors=True)
+        os.rename(src, gone)
+    except OSError:
+        gone = src
+    if os.path.isdir(gone):
+        shutil.rmtree(gone, ignore_errors=True)
+    else:
+        try:
+            os.remove(gone)
+        except OSError:
+            pass
 
 
 def _exchange(a, b):
@@ -270,23 +302,60 @@ def _exchange(a, b):
 def install_staged(staged_app, app_dir=rommlib.APP_DIR, backup=None):
     """Swap the staged app in; the current one becomes the backup. One atomic
     exchange where the filesystem allows it, so a power cut can never leave no
-    app at all (the old two-step swap had that moment); else the two steps."""
+    app at all (the old two-step swap had that moment); else the two steps.
+    The old backup is kept (as backup + ".prev") until the new one is in place,
+    and a failure at any step leaves the app as it was."""
     backup = backup or APP_BACKUP
-    shutil.rmtree(backup, ignore_errors=True)
+    prev = backup + ".prev"
+    shutil.rmtree(prev, ignore_errors=True)
+    if os.path.lexists(backup):
+        os.rename(backup, prev)                 # same folder: one step
+
+    def keep_old_backup():
+        if os.path.lexists(prev) and not os.path.lexists(backup):
+            os.rename(prev, backup)
     try:
         _exchange(staged_app, app_dir)              # app_dir: new version; staged_app: the old one
         exchanged = True
     except (OSError, AttributeError):
         exchanged = False
     if exchanged:
-        _move(staged_app, backup)
-    else:
-        _move(app_dir, backup)
         try:
-            _move(staged_app, app_dir)
-        except Exception:
-            _move(backup, app_dir)              # put the old version back
+            _move(staged_app, backup)
+        except BaseException:
+            try:
+                _exchange(staged_app, app_dir)      # failed to keep the old one: undo
+            except OSError:
+                pass
+            keep_old_backup()
             raise
+    else:
+        # The new version goes next to the app first (a copy when the app is
+        # on another filesystem), so the app is only moved once it's ready.
+        ready = app_dir + ".new"
+        shutil.rmtree(ready, ignore_errors=True)
+        try:
+            _move(staged_app, ready)
+        except BaseException:
+            keep_old_backup()
+            raise
+        try:
+            _move(app_dir, backup)              # a failed copy leaves app_dir whole
+        except BaseException:
+            shutil.rmtree(ready, ignore_errors=True)
+            keep_old_backup()
+            raise
+        try:
+            if os.path.lexists(app_dir):        # what a half-finished delete left
+                shutil.rmtree(app_dir)
+            _move(ready, app_dir)               # same filesystem: a rename
+        except BaseException:
+            shutil.rmtree(app_dir, ignore_errors=True)
+            _move(backup, app_dir)              # put the old version back
+            keep_old_backup()
+            shutil.rmtree(ready, ignore_errors=True)
+            raise
+    shutil.rmtree(prev, ignore_errors=True)
     shutil.rmtree(os.path.dirname(staged_app), ignore_errors=True)
     _core.log("UPDATE installed %s (previous %s kept for rollback)" % (_version_in(app_dir, True),
                                                                      _version_in(backup, True)))

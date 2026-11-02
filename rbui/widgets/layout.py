@@ -221,9 +221,9 @@ class Panel:
         r = status_chip(self.c, self.f.small, label, (self.x, self.y), color, h=26)
         self.y = r.bottom + 10
 
-    def verb(self, label, kind="go", detail="", glyph="A", fn=None, frac=0.0, foot=True):
-        """The panel's one big action (hero.verb_button), tapped like fn. foot: at the bottom, a
-        footer drawn before the body; otherwise where the body has got to."""
+    def reserve(self, fn=None, foot=True):
+        """The rect of the panel's one big action, tapped like fn. foot: at the bottom, a footer
+        drawn before the body; otherwise where the body has got to."""
         if foot:
             r = pygame.Rect(self.x, self.bottom - VERB_H, self.w, VERB_H)
             self.bottom = r.top - 16
@@ -232,6 +232,11 @@ class Panel:
             self.y = r.bottom + 14
         if fn and self.app is not None:
             self.app.hit(r, fn)
+        return r
+
+    def verb(self, label, kind="go", detail="", glyph="A", fn=None, frac=0.0, foot=True):
+        """The panel's one big action (hero.verb_button), in reserve()."""
+        r = self.reserve(fn, foot)
         verb_button(self.c, self.f, r, label, kind, detail, glyph, frac)
         return r
 

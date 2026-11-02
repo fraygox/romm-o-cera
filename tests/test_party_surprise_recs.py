@@ -157,6 +157,39 @@ def test_party_filter_on_a_fixed_list(live, rb):
     assert len(gl.items) == 5
 
 
+def test_show_choice_steps_back_and_the_players_answer_after_closing_fetches_nothing(live, rb):
+    app = live
+    gl = rb.GameListScreen(app, "NES", platform=app.platforms[0])
+    app.push(gl)
+    gl.cycle_box_filter()
+    assert gl.box_filter == "here"
+    gl.cycle_box_filter(-1)
+    assert gl.box_filter == "all"
+    gl.cycle_box_filter(-1)
+    assert gl.box_filter == "away"
+    app.player_counts = None
+    gl.players = 0
+    gl._cycle_players(1)
+    app.pop()                                   # closed before RomM answers
+    gl.reset = lambda: (_ for _ in ()).throw(AssertionError("fetched for a closed list"))
+    _pump(app, lambda: not gl._asking_players)
+    assert gl.players == 0
+
+
+def test_search_from_a_collection_stays_in_it(live, rb):
+    app = live
+    col = {"id": 5, "param": "collection_id", "name": "Faves", "full": "Faves"}
+    gl = rb.GameListScreen(app, "Faves", collection=col)
+    app.push(gl)
+    gl.action("y")
+    sc = app.stack[-1]
+    assert isinstance(sc, rb.SearchScreen) and sc.collection is col
+    assert sc.crumbs() == ["Search", "Faves"]
+    sc.type_text("ab")
+    sc.action("start")
+    assert app.stack[-1].collection is col and app.stack[-1].search == "ab"
+
+
 # ------------------------------------------------------------- Surprise me
 
 def test_random_rom_and_surprise_against_the_mock(mock_url):

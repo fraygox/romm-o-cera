@@ -48,20 +48,30 @@ def verb_button(c, f, rect, label, kind="go", detail="", glyph="A", frac=0.0):
     return rect
 
 
-def game_state(app, rom, status=None):
-    """Where a game stands, for a panel that browses (Home, Game night), whose A opens the game's
-    page and its button is there: (label, colour, detail, progress or None)."""
+def _game_case(app, rom, status=None):
+    """Where a game stands, for game_state and game_verb: ("nosystem" | "installed" | "active" |
+    "failed" | "missing", system, job, progress fraction)."""
     st, j = status or app.rom_status(rom)
     system = app.system_for(rom)
     if not system:
-        return "No Batocera system for this platform", theme.FAINT, "", None
-    if st == "installed":
-        return "On this box", theme.GREEN, "roms/%s" % system, None
+        return "nosystem", system, j, 0
     if st == "active":
-        frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+        return st, system, j, (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+    return (st if st in ("installed", "failed") else "missing"), system, j, 0
+
+
+def game_state(app, rom, status=None):
+    """Where a game stands, for a panel that browses (Home, Game night), whose A opens the game's
+    page and its button is there: (label, colour, detail, progress or None)."""
+    case, system, j, frac = _game_case(app, rom, status)
+    if case == "nosystem":
+        return "No Batocera system for this platform", theme.FAINT, "", None
+    if case == "installed":
+        return "On this box", theme.GREEN, "roms/%s" % system, None
+    if case == "active":
         return ("Downloading %d%%" % (frac * 100) if j.state == rommlib.Job.DOWNLOADING else j.state), \
             theme.BLUE, "", frac
-    if st == "failed":
+    if case == "failed":
         return "Download failed", theme.RED, "", None
     return "Not on this box", theme.FAINT, human_size(rom.get("fs_size_bytes")), None
 
@@ -95,18 +105,17 @@ def game_verb(app, rom, status=None, play="Play now", play_detail="on this box",
     """verb_button's arguments for a game: Play now when it's on the box, Download (and its size,
     or go_detail) when not, its progress while it downloads, nothing to do without a system.
     status: (state, job) when the screen knows better than app.rom_status (a disc set)."""
-    st, j = status or app.rom_status(rom)
-    if not app.system_for(rom):
+    case, _, j, frac = _game_case(app, rom, status)
+    if case == "nosystem":
         return dict(label="No Batocera system for this platform", kind="off")
-    if st == "installed":
+    if case == "installed":
         return dict(label=play, kind="play", detail=play_detail)
-    if st == "active":
-        frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+    if case == "active":
         label = j.state
         if j.state == rommlib.Job.DOWNLOADING:
             label = "Downloading %d%%, %s/s" % (frac * 100, human_size(j.speed))
         return dict(label=label, kind="busy", frac=frac)
-    return dict(label="Retry download" if st == "failed" else "Download", kind="go",
+    return dict(label="Retry download" if case == "failed" else "Download", kind="go",
                 detail=go_detail if go_detail is not None else human_size(rom.get("fs_size_bytes")))
 
 

@@ -385,3 +385,15 @@ def test_a_renamed_games_alt_box_art_is_carried(isolated):
     entry = {"system": "psx", "rename": {os.path.join(sysdir, "Lorem.cue"): os.path.join(sysdir, "Lorem.chd")}}
     carry = rb_finalize.snapshot_renames([entry])
     assert set(carry[os.path.join(sysdir, "Lorem.chd")]["media"]) == {"image", "boxart"}
+
+
+def test_gamelist_xml_strips_forbidden_chars_and_skips_unencodable_paths(isolated):
+    import xml.etree.ElementTree as ET
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    good = os.path.join(sysdir, "Good.zip")
+    bad = os.path.join(sysdir, os.fsdecode(b"Bad\xff.zip"))
+    body = rommlib.gamelist_xml("gba", {bad: {"name": "x"},
+                                        good: {"desc": "a\x0bb\x00c\ufffe\uffff\ud800d\te\nf", "rating": 0.5}})
+    games = ET.fromstring(body).findall("game")
+    assert len(games) == 1 and games[0].findtext("path") == "./Good.zip"
+    assert games[0].findtext("desc") == "abcd\te\nf" and games[0].findtext("rating") == "0.5"

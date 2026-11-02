@@ -185,6 +185,12 @@ class _RangedFile:
         return data
 
 
+def _range_start(r):
+    """Where a 206's body starts in the file ("bytes S-E/T"), or None."""
+    m = re.match(r"\s*bytes\s+(\d+)-\d+/(\d+|\*)\s*$", r.headers.get("Content-Range") or "")
+    return int(m.group(1)) if m else None
+
+
 def _ranged_get(api, path, size):
     """get(start, end) -> those bytes of path on the RomM server, or Unlistable
     when the server doesn't answer with exactly that range of a file that size."""
@@ -340,6 +346,7 @@ class Job:
         self.short_space = 0          # waiting for space: bytes still to free
         self.replace = None           # broken copy under another name, removed once this one is in
         self.listing_tried = False    # the forecast's archive listing (zip_listing) was tried
+        self.made = []                # finished files this job put where none was (cancel removes them)
         self.cancel = threading.Event()
 
     @property
@@ -640,12 +647,29 @@ class Downloader:
         return n
 
     def _drop_parts(self, job):
-        """Delete a cancelled/removed download's partial files."""
-        for p in self._part_files(job):
+        """Delete a cancelled/removed download's partial files, and the finished
+        files it created (a folder game's members, an archive waiting to be
+        unpacked): left behind, ES would list a broken game nothing can delete.
+        Never a file that was there before the job (repair over an installed copy)."""
+        sysdir = os.path.join(_core.ROMS_ROOT, job.system)
+        made = [p for p in job.made if os.path.isfile(p) and not os.path.islink(p) and _core._inside(p, sysdir)]
+        for p in self._part_files(job) + made:
             try:
                 os.remove(p)
             except OSError:
                 pass
+        base = _core.rom_dest(job.rom, job.system)
+        if made and base and _core._inside(base, sysdir):
+            base = os.path.normpath(base)
+            for p in made:                     # the game's own folders it emptied (only empty ones go)
+                d = os.path.dirname(os.path.normpath(p))
+                while d == base or d.startswith(base + os.sep):
+                    try:
+                        os.rmdir(d)
+                    except OSError:
+                        break
+                    d = os.path.dirname(d)
+        job.made = []
 
     def cancel_job(self, job):
         drop = False
@@ -693,7 +717,8 @@ class Downloader:
             # the game's media for ES ride along as paths (_es_media), not RomM's whole metadata
             pend = [{"rom": dict({k: j.rom.get(k) for k in self.SLIM_KEYS}, _es_media=_library.es_media(j.rom)),
                      "system": j.system,
-                     "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None}
+                     "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None,
+                     "made": list(j.made) or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(_core.DATA_DIR, exist_ok=True)
             _core.atomic_write_json(_core.QUEUE_PATH, {"held": self.hold, "jobs": pend})
@@ -729,6 +754,8 @@ class Downloader:
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
                 j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"), save=False)
+                if it.get("made") and not j.made:         # what it had created before the restart
+                    j.made = [p for p in it["made"] if isinstance(p, str)]
                 if it.get("paused"):
                     with self.cv:
                         j.user_paused = True
@@ -741,11 +768,11 @@ class Downloader:
 
     def pause_all(self):
         """Stop transfers but keep them queued (partials resume via Range)."""
-        for j in list(self.jobs):
-            if j.active:
-                j.pause, j.resume = True, False
-                j.cancel.set()
-        with self.cv:
+        with self.cv:                      # the lock _failed / resume_job decide pause and resume under
+            for j in self.jobs:
+                if j.active:
+                    j.pause, j.resume = True, False
+                    j.cancel.set()
             self.cv.notify_all()
         self.save_queue()
 
@@ -943,6 +970,15 @@ class Downloader:
         else:
             if r.status_code == 200:
                 have = 0
+            elif have and _range_start(r) != have:
+                # a 206 that isn't the rest of the .part (a proxy answering from 0, or
+                # another range): appending it would corrupt the file
+                if _range_start(r) == 0:
+                    have = 0                       # the whole file after all: write it over the .part
+                else:
+                    _net.discard(r)
+                    os.remove(part)                # start over from 0 next time
+                    raise NetError("The server resumed at the wrong place; starting over.")
             j.done_bytes += have
             t0, b0 = time.time(), j.done_bytes
             lim_t0, lim_b = time.time(), 0
@@ -1006,6 +1042,14 @@ class Downloader:
                 os.remove(part)            # cancelled while verifying: don't keep it
             raise Cancelled()
         os.replace(part, dest)
+
+    def _fetch_new(self, j, url_path, dest, size_hint, record=None):
+        """_fetch, noting dest on the job when nothing was there before (a file
+        this job created goes again on cancel; one it replaced never does)."""
+        existed = os.path.lexists(dest)
+        self._fetch(j, url_path, dest, size_hint, record)
+        if not existed and dest not in j.made:
+            j.made.append(dest)
 
     def _free_bytes(self, path):
         st = os.statvfs(path)
@@ -1078,7 +1122,7 @@ class Downloader:
                         and file_hash_ok(dest, f)[0] is not False:
                     j.done_bytes += f.get("file_size_bytes") or 0
                     continue
-                self._fetch(j, "/api/roms/%d/files/content/%s" % (
+                self._fetch_new(j, "/api/roms/%d/files/content/%s" % (
                     f["id"], urllib.parse.quote(f["file_name"])), dest, f.get("file_size_bytes"), f)
             return {"kind": "folder", "path": folder, "heavy": False}
         else:
@@ -1088,7 +1132,7 @@ class Downloader:
                     os.path.getsize(dest) == j.total_bytes and file_hash_ok(dest, rec, name=dest)[0] is True:
                 j.done_bytes, j.verified = j.total_bytes, True   # already here, verified (e.g. paused while extracting)
             else:
-                self._fetch(j, "/api/roms/%d/content/%s" % (
+                self._fetch_new(j, "/api/roms/%d/content/%s" % (
                     rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes, rec)
             heavy = self._will_extract(j, dest)
             return {"kind": "file", "path": dest, "heavy": heavy,
@@ -1110,6 +1154,7 @@ class Downloader:
         entry = self._queue_gamelist(rom, system, results)
         self.library.mark(rom, system, results, group=j.group, meta=entry)
         j.chd_queued = bool(j.chd_task)
+        j.made = []                          # the game is in: its files are no longer a cancel's to remove
         j.state = Job.DONE
         j.message = "Ready to play" + (", checksum OK" if j.verified else "")
         _core.log("OK %s -> %s%s" % (j.name, results, " [verified]" if j.verified else ""))
@@ -1350,19 +1395,33 @@ class Downloader:
                     dest = os.path.realpath(os.path.join(target, info.filename))
                     if not dest.startswith(real + os.sep):
                         raise _core.RommError("Unsafe path in archive: %s" % info.filename)
-                made = []
+                # unpack into a private folder beside the target and move into place only
+                # once all of it is out: a cancel or a full disk halfway leaves no
+                # half-extracted game, and a copy it replaces (repair) stays whole
+                stage = os.path.join(target, ".rb-extract-%d-%d" % (os.getpid(), threading.get_ident()))
+                shutil.rmtree(stage, ignore_errors=True)
+                os.makedirs(stage)
                 try:
+                    got = []
                     for info in infos:
                         if j.cancel.is_set():
                             raise Cancelled()
-                        made.append(z.extract(info, target))
-                except BaseException:
-                    for m in reversed(made):          # no half-extracted game left behind
-                        try:
-                            os.rmdir(m) if os.path.isdir(m) else os.remove(m)
-                        except OSError:
-                            pass
-                    raise
+                        got.append(z.extract(info, stage))
+                    moves = []
+                    for p in got:                     # check every destination before replacing any
+                        dest = os.path.join(target, os.path.relpath(p, stage))
+                        if os.path.isdir(dest) != os.path.isdir(p) and os.path.lexists(dest):
+                            raise _core.RommError("%s is in the way of the archive's %s"
+                                                  % (os.path.relpath(dest, target), "folder" if os.path.isdir(p) else "file"))
+                        moves.append((p, dest))
+                    for p, dest in moves:
+                        if os.path.isdir(p):
+                            os.makedirs(dest, exist_ok=True)
+                        else:
+                            os.makedirs(os.path.dirname(dest), exist_ok=True)
+                            os.replace(p, dest)
+                finally:
+                    shutil.rmtree(stage, ignore_errors=True)
         else:
             for m in self._list_archive(path):        # same zip-slip rule for 7z/rar
                 if m.startswith(("/", "\\")) or ".." in m.replace("\\", "/").split("/"):

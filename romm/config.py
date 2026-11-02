@@ -14,7 +14,7 @@ def _parses(fn):
     def valid(v):
         try:
             fn(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return False
         return True
     return valid
@@ -89,7 +89,7 @@ SETTINGS = (
     Setting("keep_free_gb", 20,         # downloads and CHD conversions never leave less than this free (GB)
             row="keepfree", label="Keep free on disk", sub="Downloads wait instead of filling the drive",
             kind="choice", choices=KEEP_FREE_CHOICES, effects=("downloader",),
-            valid=_parses(lambda v: float(v or 0)),     # 0: no reserve; null/"" show as Nothing but keep 20 GB (keep_free_bytes)
+            valid=_parses(lambda v: int(float(v or 0) * (1 << 30))),     # 0: no reserve; inf/nan fail; null/"" show as Nothing but keep 20 GB (keep_free_bytes)
             help="Downloads and conversions never leave less than this free. One that doesn't fit waits for room; "
                  "smaller ones keep going."),
     Setting("extract_parallel", True,   # the next download starts while the last one is being extracted
@@ -516,5 +516,5 @@ def keep_free_bytes(cfg):
     v = config_value(cfg, "keep_free_gb")
     try:
         return max(0, int(float(v) * (1 << 30)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):    # OverflowError: inf, or a value too big for float
         return DEFAULT_CONFIG["keep_free_gb"] << 30

@@ -1,6 +1,7 @@
 """EmulationStation: its HTTP API, playlists and a game's files."""
 import json
 import os
+import re
 import shutil
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -297,6 +298,7 @@ def delete_game(system, path, library=None):
                 if paths and all(x in gone or not os.path.exists(x) for x in paths):
                     inst.pop(rid, None)
         library.update(drop)
+        library.rescan(system)
     if files:
         _core.append_gamelist({"system": system, "remove": files})
     _core.log("DELETE %s: %s (%s)" % (system, files, _core.human_size(freed)))
@@ -457,16 +459,29 @@ def launch_when_closed(path, system=None, name=None, wait=600, python=None):
         return False
 
 
+_XML_BAD = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _xml_text(v):
+    """Text XML 1.0 can carry: the characters it forbids (C0 controls but tab, newline and
+    return; surrogates; U+FFFE/U+FFFF) dropped, which ES would reject the whole body for."""
+    return _XML_BAD.sub("", str(v))
+
+
 def gamelist_xml(system, games):
     """A partial gamelist.xml (bytes) for games of a system: {absolute path:
     {tag: text}}; paths are written relative to the system folder."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     root = ET.Element("gameList")
     for path, fields in games.items():
+        rel = os.path.relpath(path, sysdir)
+        if _XML_BAD.search(rel):
+            _core.log("ADDGAMES %s: skipped %r (name can't be written as XML)" % (system, path))
+            continue
         g = ET.SubElement(root, "game")
-        ET.SubElement(g, "path").text = "./" + os.path.relpath(path, sysdir)
+        ET.SubElement(g, "path").text = "./" + rel
         for k, v in (fields or {}).items():
-            ET.SubElement(g, k).text = str(v)
+            ET.SubElement(g, k).text = _xml_text(v)
     return ET.tostring(root, encoding="utf-8")
 
 

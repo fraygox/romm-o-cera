@@ -1,5 +1,6 @@
 """Self-update: stage from a (fake, local) GitHub release, install, roll back."""
 import glob
+import errno
 import hashlib
 import shutil
 import http.server
@@ -287,3 +288,100 @@ def test_saving_config_never_writes_the_environments_server_or_token(isolated, m
     rommlib.save_config(cfg)
     saved = json.load(open(rommlib.CONFIG_PATH))
     assert saved["url"] == "https://file.example.com" and saved["token"] == "rmm_typed"
+
+
+# ------------------------------------------------- install across filesystems
+def _tree_app(path, version, extra=8):
+    os.makedirs(os.path.join(path, "romm"))
+    open(os.path.join(path, "rommlib.py"), "w").write('VERSION = "%s"\n' % version)
+    open(os.path.join(path, "rommbrowser.pygame"), "w").write("# app %s\n" % version)
+    for i in range(extra):
+        open(os.path.join(path, "romm", "m%d.py" % i), "w").write("# %s %d\n" % (version, i))
+    return path
+
+
+def _files(path):
+    return sorted(os.path.relpath(os.path.join(d, f), path) for d, _, fs in os.walk(path) for f in fs)
+
+
+@pytest.fixture
+def two_filesystems(tmp_path, monkeypatch):
+    """roms/ and data/ on different filesystems (as /userdata/roms on exFAT):
+    a rename between them fails with EXDEV, and there's no atomic exchange."""
+    roms, data = str(tmp_path / "roms"), str(tmp_path / "data")
+    real = os.rename
+
+    def rename(src, dst, *a, **kw):
+        if os.fspath(src).startswith(roms) != os.fspath(dst).startswith(roms):
+            raise OSError(errno.EXDEV, "Invalid cross-device link", src)
+        return real(src, dst, *a, **kw)
+
+    def no_exchange(a, b):
+        raise OSError(errno.EXDEV, "Invalid cross-device link", a)
+    monkeypatch.setattr(os, "rename", rename)
+    monkeypatch.setattr(rommlib, "_exchange", no_exchange)
+    app = _tree_app(os.path.join(roms, "pygame", "rommbrowser"), "0.0.1")
+    staged = _tree_app(os.path.join(data, "app-staging", "rommbrowser"), "0.0.2")
+    backup = _tree_app(os.path.join(data, "app-backup"), "0.0.0")
+    return app, staged, backup
+
+
+def _leftovers(*dirs):
+    return [n for d in dirs for n in os.listdir(d) if n.endswith((".new", ".partial", ".moved", ".prev"))]
+
+
+def test_an_update_across_filesystems_installs_and_keeps_a_backup(isolated, two_filesystems):
+    app, staged, backup = two_filesystems
+    assert rommlib.install_staged(staged, app_dir=app, backup=backup) == "0.0.2"
+    assert rommlib._version_in(backup) == "0.0.1" and _files(app) == _files(backup)
+    assert not os.path.exists(os.path.dirname(staged))
+    assert not _leftovers(os.path.dirname(app), os.path.dirname(backup))
+    assert rommlib.rollback(app_dir=app, backup=backup) == "0.0.1"
+    assert rommlib._version_in(backup) == "0.0.2"
+
+
+def _copy_dies_into(monkeypatch, marker, after=3):
+    """Disk full partway through copying a folder whose copy path has marker."""
+    real, done = shutil.copyfile, []
+
+    def copyfile(src, dst, *a, **kw):
+        if marker in os.fspath(dst):
+            done.append(dst)
+            if len(done) > after:
+                raise OSError(errno.ENOSPC, "No space left on device", dst)
+        return real(src, dst, *a, **kw)
+    monkeypatch.setattr(shutil, "copyfile", copyfile)
+    return done
+
+
+@pytest.mark.parametrize("where", ["app-backup.partial", "rommbrowser.new.partial"])
+def test_a_disk_full_midway_through_the_copy_leaves_the_app_and_its_backup_whole(isolated, two_filesystems,
+                                                                                  monkeypatch, where):
+    """install_staged deleted the backup, then shutil.move copied the app over
+    and deleted it: disk full (or an I/O error) partway left a half-deleted app
+    and no backup. Now nothing is removed until its copy is whole."""
+    app, staged, backup = two_filesystems
+    before = _files(app)
+    done = _copy_dies_into(monkeypatch, where)
+    with pytest.raises(OSError):
+        rommlib.install_staged(staged, app_dir=app, backup=backup)
+    assert done, "the copy wasn't exercised"
+    assert rommlib._version_in(app) == "0.0.1" and _files(app) == before
+    assert rommlib._version_in(backup) == "0.0.0"
+    assert not _leftovers(os.path.dirname(app), os.path.dirname(backup))
+
+
+def test_a_failed_delete_of_the_moved_app_still_installs(isolated, two_filesystems, monkeypatch):
+    """The old app is renamed off its path before it's deleted, so a delete
+    that stops partway can't leave a half app where the new one goes."""
+    app, staged, backup = two_filesystems
+    real = shutil.rmtree
+
+    def rmtree(path, *a, **kw):
+        if os.fspath(path).endswith(".moved"):
+            os.remove(os.path.join(path, "rommlib.py"))        # some of it went, then an I/O error
+            return
+        return real(path, *a, **kw)
+    monkeypatch.setattr(shutil, "rmtree", rmtree)
+    assert rommlib.install_staged(staged, app_dir=app, backup=backup) == "0.0.2"
+    assert rommlib._version_in(backup) == "0.0.1"

@@ -6,10 +6,12 @@ instance (flock on downloads.lock). Works through download-queue.json with the
 same pipeline as the app (resume via Range, extract, CHD hand-off, gamelist
 hand-off), keeps going while you play, and writes downloads-status.json. When
 the app starts again it touches downloads.stop: this worker pauses its current
-transfer (the .part stays), saves the queue and exits, and the app takes over.
+transfer (the .part stays), lets an unpack under way finish or roll back, saves
+the queue and exits, and the app takes over.
 When the queue is empty it starts the CHD worker if needed and merges gamelist
 entries once ES is idle.
 """
+import json
 import os
 import sys
 import time
@@ -18,11 +20,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 
 
+# Handing the queue back to the app: a transfer stops at its next chunk (its
+# .part resumes), so HANDBACK_WAIT only covers a stuck socket. An unpack can't
+# stop inside a member (one disc image can take minutes) and must not be killed
+# half-way: that leaves a half-unpacked folder no later attempt may unpack
+# into, so the game fails for good. It gets UNPACK_WAIT to finish or roll back,
+# and handover() (the app) waits as long as the status file says one is going.
+HANDBACK_WAIT = 15
+UNPACK_WAIT = 900
+STATUS_FRESH = 10          # seconds: an older status file is a worker that's gone
+
+
+def _unpacking(d):
+    return next((j for j in d.jobs if j.state == rommlib.Job.EXTRACTING), None)
+
+
 def write_status(d):
     j = next((j for j in d.jobs if j.state == rommlib.Job.DOWNLOADING), None)
+    u = _unpacking(d)
     st = {"pending": d.pending_count(), "current": j.name if j else None,
           "done_bytes": j.done_bytes if j else 0, "total_bytes": j.total_bytes if j else 0,
-          "updated": time.time()}
+          "unpacking": u.name if u else None, "updated": time.time()}
     rommlib.atomic_write_json(rommlib.DL_STATUS, st, sync=False)     # rewritten every second
 
 
@@ -129,10 +147,7 @@ def download(cfg):
     tick = 0
     while d.active_count():
         if os.path.exists(rommlib.DL_STOP):      # the app is back: hand over
-            d.pause_all()
-            t0 = time.time()
-            while d.active_count() and time.time() - t0 < 15:
-                time.sleep(0.2)
+            hand_back(d)
             stopped = True
             break
         if tick % 5 == 0:                        # every ~5 s: game running? cap / popups
@@ -159,6 +174,31 @@ def download(cfg):
     return notes
 
 
+def hand_back(d):
+    """Pause everything and wait until the jobs have stopped: a transfer for
+    HANDBACK_WAIT, an unpack under way for UNPACK_WAIT (it finishes, or rolls
+    back at its next member). Keeps the status file fresh meanwhile, so the
+    app's handover() knows to keep waiting. Returns True if all stopped."""
+    d.pause_all()
+    t0 = shown = time.time()
+    said = False
+    while d.active_count():
+        now = time.time()
+        u = _unpacking(d)
+        if u is not None and not said:
+            rommlib.log("dl-worker: letting %s finish unpacking before handing back" % u.name)
+            said = True
+        if now - t0 >= (UNPACK_WAIT if u is not None else HANDBACK_WAIT):
+            rommlib.log("dl-worker: %d job(s) still going after %d s; handing back anyway"
+                        % (d.active_count(), now - t0))
+            return False
+        if now - shown >= 1:
+            write_status(d)
+            shown = now
+        time.sleep(0.2)
+    return True
+
+
 def after_downloads(cfg, notes):
     """CHD-compress and hand game info to ES for whatever is queued — this
     run's downloads or earlier ones (the app leaves them to us on exit)."""
@@ -171,20 +211,51 @@ def after_downloads(cfg, notes):
         notes.flush()                            # games are listed now: tell the player
 
 
-def handover(timeout=30):
+def _status_unpacking():
+    """The game the running worker says it's unpacking (its status file is
+    fresh), else None."""
+    try:
+        with open(rommlib.DL_STATUS) as f:
+            st = json.load(f)
+        if time.time() - float(st.get("updated") or 0) < STATUS_FRESH:
+            return st.get("unpacking") or None
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def handover(timeout=30, unpack_timeout=UNPACK_WAIT + 30, waiting=None):
     """Called by the app at start: if a worker is running, ask it to stop and
-    wait until it has released the lock. Returns True if one was running."""
+    wait until it has released the lock. Past timeout it keeps waiting only
+    while the worker reports an unpack under way (up to unpack_timeout): the
+    app must not take the queue while that game is half on disk; waiting(name)
+    is called on each poll then, so the app can say why it hasn't opened.
+    Returns True if one was running."""
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     with rommlib.try_lock(rommlib.DL_LOCK) as fd:
         if fd is not None:
             return False                         # nobody holds it
     open(rommlib.DL_STOP, "w").close()
     t0 = time.time()
-    while time.time() - t0 < timeout:
+    said = False
+    while True:
         with rommlib.try_lock(rommlib.DL_LOCK) as fd:
             if fd is not None:
                 return True
+        waited = time.time() - t0
+        if waited >= unpack_timeout:
+            break
+        if waited >= timeout:
+            name = _status_unpacking()
+            if not name:
+                break
+            if not said:
+                rommlib.log("handover: waiting for the background worker to finish unpacking %s" % name)
+                said = True
+            if waiting:
+                waiting(name)
         time.sleep(0.2)
+    rommlib.log("handover: the background worker didn't stop in %d s" % (time.time() - t0))
     return True
 
 

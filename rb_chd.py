@@ -335,6 +335,41 @@ def sources_of(cue_or_gdi):
     return [cue_or_gdi] + rommlib.sheet_sources(cue_or_gdi, strict=True)     # unreadable: OSError
 
 
+def still_named(srcs, dirs, walk_root=None):
+    """Files (normalised paths) that a .cue/.gdi/.m3u other than srcs names, in
+    dirs or anywhere under walk_root: Game.cue and Game (alt).cue sharing
+    Game.bin. Converting one sheet must leave the shared track for the other; the
+    run that converts the last sheet naming it deletes it."""
+    mine = {os.path.normpath(s) for s in srcs}
+    sheets = set()
+    for d in dirs:
+        try:
+            sheets.update(os.path.join(d, f) for f in os.listdir(d))
+        except OSError:
+            pass
+    if walk_root:
+        for dp, dns, fns in os.walk(walk_root):
+            dns[:] = [x for x in dns if x not in rommlib.MEDIA_DIRS]
+            sheets.update(os.path.join(dp, f) for f in fns)
+    named = set()
+    for sh in sheets:
+        low = sh.lower()
+        if not low.endswith((".cue", ".gdi", ".m3u")) or os.path.normpath(sh) in mine \
+                or not os.path.isfile(sh):
+            continue
+        if low.endswith((".cue", ".gdi")):
+            named.update(os.path.normpath(p) for p in rommlib.sheet_sources(sh))
+        elif low.endswith(".m3u"):
+            try:
+                with open(sh, errors="surrogateescape") as f:
+                    lines = [ln.strip() for ln in f]
+            except OSError:
+                continue
+            named.update(os.path.normpath(os.path.join(os.path.dirname(sh), ln))
+                         for ln in lines if ln and not ln.startswith("#"))
+    return named
+
+
 def _crc32(out):
     m = re.search(r"CRC32:\s*([0-9a-f]{8})", out) or re.search(r"(?m)^([0-9a-f]{8})\s*$", out)
     return m.group(1) if m else None
@@ -993,9 +1028,24 @@ def convert(task):
                 pass
         return False
     old_to_new = {os.path.normpath(s): o for s, o in plan}
-    in_size = sum(os.path.getsize(p) for s in srcs for p in sources_of(s) if os.path.isfile(p))
-    out_size = sum(rommlib.path_size(m) for m in made)
     m3us = rommlib.fix_m3us(sysdir, old_to_new)
+    # what goes with each disc: its sheet, and each track no other sheet or playlist
+    # still names (after fix_m3us, so a playlist of these discs names their CHDs now)
+    # and that really is this game's (inside its folder; checked above, but a
+    # deletion is checked where it's made)
+    shared = still_named(srcs, {os.path.dirname(s) for s in srcs} | {out_dir}, folder_root)
+    goes = {}
+    for src in srcs:
+        home = os.path.realpath(folder_root or os.path.dirname(src))
+        goes[src] = [p for p in sources_of(src) if p == src or (
+            os.path.normpath(p) not in shared and os.path.realpath(p).startswith(home + os.sep))]
+        for p in sources_of(src):
+            if p not in goes[src]:
+                note("chd: keeping %s: another disc image still uses it" % os.path.basename(p)
+                     if os.path.normpath(p) in shared else
+                     "chd: keeping %s: not this game's file" % p)
+    in_size = sum(os.path.getsize(p) for s in srcs for p in goes[s] if os.path.isfile(p))
+    out_size = sum(rommlib.path_size(m) for m in made)
     hide = []
     if multi:
         # an existing playlist (now rewritten) stays the entry; else write one
@@ -1018,13 +1068,16 @@ def convert(task):
                                           errors="surrogateescape")
                 _sync_dir(out_dir)
         hide = made if primary else []
-        primary = primary or made[0]
-        rommlib.migrate_saves(system, srcs[0], primary)
+        rommlib.migrate_saves(system, srcs[0], primary or made[0])
         for s, o in plan:
             rommlib.migrate_saves(system, s, o)
     else:
         primary = made[0]
         rommlib.migrate_saves(system, srcs[0], primary)
+    # each disc's entry follows the playlist when there is one, else its own CHD
+    # (an .m3u name already taken: the discs stay listed one by one)
+    entry = {s: primary or o for s, o in plan}
+    primary = primary or made[0]
 
     # record the rename before deleting anything: a crash after this leaves
     # duplicates at worst, never a CHD whose game info can't follow it
@@ -1036,8 +1089,8 @@ def convert(task):
     rename = {}
     gone = set()
     for src in srcs:
-        for p in sources_of(src):
-            rename[p] = primary
+        for p in goes[src]:
+            rename[p] = entry[src]
             gone.add(os.path.normpath(p))
     folder_goes = False
     if folder_root and os.path.isdir(folder_root):
@@ -1050,7 +1103,7 @@ def convert(task):
     # our record of the game points at the new file even when its folder stays for other files
     rommlib.Library().rename_paths(dict(rename, **{folder_root: primary}) if folder_root else rename, hide)
     for src in srcs:
-        for p in sources_of(src):
+        for p in goes[src]:
             if os.path.isfile(p):
                 os.remove(p)
     if folder_root and os.path.isdir(folder_root):
