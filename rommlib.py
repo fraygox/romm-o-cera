@@ -91,4 +91,15 @@ class _Rommlib(types.ModuleType):
         return sorted(set(super().__dir__()) | set(_OWNER))
 
 
+def _through(n):
+    """rommlib.n as a property on the module's class: a data descriptor, so tools
+    that look in the module's __dict__ (pytest >= 9.2's monkeypatch) see it is
+    served from elsewhere and restore it by setting it, not by deleting it from
+    its owner."""
+    return property(lambda self: getattr(_OWNER[n], n), lambda self, v: setattr(_OWNER[n], n, v),
+                    lambda self: delattr(_OWNER[n], n))
+
+
+for _n in _OWNER:
+    setattr(_Rommlib, _n, _through(_n))
 sys.modules[__name__].__class__ = _Rommlib

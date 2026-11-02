@@ -168,3 +168,18 @@ def test_isolated_redirects_every_data_path(isolated):
     for fn in (rommlib.chd_lock_path, rommlib.chd_current_path, rommlib.chd_results_path,
                rommlib.audit_path, rb_finalize.lock_path, rb_finalize.deferred_path):
         assert fn().startswith(rommlib.DATA_DIR + os.sep), (fn.__name__, fn())
+
+
+def test_a_monkeypatch_undo_puts_a_rommlib_name_back():
+    """pytest >= 9.2 restores what it finds in the module's __dict__: rommlib's
+    names live in their owner modules, so an undo must set them back, not
+    delete them from their owner (that broke every later test)."""
+    import pytest
+    import rommlib
+    downloader = rommlib._OWNER["WORKER_POLL"]           # the module that owns it
+    before = downloader.WORKER_POLL
+    mp = pytest.MonkeyPatch()
+    mp.setattr(rommlib, "WORKER_POLL", 0.01)
+    assert downloader.WORKER_POLL == 0.01
+    mp.undo()
+    assert downloader.WORKER_POLL == before and rommlib.WORKER_POLL == before
