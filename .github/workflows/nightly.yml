@@ -65,11 +65,11 @@ jobs:
         run: |
           git tag -f nightly HEAD
           git push -f origin refs/tags/nightly
-          if gh release view nightly >/dev/null 2>&1; then
-              # the files first, the title (which the app reads) last
-              gh release upload nightly dist/romm-o-cera.zip dist/SHA256SUMS dist/install.sh --clobber
-              gh release edit nightly --prerelease --title "Nightly v$LABEL" --notes-file notes.md
-          else
-              gh release create nightly --prerelease --latest=false --title "Nightly v$LABEL" \
-                  --notes-file notes.md dist/romm-o-cera.zip dist/SHA256SUMS dist/install.sh
-          fi
+          # a new release each build, so GitHub shows this build's date (an edited
+          # release keeps the date it was first published). The tag and download
+          # URLs stay the same; create uploads the files to a draft and publishes
+          # it once they're all there, so the title (which the app reads) never
+          # names a build whose files are missing.
+          gh release delete nightly --yes >/dev/null 2>&1 || true
+          gh release create nightly --verify-tag --prerelease --latest=false --title "Nightly v$LABEL" \
+              --notes-file notes.md dist/romm-o-cera.zip dist/SHA256SUMS dist/install.sh
