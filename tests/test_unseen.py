@@ -181,7 +181,7 @@ def test_unpack_refuses_to_mix_into_another_game(isolated):
 def test_unpack_refuses_unsafe_archives(isolated):
     _zip("ps2/Evil.zip", {"../escape.iso": b"x", "Evil.iso": b"y"})
     f = _by_name(rommlib.find_unseen(ES))["ps2/Evil.zip"]
-    with pytest.raises(rommlib.RommError, match="Unsafe"):
+    with pytest.raises(rommlib.RommError, match="outside its folder"):
         rommlib.unpack_unseen(_dl(), f)
     assert not os.path.exists(os.path.join(rommlib.ROMS_ROOT, "escape.iso"))
 
@@ -347,7 +347,7 @@ def test_findings_then_the_door_to_games_es_cant_see(ui, rb):
     ck = rb.CheckScreen(app)
     app.push(ck)
     assert ck.unseen == 0 and len(ck.findings) == 1
-    assert ck.sel == 0 and ck.hints()[:3] == [("A", "Download again"), ("X", "Actions"), ("Y", "Check again")]
+    assert ck.sel == 0 and ck.hints()[:3] == [("A", "Download again"), ("X", "Actions"), ("Y", "Quick check")]
     ck.action("down")
     assert ck.sel == 1 and ck.hints()[0] == ("A", "Open")
     ck.action("down")
@@ -391,7 +391,7 @@ def test_pick_several_then_unpack_them_all(ui, rb):
     assert [os.path.basename(i["path"]) for i in sc.items] == ["Mystery.xyz", "Broken.zip"]
     assert sc.picks == {} and not sc.picking and not sc.busy and sc.progress == ""
     msg, col = app.toasts[-1][:2]
-    assert msg.startswith("Unpacked 2") and "1 couldn't be: Broken.zip (can't be read" in msg and col == rb.AMBER
+    assert msg.startswith("Unpacked 2") and "1 couldn't be: Broken.zip (the archive is damaged" in msg and col == rb.AMBER
 
 
 def test_pick_several_then_delete_them_all(ui, rb):

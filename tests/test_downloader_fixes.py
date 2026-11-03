@@ -103,17 +103,17 @@ def test_an_unpack_cut_short_leaves_the_installed_copy_whole(isolated, monkeypat
     arc = _zip(os.path.join(sysdir, "Game.zip"), {"Game/Game.cue": "new cue", "Game/Game.bin": "new bin",
                                                    "Game/Extra.txt": "x"})
     j = rommlib.Job({"id": 1, "name": "Game"}, "psx")
-    real, n = zipfile.ZipFile.extract, [0]
+    real, n = rommlib.Downloader._unzip_member, [0]
 
-    def extract(self, info, path=None, pwd=None):
+    def unzip_member(z, info, stage, j_):
         n[0] += 1
         if n[0] == 2:
             if how == "cancel":
                 j.cancel.set()
             else:
                 raise OSError(errno.ENOSPC, "No space left on device")
-        return real(self, info, path, pwd)
-    monkeypatch.setattr(zipfile.ZipFile, "extract", extract)
+        return real(z, info, stage, j_)
+    monkeypatch.setattr(rommlib.Downloader, "_unzip_member", staticmethod(unzip_member))
     with pytest.raises((rommlib.Cancelled, OSError)):
         _downloader()._extract(arc, sysdir, j)
     for n_, data in old.items():

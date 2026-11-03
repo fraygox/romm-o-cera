@@ -22,11 +22,13 @@ Per converted game it also:
   only when ES is idle).
 """
 import glob
+import hashlib
 import json
 import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -35,8 +37,11 @@ import zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rommlib  # noqa: E402
 
-JUNK_EXTS = {".txt", ".nfo", ".md5", ".sfv", ".sha1", ".jpg", ".jpeg", ".png", ".m3u",
-             ".dat", ".url", ".log", ".xml", ".pdf", ".cfg", ".ini", ".lic"}
+# what a game folder may still hold and be removed with its game: files the OS made
+# (thumbnail caches, folder settings, macOS resource forks). A manual, a cover, notes,
+# a save or anything unknown is the owner's: the folder stays, with them in it
+OS_JUNK = {"thumbs.db", "ehthumbs.db", ".ds_store", "desktop.ini", ".directory"}
+CHECKSUM_EXTS = (".sfv", ".md5", ".sha1")
 FINALIZE_EVERY = 15   # merge gamelist renames + reload ES after this many games
 TOOL_POLL = 3         # seconds between progress / running-game / memory checks while a converter runs
 MEMORY_RETRY = 60     # seconds before a conversion stopped for a game's memory is tried again
@@ -335,6 +340,196 @@ def sources_of(cue_or_gdi):
     return [cue_or_gdi] + rommlib.sheet_sources(cue_or_gdi, strict=True)     # unreadable: OSError
 
 
+# next release: rommlib.disc_info recognises the same tags; a local copy so a worker
+# loaded by an older rommlib (an in-app update) tells discs apart the same way.
+# "(Disc 1)", "(Disc 1 of 2)", "(Disk 2)", "(CD1)", "(CD 2)", "(DVD 2)", "(Disc A)" —
+# never "(CD32)" (Amiga CD32) or "(DVD5)"/"(DVD9)" (disc types).
+DISC_TAG = re.compile(r"\s*\((?!CD\s*32\)|DVD\s*[59]\))(?:Disc|Disk|CD|DVD)\s*([0-9]{1,2}|[A-H])"
+                      r"(?:\s*of\s*[0-9]{1,2})?\)", re.I)
+# a disc subfolder named only for its disc: "Game/Disc 1/", "Game/CD2/"
+BARE_DISC = re.compile(r"^(?:Disc|Disk|CD|DVD)\s*[0-9]{1,2}$", re.I)
+
+
+def disc_title(name):
+    """The title of a disc-tagged name ("Game (USA)" for "Game (USA) (Disc 2)",
+    tags after the disc tag kept), None when it names no disc."""
+    m = DISC_TAG.search(name or "")
+    if not m:
+        return None
+    return re.sub(r"\s{2,}", " ", (name[:m.start()] + name[m.end():]).strip())
+
+
+def plan_outputs(system, mode, srcs, roots):
+    """Where a task's outputs go: (folder_root, out_dir, [(src, out)]). A game
+    folder's one disc becomes <folder>.chd in its parent; several discs, or a
+    loose file, keep each sheet's own name. Discs whose sheets share a name in
+    their own folders ("Game/CD1/game.cue", "Game/CD2/game.cue") are named by
+    their folder: "Game (CD1)", "Game (CD2)". Two outputs can still be the same
+    file (the caller skips such a task)."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+    folder_root = next((r.rstrip("/") for r in roots if os.path.isdir(r)), None)
+    if folder_root and os.path.normpath(folder_root) == os.path.normpath(sysdir):
+        folder_root = None        # never treat the system dir itself as a game folder
+    out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
+    multi = len(srcs) > 1
+    stems = [os.path.splitext(os.path.basename(src))[0] if multi or not folder_root
+             else os.path.basename(folder_root)                 # game name, not track name
+             for src in srcs]
+    if multi:
+        seen = {}
+        for st in stems:
+            seen[st.lower()] = seen.get(st.lower(), 0) + 1
+        for i, src in enumerate(srcs):
+            d = os.path.dirname(src)
+            if seen[stems[i].lower()] > 1 and folder_root \
+                    and os.path.normpath(d) != os.path.normpath(folder_root):
+                disc = os.path.basename(d)
+                stems[i] = "%s (%s)" % (os.path.basename(folder_root), disc) if BARE_DISC.match(disc) else disc
+    plan = [(src, os.path.join(out_dir, rommlib.conversion_output(mode, st, src))) for src, st in zip(srcs, stems)]
+    return folder_root, out_dir, plan
+
+
+# An output this worker made records which sources it came from (in the data
+# folder, never beside the game): after an interruption only such an output is
+# finished off. Any other file already at that name is left alone, and the
+# task skipped: it may be another game's, or a copy the owner keeps.
+MADE_DIR = "chd-made"
+
+
+def _made_path(out):
+    key = hashlib.sha1(os.path.normpath(out).encode("utf-8", "surrogateescape")).hexdigest()
+    return os.path.join(rommlib.DATA_DIR, MADE_DIR, key + ".json")
+
+
+def same_time(a, b):
+    """Two modification times of one file: equal within FAT's 2 s, or apart by a
+    whole number of quarter hours (a FAT drive keeps local time: a box booted in
+    another time zone, or across a DST change, sees every file shifted)."""
+    d = abs(a - b)
+    return d < 2.5 or (d < 15 * 3600 and abs(d - round(d / 900) * 900) < 2.5)
+
+
+def mark_made(out, srcs, tmp):
+    """Record, before tmp becomes out, that this task's srcs make it."""
+    st = os.stat(tmp)
+    path = _made_path(out)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    rommlib.atomic_write_json(path, {"out": os.path.normpath(out), "sources": [os.path.normpath(s) for s in srcs],
+                                     "size": st.st_size, "mtime": st.st_mtime})
+
+
+def _record_matches(path, out):
+    with open(path) as f:
+        rec = json.load(f)
+    st = os.stat(out)
+    return rec if rec.get("out") == os.path.normpath(out) and rec.get("size") == st.st_size \
+        and same_time(rec.get("mtime", 0), st.st_mtime) else None
+
+
+def made_from(out, src):
+    """True when out is the file a run converting src made (its record matches
+    the file there now: same size and time)."""
+    try:
+        rec = _record_matches(_made_path(out), out)
+        return bool(rec) and os.path.normpath(src) in rec.get("sources", ())
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def already_here(out):
+    """Why a game whose output name a file already has is skipped (the planner's reason
+    too): that file may be another copy of the game, or another disc's or game's."""
+    return "a file named %s is already here (another copy of it, or another disc or game)" \
+        % os.path.basename(out)
+
+
+def unmark(out):
+    try:
+        os.remove(_made_path(out))
+    except OSError:
+        pass
+
+
+PRUNE_AFTER = 30 * 86400     # a record whose drive hasn't been back this long: dropped
+
+
+def _prune_made():
+    """Records whose output is gone (dropped, deleted since): removed. Only when
+    the output's folder is there to look in: a drive that mounts late (or is
+    unplugged for now) keeps its records, unless they're a month old."""
+    d = os.path.join(rommlib.DATA_DIR, MADE_DIR)
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    for n in names:
+        p = os.path.join(d, n)
+        try:
+            with open(p) as f:
+                out = json.load(f).get("out")
+            if out and os.path.lexists(out):
+                continue
+            if out:
+                try:
+                    os.listdir(os.path.dirname(out))       # its drive is there: the output really is gone
+                except OSError:
+                    if time.time() - os.path.getmtime(p) < PRUNE_AFTER:
+                        continue
+        except (OSError, ValueError, AttributeError):
+            pass
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
+def _also_owner(sheet, srcs):
+    """Which of srcs a sheet the planner set aside belongs to (a .cue beside the
+    .gdi of the same game): the one that names every track the sheet names; None
+    when none does (another game's sheet, or a second dump with tracks of its own:
+    never taken)."""
+    tracks = {os.path.normpath(p) for p in rommlib.sheet_sources(sheet)}
+    if not tracks:
+        return None
+    for s in srcs:
+        if tracks <= {os.path.normpath(p) for p in sources_of_quiet(s)[1:]}:
+            return s
+    return None
+
+
+def sources_of_quiet(src):
+    """sources_of, an unreadable sheet as just itself."""
+    try:
+        return sources_of(src)
+    except OSError:
+        return [src]
+
+
+# what each cue/gdi names, by (path, size, mtime, inode), for this worker's run: a
+# flat system folder holds thousands, and every converted game asks again (re-read
+# from an SD card, that's tens of seconds a game). An edited sheet has a new key
+_SHEETS = {}
+
+
+def _sheet_tracks(sh):
+    """The normalised paths a cue/gdi names (none when it isn't a file)."""
+    try:
+        st = os.stat(sh)
+    except OSError:
+        return ()
+    if not stat.S_ISREG(st.st_mode):
+        return ()
+    key = (os.path.normpath(sh), st.st_size, st.st_mtime_ns, st.st_ino)
+    got = _SHEETS.get(key)
+    if got is None:
+        got = tuple(os.path.normpath(p) for p in rommlib.sheet_sources(sh))
+        if all(os.path.lexists(p) for p in got):
+            # kept only when every track is there: a name that resolves to no file yet
+            # (or only in another letter case) can resolve differently once one lands
+            _SHEETS[key] = got
+    return got
+
+
 def still_named(srcs, dirs, walk_root=None):
     """Files (normalised paths) that a .cue/.gdi/.m3u other than srcs names, in
     dirs or anywhere under walk_root: Game.cue and Game (alt).cue sharing
@@ -355,11 +550,11 @@ def still_named(srcs, dirs, walk_root=None):
     for sh in sheets:
         low = sh.lower()
         if not low.endswith((".cue", ".gdi", ".m3u")) or os.path.normpath(sh) in mine \
-                or not os.path.isfile(sh):
+                or os.path.basename(sh).startswith(CHDMAN_CUE):     # our copy for chdman (a killed run's)
             continue
         if low.endswith((".cue", ".gdi")):
-            named.update(os.path.normpath(p) for p in rommlib.sheet_sources(sh))
-        elif low.endswith(".m3u"):
+            named.update(_sheet_tracks(sh))
+        elif os.path.isfile(sh):
             try:
                 with open(sh, errors="surrogateescape") as f:
                     lines = [ln.strip() for ln in f]
@@ -752,6 +947,7 @@ def convert_ps3(src, tmp):
 
 def _drop(path):
     """Remove a finished or partial output: a file, or a game folder (PS3)."""
+    unmark(path)
     if os.path.isdir(path) and not os.path.islink(path):
         shutil.rmtree(path, ignore_errors=True)
     elif os.path.lexists(path):
@@ -799,6 +995,122 @@ def _wux_instead(mode, rc, system, src, plan):
     return None if os.path.exists(out) else out
 
 
+# chdman reads a cue's FILE names exactly as written, relative to the cue's folder:
+# a byte-order mark, old Mac line ends (it never finishes), a name in another letter
+# case or with Windows backslashes all fail ("couldn't find bin file"). Such a sheet
+# is handed over as a cleaned copy beside it (a hidden name, gone when chdman is done)
+CHDMAN_CUE = ".rb-chdman-"
+CUE_FILE = re.compile(r'^([ \t]*FILE[ \t]+)(?:"([^"]+)"|(\S+))', re.I)
+
+
+def _chdman_sheet(src):
+    """A cleaned copy of cue src for chdman (its path), or None when src works as it
+    is. The copy names the very files sheet_sources resolves, so what's packed is
+    what's deleted after."""
+    if not src.lower().endswith(".cue"):
+        return None
+    try:
+        with open(src, "rb") as f:
+            text = f.read(1 << 20).decode("utf-8", "surrogateescape")
+    except OSError:
+        return None
+    clean = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    fix = text.startswith("\ufeff") or re.search(r"\r(?!\n)", text) is not None    # (chdman reads CRLF)
+    d = os.path.dirname(src)
+    tracks = rommlib.sheet_sources(src)          # each FILE line's file, in order
+    lines = clean.split("\n")
+    if sum(1 for ln in lines if CUE_FILE.match(ln)) != len(tracks):
+        return None                              # read differently: leave it to chdman as it is
+    it = iter(tracks)
+    for i, ln in enumerate(lines):
+        m = CUE_FILE.match(ln)
+        if not m:
+            continue
+        name = m.group(2) or m.group(3)
+        rel = os.path.relpath(next(it), d).replace(os.sep, "/")
+        if rel != name:                          # another letter case, or backslashes
+            lines[i] = '%s"%s"%s' % (m.group(1), rel, ln[m.end():])
+            fix = True
+    tmp = os.path.join(d, CHDMAN_CUE + os.path.basename(src))
+    if not fix:
+        if os.path.lexists(tmp):
+            _gone(tmp)                           # a killed run's copy
+        return None
+    try:
+        with open(tmp, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write("\n".join(lines))
+    except OSError as e:                         # a folder it can't write to: chdman gets the original
+        note("chd: note couldn't write a cleaned copy of %s (%s)" % (os.path.basename(src), e.strerror))
+        _gone(tmp)
+        return None
+    return tmp
+
+
+def _gone(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+BSD_SUM = re.compile(r"^(?:MD5|SHA1)\s*\((.+)\)\s*=\s*[0-9a-f]+\s*$", re.I)
+
+
+def _listed(path):
+    """The file names a .sfv/.md5/.sha1 lists, or None when it can't be read as one."""
+    try:
+        if os.path.getsize(path) > 1 << 20:
+            return None
+        with open(path, encoding="utf-8-sig", errors="surrogateescape") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    names = []
+    sfv = path.lower().endswith(".sfv")
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln.startswith((";", "#")):
+            continue
+        m = BSD_SUM.match(ln)
+        if m:
+            names.append(m.group(1))
+            continue
+        parts = ln.rsplit(None, 1) if sfv else ln.split(None, 1)
+        if len(parts) != 2:
+            return None
+        name, digest = (parts[0], parts[1]) if sfv else (parts[1].lstrip("*"), parts[0])
+        if not re.fullmatch(r"[0-9a-fA-F]{8,128}", digest):
+            return None                           # not a checksum line: someone's own file
+        names.append(name)
+    return names or None
+
+
+def _disposable(path, gone, made):
+    """A file left in a game folder that may go with it once the game is one file:
+    OS junk, a checksum list naming only the converted tracks, or a playlist
+    (rewritten by fix_m3us) naming only the converted discs. gone/made: normalised,
+    lower-case paths."""
+    name = os.path.basename(path).lower()
+    if name in OS_JUNK or name.startswith(("._", CHDMAN_CUE)):
+        return True
+    d = os.path.dirname(path)
+
+    def resolve(n):
+        return os.path.normpath(os.path.join(d, n.replace("\\", "/"))).lower()
+    if name.endswith(CHECKSUM_EXTS):
+        names = _listed(path)
+        return bool(names) and all(resolve(n) in gone for n in names)
+    if name.endswith(".m3u"):
+        try:
+            with open(path, encoding="utf-8-sig", errors="surrogateescape") as f:
+                entries = [ln.strip() for ln in f.read().splitlines()]
+        except OSError:
+            return False
+        entries = [e for e in entries if e and not e.startswith("#")]
+        return bool(entries) and all(resolve(e) in made for e in entries)
+    return False
+
+
 def convert(task):
     system, mode = task["system"], task["mode"]
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
@@ -833,15 +1145,22 @@ def convert(task):
                 # nothing to retry: an encrypted dump stays encrypted (and Azahar can't run it either)
                 note("chd: SKIP %s %s: %s" % (mode, os.path.basename(src), e))
                 return False
+    # sheets the planner set aside for one of these (a .cue beside the game's .gdi)
+    # are this game's too: they go with it. Only a sheet whose every track the game's
+    # own sheet names: never another game's, or a second dump with tracks of its own
+    also = {}
+    for a in task.get("also") or ():
+        if isinstance(a, str) and os.path.isfile(a) and a not in srcs \
+                and a.lower().endswith((".cue", ".gdi")):
+            owner = _also_owner(a, srcs)
+            if owner is not None:
+                also.setdefault(owner, []).append(a)
+    extra = [a for v in also.values() for a in v]
     playing = running_game()
-    if playing and playing in srcs:
+    if playing and playing in srcs + extra:
         note("chd: SKIP in use %s" % playing)
         return False
-    roots = task["roots"]
-    folder_root = next((r.rstrip("/") for r in roots if os.path.isdir(r)), None)
-    if folder_root and os.path.normpath(folder_root) == os.path.normpath(sysdir):
-        folder_root = None        # never treat the system dir itself as a game folder
-    out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
+    folder_root, out_dir, plan = plan_outputs(system, mode, srcs, task["roots"])
     # every file a cue/gdi names must belong to this game: its folder, or the
     # sheet's own folder for a loose one. A sheet pointing elsewhere (another
     # game, or any file on the box) would get that file packed and then deleted.
@@ -857,14 +1176,7 @@ def convert(task):
                 note("chd: SKIP %s: a track is outside the game's folder (%s)" % (os.path.basename(src), p))
                 return False
     multi = len(srcs) > 1
-    plan = []
-    for src in srcs:
-        if multi or not folder_root:
-            stem = os.path.splitext(os.path.basename(src))[0]
-        else:
-            stem = os.path.basename(folder_root)      # game name, not track name
-        plan.append((src, os.path.join(out_dir, rommlib.conversion_output(mode, stem, src))))
-    if len({out for _, out in plan}) != len(plan):
+    if len({out.lower() for _, out in plan}) != len(plan):
         # two sources would become the same .chd: converting would overwrite
         # one with the other and then delete both originals
         note("chd: SKIP name clash (%s)" % ", ".join(os.path.basename(s) for s in srcs))
@@ -879,9 +1191,13 @@ def convert(task):
             return False
         if cut:          # only a file entry past the end (could be a dummy): convert, but say so
             note("chd: note %s may be cut short (a file reaches sector %d of %d)" % (src, cut[1], cut[0]))
-    # an output already there that an interrupted run made (killed after it landed,
-    # before the rename was recorded): finish the job instead of skipping forever
+    # an output already there that an interrupted run of this game made (killed after
+    # it landed, before the rename was recorded): finish the job instead of skipping
+    # forever. Only one its record proves this game made: any other file of that name
+    # (another game's, an older worker's, a copy the owner keeps) is never touched,
+    # replaced or taken; the task is skipped and the planner lists it with the reason
     resume = set()
+    replacing = set()                            # a damaged or different copy a fresh download replaces
 
     def newer_than_sources(out, src):
         try:
@@ -899,23 +1215,35 @@ def convert(task):
             except (rommlib.Z3dsError, OSError):
                 same = False
             if not same:
-                note("chd: replacing damaged or different %s" % out)
+                note("chd: replacing damaged or different %s" % os.path.basename(out))
+                replacing.add(out)
                 continue
             resume.add(out)                          # exactly this copy: just finish the job
             continue
-        if os.path.exists(out) and mode == "wux" and _wux_size(out) != _size(next(s for s, o in plan if o == out)):
-            note("chd: replacing %s: made from a different (cut-short?) image" % out)   # a fresh copy came down
+        if os.path.exists(out) and mode == "wux" and _size(next(s for s, o in plan if o == out)) == WUD_SIZE \
+                and _wux_size(out) != WUD_SIZE:
+            # a full .wud beside a .wux of a cut-short one: a fresh copy came down. Never the
+            # other way round (a good .wux beside a cut-short .wud stays)
+            note("chd: replacing %s: made from a cut-short image" % os.path.basename(out))
+            replacing.add(out)
             continue
-        if os.path.exists(out):
-            if rommlib.disc_incomplete(out):
-                note("chd: replacing incomplete %s" % out)   # a fresh copy came down
+        if os.path.lexists(out):
+            cut = os.path.exists(out) and rommlib.disc_incomplete(out)
+            if cut and cut[2]:                   # certainly cut short (not just a dummy entry past the end)
+                note("chd: replacing incomplete %s" % os.path.basename(out))   # a fresh copy came down
+                replacing.add(out)
                 continue
             src = next(s for s, o in plan if o == out)
-            if conv and conv.chd and newer_than_sources(out, src) \
-                    and chdman("verify", "-i", out)[0] == 0:
-                resume.add(out)
+            if made_from(out, src):
+                if conv and conv.chd and newer_than_sources(out, src) and chdman("verify", "-i", out)[0] == 0:
+                    resume.add(out)
+                    continue
+                # ours, but it can't be finished (broken by a power cut, its sources newer, or a
+                # format only made again): made again over it, or it'd be offered and skipped forever
+                note("chd: replacing %s: made by an interrupted run, making it again" % os.path.basename(out))
+                replacing.add(out)
                 continue
-            note("chd: SKIP exists %s" % out)
+            note("chd: SKIP %s: %s" % (os.path.basename(src), already_here(out)))
             return False
     cfg = rommlib.load_config()
     todo = [s for s, o in plan if o not in resume]  # outputs an earlier run made already take no more room
@@ -939,7 +1267,7 @@ def convert(task):
     def sig(p):
         st = os.stat(p)
         return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-    before = {p: sig(p) for s in srcs for p in sources_of(s) if os.path.exists(p)}
+    before = {p: sig(p) for s in srcs + extra for p in sources_of_quiet(s) if os.path.exists(p)}
     made = []
     for src, out in plan:
         if out in resume:
@@ -966,7 +1294,12 @@ def convert(task):
                     tmp = out + ".part"
                     rc, err = RUNNERS[mode](src, tmp, threads)
             else:
-                rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", src, "-o", tmp)
+                sheet = _chdman_sheet(src)       # a copy chdman can read, when the owner's can't be
+                try:
+                    rc, err = chdman(mode, "-np", threads, *codecs, "-f", "-i", sheet or src, "-o", tmp)
+                finally:
+                    if sheet:
+                        _gone(sheet)
                 if rc == 0:
                     status(step="Verifying", pct=None)
                     rc, err = chdman("verify", "-i", tmp)
@@ -1000,10 +1333,31 @@ def convert(task):
             for m in made + [tmp]:
                 _drop(m)
             return False
-        # the output must be on disk before any original is deleted: after a power
-        # cut a renamed-but-unflushed file comes back empty (seen on ext4)
+        # the output must be on disk before it takes its name, and before any original
+        # is deleted: after a power cut a renamed-but-unflushed file comes back empty or
+        # broken (seen on ext4). A folder output (PS3) was synced file by file as it was made
+        if os.path.isfile(tmp):
+            rommlib.sync_file(tmp)
+        if os.path.lexists(out) and out not in replacing:
+            # appeared while this disc converted (checked before): never replaced
+            note("chd: SKIP %s: %s" % (os.path.basename(src), already_here(out)))
+            for m in made + [tmp]:
+                _drop(m)
+            return False
+        if out in replacing and os.path.isdir(out) and not os.path.islink(out):
+            _drop(out)                         # a game folder (PS3) can't be replaced in one step
+            if os.path.lexists(out):           # couldn't be removed all the way: never renamed over
+                note("chd: FAIL %s: the old folder couldn't be removed" % os.path.basename(out))
+                for m in made + [tmp]:
+                    _drop(m)
+                unmark(out)
+                return False
+        try:
+            mark_made(out, srcs, tmp)          # before it lands: a resume must know it's this game's
+        except OSError:
+            pass                               # no record: an interruption means converting again
         os.replace(tmp, out)
-        rommlib.sync_file(out)
+        rommlib.sync_file(out)                 # (already flushed: cheap)
         _sync_dir(out_dir)
         made.append(out)
         note("chd: disc done %s (%.0fs)" % (os.path.basename(out), time.time() - t0))
@@ -1028,18 +1382,21 @@ def convert(task):
                 pass
         return False
     old_to_new = {os.path.normpath(s): o for s, o in plan}
+    old_to_new.update({os.path.normpath(a): o for s, o in plan for a in also.get(s, ())})
     m3us = rommlib.fix_m3us(sysdir, old_to_new)
     # what goes with each disc: its sheet, and each track no other sheet or playlist
     # still names (after fix_m3us, so a playlist of these discs names their CHDs now)
     # and that really is this game's (inside its folder; checked above, but a
     # deletion is checked where it's made)
-    shared = still_named(srcs, {os.path.dirname(s) for s in srcs} | {out_dir}, folder_root)
+    shared = still_named(srcs + extra, {os.path.dirname(s) for s in srcs} | {out_dir}, folder_root)
     goes = {}
     for src in srcs:
         home = os.path.realpath(folder_root or os.path.dirname(src))
-        goes[src] = [p for p in sources_of(src) if p == src or (
-            os.path.normpath(p) not in shared and os.path.realpath(p).startswith(home + os.sep))]
-        for p in sources_of(src):
+        parts = sources_of(src) + [p for a in also.get(src, ()) for p in sources_of_quiet(a)]
+        goes[src] = [p for p in dict.fromkeys(parts) if p == src or (
+            (p in also.get(src, ()) or os.path.normpath(p) not in shared)
+            and os.path.realpath(p).startswith(home + os.sep))]
+        for p in dict.fromkeys(parts):
             if p not in goes[src]:
                 note("chd: keeping %s: another disc image still uses it" % os.path.basename(p)
                      if os.path.normpath(p) in shared else
@@ -1054,8 +1411,8 @@ def convert(task):
             primary = outside[0]
         else:
             name = task.get("name") or (os.path.basename(folder_root) if folder_root else
-                                        re.sub(r"\s*\(Disc \d+\).*$", "",
-                                               os.path.splitext(os.path.basename(srcs[0]))[0]))
+                                        DISC_TAG.split(os.path.splitext(os.path.basename(srcs[0]))[0],
+                                                       1)[0].rstrip())
             primary = os.path.join(out_dir, name + ".m3u")
             if os.path.exists(primary):
                 # a playlist of that name belongs to another copy of the game:
@@ -1093,15 +1450,28 @@ def convert(task):
             rename[p] = entry[src]
             gone.add(os.path.normpath(p))
     folder_goes = False
+    rest = spare = lists = []                    # lists: playlists in the folder naming only these discs' CHDs
     if folder_root and os.path.isdir(folder_root):
         rest = [os.path.join(dp, f) for dp, _, fs in os.walk(folder_root) for f in fs
                 if os.path.normpath(os.path.join(dp, f)) not in gone]
-        folder_goes = all(os.path.splitext(f)[1].lower() in JUNK_EXTS for f in rest)
+        low_gone = {g.lower() for g in gone}
+        # (a playlist only when there's one outside to list the game, or one CHD: the
+        # discs listed one by one keep theirs)
+        low_made = {os.path.normpath(m).lower() for m in made} if hide or not multi else set()
+        spare = [f for f in rest if _disposable(f, low_gone, low_made)]
+        lists = [f for f in spare if f.lower().endswith(".m3u")]
+        folder_goes = len(spare) == len(rest)
+        for m in lists:
+            rename[m] = primary                  # a second listing of the game: the CHD's entry now
     if folder_goes:
         rename[folder_root] = primary            # the whole game folder becomes this file
     rommlib.append_gamelist({"system": system, "rename": rename, "hide": hide})
     # our record of the game points at the new file even when its folder stays for other files
-    rommlib.Library().rename_paths(dict(rename, **{folder_root: primary}) if folder_root else rename, hide)
+    try:
+        rommlib.Library().rename_paths(dict(rename, **{folder_root: primary}) if folder_root else rename, hide)
+    except Exception as e:                        # installed.json can't be opened right now: the CHD is in and
+        rommlib.log("chd: %s: couldn't update installed.json (%s); it still names the "
+                    "game's old files" % (os.path.basename(primary), e))   # ES has its rename: finish
     for src in srcs:
         for p in goes[src]:
             if os.path.isfile(p):
@@ -1117,8 +1487,18 @@ def convert(task):
         if folder_goes:
             shutil.rmtree(folder_root, ignore_errors=True)
         else:
-            # other games / files stay in it: only the converted files were renamed
-            note("chd: kept folder (non-junk leftovers) %s" % folder_root)
+            # the owner's files (a manual, a cover, notes, another game) stay in it; only the
+            # converted files went, and a playlist of them (else ES would list the game twice)
+            for m in lists:
+                try:
+                    os.remove(m)
+                except OSError:
+                    pass
+            note("chd: kept folder %s: it holds other files (%s)" % (
+                folder_root, ", ".join(sorted(os.path.relpath(f, folder_root) for f in rest
+                                              if f not in spare)[:5])))
+    for m in made:
+        unmark(m)                                # finished: a later file of this name is someone else's
     _state["sizes"] = (in_size, out_size)
     note("chd: OK %s -> %s  (%s -> %s)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),
@@ -1197,6 +1577,7 @@ def work(fd, waiting=None):
         except OSError:
             pass
     _drop_old_tools()
+    _prune_made()
     while True:
         _readmit(waiting)
         tasks = sorted(t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json") and t not in waiting)

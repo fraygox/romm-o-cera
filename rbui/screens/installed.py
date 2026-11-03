@@ -110,19 +110,32 @@ class InstalledScreen(ListScreen):
         size = sum(i["size"] for i in items)
 
         def run():
-            freed = 0
-            for it in items:
-                if it.get("group"):
-                    freed += lib.uninstall_group(it["group"], it["system"])[1]
-                else:
-                    freed += lib.uninstall({"id": it["id"], "name": it["name"]}, it["system"])[1]
-            return freed
+            freed, gone, why = 0, 0, []
+            for it in items:                     # one that can't go (being compressed, a busy file) doesn't stop the rest
+                try:
+                    if it.get("group"):
+                        freed += lib.uninstall_group(it["group"], it["system"])[1]
+                    else:
+                        freed += lib.uninstall({"id": it["id"], "name": it["name"]}, it["system"])[1]
+                    gone += 1
+                except (rommlib.RommError, OSError) as e:
+                    freed += getattr(e, "freed", 0) or 0
+                    went, note = delete_outcome(it["name"], e)
+                    gone += went
+                    why.append(note)
+            return freed, gone, why
 
-        def done(freed):
+        def done(res):
+            freed, gone, why = res
             self.picks.clear()
             self.picking = False
-            app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(items), "game"), human_size(freed)),
-                      theme.GREEN)
+            if why:
+                more = " (and %d more)" % (len(why) - 1) if len(why) > 1 else ""
+                app.toast("Deleted %d of %s — %s freed. %s%s" % (gone, plural(len(items), "game"), human_size(freed),
+                                                                 why[0], more), theme.AMBER)
+            else:
+                app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(items), "game"), human_size(freed)),
+                          theme.GREEN)
             app.space_freed()
             self.load()
         app.modal = Confirm(app, "Delete %s?" % plural(len(items), "game"),
@@ -221,6 +234,21 @@ class InstalledScreen(ListScreen):
         p.fact("Size", human_size(it["size"]))
         p.fact("Added", it.get("when", "")[:10])
         p.prose(note, color=theme.FAINT, lines=3)
+
+
+def delete_outcome(name, e):
+    """(went, note) for a game whose delete raised e: went when its files are
+    gone and only installed.json couldn't be updated; note says what happened,
+    once with the game's name."""
+    if isinstance(e, rommlib.LibraryUnreadable) and e.paths and not e.failed:
+        return True, "%s: deleted, but installed.json can't be updated now" % name
+    if isinstance(e, rommlib.DeleteIncomplete) and e.paths and not e.failed:
+        return True, str(e)                      # every file went; only a record or the game list lags
+    if isinstance(e, (rommlib.LibraryUnreadable, rommlib.DeleteIncomplete)) and e.paths:
+        return False, str(e)                     # "Couldn't delete all of <name>: …"
+    if isinstance(e, OSError):
+        return False, "%s: %s" % (name, e.strerror or e.__class__.__name__)
+    return False, "%s: %s" % (name, e)
 
 
 def _lastplayed_label(lp):

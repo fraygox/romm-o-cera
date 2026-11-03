@@ -633,8 +633,16 @@ class SettingsScreen(Screen):
             app.downloader.pause_all()
 
             def run():
-                end = time.monotonic() + 15            # a transfer stops at once; unzipping may take a moment
-                while time.monotonic() < end and any(j.state in UPDATE_WAITS for j in list(app.downloader.jobs)):
+                # a transfer or an unpack stops within a second or so (an unpack rolls
+                # back: it's unpacked into a private folder); a game whose files are
+                # being moved into place is let finish that, a few seconds at most
+                start = time.monotonic()
+                while True:
+                    busy = [j for j in list(app.downloader.jobs) if j.state in UPDATE_WAITS]
+                    moving = app.downloader.moving_jobs()
+                    waited = time.monotonic() - start
+                    if not busy or waited >= (rommlib.MOVE_WAIT if moving else 15):
+                        break
                     time.sleep(0.2)
                 rommlib.stop_helpers()
                 return install(staged) if staged is not None else install()

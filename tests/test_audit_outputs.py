@@ -339,7 +339,7 @@ def test_ps3_full_check_reads_every_file(isolated, monkeypatch):
     monkeypatch.setattr("builtins.open", flaky)
     assert _check("ps3", games)[0] == []                                  # quick: only the boot files
     assert _check("ps3", games, deep=True)[0] == [
-        ("Lorem (USA).ps3", "damaged", "Can't read PS3_GAME/USRDIR/DATA.PSARC (Input/output error)")]
+        ("Lorem (USA).ps3", "damaged", "Can't be read (I/O error)")]       # an I/O error, kept out of the bulk download
     assert os.path.isdir(root)
 
 

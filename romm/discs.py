@@ -97,9 +97,10 @@ def _verdict(have, r, vol=None):
     # certain: what the game needs to start is past the end, or the disc's own header and its
     # files both say it is a quarter bigger than this copy (Siren, 2026-10: 41% missing). Complete
     # discs measured on a real box overshoot less (Final Fantasy VI: 13%; dummy files: past the
-    # files only), so smaller gaps stay a hint
+    # files only), so smaller gaps stay a hint. A tree that lists nothing at all (end 0: the
+    # root directory's record is empty) can't argue with the header: the header decides alone
     far = int(have * CUT_SHORT) + 16
-    sure = boot_end > have or (vol or 0) > far and end > far
+    sure = boot_end > have or (vol or 0) > far and (end > far or end == 0)
     need = max(end, boot_end, vol or 0) if sure else max(end, boot_end)
     return (have, need, sure)
 
@@ -464,14 +465,18 @@ def cso_decode(src, dst, pause=None, progress=None):
 # ----------------------------------------------------------- audit
 
 # a cue's FILE line: quoted, or a bare name without spaces (both are valid)
-# (FILE must start the line: a TITLE or REM that says "file" is not a track)
-CUE_FILE_RE = re.compile(r'^[ \t]*FILE[ \t]+(?:"([^"]+)"|(\S+))', re.I | re.M)
+# (FILE must start the line: a TITLE or REM that says "file" is not a track.
+# A BOM may precede it. Old Mac bare-CR line ends need no branch here: the
+# sheet is read in text mode, which turns them into \n before this runs.)
+CUE_FILE_RE = re.compile(r'^[\ufeff \t]*FILE[ \t]+(?:"([^"]+)"|(\S+))', re.I | re.M)
 
 
-def _cue_path(d, name):
+def _cue_path(d, name, listings=None):
     """A cue's track name as a path under d: Windows backslashes read as
     separators, and a name that differs from the file on disk only in letter
-    case resolves to that file. Never leaves d; unresolved names stay as written."""
+    case resolves to that file. Never leaves d; unresolved names stay as written.
+    listings: {folder: names} shared across one sheet's tracks, so a folder is
+    listed once, not once per track."""
     name = name.replace("\\", "/")
     parts = [x for x in name.split("/") if x not in ("", ".")]
     if not parts or ".." in parts or name.startswith("/") or re.match(r"[A-Za-z]:", name):
@@ -482,7 +487,11 @@ def _cue_path(d, name):
         if not os.path.lexists(nxt):
             try:
                 low = part.lower()
-                hit = sorted(n for n in os.listdir(cur) if n.lower() == low)
+                if listings is None:
+                    listings = {}
+                if cur not in listings:
+                    listings[cur] = os.listdir(cur)
+                hit = sorted(n for n in listings[cur] if n.lower() == low)
             except OSError:
                 hit = []
             if not hit:
@@ -505,7 +514,8 @@ def sheet_sources(sheet, strict=False):
             raise
         return out
     if sheet.lower().endswith(".cue"):
-        out = [_cue_path(d, m.group(1) or m.group(2)) for m in CUE_FILE_RE.finditer(text)]
+        listings = {}
+        out = [_cue_path(d, m.group(1) or m.group(2), listings) for m in CUE_FILE_RE.finditer(text)]
     else:
         for line in text.splitlines()[1:]:
             m = re.match(r'\s*\d+\s+\d+\s+\d+\s+\d+\s+("([^"]+)"|(\S+))', line)

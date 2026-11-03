@@ -1,11 +1,14 @@
 """Conversions: the Z3DS codec, the converter table, the conversion queue."""
+import atexit
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
+import zlib
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -275,10 +278,11 @@ def zar_enabled(cfg, system):
     return system in _tools.ZAR_SYSTEMS and bool(_config.config_value(cfg, "zar")) and _tools.x360_tools() is not None
 
 
-def zar_check(path, full=False):
+def zar_check(path, full=False, cancel=None):
     """None if a .zar looks whole; else what's wrong. Always: the size and
     magic in its footer. full: also the SHA-256 it carries over the whole file
-    (zarchive itself never checks it)."""
+    (zarchive itself never checks it). cancel: stops between blocks (raises
+    CheckStopped)."""
     import hashlib
     try:
         size = os.path.getsize(path)
@@ -297,6 +301,7 @@ def zar_check(path, full=False):
             f.seek(0)
             left = size - 144
             while left:
+                check_stop_point(cancel)
                 chunk = f.read(min(8 << 20, left))
                 if not chunk:
                     return "cut short"
@@ -348,11 +353,107 @@ class NotVerified(Exception):
     """Check games can't verify this file here: args[0] names the missing tool."""
 
 
+class CheckStopped(Exception):
+    """A check of a file was stopped (B in Check games, or the app quitting): unwinds out of it."""
+
+
+_CHECK_PROCS = set()             # the tools Check games is running now: stop_running_checks() ends them
+_CHECK_LOCK = threading.Lock()
+
+
+_CHECKS_STOPPED = threading.Event()   # set by stop_running_checks(): the app is quitting, so no check tool may start
+
+
+def check_stop_point(cancel):
+    if _CHECKS_STOPPED.is_set() or (cancel is not None and cancel.is_set()):
+        raise CheckStopped()
+
+
+def _check_started(p):
+    with _CHECK_LOCK:
+        _CHECK_PROCS.add(p)
+        if _CHECKS_STOPPED.is_set():                # started just as the app quit: stop_running_checks missed it
+            p.stopped_by_quit = True
+            p.kill()
+
+
+def _check_ended(p):
+    with _CHECK_LOCK:
+        _CHECK_PROCS.discard(p)
+    if getattr(p, "stopped_by_quit", False):        # killed by stop_running_checks: not the file's fault
+        raise CheckStopped()
+
+
+def run_check_tool(argv, cancel=None, timeout=None, stall=None):
+    """Run one of Check games' tools (chdman verify, dolphin-tool verify,
+    wuatool hash…) to its end: (return code, what it printed). It is killed as
+    soon as cancel is set or stop_running_checks() runs, and CheckStopped is
+    raised; OSError when it can't start. The return code is None when it was
+    given up on: timeout (s) is a cap on the whole run; stall (s) kills it
+    once it has printed progress (stderr) and then goes that long without
+    more (chdman verify can hang on a damaged raw hunk, yet a slow disc on a
+    busy box may take hours while it keeps reporting). A tool that never
+    prints is only held to timeout."""
+    check_stop_point(cancel)
+    t0 = last = time.monotonic()
+    seen = 0
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        p = subprocess.Popen(argv, stdout=out, stderr=err if stall else subprocess.DEVNULL)
+        _check_started(p)
+        try:
+            while True:
+                try:
+                    rc = p.wait(timeout=0.5)
+                    break
+                except subprocess.TimeoutExpired:
+                    now = time.monotonic()
+                    if cancel is not None and cancel.is_set():
+                        p.kill()
+                        p.wait()
+                        raise CheckStopped() from None
+                    if stall:
+                        try:
+                            size = os.fstat(err.fileno()).st_size
+                        except OSError:
+                            size = seen
+                        if size != seen:
+                            seen, last = size, now
+                    if (timeout is not None and now - t0 > timeout) or (stall and seen and now - last > stall):
+                        p.kill()
+                        p.wait()
+                        rc = None
+                        break
+        finally:
+            _check_ended(p)
+        out.seek(0)
+        return rc, out.read().decode(errors="replace")
+
+
+def stop_running_checks():
+    """Kill every tool a check is running (chdman, dolphin-tool, wuatool,
+    unsquashfs): the app is quitting, and a check's children would otherwise
+    go on reading the drive for hours. Also stops the check starting another
+    (check_stop_point and run_check_tool raise CheckStopped from now on).
+    Runs at exit too."""
+    with _CHECK_LOCK:
+        _CHECKS_STOPPED.set()
+        procs = list(_CHECK_PROCS)
+    for p in procs:
+        p.stopped_by_quit = True
+        try:
+            p.kill()
+        except OSError:
+            pass
+
+
+atexit.register(stop_running_checks)
+
+
 def _differs(size, want):
     return "Packed from a different file than RomM's (%s vs %s)" % (_core.human_size(size), _core.human_size(want))
 
 
-def z3ds_audit(path, orig, deep):
+def z3ds_audit(path, orig, deep, cancel=None):
     hdr = z3ds_header(path)
     if hdr is None:
         return "Not a readable .zcci (damaged header)", "damaged"
@@ -362,7 +463,7 @@ def z3ds_audit(path, orig, deep):
         return _differs(hdr["size"], orig["size"]), "differs"
     if deep:
         try:
-            got, _ = z3ds_verify(path)
+            got, _ = z3ds_verify(path, pause=lambda: check_stop_point(cancel))
         except (Z3dsError, OSError) as e:
             return "Compressed file damaged: %s" % e, "damaged"
         if orig and orig["crc"] and got != orig["crc"]:
@@ -370,19 +471,19 @@ def z3ds_audit(path, orig, deep):
     return None
 
 
-def zar_audit(path, orig, deep):
+def zar_audit(path, orig, deep, cancel=None):
     # packed here from the disc's files: RomM's image hashes can't match by design
-    bad = zar_check(path, full=deep)
+    bad = zar_check(path, full=deep, cancel=cancel)
     return ("Compressed file %s" % bad, "damaged") if bad else None
 
 
-def wua_audit(path, orig, deep):
+def wua_audit(path, orig, deep, cancel=None):
     # the disc's game partition, packed here: RomM's image hashes can't match by design
-    bad = zar_check(path, full=deep)                # a .wua is a ZArchive: the same footer and SHA-256
+    bad = zar_check(path, full=deep, cancel=cancel)     # a .wua is a ZArchive: the same footer and SHA-256
     return ("Compressed file %s" % bad.replace(".zar", ".wua"), "damaged") if bad else None
 
 
-def wux_audit(path, orig, deep):
+def wux_audit(path, orig, deep, cancel=None):
     """Quick: the .wux's layout (header, index, every sector it points at held)
     and its disc's size against RomM's .wud. Full: wuatool expands it through
     Cemu's own reader; its CRC32/SHA-1 must be RomM's .wud's. A .wux carries no
@@ -402,13 +503,13 @@ def wux_audit(path, orig, deep):
     if not exe:
         raise NotVerified("wuatool")
     try:
-        p = subprocess.run(["nice", "-n", "19", exe, "hash", path], capture_output=True, text=True, errors="replace")
+        rc, said = run_check_tool(["nice", "-n", "19", exe, "hash", path], cancel)
     except OSError:
         raise NotVerified("wuatool") from None
-    if p.returncode in (126, 127):
+    if rc in (126, 127):
         raise NotVerified("wuatool")
-    got = dict(l.split(" ", 1) for l in p.stdout.splitlines() if " " in l)
-    if p.returncode != 0 or "crc32" not in got:
+    got = dict(l.split(" ", 1) for l in said.splitlines() if " " in l)
+    if rc != 0 or "crc32" not in got:
         return "Compressed file damaged (wuatool couldn't read all of it)", "damaged"
     if raw and ((raw["crc"] and raw["crc"] != got["crc32"]) or (raw["sha1"] and raw["sha1"] != got.get("sha1"))):
         return "Checksum doesn't match RomM's copy", "differs"
@@ -436,7 +537,7 @@ def rvz_header(path):
     return {"size": int.from_bytes(h[0x24:0x2C], "big"), "complete": end == int.from_bytes(h[0x2C:0x34], "big")}
 
 
-def rvz_audit(path, orig, deep):
+def rvz_audit(path, orig, deep, cancel=None):
     """Quick: the headers, the file's length, and the disc's size against RomM's
     image. Full: dolphin-tool reads the whole disc (Wii: checking its block
     hashes too), and its CRC32/SHA-1 must be RomM's image's."""
@@ -458,24 +559,23 @@ def rvz_audit(path, orig, deep):
     user = os.path.join(_core.tmp_dir(), "dolphin-check-%d" % os.getpid())
     try:
         os.makedirs(user, exist_ok=True)
-        p = subprocess.run(["nice", "-n", "19", exe, "verify", "-u", user, "-i", path],
-                           capture_output=True, text=True, errors="replace")
+        rc, said = run_check_tool(["nice", "-n", "19", exe, "verify", "-u", user, "-i", path], cancel)
     except OSError:
         raise NotVerified("dolphin-tool") from None
     finally:
         shutil.rmtree(user, ignore_errors=True)
-    if p.returncode in (126, 127):                             # nice: couldn't run it
+    if rc in (126, 127):                                       # nice: couldn't run it
         raise NotVerified("dolphin-tool")
-    crc = re.search(r"CRC32: ([0-9a-f]{8})", p.stdout)
-    sha1 = re.search(r"SHA1: ([0-9a-f]{40})", p.stdout)
+    crc = re.search(r"CRC32: ([0-9a-f]{8})", said)
+    sha1 = re.search(r"SHA1: ([0-9a-f]{40})", said)
     # a read error leaves the hashes "not computed" (and Dolphin says so; not "the filesystem … could not be read")
-    if p.returncode != 0 or not crc or "Some of the data could not be read" in p.stdout:
+    if rc != 0 or not crc or "Some of the data could not be read" in said:
         return "Compressed file damaged (dolphin-tool couldn't read all of it)", "damaged"
     if raw and (raw["crc"] or raw["sha1"]):
         if (raw["crc"] and raw["crc"] != crc.group(1)) or (raw["sha1"] and sha1 and raw["sha1"] != sha1.group(1)):
             return "Checksum doesn't match RomM's copy", "differs"
         return None                 # RomM's own image: any problem dolphin-tool lists came with the dump
-    bad = re.search(r"Errors were found in (\d+) blocks", p.stdout)
+    bad = re.search(r"Errors were found in (\d+) blocks", said)
     if bad:
         return "dolphin-tool found errors in %s blocks (damaged, or a bad dump)" % bad.group(1), "differs"
     return None
@@ -526,11 +626,10 @@ def squashfs_listing(path):
     return out
 
 
-def squashfs_crc(path, name):
+def squashfs_crc(path, name, cancel=None):
     """(CRC32, size) of one file in a squashfs, read through unsquashfs -cat
-    (squashfs-tools 4.5+); None if it can't be read to the end."""
-    import tempfile
-    import zlib
+    (squashfs-tools 4.5+); None if it can't be read to the end. cancel:
+    unsquashfs is killed between blocks (raises CheckStopped)."""
     exe = _unsquashfs()
     crc, n = 0, 0
     with tempfile.TemporaryFile() as err:
@@ -539,11 +638,19 @@ def squashfs_crc(path, name):
                                  stdout=subprocess.PIPE, stderr=err)
         except OSError:
             raise NotVerified("unsquashfs") from None
-        with p.stdout:
-            for chunk in iter(lambda: p.stdout.read(8 << 20), b""):
-                crc = zlib.crc32(chunk, crc)
-                n += len(chunk)
-        rc = p.wait()
+        _check_started(p)
+        try:
+            with p.stdout:
+                for chunk in iter(lambda: p.stdout.read(1 << 20), b""):
+                    if cancel is not None and cancel.is_set():
+                        p.kill()
+                        p.wait()
+                        raise CheckStopped()
+                    crc = zlib.crc32(chunk, crc)
+                    n += len(chunk)
+            rc = p.wait()
+        finally:
+            _check_ended(p)
         err.seek(0)
         said = err.read(64 << 10)
     if rc in (126, 127):                                       # nice: couldn't run it
@@ -553,7 +660,7 @@ def squashfs_crc(path, name):
     return None if rc else ("%08x" % (crc & 0xffffffff), n)
 
 
-def squashfs_audit(path, orig, deep):
+def squashfs_audit(path, orig, deep, cancel=None):
     """Quick: the superblock, the file's length, and for "X.iso.squashfs" the
     image inside, its size against RomM's (or RomM's less the Xbox partition
     cut here). Full: the image read out whole; uncut, its CRC32 is RomM's."""
@@ -576,7 +683,7 @@ def squashfs_audit(path, orig, deep):
         return _differs(size, want), "differs"
     if not deep:
         return None
-    got = squashfs_crc(path, inner)
+    got = squashfs_crc(path, inner, cancel)
     if got is None or got[1] != size:
         return "Compressed file damaged (unsquashfs couldn't read all of it)", "damaged"
     if want == size and orig["crc"] and got[0] != orig["crc"]:
@@ -713,7 +820,8 @@ CONVERTERS = (
               "ps3_folders", _config.SETTING["ps3_folders"].label, "turned off",
               lambda cfg, system: bool(_config.config_value(cfg, "ps3_folders")),
               check=lambda src: _ps3.ps3_check(src), space=lambda src: _ps3.ps3_image_size(src),
-              audit=lambda path, orig, deep: _ps3.ps3_folder_check(path, deep), priority=("ps3",)),
+              audit=lambda path, orig, deep, cancel=None: _ps3.ps3_folder_check(
+                  path, deep, stop=lambda: check_stop_point(cancel)), priority=("ps3",)),
 )
 CONVERTER = {c.mode: c for c in CONVERTERS}
 

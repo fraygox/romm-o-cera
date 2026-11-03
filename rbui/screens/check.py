@@ -16,6 +16,77 @@ from rbui.screens.unseen import UnseenScreen
 from rbui.modals import Confirm
 
 
+WHY_UNVERIFIED = {rommlib.UNVERIFIED_ROMM: "RomM didn't send its record",
+                  rommlib.UNVERIFIED_ZIP: "a zip the box can't unpack",
+                  rommlib.UNVERIFIED_SLOW: "chdman verify didn't finish (see the log)",
+                  rommlib.UNVERIFIED_ERROR: "the check itself went wrong (in the log)"}
+
+
+def check_counts(findings):
+    """(damaged, can't be read, differ from RomM), in games: a game with two
+    findings counts once, as the worse of them."""
+    worst = {}
+    for f in findings:
+        rel = os.path.relpath(f.get("path") or "?", os.path.join(rommlib.ROMS_ROOT, f.get("system") or ""))
+        key = (f.get("system"), rel.split(os.sep)[0]) if f.get("path") else id(f)
+        rank = 1 if f.get("io_error") else 0 if f["severity"] == "damaged" else 2
+        worst[key] = min(rank, worst.get(key, 2))
+    n = list(worst.values())
+    return n.count(0), n.count(1), n.count(2)
+
+
+def unverified_line(st):
+    """What a check couldn't verify, as one line ("12 games not verified
+    (missing chdman)"), or ""."""
+    n = st.get("unverified")
+    if not n:
+        return ""
+    tools = st.get("unverified_tools") or ["chdman"]        # a check saved by v0.9.0: CHDs only
+    by = st.get("unverified_by") or {}
+    missing = [t for t in tools if t not in WHY_UNVERIFIED]
+    bits = (["missing %s" % ", ".join(missing)] if missing else []) + \
+        [("%s for %d" % (WHY_UNVERIFIED[t], by[t]) if by.get(t) and len(tools) > 1 else WHY_UNVERIFIED[t])
+         for t in tools if t in WHY_UNVERIFIED]
+    return "%s not verified (%s)" % (plural(n, "game"), "; ".join(bits))
+
+
+def unmatched_line(st):
+    n = st.get("unmatched")
+    return "%s not in RomM under the same file name" % plural(n, "game") if n else ""
+
+
+def _count(v):
+    return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
+
+
+def not_fully_checked(st):
+    """Games a check couldn't compare with RomM in full: not verified, or not
+    in RomM under their file name (only their tracks and disc images looked at)."""
+    st = st if isinstance(st, dict) else {}
+    return _count(st.get("unverified")) + _count(st.get("unmatched"))
+
+
+def games_in(findings):
+    """How many games the findings are about (a game with two counts once)."""
+    return sum(check_counts(findings))
+
+
+def check_result(st, findings, deep):
+    """What a finished check found, as one line and its colour, for the toast."""
+    st = st or {}
+    if st.get("no_games_folder"):
+        return "The games folder %s wasn't found: nothing was checked" % rommlib.ROMS_ROOT, theme.AMBER
+    if not st.get("checked"):
+        return "No games found to check", theme.AMBER
+    head = "Checked %s: " % plural(st["checked"], "game")
+    if findings:
+        return head + plural(games_in(findings), "game needs", "games need") + " a look", theme.AMBER
+    k = not_fully_checked(st)
+    if k:
+        return head + "nothing wrong found · %d not fully checked" % k, theme.GREEN
+    return head + ("every game looks right" if deep else "nothing wrong found"), theme.GREEN
+
+
 class AuditScreen(ListScreen):
     """Check what's on the box against RomM; damaged games can be downloaded
     again. Red: damaged or incomplete. Amber: not RomM's copy (another dump,
@@ -24,11 +95,13 @@ class AuditScreen(ListScreen):
     LOAD_ERROR_HEAD = "The check didn't finish"
     ROWS, ROW_H = 8, 62
     PICKS, PICK_WHAT, JUMP = True, "findings", "System"
+    running = None        # the last check's "finished" event: one check runs at a time, even after B
 
     def __init__(self, app, deep=False):
         super().__init__(app)
         self.deep = deep
         self.cancel = threading.Event()
+        self.finished = AuditScreen.running = threading.Event()
         self.where = ""
         self.findings = None
         self.stats = None
@@ -43,22 +116,26 @@ class AuditScreen(ListScreen):
             self.where = "roms/%s/%s" % (system, name)
 
         def run():
-            return rommlib.audit(app.api, by_sys, deep=deep, progress=progress, cancel=self.cancel)
+            try:
+                return rommlib.audit(app.api, by_sys, deep=deep, progress=progress, cancel=self.cancel)
+            finally:
+                self.finished.set()                      # stopped for real: a new check may start
 
         def done(res):
             f, self.stats = res
             self.findings = self.order(f)
-            if not self.cancel.is_set() and (self.stats or {}).get("checked"):   # nothing checked: keep the last
+            if self.cancel.is_set():
+                app.toast("Check stopped; the last result is kept" if os.path.exists(rommlib.audit_path())
+                          else "Check stopped; nothing was saved")
+                return
+            if (self.stats or {}).get("checked"):        # nothing checked: keep the last
                 try:
                     rommlib.save_audit(self.findings, self.stats, deep)
                 except OSError as e:
                     rommlib.log("audit save: %s" % e)
             st = app.stack
-            if not self.cancel.is_set() and len(st) > 1 and st[-1] is self and isinstance(st[-2], CheckScreen):
-                n = len(self.findings)
-                app.toast("Checked %s: %s" % (plural((self.stats or {}).get("checked", 0), "game"),
-                                               plural(n, "game needs", "games need") + " a look" if n
-                                               else "every game looks right"), theme.AMBER if n else theme.GREEN)
+            if len(st) > 1 and st[-1] is self and isinstance(st[-2], CheckScreen):
+                app.toast(*check_result(self.stats, self.findings, deep))
                 app.pop()                                # Check games shows what was found
         app.bg(run, done, self.load_failed("findings"))
 
@@ -84,8 +161,10 @@ class AuditScreen(ListScreen):
         return self.list_hints(*h)
 
     def redownloadable(self):
+        """What "Download all damaged again" takes: not a file the box couldn't read (the
+        drive may be failing or gone: downloading every game again onto it wouldn't help)."""
         return [f for f in (self.findings or []) if f["severity"] == "damaged" and f.get("rom")
-                and f["path"] not in self.queued]
+                and not f.get("io_error") and f["path"] not in self.queued]
 
     def jump_label(self, f):
         return f["system"]
@@ -110,7 +189,21 @@ class AuditScreen(ListScreen):
         return [("Download %d again" % len(todo), sub, (lambda: self.redownload_many(
             todo, "Download %s again?" % plural(len({f["rom"]["id"] for f in todo}), "picked game"),
             "RomM's copies replace the ones on the box (saves are kept), the ones that only differ "
-            "from RomM too.")) if todo else None)]
+            "from RomM too." + self.by_name_note(todo))) if todo else None)]
+
+    @staticmethod
+    def by_name_note(todo):
+        """The confirm's word on games RomM has only under another name: matched by title,
+        so another release of the game than the one here."""
+        named = sorted({f["rom"].get("fs_name") or f["rom"].get("name") or "" for f in todo if f.get("via") == "name"})
+        if not named:
+            return ""
+        return " %s matched by title only, so RomM's copy is another release: %s." % (
+            plural(len(named), "game is", "games are"), ", ".join(named))
+
+    def inside_folder(self, f):
+        """The finding is a file inside a game's folder (a track, a disc of a set)."""
+        return os.path.dirname(os.path.normpath(f["path"])) != os.path.join(rommlib.ROMS_ROOT, f["system"])
 
     @staticmethod
     def renamed(f):
@@ -128,7 +221,7 @@ class AuditScreen(ListScreen):
         if self.findings is None:
             if a in ("back", "quit"):
                 self.cancel.set()
-                app.toast("Check stopped")
+                app.toast("Stopping the check…")
                 super().action("back")
             return
         n = len(self.findings)
@@ -151,9 +244,17 @@ class AuditScreen(ListScreen):
             app.toast("Already queued")
         else:
             name = f["rom"].get("name") or os.path.basename(f["path"])
-            how = ("RomM's copy (%s) is downloaded; then saves move to its name and the broken file is "
-                   "deleted." % (f["rom"].get("fs_name") or name)) if self.renamed(f) else \
-                "RomM's copy replaces the one on the box (saves are kept)."
+            if self.inside_folder(f):
+                how = "RomM's copy of the game is downloaded into its folder again (saves are kept)."
+            elif self.renamed(f):
+                how = "RomM's copy (%s) is downloaded; then saves move to its name and the broken file is " \
+                      "deleted." % (f["rom"].get("fs_name") or name)
+            else:
+                how = "RomM's copy replaces the one on the box (saves are kept)."
+            if f.get("via") == "name":
+                how += " RomM has it only under another name, matched by title: it's another release."
+            if f.get("io_error"):
+                how = "The box couldn't read this file: check the drive or card first. " + how
             app.modal = Confirm(app, "Download %s again?" % name, "%s. %s" % (f["problem"].split(" · ")[0], how),
                                 "Download again",
                                 lambda: (self.redownload(f), app.toast("Queued: %s" % name, theme.GREEN)))
@@ -163,7 +264,7 @@ class AuditScreen(ListScreen):
         n = len({f["rom"]["id"] for f in todo})
         self.redownload_many(todo, "Download %d damaged games again?" % n,
                              "RomM's copies replace the damaged ones. Games that only differ from RomM "
-                             "(amber) are left alone.")
+                             "(amber) are left alone." + self.by_name_note(todo))
 
     def redownload_many(self, todo, title, body):
         """Each game once (two findings can be one game), after a confirm."""
@@ -192,16 +293,20 @@ class AuditScreen(ListScreen):
         if self.draw_load_error(c):
             return
         st = self.stats or {}
+        if not self.findings and (st.get("no_games_folder") or not st.get("checked")):
+            text(c, self.f.h3, check_result(st, self.findings, self.deep)[0] + ".", (56, 86), theme.AMBER)
+            return
         dmg = sum(1 for f in self.findings if f["severity"] == "damaged")
         dif = len(self.findings) - dmg
         head = "%d checked, %d matched to RomM. " % (st.get("checked", 0), st.get("matched", 0))
         if st.get("unverified"):
-            tools = st.get("unverified_tools") or ["chdman"]        # a check saved by v0.9.0: CHDs only
-            head += "%s not verified (missing %s). " % (plural(st["unverified"], "game"), ", ".join(tools))
+            head += unverified_line(st) + ". "
         if not self.findings:
-            text(c, self.f.h3, head + "Everything looks right.", (56, 86), theme.GREEN)
-            text(c, self.f.body, "Games not in RomM under the same file name aren't checked (%d)."
-                 % st.get("unmatched", 0), (56, 124), theme.DIM)
+            text(c, self.f.h3, head + ("Everything looks right." if self.deep and not not_fully_checked(st)
+                                       else "Nothing wrong found."), (56, 86), theme.GREEN)
+            if st.get("unmatched"):
+                text(c, self.f.body, "%s: only their tracks and disc images were looked at." % unmatched_line(st),
+                     (56, 124), theme.DIM)
             return
         text(c, self.f.h3, head, (56, 86), theme.TEXT)
         x = 56 + int(measure(self.f.h3, head)) + 6
@@ -225,12 +330,20 @@ class AuditScreen(ListScreen):
 
 DOOR = {"door": "unseen"}            # the row under the findings: Games ES can't see
 CHECK = {"door": "check"}            # never checked: the first row starts one
+NOTES = {"door": "notes"}            # what the last check couldn't verify or match, under DOOR
 
 KIND = {"damaged": ("Damaged", "RED"), "differs": ("Differs from RomM", "AMBER")}
 WHY = {"damaged": "It's broken or cut short, so it may not start or may stop partway. Downloading it again "
                   "replaces it; saves and states follow.",
        "differs": "It isn't RomM's copy: another dump or a trimmed image. It may well play. Downloading it "
                   "again replaces it with RomM's; saves and states follow."}
+WHY_IO = ("The box got an error reading this file. The drive or card may be failing, loose or unplugged, "
+          "so it isn't in Download all damaged again. Check the drive first; downloading this one again "
+          "writes a fresh copy.")
+
+
+def when(t):
+    return time.strftime("%-d %b %H:%M", time.localtime(t or 0))
 
 
 class CheckScreen(AuditScreen):
@@ -261,7 +374,16 @@ class CheckScreen(AuditScreen):
                     lambda e: setattr(self, "unseen", None))
 
     def listed(self):
-        return ([] if self.last else [CHECK]) + list(self.findings) + [DOOR]
+        return ([] if self.last else [CHECK]) + list(self.findings) + [DOOR] + ([NOTES] if self.notes() else [])
+
+    def notes(self):
+        """The last check's lines on what it couldn't verify or match ([] for none)."""
+        st = self.stats or {}
+        return [x for x in (unverified_line(st), unmatched_line(st)) if x] if self.last else []
+
+    def carried(self):
+        """Findings of the last full check a later quick check kept (it can't find them itself)."""
+        return [f for f in self.findings if f.get("full_time")] if self.last and not self.last.get("deep") else []
 
     def current(self):
         items = self.listed()
@@ -271,16 +393,17 @@ class CheckScreen(AuditScreen):
         return self.trail("Check games")
 
     def pickable(self, f):
-        return f not in (DOOR, CHECK) and AuditScreen.pickable(self, f)
+        return f not in (DOOR, CHECK, NOTES) and AuditScreen.pickable(self, f)
 
     def pick_key(self, f):
-        return f.get("path") or ("door", f["door"])      # the two door rows have no file
+        return f.get("path") or ("door", f["door"])      # the door rows have no file
 
     def jump_label(self, f):
-        return "ES" if f is DOOR else "Check" if f is CHECK else self.app.system_name(f["system"])
+        return "ES" if f is DOOR else "Check" if f in (CHECK, NOTES) else self.app.system_name(f["system"])
 
     def unpickable_why(self, f):
-        return "Games ES can't see opens on its own" if f is DOOR else AuditScreen.unpickable_why(self, f)
+        return "Games ES can't see opens on its own" if f is DOOR else \
+            "Nothing to download here" if f is NOTES else AuditScreen.unpickable_why(self, f)
 
     def hints(self):
         it = self.current()
@@ -288,11 +411,13 @@ class CheckScreen(AuditScreen):
             first = [("A", "Open")]
         elif it is CHECK:
             first = [("A", "Quick check")]
+        elif it is NOTES:
+            first = []
         elif not it.get("rom") or it["path"] in self.queued:
             first = []
         else:
             first = [("A", "Download again")]
-        y = [] if it is CHECK else [("Y", "Check again" if self.last else "Quick check")]
+        y = [] if it is CHECK else [("Y", "Quick check")]
         return self.list_hints(*(first + [("X", pads.ACTIONS)] + y))
 
     def list_actions(self):
@@ -304,6 +429,9 @@ class CheckScreen(AuditScreen):
 
     def start(self, deep):
         app = self.app
+        if AuditScreen.running is not None and not AuditScreen.running.is_set():
+            app.toast("The last check is still stopping; try again in a moment", theme.AMBER)
+            return
         if not app.platforms:                      # offline: a check would find nothing and say all is well
             app.load_platforms()
             app.toast(app.error or "Still loading platforms…", theme.AMBER)
@@ -320,7 +448,7 @@ class CheckScreen(AuditScreen):
                 app.push(UnseenScreen(app))
             elif it is CHECK:
                 self.start(False)
-            else:
+            elif it is not NOTES:
                 self.open_finding(it)
         elif a == "y":
             self.start(False)
@@ -336,23 +464,32 @@ class CheckScreen(AuditScreen):
         st = self.stats
         rows = ([] if a else [("Check now", "A quick check takes a few minutes", "")]) + \
             [(self.name(f), f["problem"].split(" · ")[0], self.app.system_name(f["system"]))
-             for f in self.findings] + [("Games ES can't see", "Archives a system doesn't take, games in "
-                                         "the wrong folder", "")]
+             for f in self.findings] + \
+            [("Games ES can't see", "Archives a system doesn't take, games in the wrong folder", "")] + \
+            ([("Not fully checked", " · ".join(self.notes()), "")] if self.notes() else [])
         lst, pan = split(need_width(self.f, rows, mark=self.showing_picks()))
         self.BUBBLE_AT = bubble_at(lst)
         if not a:
             list_head(c, self.f, lst, "Not checked yet")
-        elif self.findings:
-            list_head(c, self.f, lst, "%s a look" % plural(len(self.findings), "game needs", "games need"),
-                      "%s, %s · %s checked" % ("Full check" if a.get("deep") else "Quick check",
-                                               time.strftime("%-d %b %H:%M", time.localtime(a.get("time", 0))),
-                                               "{:,}".format(st.get("checked", 0))))
         else:
-            list_head(c, self.f, lst, "Every game here looks right", color=theme.GREEN)
+            note = "%s, %s · %s checked" % ("Full check" if a.get("deep") else "Quick check", when(a.get("time")),
+                                            "{:,}".format(st.get("checked", 0)))
+            kept = self.carried()
+            if kept:
+                note += " · %d from the full check of %s" % (len(kept), when(max(f["full_time"] for f in kept)))
+            if self.findings:
+                list_head(c, self.f, lst, "%s a look" % plural(games_in(self.findings), "game needs", "games need"),
+                          note)
+            else:       # a quick check can't vouch for checksums, nor any check for games it couldn't compare
+                list_head(c, self.f, lst, "Every game here looks right" if a.get("deep") and not not_fully_checked(st)
+                          else "Nothing wrong found", note, color=theme.GREEN)
         for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             f = items[i]
             if f is CHECK:
                 list_row(c, self.f, r, on, rows[i][0], rows[i][1], slot="check-now", chevron=True, box=theme.BG2)
+                continue
+            if f is NOTES:
+                list_row(c, self.f, r, on, rows[i][0], rows[i][1], box=theme.BG2, slot="check-notes")
                 continue
             if f is DOOR:
                 n = self.unseen
@@ -361,7 +498,7 @@ class CheckScreen(AuditScreen):
                 list_row(c, self.f, r, on, rows[i][0], rows[i][1], st_, col, slot="check-door", chevron=True,
                          box=theme.BG2)
                 continue
-            col = getattr(theme, KIND.get(f["severity"], ("", "AMBER"))[1])
+            col = getattr(theme, self.kind(f)[1])
             queued = f["path"] in self.queued
             list_row(c, self.f, r, on, rows[i][0], rows[i][1], sub_color=col, slot="check",
                      tag="queued" if queued else rows[i][2], tag_color=theme.GREEN if queued else theme.DIM,
@@ -387,18 +524,39 @@ class CheckScreen(AuditScreen):
             p.prose("What it finds stays here until the next check. Damaged games can be downloaded again; "
                     "saves follow.", lines=3)
             return
+        if it is NOTES:
+            st = self.stats or {}
+            p.title("Not fully checked", " · ".join(self.notes()))
+            if st.get("unverified"):
+                p.prose("%s. A missing tool can be installed. Games that couldn't be verified are "
+                        "tried again on the next check; some (a zip this box can't unpack) never can be." % unverified_line(st), label="Not verified", lines=4)
+            if st.get("unmatched"):
+                p.prose("%s: only their tracks and disc images were looked at, not their sizes or checksums "
+                        "against RomM." % unmatched_line(st), label="Not in RomM", lines=4)
+            return
         if it is None or not self.findings:
             return
-        kind, col = KIND.get(it["severity"], ("Needs a look", "AMBER"))
+        kind, col = self.kind(it)
         p.title(self.name(it), "Queued to download again" if it["path"] in self.queued else kind,
                 theme.GREEN if it["path"] in self.queued else getattr(theme, col))
         try:
             here = human_size(os.path.getsize(it["path"]))
         except OSError:
             here = ""
-        p.facts([("System", self.app.system_name(it["system"])), ("On this box", here)], lines=1)
+        last = self.last or {}
+        found = ("Full check, %s" % when(it["full_time"])) if it.get("full_time") else \
+            "%s, %s" % ("Full check" if last.get("deep") else "Quick check", when(last.get("time")))
+        p.facts([("System", self.app.system_name(it["system"])), ("On this box", here), ("Found by", found)],
+                lines=2)
         p.facts([("File", "roms/%s/%s" % (it["system"], os.path.relpath(
             it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))))], cols=1, lines=2)
         p.prose(it["problem"].replace(" · ", ". ") + ".", label="What's wrong", lines=3)
-        p.prose(WHY.get(it["severity"], "") if it.get("rom") else
+        p.prose(WHY_IO if it.get("io_error") else WHY.get(it["severity"], "") if it.get("rom") else
                 "RomM has no game under this file name, so it can't be downloaded again from here.", lines=4)
+
+    @staticmethod
+    def kind(f):
+        """(what the finding is, theme colour name)."""
+        if f.get("io_error"):
+            return "Can't be read", "RED"
+        return KIND.get(f["severity"], ("Needs a look", "AMBER"))

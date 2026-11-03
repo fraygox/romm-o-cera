@@ -202,17 +202,25 @@ def pending_gamelist_paths(system):
     """Paths of a system's games with game info still waiting for rb_finalize (queued, or
     deferred because ES couldn't take them yet): Fill in game info leaves them be."""
     out = set()
-    for p in (GAMELIST_QUEUE, os.path.join(DATA_DIR, "gamelist-deferred.jsonl")):
+    for p in (GAMELIST_QUEUE, GAMELIST_QUEUE + ".work",       # .work: the batch rb_finalize is applying
+              GAMELIST_QUEUE + ".work.done",                  # .done: that batch's result, being settled
+              os.path.join(DATA_DIR, "gamelist-deferred.jsonl")):
         try:
             with open(p, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
         except OSError:
             continue
+        entries = []
         for line in lines:
             try:
                 e = json.loads(line)
             except ValueError:
                 continue                        # a torn line: rb_finalize sets it aside
+            if isinstance(e, dict) and isinstance(e.get("left"), list):
+                entries += e["left"]            # .work.done: {"left": [kept entries], "bad": [...]}
+            else:
+                entries.append(e)
+        for e in entries:
             if isinstance(e, dict) and e.get("system") == system:
                 out.update(p for p in (e.get("paths") or []) if isinstance(p, str))
                 out.update(v for v in (e.get("rename") or {}).values() if isinstance(v, str))

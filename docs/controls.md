@@ -125,7 +125,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Compress | That system's games (a can't-convert row: why) | Compress the whole system | | |
 | Compress › a system | Compress this one | Actions: compress all, pick several | | A–Z |
 | BIOS files | Get from RomM | Get all from RomM | | A–Z |
-| Check games | Download again / open Games ES can't see | Actions: quick check, full check, download all damaged again, pick several | Check again | System |
+| Check games | Download again / open Games ES can't see | Actions: quick check, full check, download all damaged again, pick several | Quick check | System |
 | Games ES can't see | Its options: unpack, move, delete | Actions: pick several, pick all | | System |
 | Settings | Change / open | | | |
 | Theme picker | Keep this theme (Custom: open it) | Edit a copy | OLED on/off | |

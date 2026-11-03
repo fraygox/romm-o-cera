@@ -496,3 +496,33 @@ def test_server_version_reads_the_heartbeat(monkeypatch):
         raise rommlib.RommError("Can't reach RomM")
     monkeypatch.setattr(api, "get", down)
     assert api.server_version() is None
+
+
+def test_a_replacement_download_of_one_disc_keeps_what_it_replaces(app, rb, monkeypatch):
+    """Compare's "Get RomM's copy" of a (Disc N) game: no disc-set menu (it would drop replace=)."""
+    rom = _rom(name="Lorem Quest (Disc 2)", fs_name_no_ext="Lorem Quest (USA) (Disc 2)")
+    app.details[rom["id"]] = {}
+    got = []
+    monkeypatch.setattr(app, "start_download", lambda r, replace=None: got.append((r["id"], replace)))
+    monkeypatch.setattr(app, "bg", lambda *a, **k: None)
+    app.modal = dc = rb.DownloadConfirm(app, rom, replace=["/roms/psx/old (Disc 2).chd"])
+    assert not dc.pending
+    dc.action("ok")
+    assert got == [(1, ["/roms/psx/old (Disc 2).chd"])]
+
+
+def test_a_download_again_of_one_disc_and_an_empty_replace_list(app, rb, monkeypatch):
+    rom = _rom(name="Sit Amet (Disc 2)", fs_name_no_ext="Sit Amet (USA) (Disc 2)")
+    app.details[rom["id"]] = {}
+    group = {"id": "g9", "base": "Sit Amet (USA)", "title": "Sit Amet", "rom_ids": [rom["id"], 99]}
+    got = []
+    monkeypatch.setattr(app, "start_download", lambda r, replace=None, group=None: got.append((replace, group)))
+    monkeypatch.setattr(app, "bg", lambda *a, **k: None)
+    app.modal = dc = rb.DownloadConfirm(app, rom, replace=[], group=group)
+    assert not dc.pending                       # [] is still a replacement: no set menu
+    dc.action("ok")
+    assert got == [([], group)]
+    app.library.mark(rom, "psx", [_put("psx/Sit Amet (USA) (Disc 2).chd")], group=group)
+    m = rb.ManageMenu(app, rom)
+    dict((e[0], e[2]) for e in _entries(m))["Download this disc again"]()
+    assert got[-1] == (None, group)

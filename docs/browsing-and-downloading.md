@@ -217,10 +217,16 @@ its count:
 - **Matches RomM**: the same file RomM has, or *Matches RomM (compressed)*:
   RomM's game, compressed here by the app (a .chd from RomM's .zip). Nothing
   to do.
-- **Newer in RomM**: RomM's file changed since this one was downloaded (or a
-  file copied over by hand has RomM's name at another size). **A** (*Get the
-  newer one*) downloads it again through the usual download dialog and
-  replaces the copy here; saves are kept.
+- **Newer in RomM**: the app downloaded this game and RomM's file has changed
+  since. **A** (*Get the newer one*) downloads it again through the usual
+  download dialog and replaces the copy here; saves are kept. On a disc of a
+  set it replaces only that disc's own files and keeps the set's playlist. A
+  game whose files are all shared with another RomM entry can't be replaced
+  from here: its files here are shared with another game, so there's nothing
+  of its own to replace.
+- **Differs from RomM's**: a file with RomM's name at another size that the
+  app didn't install (copied over by hand, say). **A** (*Get RomM's copy*)
+  downloads RomM's one.
 - **Not in RomM** (platforms only): a game put on the box another way. It
   still plays.
 
@@ -250,6 +256,9 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
   they're done. If they're stuck on something only you can fix (the drive
   is full, or RomM no longer accepts the box's token), EmulationStation
   shows a message box once you're back in its menus.
+- Closing the app, or updating it, stops an unpack in progress: it's picked up
+  again later and nothing half-unpacked is left behind. Only putting a game in
+  place is waited for: usually a few seconds, at most about half a minute.
 - **Download while extracting** (Settings, on by default): the next game
   downloads while the last one unpacks. Turn it off for slow storage (SD
   cards, USB sticks).
@@ -271,7 +280,8 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
 A game you've just downloaded can start straight away: **Play now** is in
 the game's page (A on a game on the box), in its row's menu on the Downloads
 screen, and the "Ready" toast says so (tapping the toast plays it).
-RomM-o-Cera closes and EmulationStation starts the game a few seconds later.
+RomM-o-Cera closes and EmulationStation starts the game a few seconds later (up to about half a
+minute if a game is being put in place at that moment).
 If other downloads are still running it asks first: they keep going in the
 background while you play, or, with **Keep downloading after exit** off,
 pause and resume next time you open RomM-o-Cera.
@@ -303,7 +313,9 @@ hours), pause, resume, cancel, retry, or remove it from the list. The **X**
 menu pauses or resumes everything and clears finished ones (so does **Y**).
 Pick several (X › Pick several) to pause, resume, cancel, retry or remove
 them at once; cancelling (one or several, active or paused) asks first, since it
-deletes the partial files. Each game shows what it's being compressed to (CHD,
+deletes the partial files and any file the download had already finished
+(only ones it created, never files that were there before). A repair or
+replace cancelled halfway keeps the old copy whole. Each game shows what it's being compressed to (CHD,
 RVZ, squashfs, .zcci, .zar, .wux, .wua, a `.ps3` folder) and when that's done. A
 finished game's menu has [Play now](#play-now). A failed download says why
 under its name.

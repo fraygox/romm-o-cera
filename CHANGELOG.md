@@ -3,6 +3,15 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## Unreleased
+
+- Compress no longer replaces or deletes a file it didn't make: a game whose compressed name is already taken (another copy, or another disc or game with the same name) is listed under "can't convert" with what to do. A conversion cut off by an older version is listed there too, once.
+- Compressing a game in its own folder keeps the folder when it holds anything of yours (manuals, covers, readmes, saves); the compressed game goes beside it.
+- Clean up leftovers offers the originals of a converted game only when the converted file checks out (for a CHD: its header, its size against the disc, and chdman verify) and nothing still uses them; a .7z kept beside a CHD is no longer offered.
+- Compare says "Differs from RomM's" for a copy the app didn't download that isn't the same as RomM's, and "Newer in RomM" only when RomM's file changed since the app downloaded it.
+- Closing the app or updating stops an unpack in progress instead of waiting for it; it starts again later and nothing half-unpacked is left behind.
+- Known limit: a PS3 disc left partly decrypted by another tool is caught in most layouts but not all (see the PS3 page).
+
 ## v0.11.2 (2026-10-17)
 
 Faster game info away from home, and clearer words, counts and buttons on every screen

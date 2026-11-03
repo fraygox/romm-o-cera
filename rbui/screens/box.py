@@ -19,7 +19,7 @@ from rbui.screens.compress import compress_by_system, compress_scan, CompressScr
 from rbui.screens.installed import ConversionsScreen, InstalledScreen
 from rbui.screens.space import SpaceScreen
 from rbui.screens.bios import BiosScreen
-from rbui.screens.check import CheckScreen
+from rbui.screens.check import CheckScreen, check_counts, not_fully_checked
 from rbui.modals import InfoDialog
 
 
@@ -121,13 +121,17 @@ class OnThisBoxScreen(Screen):
             a = self.audit
             if not a:
                 return "Not checked yet", None
-            when = time.strftime("%Y-%m-%d", time.localtime(a.get("time", 0)))
-            dmg = sum(1 for f in a["findings"] if f["severity"] == "damaged")
-            dif = len(a["findings"]) - dmg
-            if not a["findings"]:
-                return "All good on %s" % when, None
-            bits = (["%d damaged" % dmg] if dmg else []) + (["%d differ from RomM" % dif] if dif else [])
-            return ", ".join(bits), theme.RED if dmg else theme.AMBER
+            when = time.strftime("%Y-%m-%d", time.localtime(a.get("time") or 0))
+            dmg, unread, dif = check_counts(a["findings"])
+            if not a["findings"]:       # a quick check can't vouch for checksums: it says only what it saw
+                k = not_fully_checked(a.get("stats"))
+                if not a.get("deep"):
+                    return "Nothing wrong found on %s (quick check)" % when, None
+                return ("Nothing wrong found on %s · %d not fully checked" % (when, k) if k else
+                        "All good on %s" % when), None
+            bits = (["%d damaged" % dmg] if dmg else []) + (["%d can't be read" % unread] if unread else []) + \
+                (["%d differ from RomM" % dif] if dif else [])
+            return ", ".join(bits), theme.RED if dmg or unread else theme.AMBER
         if key == "compress":
             if self.compress is None:
                 return "Looking…", None
@@ -162,11 +166,11 @@ class OnThisBoxScreen(Screen):
             offer = sum(len(r["offers"]) for r in (self.bios or []) if r.get("here"))
             return ("Fetch %d" % offer, theme.ACCENT_HI) if offer else ("", None)
         if key == "check":
-            a = self.audit
-            dmg = sum(1 for f in (a or {}).get("findings", []) if f["severity"] == "damaged")
-            dif = len((a or {}).get("findings", [])) - dmg
+            dmg, unread, dif = check_counts((self.audit or {}).get("findings", []))
             if dmg:
                 return "%d damaged" % dmg, theme.RED
+            if unread:
+                return "%d can't be read" % unread, theme.RED
             if dif:
                 return "%d differ" % dif, theme.AMBER
             return "", None

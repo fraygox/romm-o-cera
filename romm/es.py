@@ -269,40 +269,101 @@ def game_files(path):
     return [p for p in out if sysdir and _core._inside(p, sysdir)]
 
 
+class DeleteIncomplete(_core.RommError):
+    """Some of a game's files couldn't be deleted; the rest are gone. paths: what
+    went, freed: bytes freed, failed: [(path, error)]. (library.UninstallIncomplete
+    is one too.)"""
+
+    def __init__(self, msg, paths, freed, failed):
+        super().__init__(msg)
+        self.paths, self.freed, self.failed = paths, freed, failed
+
+
+def _not_all_deleted(name, failed):
+    first = os.path.basename(failed[0][0])
+    more = " and %d more" % (len(failed) - 1) if len(failed) > 1 else ""
+    return "Couldn't delete all of %s: %s%s is still there" % (name or "the game", first, more)
+
+
+def _went_anyway(e, name, gone, freed, failed, why):
+    """The error a delete raises when its files went (some or all) but what follows
+    couldn't be recorded: it says what was deleted, with paths, freed and failed set
+    to that. A RommError (LibraryUnreadable) keeps its class; anything else (an
+    OSError: the disk is full) becomes a DeleteIncomplete, shown as it is."""
+    what = _not_all_deleted(name, failed) if failed else "Deleted %s — %s freed" % (
+        name, _core.human_size(freed))
+    msg = "%s, but %s" % (what, why)
+    if not isinstance(e, _core.RommError):
+        return DeleteIncomplete(msg, list(gone), freed, list(failed))
+    e.args = (msg,)
+    e.paths, e.freed, e.failed = list(gone), freed, list(failed)
+    return e
+
+
 def delete_game(system, path, library=None):
     """Delete a game ES lists (any game, not only ours): its files, then any
-    game folder left empty. Saves and states live elsewhere and are kept.
-    Returns (deleted paths, bytes freed)."""
+    game folder left empty. Saves and states live elsewhere and are kept. A file
+    that won't go doesn't stop the rest (DeleteIncomplete after, saying what
+    went). Returns (deleted paths, bytes freed). When installed.json can't be
+    updated (or ES's removal can't be queued), the error says so, with paths and
+    freed (and failed) set to what was deleted, as Library.uninstall does: the
+    files are gone (_went_anyway)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
-    files = game_files(path)
-    freed = 0
+    files = [p for p in game_files(path) if _core._inside(p, sysdir)]
+    name = os.path.splitext(os.path.basename(path))[0]
+    gone, failed, freed = [], [], 0
     for p in files:
-        if not _core._inside(p, sysdir):
-            continue
-        freed += _core.path_size(p)
-        if os.path.isdir(p) and not os.path.islink(p):
-            shutil.rmtree(p)
-        elif os.path.lexists(p):
-            os.remove(p)
-    for p in sorted({os.path.dirname(p) for p in files}, key=len, reverse=True):
+        size = _core.path_size(p)
+        try:
+            if os.path.isdir(p) and not os.path.islink(p):
+                shutil.rmtree(p)
+            elif os.path.lexists(p):
+                os.remove(p)
+        except OSError as e:
+            failed.append((p, e))
+            if os.path.lexists(p):
+                freed += max(0, size - _core.path_size(p))
+                continue
+        gone.append(p)
+        freed += size
+    for p in sorted({os.path.dirname(p) for p in gone}, key=len, reverse=True):
         d = p
-        while _core._inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
-            os.rmdir(d)
-            d = os.path.dirname(d)
-    if library is not None and files:
-        gone = {os.path.normpath(p) for p in files}
+        try:
+            while _core._inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+                d = os.path.dirname(d)
+        except OSError:
+            pass
+    _core.log("DELETE %s: %s (%s)%s" % (system, gone, _core.human_size(freed), " FAILED %r" % failed if failed else ""))
+    queue_err = None
+    if gone:           # queued first: the files are gone even if installed.json can't be updated
+        try:
+            _core.append_gamelist({"system": system, "remove": gone})
+        except OSError as e:
+            queue_err = e
+            _core.log("DELETE %s: ES's removal not queued: %r" % (system, e))
+    if library is not None and gone:
+        done = {os.path.normpath(p) for p in gone}
 
         def drop(inst):
             for rid, rec in list(inst.items()):
                 paths = [os.path.normpath(x) for x in rec.get("paths", [])]
-                if paths and all(x in gone or not os.path.exists(x) for x in paths):
+                if paths and all(x in done or not os.path.exists(x) for x in paths):
                     inst.pop(rid, None)
-        library.update(drop)
-        library.rescan(system)
-    if files:
-        _core.append_gamelist({"system": system, "remove": files})
-    _core.log("DELETE %s: %s (%s)" % (system, files, _core.human_size(freed)))
-    return files, freed
+        try:
+            library.update(drop)
+        except (_core.RommError, OSError) as e:      # LibraryUnreadable, a full disk: say what went, as uninstall does
+            _core.log("DELETE %s: installed.json not updated: %r" % (system, e))
+            raise _went_anyway(e, name, gone, freed, failed, "installed.json can't be updated now") from None
+        finally:
+            library.rescan(system)
+    if queue_err is not None:
+        raise _went_anyway(queue_err, name, gone, freed, failed, "the game list can't be updated now") from None
+    if failed and not gone:
+        raise failed[0][1]                    # nothing went: why the first one didn't
+    if failed:
+        raise DeleteIncomplete(_not_all_deleted(name, failed), gone, freed, failed)
+    return gone, freed
 
 
 def es_media_present(system, gid, tag, base=None, timeout=15):

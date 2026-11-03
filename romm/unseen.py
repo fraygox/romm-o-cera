@@ -144,7 +144,8 @@ def archive_contents(dl, path):
     """[(member name, size or None)] of a .zip/.7z/.rar, for the confirm."""
     if path.lower().endswith(".zip"):
         with zipfile.ZipFile(path) as z:
-            return [(i.filename, i.file_size) for i in z.infolist() if not i.is_dir()]
+            return [(_downloader.archive_member_path(i.filename), i.file_size) for i in z.infolist()
+                    if not _downloader.archive_member_path(i.filename).endswith("/")]
     out, name = [], None
     res = subprocess.run([dl._7z(), "l", "-slt", "-ba", path], capture_output=True, text=True,
                          errors="replace").stdout
@@ -157,7 +158,7 @@ def archive_contents(dl, path):
             folder = True
         elif not line.strip() and name is not None:
             if not folder:
-                out.append((name, size))
+                out.append((_downloader.archive_member_path(name), size))
             name = None
     return out
 
@@ -196,9 +197,12 @@ def unpack_unseen(dl, finding):
         return out, j.chd_task                      # the worker reads the zip in place
     if os.path.exists(path):
         raise _core.RommError("%s wasn't unpacked" % os.path.basename(path))
-    if _recorded(dl.library, [path]):
-        dl.library.rename_paths({path: out[0]}, out[1:])              # it was ours: the record follows
     _core.append_gamelist({"system": system, "rename": {path: out[0]}})     # ES lists it after a reload
+    if _recorded(dl.library, [path]):
+        try:
+            dl.library.rename_paths({path: out[0]}, out[1:])          # it was ours: the record follows
+        except _core.RommError as e:                 # unpacked and handed to ES: only the record lags
+            _core.log("UNSEEN %s: couldn't update installed.json (%s)" % (path, e))
     _core.log("UNSEEN unpacked %s -> %s%s" % (path, out, " (queued %s)" % j.chd_task if j.chd_task else ""))
     return out, j.chd_task
 
@@ -263,24 +267,28 @@ def move_unseen(finding, dest, library=None, es=None):
     rename = dict(moves)
     new = rename[src]
     entries = [{"system": dest, "rename": {src: new}}]
-    if library is not None and _recorded(library, rename):
-        library.rename_paths(rename)
-        moved = set(rename.values())
-
-        def resystem(inst):
-            for rec in inst.values():
-                ps = rec.get("paths") or []
-                if rec.get("system") == system and ps and any(p in moved for p in ps) \
-                        and all(_core._inside(p, dsys) for p in ps):
-                    rec["system"] = dest
-                    if isinstance(rec.get("meta"), dict):
-                        rec["meta"] = dict(rec["meta"], system=dest, paths=list(ps))
-                        entries.append(rec["meta"])          # its game info follows
-        library.update(resystem)
-        library.rescan(system)
-        library.rescan(dest)
-    _core.append_gamelist(*entries)
     _core.log("UNSEEN moved %s -> %s" % (src, new))
+    try:
+        if library is not None and _recorded(library, rename):
+            moved = set(rename.values())
+
+            def resystem(inst):
+                for rec in inst.values():
+                    ps = rec.get("paths") or []
+                    if rec.get("system") == system and ps and any(p in moved for p in ps) \
+                            and all(_core._inside(p, dsys) for p in ps):
+                        rec["system"] = dest
+                        if isinstance(rec.get("meta"), dict):
+                            rec["meta"] = dict(rec["meta"], system=dest, paths=list(ps))
+                            entries.append(rec["meta"])          # its game info follows
+            try:
+                library.rename_paths(rename)
+                library.update(resystem)
+            finally:
+                library.rescan(system)
+                library.rescan(dest)
+    finally:           # the files moved even if installed.json can't be updated
+        _core.append_gamelist(*entries)
     return new
 
 
@@ -309,6 +317,8 @@ def delete_unseen(finding, library=None):
         while _core._inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
             os.rmdir(d)
             d = os.path.dirname(d)
+    _core.log("UNSEEN deleted %s (%s)" % (paths, _core.human_size(freed)))
+    _core.append_gamelist({"system": system, "remove": paths})    # first: they're gone either way
     if library is not None and _recorded(library, paths):
         gone = set(paths)
 
@@ -321,8 +331,8 @@ def delete_unseen(finding, library=None):
                         rec["paths"] = left
                     else:
                         inst.pop(k)
-        library.update(forget)
-        library.rescan(system)
-    _core.append_gamelist({"system": system, "remove": paths})
-    _core.log("UNSEEN deleted %s (%s)" % (paths, _core.human_size(freed)))
+        try:
+            library.update(forget)
+        finally:
+            library.rescan(system)
     return paths, freed

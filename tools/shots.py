@@ -93,6 +93,8 @@ for _t in ("Mossy Kite Quest (USA)", "Saffron Ferry Derby (Europe)"):        # u
     mk("psx/%s/%s.bin" % (_t, _t), 460 * MB if "Quest" in _t else 610 * MB)
     with open(os.path.join(R, "psx", _t, _t + ".cue"), "w") as _f:
         _f.write('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % _t)
+    for _p in ("%s.bin" % _t, "%s.cue" % _t):            # an hour old: not "still being written"
+        os.utime(os.path.join(R, "psx", _t, _p), (time.time() - 3600,) * 2)
 mk("psx/Gone (USA).zip.part", 120 * MB)
 mk("psx/Cobalt Comet Rally (USA).7z", 300 * MB)                          # a copy of a game already here as CHD
 os.makedirs(os.path.join(R, "psx", "Empty Game"), exist_ok=True)

@@ -1,14 +1,17 @@
 """Downloads: the queue, the workers, space planning."""
+import itertools
 import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import threading
 import time
 import urllib.parse
 import zipfile
+import zlib
 
 import requests
 
@@ -307,6 +310,18 @@ def queue_forecast(jobs, free, keep, chd=True, cfg=None):
             "fits": free - total >= keep, "short": max(0, total + keep - free)}
 
 
+MARGIN_MIN = 32 << 20               # keep_free_gb 0: what a download still leaves free, at least
+MARGIN_SHARE = 20                   # ... or 1/20 (5%) of what it writes, up to core.SPACE_MARGIN (2 GB)
+
+
+def space_margin(need):
+    """The small margin a download leaves free when the keep-free reserve is 0
+    (Settings: "no reserve beyond a small margin"): 5% of the bytes it writes,
+    at least 32 MB and at most 2 GB. A fixed 2 GB would make a 600 KB cart
+    wait on a nearly full card."""
+    return min(_core.SPACE_MARGIN, max(MARGIN_MIN, int(need or 0) // MARGIN_SHARE))
+
+
 def fit_in_space(items, free, reserve=_core.SPACE_MARGIN):
     """Greedy, keeping the given order: (that_fit, total_needed_for_them),
     the total counted like space_for."""
@@ -347,6 +362,9 @@ class Job:
         self.replace = None           # broken copy under another name, removed once this one is in
         self.listing_tried = False    # the forecast's archive listing (zip_listing) was tried
         self.made = []                # finished files this job put where none was (cancel removes them)
+        self.checked = []             # those of them that matched RomM's checksum when they came in
+        self.moving = False           # its unpacked files are being moved into place (see MOVE_WAIT)
+        self.proc = None              # its running 7z (killed by a pause or cancel: see _stop_unpacks)
         self.cancel = threading.Event()
 
     @property
@@ -390,15 +408,107 @@ class ChecksumError(_core.RommError):
     """The file arrived but doesn't match RomM's checksum."""
 
 
+class DamagedArchive(_core.RommError):
+    """The downloaded archive can't be listed or unpacked (a bad CRC, a cut-off
+    stream, 7z failing): _post deletes the job's own copy so Retry downloads it again."""
+
+
+def _kill_group(p):
+    """Kill a 7z started in its own process group (_run_7z) and whatever it started."""
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except OSError:                      # its group is gone already (or isn't its own)
+        p.kill()
+
+
 RETRY_DELAYS = (15, 60, 180)        # seconds before attempts 2, 3, 4
 SPACE_RECHECK = 30                  # seconds between free-space checks for a waiting download
 WORKER_POLL = 1.0                   # seconds a download/unpack worker sleeps before re-checking its queue
+
+# Stopping an unpack (Pause all, closing the app, the background worker handing
+# the queue back, an update) is safe at any moment but one: the archive is
+# unpacked into a private folder (leftovers.unpack_stage) and a stopped or killed
+# unpack only leaves that folder, which the next attempt (or Free up space)
+# deletes; the archive stays and is unpacked again. The one step that can't be
+# rolled back is moving the unpacked files into place (Job.moving, short: one
+# rename per file), until the game is recorded. Nothing stops a job then, and
+# whatever closes waits for it, up to MOVE_WAIT seconds; past that a kill is
+# caught by the move marker (leftovers.write_move_marker) on the next attempt.
+MOVE_WAIT = 30
+UNZIP_CHUNK = 1 << 20               # bytes copied between two looks at a pause or cancel
+# A 7z/rar unpack is a child process. Its own thread only looks at a pause every
+# half second, and a process that exits first (the app closing, rb_dl handing
+# back) takes that thread with it: 7z would carry on writing into a stage the
+# next attempt sweeps as stale, beside a second 7z. So whatever stops a job kills
+# its 7z itself and waits this long for it to go.
+UNPACK_KILL_WAIT = 3.0
+_PROC_LOCK = threading.Lock()       # a 7z is started, or looked up to be killed, under it
 
 
 # RomM hashes an archive by what's inside it (a zip's crc/md5/sha1 are its
 # member's), so these never match the file itself; zips are checked member by
 # member instead, the rest by size only.
 CONTENT_HASHED = (".zip", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz")
+
+# A sign-in or proxy page (Authentik, Cloudflare, a reverse proxy's error page)
+# answering instead of RomM: never written into a game file, never resumed onto.
+WEB_PAGE = "RomM answered with a web page (a login or proxy page?)."
+WEB_PAGE_HEADS = (b"<!doctype html", b"<html")
+WEB_PAGE_SNIFF = 64                 # bytes looked at before the first write
+
+
+def looks_like_web_page(head):
+    """True when the first bytes of a body are an HTML page."""
+    return head.lstrip(b"\xef\xbb\xbf \t\r\n").lower().startswith(WEB_PAGE_HEADS)
+
+
+def _is_web_page_type(r):
+    return (r.headers.get("Content-Type") or "").split(";")[0].strip().lower() in ("text/html", "application/xhtml+xml")
+
+
+def archive_member_path(name):
+    """A member name with either slash as a folder separator ("Sub\\Game.iso"
+    from a Windows zipper is Sub/Game.iso), so no file is ever named with a
+    backslash."""
+    return (name or "").replace("\\", "/")
+
+
+def archive_member_outside(name):
+    """True when a member would land outside the folder it's unpacked into:
+    an absolute path, a drive letter, or a ".." step."""
+    n = archive_member_path(name)
+    return n.startswith("/") or bool(re.match(r"[A-Za-z]:", n)) or ".." in n.split("/")
+
+
+def outside_message(name):
+    return "The archive has a file outside its folder (%s); left as it is" % archive_member_path(name)
+
+
+def _member_key(n):
+    return (n or "").replace("\\", "/").strip("/").lower()
+
+
+def zip_member_finder(infos, wanted):
+    """find(RomM's member name): the zip's entry for it, by its path (either
+    slash, any case), else by its file name alone when only one entry in the
+    zip and one of RomM's names (wanted) have it; None otherwise. (The same
+    rule as audit's _member_finder.)"""
+    by_path = {_member_key(i.filename): i for i in infos}
+    bases, romm = {}, {}
+    for i in infos:
+        bases.setdefault(_member_key(i.filename).rsplit("/", 1)[-1], []).append(i)
+    for n in wanted:
+        b = _member_key(n).rsplit("/", 1)[-1]
+        romm[b] = romm.get(b, 0) + 1
+
+    def find(name):
+        n = _member_key(name)
+        if n in by_path:
+            return by_path[n]
+        b = n.rsplit("/", 1)[-1]
+        hits = bases.get(b) or []
+        return hits[0] if len(hits) == 1 and romm.get(b) == 1 else None
+    return find
 
 
 def zip_matches(path, members):
@@ -407,11 +517,9 @@ def zip_matches(path, members):
     try:
         with zipfile.ZipFile(path) as z:
             infos = [i for i in z.infolist() if not i.is_dir()]
-            by_name = {i.filename.lower(): i for i in infos}
-            by_base = {os.path.basename(i.filename).lower(): i for i in infos}
+            find = zip_member_finder(infos, [m.get("name") or "" for m in members])
             for m in members:
-                n = (m.get("name") or "").lower()
-                i = by_name.get(n) or by_base.get(os.path.basename(n))
+                i = find(m.get("name") or "")
                 if i is None:
                     return False, "zip"
                 if m.get("size") is not None and i.file_size != m["size"]:
@@ -422,7 +530,7 @@ def zip_matches(path, members):
                 return False, "zip"
     except (NotImplementedError, RuntimeError):
         return None, None             # a method Python can't decompress (Deflate64, encrypted): size only
-    except (zipfile.BadZipFile, OSError, EOFError):
+    except (zipfile.BadZipFile, OSError, EOFError, zlib.error):     # zlib.error: a damaged deflate stream
         return False, "zip"
     return True, "zip"
 
@@ -453,10 +561,34 @@ def zip_content_ok(path, f):
                         c = zlib.crc32(b, c)
     except (NotImplementedError, RuntimeError):
         return None, None             # can't decompress it here: size only
-    except (zipfile.BadZipFile, OSError, EOFError):
+    except (zipfile.BadZipFile, OSError, EOFError, zlib.error):
         return False, "zip"
     got = h.hexdigest() if h else "%08x" % c
     return got == f[key].lower().zfill(len(got)), "zip"
+
+
+def zip_crc_bad(path, cancel=None):
+    """The first member of a zip whose data fails its own CRC (or that can't
+    be read at all: ""), else None. One streaming read, a chunk
+    at a time so cancel (an Event) stops it: Cancelled. Members Python can't
+    decompress (Deflate64, encrypted) aren't held against it."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            for i in z.infolist():
+                if i.is_dir():
+                    continue
+                try:
+                    with z.open(i) as fh:
+                        while fh.read(UNZIP_CHUNK):
+                            if cancel is not None and cancel.is_set():
+                                raise Cancelled()
+                except (NotImplementedError, RuntimeError):
+                    continue
+                except (zipfile.BadZipFile, zlib.error, EOFError):
+                    return archive_member_path(i.filename)
+    except (zipfile.BadZipFile, EOFError, zlib.error):
+        return ""
+    return None
 
 
 def file_hash_ok(path, f, name=None):
@@ -576,11 +708,29 @@ class Downloader:
         """Pause the whole queue (the running transfer stops; its .part stays)."""
         with self.cv:
             self.hold = True
+            stopped = []
             for j in self.jobs:
                 if j.state in (Job.DOWNLOADING, Job.VERIFYING, Job.EXTRACTING):
                     j.pause, j.resume = True, False
                     j.cancel.set()
+                    stopped.append(j)
+        self._stop_unpacks(stopped)
         self.save_queue()
+
+    @staticmethod
+    def _stop_unpacks(jobs):
+        """Kill the 7z of these jobs (their cancel is set already) and wait for it,
+        UNPACK_KILL_WAIT at most: see _PROC_LOCK. A 7z started after this sees
+        the cancel and never runs (_run_7z checks it under the same lock)."""
+        with _PROC_LOCK:
+            procs = [(j, j.proc) for j in jobs if getattr(j, "proc", None) is not None]
+        for j, p in procs:
+            try:
+                if p.poll() is None:
+                    _kill_group(p)
+                p.wait(timeout=UNPACK_KILL_WAIT)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                _core.log("UNPACK %s: 7z not stopped: %r" % (j.name, e))
 
     def release_all(self):
         with self.cv:
@@ -613,6 +763,7 @@ class Downloader:
             elif job.active:
                 job.pause, job.resume = True, False
                 job.cancel.set()
+        self._stop_unpacks([job])
         self.save_queue()
 
     def resume_job(self, job):
@@ -653,6 +804,15 @@ class Downloader:
         Never a file that was there before the job (repair over an installed copy)."""
         sysdir = os.path.join(_core.ROMS_ROOT, job.system)
         made = [p for p in job.made if os.path.isfile(p) and not os.path.islink(p) and _core._inside(p, sysdir)]
+        # an unpack of one of them killed while moving its files in left part of the
+        # game where it lands: with its archive gone nothing would finish or list
+        # it, and ES would list (and Play start) a broken game. Gone with it, unless
+        # installed.json records it there (drop_unfinished_move says why that's safe),
+        # or something there is newer than the unpack (put there by hand since: Free
+        # up space offers it, and deletes it only when asked).
+        for p in made:
+            for marker in _leftovers.move_markers(os.path.dirname(p), p, job.rom.get("id")):
+                _leftovers.drop_unfinished_move(marker, sysdir, keep=job.replace or (), if_untouched=True)
         for p in self._part_files(job) + made:
             try:
                 os.remove(p)
@@ -669,7 +829,7 @@ class Downloader:
                     except OSError:
                         break
                     d = os.path.dirname(d)
-        job.made = []
+        job.made, job.checked = [], []
 
     def cancel_job(self, job):
         drop = False
@@ -680,6 +840,7 @@ class Downloader:
             elif job.active:
                 job.pause = job.resume = False
                 job.cancel.set()               # the worker drops the partial when it stops
+        self._stop_unpacks([job])
         if drop:
             self._drop_parts(job)
         self.save_queue()
@@ -718,7 +879,7 @@ class Downloader:
             pend = [{"rom": dict({k: j.rom.get(k) for k in self.SLIM_KEYS}, _es_media=_library.es_media(j.rom)),
                      "system": j.system,
                      "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None,
-                     "made": list(j.made) or None}
+                     "made": list(j.made) or None, "checked": list(getattr(j, "checked", None) or []) or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             os.makedirs(_core.DATA_DIR, exist_ok=True)
             _core.atomic_write_json(_core.QUEUE_PATH, {"held": self.hold, "jobs": pend})
@@ -756,6 +917,7 @@ class Downloader:
                 j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"), save=False)
                 if it.get("made") and not j.made:         # what it had created before the restart
                     j.made = [p for p in it["made"] if isinstance(p, str)]
+                    j.checked = [p for p in it.get("checked") or [] if isinstance(p, str)]
                 if it.get("paused"):
                     with self.cv:
                         j.user_paused = True
@@ -769,15 +931,37 @@ class Downloader:
     def pause_all(self):
         """Stop transfers but keep them queued (partials resume via Range)."""
         with self.cv:                      # the lock _failed / resume_job decide pause and resume under
-            for j in self.jobs:
-                if j.active:
-                    j.pause, j.resume = True, False
-                    j.cancel.set()
+            stopped = [j for j in self.jobs if j.active]
+            for j in stopped:
+                j.pause, j.resume = True, False
+                j.cancel.set()
             self.cv.notify_all()
+        self._stop_unpacks(stopped)        # before it returns: closing the app must not leave a 7z running
         self.save_queue()
 
     def pending_count(self):
         return sum(1 for j in self.jobs if j.active or j.state == Job.PAUSED)
+
+    def moving_jobs(self):
+        """Jobs whose unpacked files are being moved into place right now."""
+        return [j for j in list(self.jobs) if getattr(j, "moving", False)]
+
+    def wait_moves(self, timeout=MOVE_WAIT, tick=None, sleep=None):
+        """Wait while a game's files are being moved into place (the one part of
+        an unpack that mustn't be cut short), at most timeout seconds; tick(jobs,
+        waited) on each poll. Returns True when none is moving any more."""
+        clock, sleep = time.monotonic, sleep or time.sleep
+        t0 = clock()
+        while True:
+            busy = self.moving_jobs()
+            waited = clock() - t0
+            if not busy or waited >= timeout:
+                if busy:
+                    _core.log("MOVE %s still going after %d s" % (busy[0].name, waited))
+                return not busy
+            if tick:
+                tick(busy, waited)
+            sleep(0.1)
 
     def job_for(self, rom_id):
         for j in reversed(self.jobs):
@@ -951,6 +1135,17 @@ class Downloader:
         RomM file record. Updates j progress; honours self.rate_limit."""
         part = dest + ".part"
         have = os.path.getsize(part) if os.path.exists(part) else 0
+        page_ok = dest.lower().endswith((".htm", ".html"))   # the one game file that may be a web page
+        if have and not page_ok:
+            try:
+                with open(part, "rb") as f:
+                    head = f.read(WEB_PAGE_SNIFF)
+            except OSError:
+                head = b""
+            if looks_like_web_page(head):
+                os.remove(part)            # a sign-in page an older version kept: never resumed onto
+                _core.log("DL %s: dropped a .part that is a web page" % j.name)
+                have = 0
         headers = {"Range": "bytes=%d-" % have} if have else {}
         try:
             r = self.api.s.get(self.api.base + url_path, headers=headers,
@@ -967,6 +1162,9 @@ class Downloader:
         elif r.status_code not in (200, 206):
             _net.discard(r)
             raise _core.RommError("Download failed: HTTP %d" % r.status_code)
+        elif _is_web_page_type(r) and not page_ok:
+            _net.discard(r)                # a sign-in or proxy page: worth trying again, never kept
+            raise NetError(WEB_PAGE)
         else:
             if r.status_code == 200:
                 have = 0
@@ -979,12 +1177,27 @@ class Downloader:
                     _net.discard(r)
                     os.remove(part)                # start over from 0 next time
                     raise NetError("The server resumed at the wrong place; starting over.")
+            chunks, head = r.iter_content(1 << 18), b""
+            if not have and not page_ok:
+                # the start of the file: a page without the text/html type is
+                # caught by its first bytes, before anything is written over the .part
+                try:
+                    for chunk in chunks:
+                        head += chunk
+                        if len(head) >= WEB_PAGE_SNIFF:
+                            break
+                except Exception as e:
+                    r.close()
+                    raise NetError("Download interrupted (%s)." % e.__class__.__name__) from None
+                if looks_like_web_page(head):
+                    r.close()
+                    raise NetError(WEB_PAGE)
             j.done_bytes += have
             t0, b0 = time.time(), j.done_bytes
             lim_t0, lim_b = time.time(), 0
             try:
                 with open(part, "ab" if have else "wb") as f:
-                    for chunk in r.iter_content(1 << 18):
+                    for chunk in itertools.chain([head] if head else [], chunks):
                         if j.cancel.is_set():
                             r.close()
                             raise Cancelled()
@@ -1037,6 +1250,8 @@ class Downloader:
             raise ChecksumError(("Zip contents don't match RomM's" if algo == "zip" else
                                  "Checksum (%s) doesn't match RomM" % algo) + " — got a damaged copy.")
         j.verified = (j.verified is not False) and bool(ok)
+        checked = [p for p in getattr(j, "checked", None) or [] if os.path.normpath(p) != os.path.normpath(dest)]
+        j.checked = checked + [dest] if ok is True else checked       # a reuse of it says "checksum OK" too
         if j.cancel.is_set():
             if not j.pause:
                 os.remove(part)            # cancelled while verifying: don't keep it
@@ -1068,6 +1283,34 @@ class Downloader:
                        if f.endswith(".part") or not f.startswith("."))
         return 0
 
+    @staticmethod
+    def _kept_download(j, dest, rec, hash_it=False):
+        """(reuse, verified) for a whole file already at dest (no .part beside it)
+        of the size RomM gives, so it isn't downloaded again: when this job
+        downloaded it itself (dest in j.made, which survives a restart in the saved
+        queue), or (hash_it) when it passes RomM's checksum. The job's own passed
+        _fetch's check before it took that name (verified when that was RomM's
+        checksum: j.checked); a 7z/rar RomM can't vouch for again (CONTENT_HASHED),
+        and a zip whose full re-test would read it all, are reused as they are. A
+        stopped unpack (Pause all, closing, the background worker handing back, an
+        update) leaves just such an archive. hash_it reads the whole file: never
+        before the space check, which a job waiting for space repeats every
+        SPACE_RECHECK."""
+        try:
+            whole = os.path.isfile(dest) and not os.path.exists(dest + ".part") and \
+                os.path.getsize(dest) == j.total_bytes
+        except OSError:
+            return False, None
+        if not whole:
+            return False, None
+        made = {os.path.normpath(p) for p in j.made if isinstance(p, str)}
+        if j.total_bytes and os.path.normpath(dest) in made and not os.path.islink(dest):
+            checked = {os.path.normpath(p) for p in getattr(j, "checked", None) or [] if isinstance(p, str)}
+            return True, (True if os.path.normpath(dest) in checked else None)
+        if hash_it and file_hash_ok(dest, rec, name=dest)[0] is True:
+            return True, True
+        return False, None
+
     def _process(self, j):
         rom, system = j.rom, j.system
         sysdir = os.path.join(_core.ROMS_ROOT, system)
@@ -1089,16 +1332,23 @@ class Downloader:
                 zip_listing(self.api, rom, system)
             except NetError as e:
                 _core.log("LIST %s: %s" % (j.name, e))      # the estimate stands; read again next time
+        is_folder = files and _library.rom_is_folder(detail, files)
+        rec = files[0] if len(files) == 1 else None
+        dest = _core.rom_dest(detail, system)
+        # the cheap part only (no file read): this check repeats every SPACE_RECHECK while it waits
+        kept, verified = self._kept_download(j, dest, rec) if dest and not is_folder else (False, None)
         # extracted disc games are bigger than the zip; what's already
-        # downloaded (.part) is on disk; and the keep-free reserve stays free
-        need = max(0, space_needed(rom, system) - self._part_bytes(system, detail)) + \
-            (_config.keep_free_bytes(self.cfg) or _core.SPACE_MARGIN)       # keep-free 0: still a small margin
+        # downloaded (.part, or the whole file kept) is on disk; and the keep-free reserve stays free
+        on_disk = self._part_bytes(system, detail) + (j.total_bytes if kept else 0)
+        rest = max(0, space_needed(rom, system) - on_disk)
+        need = rest + (_config.keep_free_bytes(self.cfg) or space_margin(rest))   # keep-free 0: a small margin
         free = self._free_bytes(sysdir) - self.unpacking_bytes
         if free < need:
             raise _core.NoSpace(need - free)
         if j.short_space:
             _core.log("SPACE %s: enough space now" % j.name)
         j.short_space = 0
+        j.message = ""                       # "Waiting for space…", a retry's reason: over now
 
         j.state = Job.DOWNLOADING
         target = _core.rom_dest(detail, system)
@@ -1108,7 +1358,6 @@ class Downloader:
         # holding a single file) is pulled file by file, keeping its layout; the
         # whole-rom /content endpoint would hand back a zip or an extensionless
         # file named after the folder.
-        is_folder = files and _library.rom_is_folder(detail, files)
         if is_folder:
             folder = target
             prefix = (detail.get("full_path") or "").rstrip("/") + "/"
@@ -1127,10 +1376,10 @@ class Downloader:
             return {"kind": "folder", "path": folder, "heavy": False}
         else:
             dest = target
-            rec = files[0] if len(files) == 1 else None
-            if os.path.isfile(dest) and not os.path.exists(dest + ".part") and \
-                    os.path.getsize(dest) == j.total_bytes and file_hash_ok(dest, rec, name=dest)[0] is True:
-                j.done_bytes, j.verified = j.total_bytes, True   # already here, verified (e.g. paused while extracting)
+            if not kept:                     # one RomM's checksum vouches for (reads it all)
+                kept, verified = self._kept_download(j, dest, rec, hash_it=True)
+            if kept:
+                j.done_bytes, j.verified = j.total_bytes, verified   # already here (e.g. paused while unpacking)
             else:
                 self._fetch_new(j, "/api/roms/%d/content/%s" % (
                     rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes, rec)
@@ -1139,25 +1388,87 @@ class Downloader:
                     "extra": max(0, space_needed(rom, system) - j.total_bytes) if heavy else 0}
 
     def _post(self, j, post):
-        """After the download: extract / queue conversion, hand the game to ES, done."""
+        """After the download: extract, hand the game to ES, record it, queue its
+        conversion, done."""
         rom, system = j.rom, j.system
-        if post["kind"] == "folder":
-            results = self._postprocess_folder(j, post["path"])
-        else:
-            if post.get("heavy"):
-                j.state, j.message = Job.EXTRACTING, ""
-                if j.cancel.is_set():
-                    raise Cancelled()
-            results = self._postprocess_file(j, post["path"])
-        if j.replace:
-            self._replace_old(j, results)
-        entry = self._queue_gamelist(rom, system, results)
-        self.library.mark(rom, system, results, group=j.group, meta=entry)
+        j.after_warn, j.pending_chd, j.move_markers = None, None, []
+        j.defer_chd = True                       # its conversion is queued below, once it's recorded
+        recorded = False
+        try:
+            if post["kind"] == "folder":
+                results = self._postprocess_folder(j, post["path"])
+            else:
+                if post.get("heavy"):
+                    j.state, j.message = Job.EXTRACTING, ""
+                    if j.cancel.is_set():
+                        raise Cancelled()
+                try:
+                    results = self._postprocess_file(j, post["path"])
+                except DamagedArchive:
+                    self._drop_damaged(j, post["path"])
+                    raise
+            # every file of the game is whole and in place: from here on no failure
+            # (and no removing the job from Activity) may delete them
+            j.made, j.checked = [], []
+            self.save_queue()
+            # the rest is bookkeeping: the game plays whether or not it all goes
+            # through, so a failure is a warning on a finished job, not a failed one
+            # (which would offer to download it all again)
+            warn = j.after_warn
+            if j.replace:
+                warn = self._replace_old(j, results) or warn
+            entry = None
+            try:
+                entry = self._queue_gamelist(rom, system, results)
+            except OSError as e:
+                _core.log("gamelist %s: %r" % (j.name, e))
+                warn = warn or "its game info couldn't be handed to the game list"
+            try:
+                self.library.mark(rom, system, results, group=j.group, meta=entry)
+                recorded = True
+            except (_core.RommError, OSError) as e:
+                _core.log("mark %s: %s" % (j.name, e))
+                warn = warn or "installed.json can't be updated now"
+        finally:
+            j.moving = j.defer_chd = False
+        if recorded:
+            # its record now says the files are this game's: a later download may
+            # unpack over them without the marker (and one kept while it isn't
+            # recorded lets a download of it again do so)
+            _leftovers.drop_move_markers(j.move_markers)
+        # queued only once the game is recorded: the converter updates that record
+        # when it's done (queued first, a quick conversion could finish before it)
+        if j.pending_chd:
+            try:
+                self._maybe_chd(j, *j.pending_chd)
+            except Exception as e:
+                _core.log("convert %s: %r" % (j.name, e))
+                warn = warn or "it couldn't be queued for compression"
         j.chd_queued = bool(j.chd_task)
-        j.made = []                          # the game is in: its files are no longer a cancel's to remove
         j.state = Job.DONE
-        j.message = "Ready to play" + (", checksum OK" if j.verified else "")
-        _core.log("OK %s -> %s%s" % (j.name, results, " [verified]" if j.verified else ""))
+        j.message = "Ready to play" + (", checksum OK" if j.verified else "") + (", but " + warn if warn else "")
+        _core.log("OK %s -> %s%s%s" % (j.name, results, " [verified]" if j.verified else "",
+                                       " WARNING: " + warn if warn else ""))
+
+    def _drop_damaged(self, j, path):
+        """The job's own download of an archive that won't unpack goes (and out
+        of j.made), so Retry downloads it again instead of reusing it on its size
+        (_kept_download). A file that was there before the job is never deleted:
+        not being the job's, it's reused only when RomM's checksum vouches for it."""
+        p = os.path.normpath(path)
+        if p not in {os.path.normpath(x) for x in j.made if isinstance(x, str)}:
+            return
+        sysdir = os.path.join(_core.ROMS_ROOT, j.system)
+        try:
+            if os.path.isfile(p) and not os.path.islink(p) and _core._inside(p, sysdir):
+                os.remove(p)
+        except OSError as e:
+            _core.log("UNPACK %s: damaged archive not removed: %r" % (j.name, e))
+            return                           # still there: it's still the job's to delete on cancel
+        j.made = [x for x in j.made if not (isinstance(x, str) and os.path.normpath(x) == p)]
+        j.checked = [x for x in getattr(j, "checked", None) or [] if os.path.normpath(x) != p]
+        _core.log("UNPACK %s: damaged archive removed, downloaded again on retry" % j.name)
+        self.save_queue()
 
     # -- multi-disc sets -----------------------------------------------
     def _finish_group(self, group, system):
@@ -1180,7 +1491,12 @@ class Downloader:
         lines = [os.path.relpath(p, sysdir) for p in prims]
         if os.path.exists(m3u):
             old = _es.m3u_lines(m3u)
-            if old == lines:
+            # done only when the playlist is right, every disc's record holds it (Compare
+            # tells a disc's own files from the set's by that) and every disc is hidden
+            # under it: Library.mark records a disc fetched again (under a new name too)
+            # as not hidden yet; a record from before that was kept has no say, and was
+            # hidden when its playlist was written
+            if old == lines and all(m3u in r["paths"] and r.get("hidden_disc") is not False for r in recs):
                 return m3u
             ours = any(m3u in r["paths"] for r in recs)     # we wrote it earlier
             if not ours and not all(os.path.normpath(os.path.join(sysdir, ln)) in
@@ -1191,17 +1507,21 @@ class Downloader:
                 return None
         _core.atomic_write_text(m3u, "\n".join(lines) + "\n")
         ids = [str(rid) for rid in group["rom_ids"]]
+        first = recs[0]
+        meta = dict(first.get("meta") or {}, system=system, paths=[m3u],
+                    name=group.get("title") or group["base"])
+        # the hide is queued before the records say so: one that can't be queued
+        # leaves them not hidden, and the next check (repair_groups) queues it again
+        _core.append_gamelist({"system": system, "hide": prims}, meta)
 
         def add_m3u(inst):
             for rid in ids:
                 r = inst.get(rid)
                 if r and m3u not in r["paths"]:
                     r["paths"].append(m3u)
+                if r:
+                    r["hidden_disc"] = True             # its disc's hide is queued above
         lib.update(add_m3u)
-        first = recs[0]
-        meta = dict(first.get("meta") or {}, system=system, paths=[m3u],
-                    name=group.get("title") or group["base"])
-        _core.append_gamelist({"system": system, "hide": prims}, meta)
         _core.log("group %s: wrote %s (%d discs)" % (group["base"], m3u, len(prims)))
         return m3u
 
@@ -1223,26 +1543,102 @@ class Downloader:
     def _replace_old(self, j, results):
         """The broken copy (another file name) goes now that RomM's is here:
         saves are copied to the new name, playlists pointed at it, then the
-        old files are deleted (never the new ones)."""
+        old files are deleted (never the new ones, nor a set's playlist or a
+        file another disc of the set holds or the playlist names; a playlist
+        goes alone, never the discs it names). Each old copy on its own:
+        one that can't go (or whose removal installed.json can't record) doesn't
+        stop the rest. Returns a warning for the job's message, else None."""
         sysdir = os.path.join(_core.ROMS_ROOT, j.system)
         new = _library.primary_path(j.system, results, self.es) or results[0]
         new_set = {os.path.normpath(p) for r in results for p in ([r] + _es.game_files(r))}
         # a game folder the download (re)filled: whatever "old" file sits in it is
         # part of the new copy now (game_files doesn't look inside folders)
         new_dirs = [os.path.realpath(r) for r in results if os.path.isdir(r)]
+        keep = new_set | self._others_files(j)
+        warn = None
         for old in j.replace or []:
             if not os.path.exists(old) or os.path.normpath(old) in new_set or not _core._inside(old, sysdir):
                 continue
             if any(os.path.realpath(old).startswith(d + os.sep) for d in new_dirs):
+                continue
+            # a playlist alone, never what it names (the new disc and the set's other discs);
+            # the set's own playlist stays: fix_m3us points it at the new disc
+            playlist = old.lower().endswith(".m3u")
+            files = [os.path.normpath(old)] if playlist else _es.game_files(old)
+            own = [p for p in files if p not in keep]
+            if not own:
+                _core.log("replace %s: part of the set, kept" % old)
                 continue
             try:
                 _library.migrate_saves(j.system, old, new)
                 _library.fix_m3us(sysdir, {os.path.normpath(old): new})
             except Exception as e:
                 _core.log("replace %s: %r" % (old, e))
-            _es.delete_game(j.system, old, self.library)
+            try:
+                if own == files and not playlist:
+                    _es.delete_game(j.system, old, self.library)      # queues ES's removal before the library's
+                else:                                     # a playlist, or a sheet naming another disc's tracks
+                    self._delete_own(j.system, own)
+            except (_core.RommError, OSError) as e:
+                _core.log("replace %s: %s" % (old, e))
+                warn = warn or ("the old copy is still there" if os.path.lexists(old)
+                                else "installed.json can't be updated now")
+                continue
             _core.log("REPLACED %s -> %s" % (old, new))
         j.replace = None
+        return warn
+
+    def _others_files(self, j):
+        """Files replacing a disc of a set must never delete: those another disc's record holds
+        and the discs the set's playlist names (but the old copy). A playlist itself isn't
+        followed (it names this disc too). Normalised paths; empty for a lone game."""
+        out = set()
+        me, group = str((getattr(j, "rom", None) or {}).get("id")), getattr(j, "group", None)
+        if not group:
+            return out
+        for rid, rec in self.library.snapshot().items():
+            if rid != me and isinstance(rec, dict) and rec.get("system") == j.system and \
+                    (rec.get("group") or {}).get("id") == group.get("id"):
+                out.update(os.path.normpath(p) for p in rec.get("paths") or [])
+        if group.get("base"):
+            m3u = os.path.join(_core.ROMS_ROOT, j.system, _core.safe_name(group["base"]) + ".m3u")
+            if os.path.isfile(m3u):
+                out.add(os.path.normpath(m3u))
+                mine = {os.path.normpath(p) for p in j.replace or []}
+                out.update(p for p in (os.path.normpath(q) for q in _es.m3u_paths(m3u)) if p not in mine)
+        return out
+
+    def _delete_own(self, system, files):
+        """delete_game for a list of files as it is (no playlist or sheet followed): only the
+        old copy's own files go when some of what it names is another game's or the new one's."""
+        sysdir = os.path.join(_core.ROMS_ROOT, system)
+        files = [p for p in files if _core._inside(p, sysdir)]
+        gone = []
+        try:
+            for p in files:                  # one that won't go stops the rest; what went is still told
+                if os.path.isdir(p) and not os.path.islink(p):
+                    shutil.rmtree(p)
+                elif os.path.lexists(p):
+                    os.remove(p)
+                gone.append(p)
+        finally:
+            _core.log("DELETE %s: %s%s" % (system, gone, "" if len(gone) == len(files) else
+                                           " (not all: %s left)" % files[len(gone):]))
+            if gone:
+                done = {os.path.normpath(p) for p in gone}
+
+                def drop(inst):
+                    for rid, rec in list(inst.items()):
+                        paths = [os.path.normpath(x) for x in rec.get("paths", [])]
+                        if paths and all(x in done or not os.path.exists(x) for x in paths):
+                            inst.pop(rid, None)
+                try:
+                    _core.append_gamelist({"system": system, "remove": gone})     # queued first, as delete_game does
+                finally:
+                    try:
+                        self.library.update(drop)
+                    finally:
+                        self.library.rescan(system)
 
     # -- post-processing -------------------------------------------------
     def _will_extract(self, j, path):
@@ -1256,6 +1652,24 @@ class Downloader:
             return False
         has_disc = any(os.path.splitext(m)[1].lower() in _core.DISC_EXTS for m in members)
         return bool(members) and not (self._accepts(j.system, ext) and not has_disc)
+
+    def _zip_kept_ok(self, j, path):
+        """A zip the emulator reads as it is (arcade, a cart zip) is never
+        unpacked, which would check its CRCs: when no RomM checksum vouched for
+        it (j.verified), it's read through once, so a damaged copy isn't "Ready to
+        play". DamagedArchive: _post drops the job's copy, Retry downloads it again."""
+        if j.verified:
+            return
+        prev = j.state
+        j.state = Job.VERIFYING
+        try:
+            bad = zip_crc_bad(path, j.cancel)
+        finally:
+            j.state = prev
+        if bad is not None:
+            _core.log("VERIFY %s: %s fails its CRC" % (j.name, bad))
+            raise DamagedArchive("the download is damaged (%s)" % (
+                "%s fails its check" % bad if bad else "it isn't a zip that can be read"))
 
     def _accepts(self, system, ext):
         """The system's emulator opens ext as it is (else a zip is unpacked)."""
@@ -1280,25 +1694,47 @@ class Downloader:
                 out.append(_discs.xiso_to_iso(r))
         return out
 
+    def _convert(self, j, system, playable, roots):
+        """Queue the game's conversion now, or (j.defer_chd: in _post) once it's recorded."""
+        if getattr(j, "defer_chd", False):
+            j.pending_chd = (system, playable, roots)
+        else:
+            self._maybe_chd(j, system, playable, roots)
+
     def _postprocess_file(self, j, path):
+        """The game's files from a downloaded file (unpacked when the system needs
+        it), and its conversion queued (from _post: left in j.pending_chd).
+        Once the files are in place nothing fails the job: what goes wrong after
+        is a warning in j.after_warn."""
         j.chd_task = None
+        j.after_warn = None
         path = self._xbox_names(j.system, [path])[0]
         ext = os.path.splitext(path)[1].lower()
         system = j.system
         if system == "ps3" and ext == ".zip" and _convert.conversion_for(system, path, self.cfg, self._accepts) \
                 and _ps3.ps3_zip_is_disc(path):
-            self._maybe_chd(j, system, [path], [path])   # read in place: no unzipped copy beside it
+            self._convert(j, system, [path], [path])   # read in place: no unzipped copy beside it
             return [path]
         if ext not in _core.ARCHIVE_EXTS or system in _core.ZIP_NATIVE:
             if ext in _core.DISC_EXTS:                   # a bare .iso/.cue/...: convert it like an extracted one
-                self._maybe_chd(j, system, [path], [path])
+                self._convert(j, system, [path], [path])
+            elif ext == ".zip":
+                self._zip_kept_ok(j, path)               # arcade: the zip is the game
             return [path]
-        members = self._list_archive(path)
-        if not members:
-            raise _core.RommError("The archive is empty.")
+        try:
+            members = self._list_archive(path)
+        except (zipfile.BadZipFile, zlib.error, EOFError) as e:
+            raise DamagedArchive("the archive is damaged: %s" % str(e).rstrip(".").lower()) from None
+        if not members:                       # 7z lists nothing in one it can't read either
+            raise DamagedArchive("The archive is empty.")
         has_disc = any(os.path.splitext(m)[1].lower() in _core.DISC_EXTS for m in members)
         if self._accepts(system, ext) and not has_disc:
+            if ext == ".zip":
+                self._zip_kept_ok(j, path)
             return [path]          # cart rom in a zip the core reads directly
+        bad = next((m for m in members if archive_member_outside(m)), None)
+        if bad is not None:
+            raise _core.RommError(outside_message(bad))
         j.state = Job.EXTRACTING
         stem = os.path.splitext(os.path.basename(path))[0]
         top = {m.split("/")[0] for m in members}
@@ -1316,20 +1752,44 @@ class Downloader:
         # where this game's files land must not already be another game's (or a
         # copy put there another way): unpacking would mix into it, and deleting
         # this game later would take that one with it
+        _leftovers.sweep_stages(target)        # a killed unpack's folder isn't "already on the box"
         lands = target if len(top) > 1 else os.path.join(sysdir, next(iter(top)))
-        if os.path.lexists(lands) and not self._may_unpack_into(j, lands):
+        # an earlier attempt at this same archive for this same game that was cut
+        # off while moving its files in (or before it was recorded): what's there
+        # is its own half-made copy, unpacked over again now
+        before = _leftovers.move_markers(sysdir, path, j.rom.get("id"))
+        resumed = os.path.normpath(lands) in before.values()
+        if resumed:
+            _core.log("UNPACK %s: finishing an earlier unpack into %s that was cut off" % (j.name, lands))
+        if os.path.lexists(lands) and not resumed and not self._may_unpack_into(j, lands):
             raise _core.RommError("%s is already on the box under that name; not unpacking over it"
                             % os.path.basename(lands))
+        j.move_markers = list(before)
         os.makedirs(target, exist_ok=True)
-        self._extract(path, target, j)
-        os.remove(path)
-        if len(top) > 1:
-            out = [target]
-        else:
-            out = [os.path.join(sysdir, list(top)[0])]
-        out = self._xbox_names(system, out)
+        self._extract(path, target, j, lands=lands)
+        # the files are in place: whatever goes wrong now leaves a game that plays
+        out = [target] if len(top) > 1 else [os.path.join(sysdir, list(top)[0])]
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            _core.log("UNPACK %s: archive not removed: %r" % (j.name, e))
+            j.after_warn = j.after_warn or "its archive couldn't be deleted"
+        try:
+            out = self._xbox_names(system, out)
+        except OSError as e:
+            _core.log("xbox %s: %r" % (j.name, e))
+            j.after_warn = j.after_warn or "it couldn't be renamed for xemu"
         playable = self._playable_paths(system, out)
-        self._maybe_chd(j, system, playable, out)
+        try:
+            self._convert(j, system, playable, out)
+        except Exception as e:                   # not deferred (Unpack from Games ES can't see)
+            _core.log("convert %s: %r" % (j.name, e))
+            j.after_warn = j.after_warn or "it couldn't be queued for compression"
+        if not getattr(j, "defer_chd", False):   # no _post to record it: the caller does
+            j.moving = False
+            _leftovers.drop_move_markers(j.move_markers)
         return out
 
     def _may_unpack_into(self, j, dest):
@@ -1352,8 +1812,9 @@ class Downloader:
 
     def _postprocess_folder(self, j, folder):
         j.chd_task = None
+        j.after_warn = None
         self._xbox_names(j.system, [folder])
-        self._maybe_chd(j, j.system, self._playable_paths(j.system, [folder]), [folder])
+        self._convert(j, j.system, self._playable_paths(j.system, [folder]), [folder])
         return [folder]
 
     def _playable_paths(self, system, roots):
@@ -1369,12 +1830,16 @@ class Downloader:
         return found
 
     def _list_archive(self, path):
+        """The archive's file members, either slash a folder separator
+        (archive_member_path)."""
         if path.lower().endswith(".zip"):
             with zipfile.ZipFile(path) as z:
-                return [i.filename for i in z.infolist() if not i.is_dir()]
-        out = subprocess.run([self._7z(), "l", "-slt", "-ba", path],
-                             capture_output=True, text=True).stdout
-        return [l[7:] for l in out.splitlines() if l.startswith("Path = ")]
+                names = [archive_member_path(i.filename) for i in z.infolist() if not i.is_dir()]
+        else:
+            out = subprocess.run([self._7z(), "l", "-slt", "-ba", path],
+                                 capture_output=True, text=True).stdout
+            names = [archive_member_path(l[7:]) for l in out.splitlines() if l.startswith("Path = ")]
+        return [n for n in names if not n.endswith("/")]     # a Windows zipper's "Sub\" folder entry
 
     def _7z(self):
         for name in ("7zz", "7z", "7zr"):
@@ -1386,59 +1851,55 @@ class Downloader:
                 return p
         return "7zr"
 
-    def _extract(self, path, target, j):
+    def _extract(self, path, target, j, lands=None):
+        """Unpack the archive into target: into a private folder there first (a
+        pause, cancel or kill until then leaves only that folder, swept later),
+        then each file moved into place, which nothing interrupts. lands: where
+        the game lands, for the move marker (see leftovers.write_move_marker)."""
+        _leftovers.sweep_stages(target)        # what an unpack killed half-way here left
         if path.lower().endswith(".zip"):
-            with zipfile.ZipFile(path) as z:
-                real = os.path.realpath(target)
-                infos = z.infolist()
-                for info in infos:                     # check every member before writing any
-                    dest = os.path.realpath(os.path.join(target, info.filename))
-                    if not dest.startswith(real + os.sep):
-                        raise _core.RommError("Unsafe path in archive: %s" % info.filename)
-                # unpack into a private folder beside the target and move into place only
-                # once all of it is out: a cancel or a full disk halfway leaves no
-                # half-extracted game, and a copy it replaces (repair) stays whole
-                stage = os.path.join(target, ".rb-extract-%d-%d" % (os.getpid(), threading.get_ident()))
-                shutil.rmtree(stage, ignore_errors=True)
-                os.makedirs(stage)
-                try:
-                    got = []
-                    for info in infos:
-                        if j.cancel.is_set():
-                            raise Cancelled()
-                        got.append(z.extract(info, stage))
-                    moves = []
-                    for p in got:                     # check every destination before replacing any
-                        dest = os.path.join(target, os.path.relpath(p, stage))
-                        if os.path.isdir(dest) != os.path.isdir(p) and os.path.lexists(dest):
-                            raise _core.RommError("%s is in the way of the archive's %s"
-                                                  % (os.path.relpath(dest, target), "folder" if os.path.isdir(p) else "file"))
-                        moves.append((p, dest))
-                    for p, dest in moves:
-                        if os.path.isdir(p):
-                            os.makedirs(dest, exist_ok=True)
-                        else:
-                            os.makedirs(os.path.dirname(dest), exist_ok=True)
-                            os.replace(p, dest)
-                finally:
+            try:
+                with zipfile.ZipFile(path) as z:
+                    real = os.path.realpath(target)
+                    infos = z.infolist()
+                    for info in infos:                     # check every member before writing any
+                        dest = os.path.realpath(os.path.join(target, archive_member_path(info.filename)))
+                        if archive_member_outside(info.filename) or not dest.startswith(real + os.sep):
+                            raise _core.RommError("Unsafe path in archive: %s" % info.filename)
+                    # unpack into a private folder beside the target and move into place only
+                    # once all of it is out: a cancel or a full disk halfway leaves no
+                    # half-extracted game, and a copy it replaces (repair) stays whole
+                    stage = _leftovers.unpack_stage(target)
                     shutil.rmtree(stage, ignore_errors=True)
+                    os.makedirs(stage)
+                    try:
+                        got = [self._unzip_member(z, info, stage, j) for info in infos]
+                        moves = []
+                        for p in got:                     # check every destination before replacing any
+                            dest = os.path.join(target, os.path.relpath(p, stage))
+                            if os.path.isdir(dest) != os.path.isdir(p) and os.path.lexists(dest):
+                                raise _core.RommError("%s is in the way of the archive's %s"
+                                                      % (os.path.relpath(dest, target), "folder" if os.path.isdir(p) else "file"))
+                            moves.append((p, dest))
+                        self._move_into_place(j, moves, path, lands)
+                    finally:
+                        shutil.rmtree(stage, ignore_errors=True)
+            except (zipfile.BadZipFile, zlib.error, EOFError) as e:     # a bad CRC, a cut-off stream
+                raise DamagedArchive("the archive is damaged: %s" % str(e).rstrip(".").lower()) from None
         else:
             for m in self._list_archive(path):        # same zip-slip rule for 7z/rar
-                if m.startswith(("/", "\\")) or ".." in m.replace("\\", "/").split("/"):
+                if archive_member_outside(m):     # _postprocess_file names it first (outside_message)
                     raise _core.RommError("Unsafe path in archive: %s" % m)
             # 7z restores symlink entries, and would also write a member through a
             # link already on disk. So: unpack into a private folder beside the
             # target, refuse anything that isn't a plain file or folder, and move
             # each file into place only where its real destination stays inside
             # the target (no link along the way, planted earlier or now).
-            stage = os.path.join(target, ".rb-extract-%d-%d" % (os.getpid(), threading.get_ident()))
+            stage = _leftovers.unpack_stage(target)
             shutil.rmtree(stage, ignore_errors=True)
             os.makedirs(stage)
             try:
-                rc = subprocess.run([self._7z(), "x", "-y", "-o" + stage, path],
-                                    capture_output=True).returncode
-                if rc != 0:
-                    raise _core.RommError("7z extract failed (rc %d)" % rc)
+                self._run_7z(path, stage, j)
                 files = []
                 for dp, dns, fns in os.walk(stage):
                     for n in dns + fns:
@@ -1450,18 +1911,102 @@ class Downloader:
                         if stat.S_ISREG(st.st_mode):
                             files.append(os.path.relpath(p, stage))
                 real = os.path.realpath(target)
-                for rel in files:                # check every destination before writing any
-                    dest = os.path.join(target, rel)
+                # a member 7z wrote with a backslash in its name goes where the zip
+                # path says (Sub\Game.iso: Sub/Game.iso), as from a zip unpacked here
+                moves = [(os.path.join(stage, rel), os.path.join(target, archive_member_path(rel).replace("/", os.sep)))
+                         for rel in files]
+                for src, dest in moves:          # check every destination before writing any
+                    rel = os.path.relpath(src, stage)
                     parent = os.path.realpath(os.path.dirname(dest))    # resolves links that exist
                     if (parent != real and not parent.startswith(real + os.sep)) or os.path.islink(dest):
                         raise _core.RommError("Unsafe path in archive (through a link): %s" % rel)
-                for rel in files:
-                    dest = os.path.join(target, rel)
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    os.replace(os.path.join(stage, rel), dest)
+                self._move_into_place(j, moves, path, lands)
             finally:
                 shutil.rmtree(stage, ignore_errors=True)
 
+    @staticmethod
+    def _unzip_member(z, info, stage, j):
+        """One member into the stage, as ZipFile.extract names it, a chunk at a
+        time so a pause or cancel stops it within a second (a disc image is one
+        member: minutes). Returns the path written."""
+        name = archive_member_path(info.filename)        # a Windows zipper's Sub\Game.iso: Sub/Game.iso
+        arc = os.path.splitdrive(name.replace("/", os.sep))[1]
+        arc = os.sep.join(x for x in arc.split(os.sep) if x not in ("", os.curdir, os.pardir))
+        dest = os.path.normpath(os.path.join(stage, arc))
+        if j.cancel.is_set():
+            raise Cancelled()
+        if info.is_dir() or name.endswith("/"):
+            os.makedirs(dest, exist_ok=True)
+            return dest
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with z.open(info) as src, open(dest, "wb") as out:
+            while True:
+                buf = src.read(UNZIP_CHUNK)
+                if not buf:
+                    break
+                out.write(buf)
+                if j.cancel.is_set():
+                    raise Cancelled()
+        return dest
+
+    def _run_7z(self, path, stage, j):
+        """7z x into the stage; a pause or cancel stops it (the stage is swept).
+        The process is kept on the job (j.proc) so whatever stops the job kills it
+        too (_stop_unpacks): this thread may not outlive the process."""
+        with _PROC_LOCK:
+            if j.cancel.is_set():
+                raise Cancelled()
+            # its own process group: a 7z that is a wrapper script (or starts
+            # helpers) goes whole when it's stopped (_kill_group)
+            p = subprocess.Popen([self._7z(), "x", "-y", "-o" + stage, path], start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            j.proc = p
+        try:
+            while True:
+                try:
+                    rc = p.wait(timeout=0.5)
+                    break
+                except subprocess.TimeoutExpired:
+                    if j.cancel.is_set():
+                        raise Cancelled() from None
+        finally:
+            if p.poll() is None:
+                _kill_group(p)
+                p.wait()
+            with _PROC_LOCK:
+                j.proc = None
+        if j.cancel.is_set():
+            raise Cancelled()              # killed by _stop_unpacks: a pause, not a failed unpack
+        if rc != 0:
+            raise DamagedArchive("7z extract failed (rc %d)" % rc)
+
+    def _move_into_place(self, j, moves, archive, lands):
+        """Move the staged files (src, dest) into place. The last point a pause or
+        cancel stops the unpack is before the first one: from there the job is
+        "moving" (whatever closes waits for it, see MOVE_WAIT) until _post has
+        recorded the game, and a marker beside where it lands lets an attempt
+        killed half-way be finished by the next one."""
+        if j.cancel.is_set():
+            raise Cancelled()
+        j.moving = True
+        try:
+            marker = None
+            if lands is not None:
+                keep = _leftovers.path_overlaps(lands,[os.path.normpath(p) for p in getattr(j, "replace", None) or []])
+                marker = _leftovers.write_move_marker(os.path.dirname(os.path.normpath(lands)), lands, archive,
+                                                      j.rom.get("id"), keep=keep)
+                j.move_markers = list(getattr(j, "move_markers", None) or []) + [marker]
+            for src, dest in moves:
+                if os.path.isdir(src):
+                    os.makedirs(dest, exist_ok=True)
+                else:
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    os.replace(src, dest)
+            if marker is not None:
+                _leftovers.mark_moved(marker)     # whole now: never offered as an unfinished unpack
+        finally:
+            if lands is None:
+                j.moving = False                 # nothing records it after: the caller's own unpack
     def _maybe_chd(self, j, system, playable, roots):
         if system == "xbox":
             for p in playable if _config.config_value(self.cfg, "xbox_bootable") else []:

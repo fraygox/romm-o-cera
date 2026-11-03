@@ -896,19 +896,18 @@ def test_chd_loose_discs_playlist_takes_the_planners_name(isolated, monkeypatch,
     assert not os.path.exists(os.path.join(sysdir, "Saga (USA).m3u"))
 
 
-def test_chd_refuses_two_sources_with_one_output_name(isolated, monkeypatch):
+def test_chd_names_discs_whose_sheets_share_a_name_by_their_folder(isolated):
+    """G/CD1/game.cue + G/CD2/game.cue used to clash on one game.chd (refused for ever);
+    they're named by their disc folders. A real clash is in test_chd_plan_fixes."""
     import rb_chd
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     for d in ("G/CD1", "G/CD2"):
         os.makedirs(os.path.join(sysdir, d))
         open(os.path.join(sysdir, d, "game.cue"), "w").write("x")
-    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
-    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
-    monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("must not convert"))
     srcs = [os.path.join(sysdir, "G/CD1/game.cue"), os.path.join(sysdir, "G/CD2/game.cue")]
-    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": srcs,
-                           "roots": [os.path.join(sysdir, "G")]}) is False
-    assert all(os.path.exists(s) for s in srcs)
+    _, _, plan = rb_chd.plan_outputs("psx", "createcd", srcs, [os.path.join(sysdir, "G")])
+    outs = [os.path.basename(o) for _, o in plan]
+    assert outs == ["G (CD1).chd", "G (CD2).chd"]
 
 
 # ------------------------------------------------------------ bug-sweep regressions (2026-10-10)

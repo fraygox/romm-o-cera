@@ -100,12 +100,13 @@ def test_no_key_found_by_wuatool_still_makes_a_wux(box, monkeypatch):
     assert "chd: WUX Lorem.wud instead of WUA: no disc key" in open(rommlib.LOG_PATH).read()
 
 
-def test_a_wux_of_a_cut_short_image_is_replaced_by_a_fresh_download(box):
+def test_a_wux_of_a_cut_short_image_is_replaced_by_a_fresh_download(box, monkeypatch):
     rb_chd, disc = box["rb_chd"], box["disc"]
+    monkeypatch.setattr(rb_chd, "WUD_SIZE", 0x20000)       # this test's .wud is a full-size disc
     box["have"][0] = True
     out = disc[:-4] + ".wux"
     open(out, "wb").write(b"WUX0" + b"\0" * 12 + (12345).to_bytes(8, "little"))   # made from a shorter .wud
     assert rb_chd.convert(box["task"]) is True
     assert int.from_bytes(open(out, "rb").read()[0x10:0x18], "little") == 0x20000
     log = open(rommlib.LOG_PATH).read()
-    assert "replacing %s: made from a different (cut-short?) image" % out in log
+    assert "replacing %s: made from a cut-short image" % os.path.basename(out) in log

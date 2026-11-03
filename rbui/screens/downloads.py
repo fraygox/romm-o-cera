@@ -25,6 +25,13 @@ RESULT_COLOURS = {"ok": "GREEN", "failed": "RED", "stopped": "AMBER", "skipped":
 PAUSED_WHY = {"hold": "paused by you", "game": "paused while you play", "es": "paused while ES is busy"}
 
 
+def sentence(msg):
+    """msg starting with a capital, the rest as it is (str.capitalize would turn
+    "ES" into "es"); never a file name it starts with ("installed.json")."""
+    first = msg.split(" ", 1)[0]
+    return msg if "." in first or "/" in first else msg[:1].upper() + msg[1:]
+
+
 class DownloadsScreen(ListScreen):
     """Activity. Left: the download queue in the order it runs, then finished downloads (newest
     first). A: per-download menu (reorder, pause, cancel, retry, Play now); X: pause or resume
@@ -342,7 +349,7 @@ class DownloadsScreen(ListScreen):
                 st += " · %s left" % time_left(max(0, j.total_bytes - j.done_bytes) / j.speed)
             return st + (" (slowed)" if d.rate_limit else ""), theme.BLUE
         if j.state == J.VERIFYING:
-            return "Checking checksum…", theme.BLUE
+            return "Checking the file…", theme.BLUE
         if j.state == J.EXTRACTING:
             return ("Waiting to unpack" if j.message.startswith("Waiting") else "Unpacking"), theme.AMBER
         if j.state == J.QUEUED:
@@ -357,6 +364,8 @@ class DownloadsScreen(ListScreen):
                 return "Retry %d of %d in %d s" % (j.attempts, len(rommlib.RETRY_DELAYS), wait + 1), theme.AMBER
             return "Queued", theme.DIM
         if j.state == J.DONE:
+            if ", but " in (j.message or ""):            # in and playable; a step after it didn't go through
+                return "Ready to play", theme.AMBER
             return "Ready to play", theme.GREEN
         if j.state == J.FAILED:
             return "Failed", theme.RED
@@ -369,7 +378,7 @@ class DownloadsScreen(ListScreen):
         happened to it; a failure's reason in red."""
         J = rommlib.Job
         if j.state == J.FAILED:
-            return j.message or "Failed", theme.RED
+            return sentence(j.message or "Failed"), theme.RED
         parts = ["roms/" + j.system]
         if j.group:
             parts.append("%s, %d discs" % (j.group.get("title") or j.group.get("base"),
@@ -379,6 +388,8 @@ class DownloadsScreen(ListScreen):
             parts.append(rommlib.hours_label(self.app.cfg["download_hours"]))
         elif j.state == J.QUEUED and j.attempts and j.retry_at > time.time():
             parts.append(j.message.split(" Retrying")[0])
+        if j.state == J.DONE and ", but " in (j.message or ""):
+            return sentence(j.message.split(", but ", 1)[1]), theme.AMBER     # e.g. installed.json can't be updated now
         if j.state == J.DONE:
             if j.verified:
                 parts.append("checksum OK")

@@ -238,9 +238,25 @@ Titles from the eShop (NUS format: `.app`/`.tmd` folders) aren't handled yet.
 - If a game's files change or disappear while it's being converted (a fresh
   download, a delete), the conversion is dropped and the files are left as
   they are.
-- A conversion cut off by a shutdown just after its new file was written is
-  finished on the next try, instead of leaving both copies listed.
+- A conversion the app itself was making that gets cut off (a shutdown, say)
+  is finished or redone on the next try, in every format, instead of leaving
+  both copies listed.
+- A file the app didn't make, or one an older version left behind, with the
+  name the new file would get is never replaced or deleted, unless it's
+  certainly cut short or damaged and a fresh copy of the game came down beside
+  it (then the fresh copy replaces it). Otherwise the game isn't
+  converted, and Compress lists it under can't convert: "a file named X.chd is
+  already here (another copy of it, or another disc or game)". If it's another
+  copy of this game, keep the one that plays and delete the other (the
+  compressed file or the original files). If it's a different disc or game,
+  rename one of them so they get different names.
 - A `.cue` or `.gdi` naming a file outside the game's folder is refused.
+- A game in its own folder becomes one file beside that folder. The folder goes
+  only when nothing but system junk is left in it (`Thumbs.db`, `.DS_Store`,
+  `desktop.ini`); manuals, covers, readmes, saves and anything else you put
+  there stay in the folder.
+- A disc image that is certainly cut short is never converted: Compress lists
+  it under can't convert, and Check games can download it again.
 
 ## Converting a library you already have
 
@@ -249,7 +265,8 @@ disc games on the box that could still be compressed. Compress one game or a
 whole system (a whole system can take hours). CHD works even with its switch
 off; RVZ, squashfs, .zcci, .zar, .wux, .wua and PS3 game folders need theirs on. Games it
 can't convert (an encrypted 3DS dump, a PS3 or Wii U disc without its key, a
-damaged `.cso`) are listed apart with the reason, never queued. Details in
+damaged `.cso`, a file named like the new one already here) are listed apart with the
+reason, never queued. Details in
 [On this box](on-this-box.md#compress-games-already-here).
 
 Over SSH, `rb_chd_plan.py` does the same:

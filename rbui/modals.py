@@ -172,7 +172,7 @@ class ManageMenu(ActionMenu):
             super().__init__(app, title, [
                 app.play_entry(rom, system, title),
                 ("Delete all %d discs" % n, "Frees %s" % human_size(gsize), delete_set if allp else None),
-                ("Download this disc again", "Replaces this disc only", lambda: app.start_download(rom)),
+                ("Download this disc again", "Replaces this disc only", lambda: app.start_download(rom, group=group)),
             ])
             return
 
@@ -325,9 +325,9 @@ class DownloadConfirm(Confirm):
     """Download one game. A disc of a multi-disc set first looks the set up in
     RomM, then offers all discs (one ES entry via an .m3u) or just this one."""
 
-    def __init__(self, app, rom, replace=None):
+    def __init__(self, app, rom, replace=None, group=None):
         """replace: files on the box this download takes the place of (another name: Compare's
-        "Get the newer one"), removed once it's in."""
+        "Get the newer one"), removed once it's in. group: the disc set the game is part of, kept by the download."""
         system = app.system_for(rom)
         st = app.rom_status(rom)
         name = rom.get("name") or rom.get("fs_name_no_ext")
@@ -340,21 +340,28 @@ class DownloadConfirm(Confirm):
             super().__init__(app, name, "Already downloading.", "OK", lambda: None)
             return
         self.app = app
+        self._rom, self._replace, self._group = rom, replace, group
         body = self._body(rom, system, st)
-        super().__init__(app, name, body, "Download", (lambda: app.start_download(rom, replace)) if replace
-                         else (lambda: app.start_download(rom)))
+        super().__init__(app, name, body, "Download", self._start)
         if rommlib.needs_listing(rom, system):       # an estimate until RomM tells what the zip holds
             def listed(_):
                 if app.modal is self and not self.pending:
                     about = self.body[:len(self.body) - len(body)] if self.body.endswith(body) else ""
                     self.body = about + self._body(rom, system, st)
             app.bg(lambda: rommlib.zip_listing(app.api, rom, system), listed, lambda e: None)
-        if rommlib.disc_info(rom.get("fs_name_no_ext") or "") and st[0] != "installed":
+        if rommlib.disc_info(rom.get("fs_name_no_ext") or "") and st[0] != "installed" and replace is None:
+            # (a replacement is this one disc on purpose: no set menu, which would drop replace)
             self.pending = True
             self.body = "Looking for the other discs in RomM…"
             app.bg(lambda: rommlib.find_disc_set(app.api, rom),
                    lambda res: self._found(rom, system, body, *res),
                    lambda e: self._lookup_failed(body, e))
+
+    def _start(self):
+        kw = {} if self._replace is None else {"replace": self._replace}
+        if self._group:
+            kw["group"] = self._group
+        self.app.start_download(self._rom, **kw)
 
     def _body(self, rom, system, st):
         app = self.app

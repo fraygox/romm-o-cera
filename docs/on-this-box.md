@@ -32,13 +32,27 @@ for downloads.
   instead). **A** picks games, or the X Actions menu picks the least played, biggest
   ones until 10, 20, 50 or 100 GB would be freed; check the ticks, then X
   deletes them in one go, after asking. Saves and states are kept.
-- **Clean up leftovers**: partial files and empty folders that interrupted
+- **Clean up leftovers**: partial files and empty folders (empty, or holding
+  only files the system makes by itself, like `Thumbs.db` or `.DS_Store`; a
+  folder with a manual, cover, save or any other file of yours is never one) that interrupted
   downloads or conversions left behind (including a half-made `.ps3` game
-  folder), and **copies of games already here converted**: an archive, image
+  folder, or a game left part-unpacked when the app closed or the power
+  went: **Unfinished unpack**), and **copies of games already here converted**: an archive, image
   or loose tracks next to the same game's `.chd`, `.rvz`, `.iso.squashfs`,
   `.zcci`, `.zar`, `.wux`, `.wua` or `.ps3` folder (say `Game.7z` beside `Game.rvz`). Each
   copy names the converted game it duplicates. A copy is only offered when
-  the converted game looks whole, never while a conversion runs, never for a
+  the converted game is proven whole and the same game: a `.chd` must be a
+  standalone CHD v5 whose header, hunk map and metadata all fit in the file,
+  whose tracks (or DVD image) hold the same number of bytes as the copy's
+  (its `.cue`/`.gdi` tracks, loose tracks, `.iso`, the ISO a `.cso` decodes
+  to, or the tracks in a `.zip`; within a sector per track), and that passes
+  `chdman verify`. An `.rvz`, `.zcci`, `.wux` or `.iso.squashfs` must pass
+  Check games' quick check and hold an image the size of the copy's (a plain
+  `.iso`/`.gcm`/`.wud`/cartridge, or the one in a `.zip`), so a `.7z` or `.rar`
+  beside one isn't offered. A `.zar` or `.wua` must pass its footer check, a
+  `.ps3` folder what RPCS3 boots it by. A file an `.m3u` playlist or another
+  `.cue`/`.gdi`/`.ccd` still points at is never offered (point the playlist at
+  the converted files first), nor a `.sbi` or `.sub`. Never while a conversion runs, never for a
   file a queued conversion will use, and not on arcade systems (where
   `game.zip` and `game.chd` belong together). Partial downloads still queued
   are kept so they can resume. **A** deletes one, **Y** all of them, and the
@@ -61,7 +75,12 @@ biggest first.
 
 Games a converter applies to but can't convert come last, as **can't convert**
 rows per system: an encrypted 3DS dump, an encrypted PS3 disc without its key
-(or with **Decrypt PS3 discs** off), a damaged or LZ4 `.cso`. **A** lists them
+(or with **Decrypt PS3 discs** off), a damaged or LZ4 `.cso`, a file named like the new
+one already here ("a file named X.chd is already here (another copy of it, or
+another disc or game)": keep the one that plays and delete the other, or rename
+one if they're different discs or games), a game still being written (try again in a minute),
+another game here that would also become the same file, two of its discs that
+would become the same file, a missing track. **A** lists them
 with the reason for each. They're left as they are and never queued; fix or
 replace the file and it shows up with the others.
 
@@ -94,7 +113,8 @@ quick check; **X** Actions has **Quick check**, **Full check** and
 **Download all damaged again**. Under the findings,
 [Games ES can't see](#games-es-cant-see) opens with A. Before the first check,
 the list starts with **Check now**. B stops a check that's running; when it
-finishes, Check games shows what it found.
+finishes, Check games shows what it found. If the drive stops answering or is
+swapped mid-check, the check stops and saves nothing.
 
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files
@@ -123,6 +143,12 @@ or `Game.iso` for `Game.ps3`).
 
 If RomM can't be reached, or a list can't be read, the screen says so in red
 instead of showing an empty, all-clear list. Go back and open it again to retry.
+
+Games that weren't fully verified (say `chdman verify` didn't finish) or
+aren't in RomM under the same file name are listed under **Not fully checked**.
+A file the box can't read shows as **Can't be read** and is left out of
+**Download all damaged again**. A quick check keeps the last full check's
+findings for files that haven't changed.
 
 The last check's results stay here until you check again. A game whose file
 has changed since (replaced or deleted) drops off the list.

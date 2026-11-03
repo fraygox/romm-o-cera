@@ -572,7 +572,12 @@ def test_forecast_asks_every_converter_for_its_working_space(monkeypatch):
         assert rommlib.queue_forecast([j], 0, 0, off["chd"], off)["need"] == size, system
 
 
-def test_leftovers_offer_copies_of_converted_games_and_unfinished_folders(isolated):
+def test_leftovers_offer_copies_of_converted_games_and_unfinished_folders(isolated, monkeypatch):
+    """Which files are copies of which converted game, and what's deleted. The
+    converted files here are stand-ins: proving one whole and the same game
+    (_converted_ok) is tested with real layouts in test_leftovers_safety.py."""
+    from romm import leftovers
+    monkeypatch.setattr(leftovers, "_converted_ok", lambda conv, orig, here, dp, checked: True)
     R = rommlib.ROMS_ROOT
 
     def w(rel, size=10):

@@ -10,10 +10,12 @@ from . import (core as _core, config as _config, es as _es, convert as _convert,
 
 # ------------------------------------------------------------ Compare with RomM
 
-MATCHES, COMPRESSED, NEWER, NOT_IN_ROMM = "matches", "compressed", "newer", "not_in_romm"
+MATCHES, COMPRESSED, NEWER, DIFFERS, NOT_IN_ROMM = "matches", "compressed", "newer", "differs", "not_in_romm"
 COMPARE_LABELS = {MATCHES: "Matches RomM", COMPRESSED: "Matches RomM (compressed)",
-                  NEWER: "Newer in RomM", NOT_IN_ROMM: "Not in RomM"}
-_RANK = {MATCHES: 0, COMPRESSED: 1, NEWER: 2}        # a set of discs shows its worst
+                  NEWER: "Newer in RomM", DIFFERS: "Differs from RomM's", NOT_IN_ROMM: "Not in RomM"}
+_RANK = {MATCHES: 0, COMPRESSED: 1, DIFFERS: 2, NEWER: 3}        # a set of discs shows its worst
+# folders named like a file ("Game.ps3"): the only folder "extensions" that aren't part of the name
+_FOLDER_EXTS = {".ps3", ".xbox360", ".wiiu", ".pc", ".psvita", ".daphne", ".scummvm", ".squashfs"}
 # the RomM fields Compare reads (roms_all keeps only these: a big platform's
 # full records are hundreds of MB)
 COMPARE_FIELDS = ("id", "name", "fs_name", "fs_name_no_ext", "fs_extension", "fs_size_bytes", "sha1_hash",
@@ -49,11 +51,12 @@ def rom_format(rom):
 
 def _key(name, is_dir):
     """Grouping key of a top-level entry: a file's stem; a folder's whole name
-    ("Dr. Mario (USA)" has no extension), unless it ends in a short one (X.ps3)."""
+    ("Game v1.2" and "Dr. Mario (USA)" have no extension), unless it ends in a
+    game-folder one (X.ps3)."""
     low = name.lower()
     if is_dir:
         ext = _lower_ext(low)
-        return low[:-len(ext)] if ext and len(ext) <= 5 and ext[1:].isalnum() else low
+        return low[:-len(ext)] if ext in _FOLDER_EXTS else low
     return _core.stem_of(low)
 
 
@@ -81,7 +84,8 @@ def local_games(system):
                 continue
             if not is_dir and low.endswith(skip_ext):
                 continue
-            size = None if is_dir else e.stat().st_size
+            st = e.stat()
+            size = None if is_dir else st.st_size
         except OSError:
             continue
         g = groups.setdefault(_key(name, is_dir), {"paths": [], "size": 0})
@@ -176,12 +180,16 @@ def compare_games(roms, records, local, system, scope="platform"):
     local: local_games(system). A game the app installed is matched by its
     record, any other by file name. Statuses: "matches"; "compressed" (the
     app converted RomM's file: .chd from RomM's .zip/.cue); "newer" (RomM's
-    file changed since it was installed: size or hash, or for a game the app
-    didn't install, the same file name at another size); "not_in_romm" (no
+    file changed since the app installed it: size or hash); "differs" (a game
+    the app didn't install, with RomM's file name at another size: which one is
+    newer can't be told, RomM's dates change on any edit and the file's is the
+    copy's); "not_in_romm" (no
     RomM game for it). scope="collection": games that aren't in it are left
     out instead of "not_in_romm". Returns {"items": [{"status", "label",
-    "name", "path", "paths", "size", "rom" (RomM's record or None),
-    "rom_ids"}], by name, "counts": {status: n}}."""
+    "name", "path", "paths", "size", "rom" (RomM's record, of the
+    worst-off disc for a set, or None), "rom_ids", "parts": [{"rom", "status", "paths"
+    (the files of that RomM game alone: a record's own, never another record's
+    or another disc's, nor a set's playlist)}]}], by name, "counts": {status: n}}."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     by_id, by_name = {}, {}
     for r in roms:
@@ -190,7 +198,9 @@ def compare_games(roms, records, local, system, scope="platform"):
         by_id[str(r["id"])] = r
         for n in (r.get("fs_name"), r.get("fs_name_no_ext")):
             if n:
-                by_name.setdefault(n.lower(), r)
+                cands = by_name.setdefault(n.lower(), [])
+                if r not in cands:
+                    cands.append(r)
     outs = compressed_exts(system)
     owner = {}
     for g in local:
@@ -198,26 +208,46 @@ def compare_games(roms, records, local, system, scope="platform"):
             owner[p] = g
     found = {}                                          # id(game) -> item
 
-    def put(g, status, rom):
-        it = found.setdefault(id(g), {"status": None, "game": g, "rom": None, "rom_ids": []})
+    def put(g, status, rom, paths=None):
+        it = found.setdefault(id(g), {"status": None, "game": g, "parts": []})
         if rom:
-            if rom["id"] not in it["rom_ids"]:
-                it["rom_ids"].append(rom["id"])
-            it["rom"] = it["rom"] or rom
+            part = next((x for x in it["parts"] if x["rom"]["id"] == rom["id"]), None)
+            if part is None:
+                it["parts"].append({"rom": rom, "status": status, "paths": list(g["paths"] if paths is None else paths)})
+            else:
+                if _RANK[status] > _RANK[part["status"]]:
+                    part["status"] = status
+                part["paths"] += [p for p in paths or () if p not in part["paths"]]
         if status == NOT_IN_ROMM:
             it["status"] = it["status"] or NOT_IN_ROMM
         elif it["status"] in (None, NOT_IN_ROMM) or _RANK[status] > _RANK[it["status"]]:
             it["status"] = status
 
     def by_names(g):
+        """RomM's game for a local one by file name. Two platforms mapped to one
+        system can both have the name: the one whose size agrees wins."""
+        cands = []
         for p in g["paths"]:
             b = os.path.basename(p).lower()
             for n in (b, _core.stem_of(b)):
-                if n in by_name:
-                    return by_name[n]
-        return None
+                for r in by_name.get(n, ()):
+                    if r not in cands:
+                        cands.append(r)
+        if len(cands) > 1:
+            def fit(r):
+                same = os.path.basename(g["path"]).lower() == (r.get("fs_name") or "").lower()
+                return (bool(g["size"] and r.get("fs_size_bytes") == g["size"]), same)
+            return max(cands, key=fit)           # max keeps the first of equals
+        return cands[0] if cands else None
 
-    claimed = set()
+    def g_tops(g):
+        return {_top(p, sysdir) for p in g["paths"]}
+
+    claimed, claims = set(), {}
+    for rid, rec in records.items():                    # how many records hold each file
+        if isinstance(rec, dict) and rec.get("system") == system:
+            for p in set(rec.get("paths") or []):
+                claims[p] = claims.get(p, 0) + 1
     for rid, rec in records.items():
         if not isinstance(rec, dict) or rec.get("system") != system:
             continue
@@ -229,6 +259,8 @@ def compare_games(roms, records, local, system, scope="platform"):
         rom = by_id.get(str(rid))
         if rom is None and scope == "platform":
             rom = by_names(games[0])
+            if rom is not None and str(rom["id"]) in records:
+                rom = None                              # that game has a record of its own
         for g in games:
             if rom is None:
                 if scope == "platform":
@@ -236,7 +268,10 @@ def compare_games(roms, records, local, system, scope="platform"):
                 continue
             paths = list(rec.get("paths") or []) + g["paths"]
             status = NEWER if _changed(rom, rec) else COMPRESSED if _compressed(rom, paths, outs) else MATCHES
-            put(g, status, rom)
+            # a disc of a set never owns the set's playlist (deleting it takes every disc)
+            put(g, status, rom, [p for p in rec.get("paths") or []
+                                 if _top(p, sysdir) in g_tops(g) and claims.get(p) == 1
+                                 and not (rec.get("group") and _lower_ext(p) == ".m3u")])
     for g in local:
         if id(g) in claimed:
             continue
@@ -250,20 +285,45 @@ def compare_games(roms, records, local, system, scope="platform"):
         elif len(g["paths"]) == 1 and g["size"] and rom.get("fs_size_bytes") and \
                 os.path.basename(g["path"]).lower() == (rom.get("fs_name") or "").lower() and \
                 g["size"] != rom["fs_size_bytes"]:
-            status = NEWER
+            status = DIFFERS            # which one is newer can't be told: RomM's date changes on any edit, ours is the copy's
         else:
             status = MATCHES
         put(g, status, rom)
     items = []
     counts = dict.fromkeys(COMPARE_LABELS, 0)
     for it in found.values():
-        g = it["game"]
+        g, parts = it["game"], it["parts"]
         counts[it["status"]] += 1
+        if len(parts) > 1:                             # each disc keeps only the files that are its own
+            held = [list(x["paths"]) for x in parts]
+            for i, x in enumerate(parts):
+                others = {p for j, h in enumerate(held) if j != i for p in h}
+                # never the set's playlist: it names (and deleting it takes) every disc
+                x["paths"] = [p for p in held[i] if p not in others and _lower_ext(p) != ".m3u"]
+        worst = max(parts, key=lambda x: _RANK[x["status"]], default=None)      # first of the worst
         items.append({"status": it["status"], "label": COMPARE_LABELS[it["status"]], "name": g["name"],
-                      "path": g["path"], "paths": g["paths"], "size": g["size"], "rom": it["rom"],
-                      "rom_ids": it["rom_ids"]})
+                      "path": g["path"], "paths": g["paths"], "size": g["size"],
+                      "rom": worst["rom"] if worst else None, "rom_ids": [x["rom"]["id"] for x in parts],
+                      "parts": parts})
     items.sort(key=lambda it: it["name"].lower())
     return {"items": items, "counts": counts}
+
+
+def recheck(item, library, system):
+    """One row compared again (blocking: reads the folder): the item
+    compare_games makes now for the same RomM games, or None when they are no
+    longer here as one game. Run after "Get the newer one" finished."""
+    roms = [x["rom"] for x in item.get("parts") or ()]
+    if not roms:
+        return None
+    snap = library.snapshot()
+    sysdir = os.path.join(_core.ROMS_ROOT, system)
+    tops = set()
+    for x in roms:
+        tops |= {_top(p, sysdir) for p in (snap.get(str(x["id"])) or {}).get("paths") or []}
+    local = [g for g in local_games(system) if tops & {_top(p, sysdir) for p in g["paths"]}]
+    got = compare_games(roms, snap, local, system, scope="collection")["items"]
+    return got[0] if len(got) == 1 else None
 
 
 def compare_platform(api, library, system, platform_ids, cancel=None):
@@ -339,7 +399,9 @@ def backlog_fit_listed(api, items, cfg=None, free=None, on_box=None, cancel=None
     if cancel is not None and cancel.is_set():
         return None
     free = _core.free_bytes(_core.ROMS_ROOT) if free is None else free
-    return backlog_fit(items, free, _config.keep_free_bytes(cfg) or _core.SPACE_MARGIN, on_box)
+    reserve = _config.keep_free_bytes(cfg) or _downloader.space_margin(
+        sum(r.get("fs_size_bytes") or 0 for r, _ in items))      # the downloader's own margin when keep-free is 0
+    return backlog_fit(items, free, reserve, on_box)
 
 
 # ------------------------------------------------------------ played here

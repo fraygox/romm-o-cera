@@ -20,15 +20,21 @@ USER_LISTS = {
 
 
 def utc_seconds(stamp):
-    """Epoch seconds of one of RomM's UTC datetimes ("2026-10-01T12:30:00Z",
-    "+00:00", fractions): None when there is none or it isn't one."""
-    m = re.match(r"^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)", stamp or "") if isinstance(stamp, str) else None
+    """Epoch seconds of one of RomM's datetimes ("2026-10-01T12:30:00Z", "+02:00",
+    fractions; one without a zone is UTC, as RomM writes them): None when there
+    is none or it isn't one."""
+    m = re.match(r"^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?\s*(?:Z|([+-])(\d\d)(?::?(\d\d))?)?",
+                 stamp or "") if isinstance(stamp, str) else None
     if not m:
         return None
     try:
-        return calendar.timegm(tuple(int(x) for x in m.groups()) + (0, 0, 0))
+        t = calendar.timegm(tuple(int(x) for x in m.groups()[:6]) + (0, 0, 0))
     except (ValueError, OverflowError):
         return None
+    if m.group(7):
+        off = int(m.group(8)) * 3600 + int(m.group(9) or 0) * 60
+        t -= off if m.group(7) == "+" else -off
+    return t
 
 
 def user_status(rom):

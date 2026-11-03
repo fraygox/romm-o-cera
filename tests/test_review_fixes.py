@@ -245,6 +245,9 @@ def test_a_truncated_installed_json_is_kept_before_the_next_write(isolated):
     full = json.dumps({str(i): {"name": "Game %d" % i, "system": "psx", "paths": []} for i in range(39)})
     open(rommlib.STATE_PATH, "w").write(full[: len(full) // 2])       # cut short
     rommlib.Library().update(lambda inst: inst.update({"99": {"name": "New", "system": "psx", "paths": []}}))
+    now = json.load(open(rommlib.STATE_PATH))           # every whole record before the cut is salvaged
+    orig = json.loads(full)
+    assert "99" in now and len(now) > 10 and all(now[k] == orig[k] for k in now if k != "99")
     kept = [n for n in os.listdir(rommlib.DATA_DIR) if n.startswith("installed.json.bad-")]
     assert len(kept) == 1 and open(os.path.join(rommlib.DATA_DIR, kept[0])).read() == full[: len(full) // 2]
 

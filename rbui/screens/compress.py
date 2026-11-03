@@ -61,20 +61,63 @@ def compress_scan(skipped=None):
     return rb_chd_plan.candidates(skipped=skipped)
 
 
-def cant_convert_rows(skipped):
-    """[{"system", "n", "size", "skipped": [(file, reason)], "cant": True}] in the planner's order:
-    images a converter applies to but that can't be converted (an encrypted dump, a bad .cso…)."""
-    by = {}
-    for system, f, why in skipped:
-        r = by.setdefault(system, {"system": system, "n": 0, "size": 0, "skipped": [], "cant": True,
-                                   "enabled": False})
-        r["n"] += 1
+def game_size(f):
+    """A skipped image's size on disk: a .cue/.gdi with the tracks it names."""
+    files = [f]
+    if f.lower().endswith((".cue", ".gdi")):
+        files += [p for p in rommlib.sheet_sources(f) if p != f]
+    total = 0
+    for p in files:
         try:
-            r["size"] += os.path.getsize(f)
+            total += os.path.getsize(p)
         except OSError:
             pass
+    return total
+
+
+def skipped_sizes(skipped):
+    """{file: game_size} for the planner's skipped list (read off the UI thread)."""
+    return {f: game_size(f) for _, f, _ in skipped}
+
+
+def cant_convert_rows(skipped, sizes=None):
+    """[{"system", "n", "size", "skipped": [(file, reason)], "sizes", "cant": True}] in the planner's
+    order: images a converter applies to but that can't be converted (an encrypted dump, a bad
+    .cso…). sizes: skipped_sizes, from the background scan (else each is read here)."""
+    sizes = sizes if sizes is not None else skipped_sizes(skipped)
+    by = {}
+    for system, f, why in skipped:
+        r = by.setdefault(system, {"system": system, "n": 0, "size": 0, "skipped": [], "sizes": {}, "cant": True,
+                                   "enabled": False})
+        r["n"] += 1
+        r["size"] += sizes.get(f, 0)
+        r["sizes"][f] = sizes.get(f, 0)
         r["skipped"].append((f, why))
     return list(by.values())
+
+
+def cant_convert_advice(system, why):
+    """What to do about one image Compress can't convert, by the planner's reason."""
+    w = why.lower()
+    for start, fix in (
+            ("a track is missing", "Put the missing track back beside its sheet, or download the game again "
+                                   "(Check games finds it)."),
+            ("it's still being written", "Wait until it's copied or unpacked, then open Compress again."),
+            ("can't read it", "Check the drive and the file's permissions, then open Compress again."),
+            ("another game here would also become", "Rename one of the two games (or its folder) so they get "
+                                                    "different names."),
+            ("two of its discs would both become", "Rename the disc files (or their folders) so each disc gets "
+                                                   "a name of its own."),
+            ("can't decrypt it", "Nothing to do: it's offered in the other format. Add the disc's key to get "
+                                 "the decrypted one instead.")):
+        if w.startswith(start):
+            return fix
+    if w.startswith("a file named") or "and its originals are both here" in w:     # (an older planner's)
+        return ("If it's another copy of this game, keep the one that plays and delete the other (the "
+                "compressed file or the original files). If it's a different disc or game, rename one "
+                "of them so they get different names.")
+    fix = {"3ds": "a decrypted dump", "ps3": "the disc's key in bios/ps3keys"}.get(system, "a good copy")
+    return "Replace it with %s and it shows up in Compress." % fix
 
 
 def needs_text(app, c):
@@ -160,15 +203,17 @@ class CompressScreen(ListScreen):
 
         def scan():
             skipped = []
-            return compress_scan(skipped), skipped, conversion_ratios()
+            cands = compress_scan(skipped)
+            return cands, skipped, conversion_ratios(), skipped_sizes(skipped)
         self.app.bg(scan, lambda r: self._loaded(*r), lambda e: (setattr(self, "rows", []), failed(e)))
 
     ratios = {}
 
-    def _loaded(self, cands, skipped=(), ratios=None):
+    def _loaded(self, cands, skipped=(), ratios=None, sizes=None):
         self.cands = cands
         self.ratios = ratios or {}
-        self.rows = compress_by_system(cands) + cant_convert_rows(skipped)    # those it can't: last, never queued
+        # those it can't: last, never queued
+        self.rows = compress_by_system(cands) + cant_convert_rows(skipped, sizes)
         self.clamp()
 
     def listed(self):
@@ -193,7 +238,7 @@ class CompressScreen(ListScreen):
         r = self.rows[self.sel]
         if r.get("cant") and a in ("ok", "x"):
             if a == "ok":
-                self.app.push(CantConvertScreen(self.app, r["system"], r["skipped"]))
+                self.app.push(CantConvertScreen(self.app, r["system"], r["skipped"], r.get("sizes")))
             else:
                 self.app.toast("These can't be converted: {A} shows why", theme.AMBER)
         elif a == "ok":
@@ -279,11 +324,12 @@ class CantConvertScreen(ListScreen):
     with the reason. Nothing to do here: they're left as they are."""
     ROWS, ROW_H = 9, 58
 
-    def __init__(self, app, system, skipped):
+    def __init__(self, app, system, skipped, sizes=None):
         super().__init__(app)
         self.system, self.items = system, list(skipped)
         self.sel = self.scroll = 0
-        self.rows = [(os.path.basename(f), why[:1].upper() + why[1:], self.size(f)) for f, why in self.items]
+        self.sizes = dict(sizes or {})       # from the scan; any other is read when its row shows
+        self.rows = [(os.path.basename(f), why[:1].upper() + why[1:]) for f, why in self.items]
 
     def crumbs(self):
         return self.trail("%s: can't convert" % self.app.system_name(self.system))
@@ -296,29 +342,28 @@ class CantConvertScreen(ListScreen):
         if not self.nav(a):
             super().action(a)
 
-    @staticmethod
-    def size(f):
-        try:
-            return human_size(os.path.getsize(f))
-        except OSError:
-            return ""
+    def size(self, i):
+        f = self.items[i][0]
+        if f not in self.sizes:
+            self.sizes[f] = game_size(f)
+        return human_size(self.sizes[f])
 
     def draw(self, c):
         rows = self.rows
-        lst, pan = split(need_width(self.f, rows))
+        lst, pan = split(need_width(self.f, [(n, w, human_size(self.sizes[f]) if f in self.sizes else "1023.9 MB")
+                                             for (n, w), (f, _) in zip(rows[:200], self.items)]))
         list_head(c, self.f, lst, "%s can't be converted" % plural(len(self.items), "game"))
         for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
-            name, why, size = rows[i]
-            list_row(c, self.f, r, on, name, why, size, sub_color=theme.AMBER, slot="cant")
+            name, why = rows[i]
+            list_row(c, self.f, r, on, name, why, self.size(i), sub_color=theme.AMBER, slot="cant")
         if not rows:
             return
-        name, why, size = rows[self.sel]
-        fix = {"3ds": "a decrypted dump", "ps3": "the disc's key in bios/ps3keys"}.get(self.system, "a good copy")
+        name, why = rows[self.sel]
         p = Panel(c, self.f, pan, key=self.sel, slot="cant-panel")
-        p.title(name, size)
+        p.title(name, self.size(self.sel))
         p.prose(why + ".", label="Why", color=theme.AMBER, lines=4)
-        p.prose("It's left as it is. Replace it with %s and it shows up in Compress." % fix, label="What to do",
-                lines=4)
+        p.prose("It's left as it is. " + cant_convert_advice(self.system, self.items[self.sel][1]),
+                label="What to do", lines=4)
         p.fact("Where", "roms/%s/%s" % (self.system, os.path.relpath(self.items[self.sel][0], os.path.join(
             rommlib.ROMS_ROOT, self.system))))
 

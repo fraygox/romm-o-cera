@@ -28,6 +28,14 @@ PATH_ATTRS = ("DATA_DIR", "ROMS_ROOT", "CONFIG_PATH", "STATE_PATH", "GAMELIST_QU
 
 
 @pytest.fixture(autouse=True)
+def _checks_can_run():
+    """stop_running_checks() (App.on_exit, atexit) stops every later check in the
+    process for good: a test that quits the app mustn't stop the next tests' checks."""
+    yield
+    rommlib._CHECKS_STOPPED.clear()
+
+
+@pytest.fixture(autouse=True)
 def _fast_polls(monkeypatch):
     """Poll intervals that only set how soon a wait notices it is over: the
     download/unpack workers re-check their queue (a retry or space re-check

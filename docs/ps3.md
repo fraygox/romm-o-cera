@@ -106,6 +106,22 @@ Each key is tested on the disc itself, on files whose first bytes are known,
 so a wrong key is never used. The finished folder is checked again before the
 image is deleted. Trying thousands of keys takes well under a second.
 
+### Known limits
+
+A disc that was decrypted only in part is refused when RomM-o-Cera can tell.
+It can't always tell, so such a disc may still be accepted when:
+
+- the part that is still encrypted holds only random-looking data, and no key
+  in your keys folder opens it;
+- that part also holds plain data before the point where the check stops
+  reading; or
+- that part lies beyond what a zip is read to at check time (the first 256 MB,
+  then up to 1 GB more).
+
+With **Decrypt PS3 discs** off, only the keys with the most alike names are
+tried for this; with it on, every key is tried, for at most about 2 seconds
+per disc. Check games reads the converted folder, so it can't see this either.
+
 ## Space
 
 A zipped disc needs the zip plus the finished folder for a while, about twice

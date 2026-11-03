@@ -27,3 +27,19 @@ def test_cue_backslashes_and_case_resolve_to_the_file(tmp_path):
     assert got[0] == str(tmp_path / "sub" / "Track 01.bin")
     assert got[1] == str(tmp_path / "other.bin")
     assert got[2] == str(tmp_path / "missing.bin")
+
+
+def test_a_bom_or_bare_cr_line_endings_keep_every_track(tmp_path):
+    """Notepad's BOM before the first FILE, and old Mac CR-only lines."""
+    import rommlib
+    for name in ("Track 01.bin", "Track 02.bin"):
+        (tmp_path / name).write_bytes(b"\0" * 2352)
+    bom = tmp_path / "bom.cue"
+    bom.write_bytes('﻿FILE "Track 01.bin" BINARY\r\n  TRACK 01 MODE2/2352\r\n'
+                    'FILE "Track 02.bin" BINARY\r\n  TRACK 02 AUDIO\r\n'.encode("utf-8"))
+    cr = tmp_path / "cr.cue"
+    cr.write_bytes(b'FILE "Track 01.bin" BINARY\r  TRACK 01 MODE2/2352\r'
+                   b'FILE "Track 02.bin" BINARY\r  TRACK 02 AUDIO\r')
+    for sheet in (bom, cr):
+        got = [os.path.basename(p) for p in rommlib.sheet_sources(str(sheet))]
+        assert got == ["Track 01.bin", "Track 02.bin"], (sheet.name, got)

@@ -9,7 +9,7 @@ from rbui.theme import H, W
 from rbui.draw import circle, focus_box, hline, measure, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.box_data import disk_space, pending_roms, plural, space_bar, space_parts, storage_by_system
-from rbui.screens.installed import _lastplayed_label
+from rbui.screens.installed import _lastplayed_label, delete_outcome
 from rbui.modals import Confirm
 from rbui.widgets.layout import Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width, split
 
@@ -196,22 +196,42 @@ class FreeUpScreen(ListScreen):
         size = sum(g["size"] for g in todo)
 
         def run():
-            freed = 0
-            for g in todo:
-                freed += rommlib.delete_game(g["system"], g["path"], app.library)[1]
-            return freed
+            freed, gone, why = 0, 0, []
+            for g in todo:                       # one that can't go (a busy file, installed.json) doesn't stop the rest
+                try:
+                    freed += rommlib.delete_game(g["system"], g["path"], app.library)[1]
+                    gone += 1
+                except (rommlib.RommError, OSError) as e:     # its files went and only installed.json lags: deleted
+                    freed += getattr(e, "freed", 0) or 0
+                    went, note = delete_outcome(g["name"], e)
+                    gone += went
+                    why.append(note)
+            return freed, gone, why
 
-        def done(freed):
+        def done(res):
+            freed, gone, why = res
             self.busy = False
             self.picks.clear()
-            app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(todo), "game"), human_size(freed)), theme.GREEN)
+            if why:
+                more = " (and %d more)" % (len(why) - 1) if len(why) > 1 else ""
+                app.toast("Deleted %d of %s — %s freed. %s%s" % (gone, plural(len(todo), "game"), human_size(freed),
+                                                                 why[0], more), theme.AMBER)
+            else:
+                app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(todo), "game"), human_size(freed)),
+                          theme.GREEN)
+            app.space_freed()
+            self.load()
+
+        def err(e):                              # anything else: never stuck on "Deleting…"
+            self.busy = False
+            app.toast(str(e), theme.RED)
             app.space_freed()
             self.load()
         app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "game"),
                             "Frees about %s. Their files go (playlist discs and tracks too); saves, states and "
                             "screenshots are kept. EmulationStation drops them from its lists when you leave "
                             "RomM-o-Cera." % human_size(size), "Delete %d" % len(todo),
-                            lambda: (setattr(self, "busy", True), app.bg(run, done)), danger=True)
+                            lambda: (setattr(self, "busy", True), app.bg(run, done, err)), danger=True)
 
     def pick_entries(self, games):
         return [("Delete %d picked" % len(games), "Frees about %s" % human_size(sum(g["size"] for g in games)),
@@ -399,14 +419,20 @@ class LeftoversScreen(ListScreen):
     WHY = {"Partial download": ("A download that stopped before it finished: the connection dropped, or it was "
                                 "cancelled. Downloads still queued or paused aren't listed here.",
                                 "It frees the space. Downloading the game again starts over."),
-           "Empty folder": ("A game folder with nothing left in it.", "Nothing you can play changes."),
+           "Empty folder": ("A game folder with nothing left in it, or only files the system makes by itself "
+                             "(Thumbs.db, .DS_Store).", "Nothing you can play changes."),
            "Copy of a converted game": ("The original of a game that's here converted too. The converted one is "
-                                        "what EmulationStation runs.",
+                                        "what EmulationStation runs. It passed its own check first (a CHD: "
+                                        "chdman verify, and the same size as this disc), and no playlist or "
+                                        "cue sheet still uses this file.",
                                         "It frees the space; the converted game stays and plays as before."),
            "Unfinished conversion": ("A conversion that was stopped before it finished. The original it came from "
                                      "is still here.", "It frees the space; the original stays."),
            "Unfinished CHD": ("A CHD that was stopped before it finished. The original it came from is still here.",
                               "It frees the space; the original stays."),
+           "Unfinished unpack": ("Part of a game, left when its unpack was stopped (the app closed, the power "
+                                 "went). It won't play, and unpacking or downloading that game again starts over.",
+                                 "It frees the space. Nothing you can play changes."),
            "Temporary file": ("A temporary file a download or an unpack left behind.", "It frees the space."),
            "RomM-o-Cera scratch": ("Scratch space an interrupted download or unpack left behind.",
                                    "It frees the space.")}

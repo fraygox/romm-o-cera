@@ -239,11 +239,11 @@ def test_compare_classifies_every_game_on_the_box(isolated):
     status = {it["name"]: it["status"] for it in got["items"]}
     assert status == {"Same (USA).cue": "matches", "Packed (USA).chd": "compressed",
                       "Changed (USA).chd": "newer", "Renamed (USA).chd": "newer", "Loose (USA).cue": "matches",
-                      "LoosePacked (USA).chd": "compressed", "Resized (USA).iso": "newer",
+                      "LoosePacked (USA).chd": "compressed", "Resized (USA).iso": "differs",
                       "Homebrew Thing.cue": "not_in_romm", "Set (USA).m3u": "newer", "Tracks (USA).cue": "matches"}
     sets = next(it for it in got["items"] if it["name"] == "Set (USA).m3u")
     assert sets["rom_ids"] == [8, 9] and sorted(sets["paths"]) == sorted([d1, d2, m3u])
-    assert got["counts"] == {"matches": 3, "compressed": 2, "newer": 4, "not_in_romm": 1}
+    assert got["counts"] == {"matches": 3, "compressed": 2, "newer": 3, "differs": 1, "not_in_romm": 1}
     assert next(it for it in got["items"] if it["name"] == "Same (USA).cue")["rom"]["id"] == 1
     assert next(it for it in got["items"] if it["name"] == "Same (USA).cue")["label"] == "Matches RomM"
 
@@ -272,7 +272,7 @@ def test_compare_is_quick_on_a_10k_platform(isolated):
     t = time.monotonic()
     got = rommlib.compare_games(roms, records, rommlib.local_games("snes"), "snes")
     assert time.monotonic() - t < 3
-    assert got["counts"] == {"matches": 5000, "compressed": 0, "newer": 0, "not_in_romm": 500}
+    assert got["counts"] == {"matches": 5000, "compressed": 0, "newer": 0, "differs": 0, "not_in_romm": 500}
 
 
 def test_compare_platform_and_collection_against_romm(isolated, fast_mock_url):

@@ -400,16 +400,38 @@ def _alive(pid, proc="/proc"):
         return False
 
 
-def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
+# rb_dl stops at once when asked to hand over (an unpack under way rolls back:
+# it's unpacked into a private folder), except while a game's files are being
+# moved into place: its status file says "moving" then, and it gets up to
+# DL_MOVE_WAIT for that (rb_dl.MOVE_WAIT, plus a margin to save its queue).
+DL_MOVE_WAIT = 35
+DL_STATUS_FRESH = 10            # seconds: an older status file is a worker that's gone
+
+
+def dl_moving():
+    """The game the background download worker says it is moving into place
+    (its status file is fresh), else None. An older worker never says so."""
+    try:
+        with open(_core.DL_STATUS) as f:
+            st = json.load(f)
+        if time.time() - float(st.get("updated") or 0) < DL_STATUS_FRESH:
+            return st.get("moving") or None
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc", move_timeout=DL_MOVE_WAIT):
     """Stop this app's background helpers before an update swaps their files.
     rb_dl is asked to hand over (as when the app starts: it saves the queue,
     the partial file stays for a resume); rb_chd and rb_finalize get SIGTERM
     (rb_chd stops its tool and keeps the originals; the task stays queued).
     rb_dl gets SIGTERM too if it hasn't gone after a short grace (past its
-    download loop it no longer looks for the hand-over). Whatever is still
-    running after `timeout` (and is still that helper: pids get reused) is
-    killed with its session (a paused chdman too). Returns the scripts that
-    were running."""
+    download loop it no longer looks for the hand-over), except while its
+    status file says a game's files are being moved into place: then it's left
+    to finish that, up to move_timeout. Whatever is still running after `timeout` (and is still
+    that helper: pids get reused) is killed with its session (a paused chdman
+    too). Returns the scripts that were running."""
     pids = helper_pids(app_dir, proc)
     if "rb_dl.py" in pids.values():
         try:
@@ -424,16 +446,38 @@ def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
                 pass
     start = time.monotonic()
     grace, end, nudged = start + min(5, timeout / 2), start + timeout, False
-    while time.monotonic() < end and any(_alive(p, proc) for p in pids):
-        if not nudged and time.monotonic() >= grace:
+    dl_grace, dl_end = grace, end
+    killed, said = set(), False
+    while any(_alive(p, proc) for p in pids if p not in killed):
+        now = time.monotonic()
+        dl = [p for p, s in pids.items() if s == "rb_dl.py" and _alive(p, proc)]
+        moving = dl and now - start < move_timeout and dl_moving()
+        if moving:
+            if not said:
+                _core.log("UPDATE waiting for the background worker to finish moving %s into place" % moving)
+                said = True
+            # once it's done, the usual grace to save its queue and go by itself
+            dl_grace, dl_end = max(dl_grace, now + 5), max(dl_end, now + 10)
+        kill = {p for p in pids if p not in killed and now >= (dl_end if p in dl else end)}
+        if kill:
+            _kill_helpers({p: pids[p] for p in kill}, app_dir, proc)
+            killed |= kill
+        if not nudged and now >= dl_grace:
             nudged = True
-            for pid, script in pids.items():
-                if script == "rb_dl.py" and _alive(pid, proc):
-                    try:
-                        os.kill(pid, signal.SIGTERM)
-                    except OSError:
-                        pass
+            for pid in dl:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    pass
         time.sleep(0.2)
+    if pids:
+        _core.log("UPDATE stopped %s" % ", ".join(sorted(set(pids.values()))))
+    return sorted(set(pids.values()))
+
+
+def _kill_helpers(pids, app_dir, proc):
+    """SIGKILL each helper still running (and still that helper: pids get
+    reused), with its session when it leads one (its tools go too)."""
     still = helper_pids(app_dir, proc)
     for pid in pids:
         if not _alive(pid, proc) or still.get(pid) != pids[pid]:
@@ -446,9 +490,6 @@ def stop_helpers(timeout=20, app_dir=rommlib.APP_DIR, proc="/proc"):
                 os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
-    if pids:
-        _core.log("UPDATE stopped %s" % ", ".join(sorted(set(pids.values()))))
-    return sorted(set(pids.values()))
 
 
 def relaunch_when_closed(app_dir=rommlib.APP_DIR, python=None):

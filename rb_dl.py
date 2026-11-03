@@ -6,8 +6,9 @@ instance (flock on downloads.lock). Works through download-queue.json with the
 same pipeline as the app (resume via Range, extract, CHD hand-off, gamelist
 hand-off), keeps going while you play, and writes downloads-status.json. When
 the app starts again it touches downloads.stop: this worker pauses its current
-transfer (the .part stays), lets an unpack under way finish or roll back, saves
-the queue and exits, and the app takes over.
+transfer (the .part stays) or unpack (its private folder is swept), lets a game
+whose files are being moved into place finish that, saves the queue and exits,
+and the app takes over.
 When the queue is empty it starts the CHD worker if needed and merges gamelist
 entries once ES is idle.
 """
@@ -21,26 +22,29 @@ import rommlib  # noqa: E402
 
 
 # Handing the queue back to the app: a transfer stops at its next chunk (its
-# .part resumes), so HANDBACK_WAIT only covers a stuck socket. An unpack can't
-# stop inside a member (one disc image can take minutes) and must not be killed
-# half-way: that leaves a half-unpacked folder no later attempt may unpack
-# into, so the game fails for good. It gets UNPACK_WAIT to finish or roll back,
-# and handover() (the app) waits as long as the status file says one is going.
+# .part resumes) and an unpack at its next chunk too (it is unpacked into a
+# private folder that the next attempt sweeps; the archive stays), so
+# HANDBACK_WAIT only covers a stuck socket or disk. The one step that mustn't be
+# cut short is moving an unpacked game's files into place (a rename per file):
+# the status file says "moving" then, and both this worker and the app's
+# handover() wait for it, up to MOVE_WAIT. (A move killed half-way anyway is
+# finished by the next attempt: the downloader leaves a marker for it.)
 HANDBACK_WAIT = 15
-UNPACK_WAIT = 900
+MOVE_WAIT = 30
 STATUS_FRESH = 10          # seconds: an older status file is a worker that's gone
 
 
-def _unpacking(d):
-    return next((j for j in d.jobs if j.state == rommlib.Job.EXTRACTING), None)
+def _moving(d):
+    # next release: d.moving_jobs() (an old rommlib's Job has no "moving": never moving)
+    return next((j for j in d.jobs if getattr(j, "moving", False)), None)
 
 
 def write_status(d):
     j = next((j for j in d.jobs if j.state == rommlib.Job.DOWNLOADING), None)
-    u = _unpacking(d)
+    m = _moving(d)
     st = {"pending": d.pending_count(), "current": j.name if j else None,
           "done_bytes": j.done_bytes if j else 0, "total_bytes": j.total_bytes if j else 0,
-          "unpacking": u.name if u else None, "updated": time.time()}
+          "moving": m.name if m else None, "updated": time.time()}
     rommlib.atomic_write_json(rommlib.DL_STATUS, st, sync=False)     # rewritten every second
 
 
@@ -175,20 +179,20 @@ def download(cfg):
 
 
 def hand_back(d):
-    """Pause everything and wait until the jobs have stopped: a transfer for
-    HANDBACK_WAIT, an unpack under way for UNPACK_WAIT (it finishes, or rolls
-    back at its next member). Keeps the status file fresh meanwhile, so the
-    app's handover() knows to keep waiting. Returns True if all stopped."""
+    """Pause everything and wait until the jobs have stopped: HANDBACK_WAIT,
+    or MOVE_WAIT while a game's files are being moved into place. Keeps the
+    status file fresh meanwhile, so the app's handover() knows to keep waiting
+    for a move. Returns True if all stopped."""
     d.pause_all()
     t0 = shown = time.time()
     said = False
     while d.active_count():
         now = time.time()
-        u = _unpacking(d)
-        if u is not None and not said:
-            rommlib.log("dl-worker: letting %s finish unpacking before handing back" % u.name)
+        m = _moving(d)
+        if m is not None and not said:
+            rommlib.log("dl-worker: letting %s finish moving into place before handing back" % m.name)
             said = True
-        if now - t0 >= (UNPACK_WAIT if u is not None else HANDBACK_WAIT):
+        if now - t0 >= (MOVE_WAIT if m is not None else HANDBACK_WAIT):
             rommlib.log("dl-worker: %d job(s) still going after %d s; handing back anyway"
                         % (d.active_count(), now - t0))
             return False
@@ -211,26 +215,26 @@ def after_downloads(cfg, notes):
         notes.flush()                            # games are listed now: tell the player
 
 
-def _status_unpacking():
-    """The game the running worker says it's unpacking (its status file is
-    fresh), else None."""
+def _status_moving():
+    """The game the running worker says it's moving into place (its status
+    file is fresh), else None. An older worker never says so."""
     try:
         with open(rommlib.DL_STATUS) as f:
             st = json.load(f)
         if time.time() - float(st.get("updated") or 0) < STATUS_FRESH:
-            return st.get("unpacking") or None
+            return st.get("moving") or None
     except (OSError, ValueError, TypeError, AttributeError):
         pass
     return None
 
 
-def handover(timeout=30, unpack_timeout=UNPACK_WAIT + 30, waiting=None):
+def handover(timeout=30, unpack_timeout=None, waiting=None):
     """Called by the app at start: if a worker is running, ask it to stop and
-    wait until it has released the lock. Past timeout it keeps waiting only
-    while the worker reports an unpack under way (up to unpack_timeout): the
-    app must not take the queue while that game is half on disk; waiting(name)
-    is called on each poll then, so the app can say why it hasn't opened.
-    Returns True if one was running."""
+    wait until it has released the lock, up to timeout; a little longer (up
+    to MOVE_WAIT more) while its status says a game's files are being moved
+    into place. Returns True if one was running.
+    unpack_timeout and waiting are what an app of the previous build passes
+    (it waited for whole unpacks): taken, and no longer needed."""
     os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     with rommlib.try_lock(rommlib.DL_LOCK) as fd:
         if fd is not None:
@@ -243,17 +247,15 @@ def handover(timeout=30, unpack_timeout=UNPACK_WAIT + 30, waiting=None):
             if fd is not None:
                 return True
         waited = time.time() - t0
-        if waited >= unpack_timeout:
+        if waited >= timeout + MOVE_WAIT:
             break
         if waited >= timeout:
-            name = _status_unpacking()
+            name = _status_moving()
             if not name:
                 break
             if not said:
-                rommlib.log("handover: waiting for the background worker to finish unpacking %s" % name)
+                rommlib.log("handover: waiting for the background worker to finish moving %s into place" % name)
                 said = True
-            if waiting:
-                waiting(name)
         time.sleep(0.2)
     rommlib.log("handover: the background worker didn't stop in %d s" % (time.time() - t0))
     return True

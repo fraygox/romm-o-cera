@@ -106,6 +106,11 @@ class CoverLoader:
             self.run_one()
 
 
+def plural_games(jobs):
+    """"1 game" / "3 games": what the closing wait names (a count, never a name that could overflow)."""
+    return "1 game" if len(jobs) == 1 else "%d games" % len(jobs)
+
+
 class App:
     # systems whose converter needs a downloaded tool: a finished download there may fetch it
     TOOL_SYSTEMS = frozenset(s for c in rommlib.CONVERTERS if c.tool for s in c.systems)
@@ -463,6 +468,17 @@ class App:
             self.status, self.error, self.romm_version = "Connecting…", None, None
             self.load_platforms()
 
+    def _uninstall_failed(self, then):
+        """A delete that couldn't finish (a busy file, a conversion, installed.json):
+        say why, and when some of it went, the space and the list still follow."""
+        def err(e):
+            self.toast(str(e), theme.AMBER if getattr(e, "paths", None) else theme.RED)
+            if getattr(e, "freed", 0):
+                self.space_freed()
+            if then:
+                then()
+        return err
+
     def uninstall(self, rom, system, then=None):
         def done(res):
             paths, freed = res
@@ -470,7 +486,7 @@ class App:
             self.space_freed()
             if then:
                 then()
-        self.bg(lambda: self.library.uninstall(rom, system), done)
+        self.bg(lambda: self.library.uninstall(rom, system), done, self._uninstall_failed(then))
 
     def uninstall_group(self, group, system, title, then=None):
         """Every disc of a set and its playlist; like uninstall(), conversions
@@ -480,14 +496,15 @@ class App:
             self.space_freed()
             if then:
                 then()
-        self.bg(lambda: self.library.uninstall_group(group, system), done)
+        self.bg(lambda: self.library.uninstall_group(group, system), done, self._uninstall_failed(then))
 
-    def start_download(self, rom, replace=None):
+    def start_download(self, rom, replace=None, group=None):
+        """group: the disc set this game belongs to, kept when one disc is fetched again."""
         system = self.system_for(rom)
         if not system:
             self.toast("No Batocera system for this platform", theme.RED)
             return
-        self.downloader.enqueue(rom, system, replace=replace)
+        self.downloader.enqueue(rom, system, replace=replace, **({'group': group} if group else {}))
         self.toast("Queued: %s" % rom_title(rom) + self.hours_note(), theme.GREEN)
         self.space_check()
 
@@ -577,17 +594,24 @@ class App:
         """items: [(rom, system)] of one disc set. Discs already on the box
         join the set instead of downloading again. Returns discs queued."""
         lib, dl = self.library, self.downloader
-        queued = 0
+        queued, unrecorded = 0, None
         for r, _ in items:
             j = dl.job_for(r["id"])
             if j and j.active:
                 j.group = group
                 continue
-            if lib.is_installed(r, system) and lib.adopt(r, system, group):
+            try:
+                if lib.is_installed(r, system) and lib.adopt(r, system, group):
+                    continue
+            except rommlib.RommError as e:       # installed.json can't be written now: it's here all the same
+                rommlib.log("adopt %s: %s" % (r.get("id"), e))
+                unrecorded = e
                 continue
             dl.enqueue(r, system, group)
             queued += 1
-        if not queued:                       # everything already here: just make the playlist
+        if unrecorded is not None:
+            self.toast(str(unrecorded), theme.AMBER)
+        elif not queued:                     # everything already here: just make the playlist
             self.bg(lambda: dl._finish_group(group, system),
                     lambda m3u: self.toast("Playlist made: %s" % os.path.basename(m3u) if m3u
                                            else "All discs are already on this box", theme.GREEN))
@@ -667,8 +691,9 @@ class App:
                 app.space_check()
             app.bg(lambda: app.expand_sets(chosen), queued)
 
-        if free is not None and need + (keep or rommlib.SPACE_MARGIN) > free:
-            fit, used = rommlib.fit_in_space(items, free, keep or rommlib.SPACE_MARGIN)
+        reserve = keep or rommlib.space_margin(need)        # the downloader's own margin when keep-free is 0
+        if free is not None and need + reserve > free:
+            fit, used = rommlib.fit_in_space(items, free, reserve)
             entries = []
             if fit:
                 entries.append(("Download the %d that fit" % len(fit),
@@ -763,7 +788,10 @@ class App:
         self.bg(self.downloader.repair_groups, lambda n: None, lambda e: None)
         try:
             import rb_dl
-            was_running = rb_dl.handover(waiting=None if self.headless else self._waiting_for_unpack)
+            # no arguments: the same call works with an rb_dl.py of any version. A
+            # worker stops within seconds (an unpack under way rolls back, see
+            # rommlib.MOVE_WAIT); only a game being moved into place is waited for.
+            was_running = rb_dl.handover()
         except Exception as e:
             rommlib.log("handover: %r" % e)
             was_running = False
@@ -776,14 +804,13 @@ class App:
             self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
                                                     " from the background" if was_running else ""), theme.BLUE)
 
-    def _waiting_for_unpack(self, name):
-        """One frame while a background unpack finishes before the app opens."""
-        pygame.event.pump()
+    def _notice(self, title, sub):
+        """One plain frame with two centred lines, for a wait outside the main loop."""
         c = self.canvas
         c.fill(theme.BG)
         cx, cy = c.get_width() // 2, c.get_height() // 2
-        text(c, self.fonts.body, "Finishing an unpack from the background", (cx, cy - S(18)), theme.TEXT, "center")
-        text(c, self.fonts.small, "The app opens when it's done", (cx, cy + S(22)), theme.DIM, "center")
+        text(c, self.fonts.body, title, (cx, cy - S(18)), theme.TEXT, "center")
+        text(c, self.fonts.small, sub, (cx, cy + S(22)), theme.DIM, "center")
         if self.screen is not None:
             sw, sh = self.screen.get_size()
             self.screen.fill(theme.BG)
@@ -1080,8 +1107,13 @@ class App:
             self.toast("Ready: %s" % j.label, theme.GREEN)
 
     def on_exit(self):
+        rommlib.stop_running_checks()             # a Check games tool (chdman, dolphin-tool…) must not outlive the app
         pending = 0 if self.downloader.hold else self.downloader.pending_count()
-        self.downloader.pause_all()          # keeps them in download-queue.json
+        # keeps them in download-queue.json, and kills a running 7z before it returns:
+        # its thread dies with this process, and a 7z left running would go on
+        # writing into a folder the next unpack (rb_dl) sweeps as abandoned
+        self.downloader.pause_all()
+        self._finish_moves()
         if self.headless or getattr(self, "updated", None):
             return                            # updated: it all carries on when the new version starts
         if pending and self.cfg["background_downloads"]:
@@ -1093,6 +1125,20 @@ class App:
             self.spawn_helper("rb_finalize.py")
         if rommlib.conversions_pending():
             self.spawn_helper("rb_chd.py")
+
+    def _finish_moves(self):
+        """Pause all stops an unpack where it is (its private folder is swept
+        later; the archive stays), except a game whose files are being moved into
+        place: that is waited for, up to rommlib.MOVE_WAIT (30 s), with a
+        frame saying why the app hasn't closed yet once it takes a moment."""
+        if self.headless:
+            return                                # tests and the screenshot harness never wait
+
+        def tick(busy, waited):
+            pygame.event.pump()
+            if waited >= 1:
+                self._notice("Putting %s in place" % plural_games(busy), "The app closes when it's done")
+        self.downloader.wait_moves(rommlib.MOVE_WAIT, tick)
 
     # ---- drawing
     def draw(self):

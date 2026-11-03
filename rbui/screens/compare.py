@@ -9,7 +9,7 @@ import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.draw import circle, installed_mark, text
-from rbui.modals import DownloadConfirm
+from rbui.modals import Confirm, DownloadConfirm
 from rbui.screens.base import letter_of, ListScreen
 from rbui.widgets.chips import pill_row
 from rbui.widgets.hero import time_ago
@@ -21,6 +21,7 @@ AREA = pygame.Rect(CONTENT.left, TOP, CONTENT.width, CONTENT.bottom - TOP)
 FILTERS = [("all", "All", None),
            ("matches", "Matches RomM", (rommlib.MATCHES, rommlib.COMPRESSED)),
            ("newer", "Newer in RomM", (rommlib.NEWER,)),
+           ("differs", "Differs", (rommlib.DIFFERS,)),
            ("not_in_romm", "Not in RomM", (rommlib.NOT_IN_ROMM,))]
 
 
@@ -34,7 +35,7 @@ def row_label(it):
 def state_color(status):
     """A compare status's colour (theme tokens, read when drawn)."""
     return {rommlib.MATCHES: theme.GREEN, rommlib.COMPRESSED: theme.GREEN,
-            rommlib.NEWER: theme.BLUE}.get(status, theme.DIM if status else theme.TEXT)
+            rommlib.NEWER: theme.BLUE, rommlib.DIFFERS: theme.AMBER}.get(status, theme.DIM if status else theme.TEXT)
 
 
 def display_name(it):
@@ -52,6 +53,26 @@ def system_of(it):
     return rel.split(os.sep)[0]
 
 
+ACTIONABLE = (rommlib.NEWER, rommlib.DIFFERS)
+
+
+def parts_of(it):
+    """The RomM games an item holds, each with its own status and files (one for a lone game)."""
+    return it.get("parts") or ([{"rom": it["rom"], "status": it["status"], "paths": it["paths"]}] if it.get("rom") else [])
+
+
+def targets(it):
+    """The RomM games of an item that RomM has a different copy of: [{"rom", "status", "paths"}].
+    A set of discs lists only the ones that changed."""
+    return [x for x in parts_of(it) if x["status"] == it["status"]]
+
+
+def replaceable(it):
+    """The targets with files of their own to replace (a file that more than one record holds is
+    nobody's own). Empty: Get the newer one has nothing here to take the place of."""
+    return [x for x in targets(it) if x["paths"]]
+
+
 def say(it, recorded=False):
     """The one plain sentence about an item."""
     st, rom = it["status"], it.get("rom") or {}
@@ -61,9 +82,27 @@ def say(it, recorded=False):
         fmt = rommlib.rom_format(rom)
         return "RomM's %s, compressed here to %s to save space. The same game: nothing to do." % (
             "files" if fmt == "Folder" else fmt, rommlib.path_format(it["path"]))
+    shared = " Its files here are shared with another game, so there's nothing of its own to replace."
     if st == rommlib.NEWER:
+        n, r = len(targets(it)), len(replaceable(it))
+        if n > 1 or (n == 1 and len(parts_of(it)) > 1):
+            head = "RomM has a newer copy of %s of this set's discs." % (("%d" % n) if n > 1 else "one")
+            if not r:
+                return head + (" Their files here are shared with other discs, so there's nothing of their own "
+                               "to replace." if n > 1 else shared.replace("another game", "other discs"))
+            if r < n:
+                return head + (" Only %d have files of their own here: getting them replaces those discs; "
+                               "saves are kept." % r if r > 1 else " Only one has files of its own here: getting "
+                               "it replaces that disc; saves are kept.")
+            return head + (" Getting them replaces those discs here; saves are kept." if n > 1 else
+                           " Getting it replaces that disc here; saves are kept.")
         return ("RomM's copy changed since this one was downloaded." if recorded else
-                "RomM has a different copy under the same name.") + " Getting it replaces the file here; saves are kept."
+                "RomM has a different copy under the same name.") + (
+            " Getting it replaces the file here; saves are kept." if r else shared)
+    if st == rommlib.DIFFERS:
+        return ("RomM has a copy under the same name at another size. It may be the older one, or this "
+                "one may be trimmed or cut.") + (" Getting RomM's replaces the file here; saves are kept."
+                                                 if replaceable(it) else shared)
     return "RomM has no game by this name: it was put here another way. It still plays."
 
 
@@ -85,6 +124,8 @@ class CompareScreen(ListScreen):
         self._view = None                   # (result id, filter) -> rows, cached: 10,000 rows filter once
         self._need = None
         self._added = {}                    # path -> mtime, for the selected rows only
+        self._watch = []                    # rows to compare again once downloaded (see watch_for)
+        self._polls = 0
         self.sel = self.scroll = 0
         self.start()
 
@@ -123,8 +164,10 @@ class CompareScreen(ListScreen):
         return self.result is None
 
     def filters(self):
-        """The pills: a collection has no "Not in RomM" (games outside it aren't listed)."""
-        return [f for f in FILTERS if f[0] != "not_in_romm" or not self.collection]
+        """The pills: a collection has no "Not in RomM" (games outside it aren't listed); "Differs" shows when a game does."""
+        counts = (self.result or {}).get("counts") or {}
+        return [f for f in FILTERS if (f[0] != "not_in_romm" or not self.collection)
+                and (f[0] != "differs" or counts.get(rommlib.DIFFERS) or self.filt == "differs")]
 
     def count(self, statuses):
         counts = (self.result or {}).get("counts") or {}
@@ -165,7 +208,7 @@ class CompareScreen(ListScreen):
         if self.comparing:
             return [("B", "Stop")]
         it = self.current()
-        own = [("A", "Get the newer one")] if it and it["status"] == rommlib.NEWER else []
+        own = [("A", self.verb(it))] if it and it["status"] in ACTIONABLE and replaceable(it) else []
         return self.list_hints(*own, ("X", pads.ACTIONS), ("Y", "Filter"))
 
     def action(self, a):
@@ -182,7 +225,7 @@ class CompareScreen(ListScreen):
             self.open_menu()
         elif a == "ok":
             it = self.current()
-            if it and it["status"] == rommlib.NEWER:
+            if it and it["status"] in ACTIONABLE and replaceable(it):
                 self.get_newer(it)
         else:
             super().action(a)
@@ -196,17 +239,107 @@ class CompareScreen(ListScreen):
     def list_controls(self):
         return [("Show", "", self.cycle_filter, dict((k, lab) for k, lab, _ in FILTERS)[self.filt], "choice")]
 
-    def get_newer(self, it):
-        """RomM's whole record, then the usual download-again dialog; the files here are replaced
-        once the new one is in (a .chd made from RomM's old zip too; the new files are kept)."""
-        app, rom = self.app, it["rom"]
+    @staticmethod
+    def verb(it):
+        return "Get the newer one" if it["status"] == rommlib.NEWER else "Get RomM's copy"
 
-        def got(full):
+    def get_newer(self, it):
+        """RomM's whole record of each game that changed (a set's other discs stay), then the usual
+        download-again dialog; the files of that game here are replaced once the new one is in (a
+        .chd made from RomM's old zip too; the new files are kept)."""
+        app, want = self.app, replaceable(it)
+        if not want:
+            return
+
+        def own(x):       # only the files of that RomM game's own record, never another game's or disc's
+            return list(x["paths"])
+
+        def group(full):  # a disc fetched again stays in its set
+            return app.library.group_for(full["id"])
+
+        def got(fulls):
             if app.stack[-1] is not self or app.modal is not None:
                 return
-            app.modal = DownloadConfirm(app, full, replace=list(it["paths"]))
+            if len(fulls) == 1:
+                modal = DownloadConfirm(app, fulls[0], replace=own(want[0]), group=group(fulls[0]))
+            else:
+                def go():
+                    for full, x in zip(fulls, want):
+                        app.start_download(full, own(x), group(full))
+                modal = Confirm(app, display_name(it), "Download the %d discs RomM has newer copies of? "
+                                "Each replaces its own disc here; saves are kept." % len(fulls), "Download", go)
+            app.modal = modal
+            self._watch.append(self.watch_for(it, want, modal))
         app.toast("Asking RomM for %s…" % display_name(it))
-        app.bg(lambda: app.api.rom(rom["id"]), got, lambda e: app.toast(str(e), theme.RED))
+        app.bg(lambda: [app.api.rom(x["rom"]["id"]) for x in want], got, lambda e: app.toast(str(e), theme.RED))
+
+    WATCH_EVERY = 30                        # frames between looks at the downloads
+    START_WITHIN = 120                      # seconds a download has to start once its dialog is gone
+
+    def watch_for(self, it, want, modal):
+        """A row to compare again once its downloads are in. before: each game's job and that job's
+        state now, to tell a download started for it from the one that was already there."""
+        d = self.app.downloader
+        before = {}
+        for x in want:
+            j = d.job_for(x["rom"]["id"])
+            before[x["rom"]["id"]] = (j, j.state if j else None)
+        return {"item": it, "before": before, "modal": modal, "closed": None, "started": set()}
+
+    @staticmethod
+    def _ours(j, was):
+        """A job is the one this row's download made: active, or finished since the dialog."""
+        if j is None:
+            return False
+        return j.active or (j.state == rommlib.Job.DONE and (j is not was[0] or was[1] != rommlib.Job.DONE))
+
+    def poll_downloads(self):
+        """Compare a row again once the downloads "Get the newer one" started are done (or gone from
+        the list after they started). A watch ends when a download fails or is stopped, or when none
+        was seen to start within START_WITHIN seconds of the dialogs closing (the row is compared
+        again once then). Looks every WATCH_EVERY frames."""
+        if not self._watch:
+            return
+        self._polls += 1
+        if self._polls % self.WATCH_EVERY:
+            return
+        app, d, J, now = self.app, self.app.downloader, rommlib.Job, time.monotonic()
+        for w in list(self._watch):
+            if app.modal is not None:
+                continue                                       # still asking (or another dialog is up)
+            w["closed"] = w["closed"] or now
+            states = {}
+            for rid, was in w["before"].items():
+                j = d.job_for(rid)
+                if self._ours(j, was):
+                    w["started"].add(rid)
+                    states[rid] = j.state
+                elif rid in w["started"]:
+                    states[rid] = None                         # started, then removed from the list
+                else:
+                    states[rid] = "idle"
+                if rid in w["started"] and j is not None and j.state in (J.FAILED, J.CANCELLED, J.PAUSED):
+                    states[rid] = j.state
+            if any(st in (J.FAILED, J.CANCELLED, J.PAUSED) for st in states.values()):
+                self._watch.remove(w)
+            elif len(w["started"]) == len(w["before"]) and all(st in (None, J.DONE) for st in states.values()) or \
+                    (len(w["started"]) < len(w["before"]) and now - w["closed"] > self.START_WITHIN):
+                self._watch.remove(w)           # done, or never seen to start (a finished job may be cleared unseen)
+                it = w["item"]
+                app.bg(lambda it=it: rommlib.recheck(it, app.library, system_of(it)),
+                       lambda fresh, it=it: self.replace_item(it, fresh), lambda e: None)
+
+    def replace_item(self, old, fresh):
+        items = (self.result or {}).get("items") or []
+        if fresh is None or not any(x is old for x in items):
+            return
+        items[:] = [fresh if x is old else x for x in items]
+        counts = self.result["counts"]
+        counts[old["status"]] = counts.get(old["status"], 1) - 1
+        counts[fresh["status"]] = counts.get(fresh["status"], 0) + 1
+        self._added.pop(old["path"], None)
+        self._view = None
+        self.clamp()
 
     # -- drawing
     def added(self, it):
@@ -235,9 +368,11 @@ class CompareScreen(ListScreen):
                                       if it.get("size") is not None else "folder", size) if x)
 
     def queued(self, it):
-        rom = it.get("rom")
-        j = rom and self.app.downloader.job_for(rom["id"])
-        return "downloading" if j and j.active else None
+        for rid in it.get("rom_ids") or ():
+            j = self.app.downloader.job_for(rid)
+            if j and j.active:
+                return "downloading"
+        return None
 
     def draw_pills(self, c):
         fl = self.filters()
@@ -257,6 +392,7 @@ class CompareScreen(ListScreen):
             p.prose("Each game here is checked against RomM's copy: the same file, the same game compressed "
                     "here, a newer copy in RomM, or a game RomM doesn't have. {B} stops.", lines=3)
             return
+        self.poll_downloads()
         if self.draw_load_error(c, TOP):
             return
         rows = self.listed()
@@ -303,9 +439,13 @@ class CompareScreen(ListScreen):
     def draw_panel(self, c, pan, it):
         app, rom = self.app, it.get("rom")
         p = Panel(c, self.f, pan, app, key=it["path"], slot="cmp-panel")
-        if it["status"] == rommlib.NEWER:
-            p.verb("Get the newer one", "go", human_size(rom.get("fs_size_bytes")) if rom else "",
-                   fn=lambda: self.action("ok"))
+        if it["status"] in ACTIONABLE:
+            want = replaceable(it)
+            if want:
+                size = sum(x["rom"].get("fs_size_bytes") or 0 for x in want)
+                p.verb(self.verb(it), "go", human_size(size) if size else "", fn=lambda: self.action("ok"))
+            else:
+                p.verb("Its files are shared", "off", glyph="", foot=True)
         p.art(rom, name=display_name(it))
         p.title(display_name(it), lines=3, small=True)
         p.status(it["label"], state_color(it["status"]))

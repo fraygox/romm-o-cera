@@ -238,7 +238,7 @@ class BacklogScreen(ListScreen):
         pn.figure(human_size(total), "%d game%s not on this box yet" % (len(todo), "" if len(todo) == 1 else "s"))
         share = p["fit_bytes"] / total if total else (1.0 if not nw else 0.0)
         pn.bar([(share, theme.ACCENT), (1 - share, theme.AMBER)] if nw else [(1.0, theme.ACCENT)])
-        keep = rommlib.keep_free_bytes(self.app.cfg) or rommlib.SPACE_MARGIN
+        keep = rommlib.keep_free_bytes(self.app.cfg) or rommlib.space_margin(total)
         legend = [(theme.ACCENT, "%d %s now · %s" % (nf, "fits" if nf == 1 else "fit", human_size(p["fit_bytes"])))
                   ] if nf else []
         if nw:
