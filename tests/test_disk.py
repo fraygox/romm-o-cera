@@ -331,7 +331,8 @@ def test_delete_game_forgets_filename_match(isolated):
     lib = rommlib.Library()
     rom = {"id": 9, "fs_name": "Tempor.zip", "fs_name_no_ext": "Tempor"}
     assert lib.is_installed(rom, "gba")                     # matched by filename, cached
-    rommlib.delete_game("gba", f, lib)                      # not the app's download: never deleted
+    with pytest.raises(rommlib.RommError, match="wasn't downloaded by RomM-o-Cera"):
+        rommlib.delete_game("gba", f, lib)                  # not the app's download: never deleted
     assert os.path.exists(f) and lib.is_installed(rom, "gba")
     lib.mark(rom, "gba", [f])
     rommlib.delete_game("gba", f, lib)

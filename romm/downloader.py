@@ -1448,6 +1448,7 @@ class Downloader:
             else:
                 self._fetch_new(j, "/api/roms/%d/content/%s" % (
                     rom["id"], urllib.parse.quote(detail["fs_name"])), dest, j.total_bytes, rec)
+                self.save_queue()                # it's this job's file now, even if the box dies unpacking it
             heavy = self._will_extract(j, dest)
             return {"kind": "file", "path": dest, "heavy": heavy,
                     "extra": max(0, space_needed(rom, system) - j.total_bytes) if heavy else 0}
@@ -1915,9 +1916,14 @@ class Downloader:
         or inside one of its recorded folders)."""
         p = os.path.normpath(path)
         mine = {os.path.normpath(x) for x in j.made if isinstance(x, str)}
+        if any(p == m or p.startswith(m + os.sep) for m in mine):
+            return True
+        # the app's own download of this game, as it wrote it: a file put at its path since isn't
         rec = self.library.snapshot().get(str((j.rom or {}).get("id"))) or {}
-        mine |= {os.path.normpath(x) for x in rec.get("paths") or []}
-        return any(p == m or p.startswith(m + os.sep) for m in mine)
+        of = _library.owned_files(rec)
+        if of is None:                           # a record from before files were recorded: its paths
+            of = {os.path.normpath(x) for x in rec.get("paths") or []}
+        return any(p == o or p.startswith(o + os.sep) or o.startswith(p + os.sep) for o in of)
 
     def _never_over_theirs(self, j, target):
         """The download's file or folder name is taken by something the app didn't download

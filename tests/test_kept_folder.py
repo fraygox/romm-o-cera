@@ -379,3 +379,31 @@ def test_a_download_whose_unpack_folder_holds_another_game_is_refused_before_dow
     with pytest.raises(rommlib.RommError, match="Move or rename it"):
         d._process(j)
     assert not os.path.exists(os.path.join(_sysdir(), GAME + ".zip.part"))
+
+
+def test_download_again_never_writes_over_a_file_put_where_the_apps_was(isolated):
+    """Round 7: the app's zip deleted and the owner's own put at the same path; Download again
+    (Check games, the game page, Compare) wrote RomM's over it. Its record knows the file it
+    wrote; a new file there is the owner's."""
+    d = _downloader()
+    arc = os.path.join(_sysdir(), GAME + ".zip")
+    _w(arc, b"the app's")
+    d.library.mark(ROM, "psx", [arc])
+    os.remove(arc)
+    _w(arc, b"the owner's own, a new file")
+    j = rommlib.Job(dict(ROM), "psx")
+    assert not d._ours(j, arc)
+    with pytest.raises(rommlib.RommError, match="wasn't downloaded by RomM-o-Cera"):
+        d._never_over_theirs(j, arc)
+
+
+def test_the_apps_own_download_cut_short_is_still_its_own(isolated):
+    """Round 7: truncating the app's .z64 made Delete say it wasn't downloaded by the app. The
+    same file (its inode), however damaged, is still the app's to delete or replace."""
+    p = _w(os.path.join(_sysdir(), GAME + ".chd"), b"x" * 1000)
+    lib = rommlib.Library()
+    lib.mark(ROM, "psx", [p])
+    os.truncate(p, 10)
+    assert lib.downloaded(ROM)
+    lib.uninstall(ROM, "psx")
+    assert not os.path.exists(p)

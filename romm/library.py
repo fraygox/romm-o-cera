@@ -270,9 +270,11 @@ def owned_files(rec):
     out = set()
     for p, sig in files.items():
         try:
-            if file_sig(p) == list(sig):
+            # the same file (its inode), whatever happened to it since: one the app downloaded that
+            # got cut short or damaged is still its own; one put there in its place is a new file
+            if file_sig(p)[1] == list(sig)[1]:
                 out.add(os.path.normpath(p))
-        except (OSError, TypeError):
+        except (OSError, TypeError, IndexError):
             pass
     return out
 
@@ -643,12 +645,24 @@ class Library:
         return out
 
     def downloaded(self, rom):
-        """True when the app downloaded this game and its record still names a file
-        that's there: only such a game is ever deleted or replaced by the app."""
+        """True when the app downloaded this game and its record still names a file that's
+        there and still the one it wrote (owned_files): only such a game is ever deleted or
+        replaced by the app."""
         with self.lock:
             self._reload()
             rec = self.installed.get(str(rom["id"]))
-        return bool(rec) and any(os.path.lexists(p) for p in rec.get("paths") or [])
+        if not rec or not any(os.path.lexists(p) for p in rec.get("paths") or []):
+            return False
+        of = owned_files(rec)
+        return of is None or any(os.path.normpath(p) in of or any(o.startswith(os.path.normpath(p) + os.sep)
+                                                                  for o in of)
+                                 for p in rec.get("paths") or [])
+
+    def owns(self, path, owned=None):
+        """path is the app's (owned()), or inside a folder of the app's, or holds a file of it."""
+        q = os.path.normpath(path)
+        owned = self.owned() if owned is None else owned
+        return any(q == o or q.startswith(o + os.sep) or o.startswith(q + os.sep) for o in owned)
 
     def is_installed(self, rom, system):
         with self.lock:
@@ -1620,6 +1634,15 @@ def fix_m3us(sysdir, old_to_new):
                 else:
                     out.append(ln)
             if changed:
-                _core.atomic_write_text(p, "\n".join(out) + "\n", errors="surrogateescape")
+                try:
+                    mode = os.stat(p).st_mode & 0o7777          # the owner's own playlist keeps its permissions
+                except OSError:
+                    mode = None
+                _core.atomic_write_text(p, "\n".join(out) + "\n", errors="surrogateescape", mode=mode)
+                if mode is not None:
+                    try:
+                        os.chmod(p, mode)                       # (the umask may have trimmed it)
+                    except OSError:
+                        pass
                 touched.append(p)
     return touched

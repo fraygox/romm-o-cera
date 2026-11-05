@@ -124,11 +124,8 @@ class SpaceScreen(ListScreen):
 def freeable_games(library, systems=None):
     """The games ES lists that RomM-o-Cera downloaded (its records), with their sizes: only
     these are offered to delete. One put here another way is never the app's to delete."""
-    ours = {os.path.normpath(p) for r in library.snapshot().values() if isinstance(r, dict)
-            for p in r.get("paths") or []}
-    games = [g for g in rommlib.es_game_list(systems)
-             if any(os.path.normpath(g["path"]) == o or os.path.normpath(g["path"]).startswith(o + os.sep)
-                    for o in ours)]                   # (a recorded folder: ES lists the sheet in it)
+    ours = library.owned()                        # as it wrote them: a file put in one's place isn't
+    games = [g for g in rommlib.es_game_list(systems) if library.owns(g["path"], ours)]
     for g in games:
         g["size"] = sum(rommlib.path_size(p) for p in rommlib.game_files(g["path"]))
     return [g for g in games if g["size"]]
