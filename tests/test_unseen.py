@@ -352,7 +352,8 @@ def test_check_games_tile_and_screen(ui, rb):
     assert any(t[0].startswith("Unpacked Lorem Racer.zip") for t in app.toasts)
 
 
-def test_findings_then_the_door_to_games_es_cant_see(ui, rb):
+def test_findings_then_the_door_to_games_es_cant_see(ui, rb, monkeypatch):
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)       # findings in the app's downloads
     app = ui
     rommlib.save_audit([{"system": "psx", "path": _w("psx/A.chd"), "severity": "damaged", "rom": {"id": 1, "name": "A"},
                          "problem": "Disc image cut short"}], {"checked": 1}, False)

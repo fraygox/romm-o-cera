@@ -311,7 +311,7 @@ def test_delete_game_playlist_tracks_folders_library(isolated):
     other = os.path.join(sysdir, "Other (USA).chd")
     open(other, "w").write("x")
     lib = rommlib.Library()
-    lib.update(lambda inst: inst.update({"5": {"system": "psx", "paths": [m3u]},
+    lib.update(lambda inst: inst.update({"5": {"system": "psx", "paths": [m3u, os.path.join(sysdir, "Game (USA)")]},
                                           "6": {"system": "psx", "paths": [other]}}))
     files, freed = rommlib.delete_game("psx", m3u, lib)
     assert not os.path.exists(m3u) and not os.path.exists(os.path.join(sysdir, "Game (USA)"))
@@ -331,6 +331,9 @@ def test_delete_game_forgets_filename_match(isolated):
     lib = rommlib.Library()
     rom = {"id": 9, "fs_name": "Tempor.zip", "fs_name_no_ext": "Tempor"}
     assert lib.is_installed(rom, "gba")                     # matched by filename, cached
+    rommlib.delete_game("gba", f, lib)                      # not the app's download: never deleted
+    assert os.path.exists(f) and lib.is_installed(rom, "gba")
+    lib.mark(rom, "gba", [f])
     rommlib.delete_game("gba", f, lib)
     assert not lib.is_installed(rom, "gba")
 
@@ -374,6 +377,11 @@ def test_find_and_delete_leftovers(isolated):
     os.makedirs(os.path.join(sysdir, "Set (USA)", "Set (USA) (Disc 2)"))                # emptied by CHD
     open(os.path.join(sysdir, "Set (USA)", "Set (USA) (Disc 1).chd"), "w").write("x")
     pend = [({"fs_name": "Queued (USA).zip"}, "psx")]
+    # the app's own downloads (its saved history): their .part files are its own
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+    json.dump({"jobs": [], "history": [{"rom": {"fs_name": n}, "system": "psx"} for n in ("Half (USA)", "Gone (USA).zip")]},
+              open(rommlib.QUEUE_PATH, "w"))
+    open(os.path.join(sysdir, "Mine (USA).iso.part"), "wb").write(b"x")              # another program's
     found = {os.path.relpath(i["path"], os.path.dirname(rommlib.ROMS_ROOT)): i["kind"]
              for i in rommlib.find_leftovers(pend, chd_busy=False)}
     assert found == {"roms/psx/Empty Game": "Empty folder",
@@ -387,7 +395,8 @@ def test_find_and_delete_leftovers(isolated):
     items = rommlib.find_leftovers(pend, chd_busy=False)
     assert rommlib.delete_leftovers(items) == 1110
     left = sorted(os.listdir(sysdir))
-    assert left == ["Queued (USA).zip.part", "Real (USA).chd", "Set (USA)", "Some Game", "images"]  # Half's went
+    assert left == ["Mine (USA).iso.part", "Queued (USA).zip.part", "Real (USA).chd", "Set (USA)", "Some Game",
+                    "images"]  # Half's went; another program's .part stays
     assert os.path.isdir(os.path.join(sysdir, "Some Game", "data", "empty"))
 
 
@@ -616,6 +625,8 @@ def test_leftovers_offer_copies_of_converted_games_and_unfinished_folders(isolat
     (_converted_ok) is tested with real layouts in test_leftovers_safety.py."""
     from romm import leftovers
     monkeypatch.setattr(leftovers, "_converted_ok", lambda conv, orig, here, dp, checked: True)
+    # the originals here count as the app's downloads (only those are offered)
+    monkeypatch.setattr(leftovers, "recorded_paths", lambda: [os.path.normpath(rommlib.ROMS_ROOT)])
     R = rommlib.ROMS_ROOT
 
     def w(rel, size=10):

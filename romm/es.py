@@ -341,6 +341,13 @@ def delete_game(system, path, library=None):
     files are gone (_went_anyway)."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
     files = [p for p in game_files(path) if _core._inside(p, sysdir)]
+    if library is not None:
+        # only files the app downloaded (its records, or inside a folder it downloaded): a playlist's
+        # disc, a track or a sheet of someone else's stays, whatever lists it
+        ours = {os.path.normpath(q) for r in library.snapshot().values() if isinstance(r, dict)
+                for q in r.get("paths") or []}
+        files = [p for p in files if any(os.path.normpath(p) == o or os.path.normpath(p).startswith(o + os.sep)
+                                         for o in ours)]
     name = os.path.splitext(os.path.basename(path))[0]
     gone, failed, freed = [], [], 0
     remove = library.remove_path if library is not None else _remove_keeping_folders

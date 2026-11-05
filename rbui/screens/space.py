@@ -121,8 +121,20 @@ class SpaceScreen(ListScreen):
             text(c, self.f.small, human_size(r_["total"]), (r.right - 20, r.centery), theme.DIM, "midright")
 
 
+def freeable_games(library, systems=None):
+    """The games ES lists that RomM-o-Cera downloaded (its records), with their sizes: only
+    these are offered to delete. One put here another way is never the app's to delete."""
+    ours = {os.path.normpath(p) for r in library.snapshot().values() if isinstance(r, dict)
+            for p in r.get("paths") or []}
+    games = [g for g in rommlib.es_game_list(systems) if os.path.normpath(g["path"]) in ours]
+    for g in games:
+        g["size"] = sum(rommlib.path_size(p) for p in rommlib.game_files(g["path"]))
+    return [g for g in games if g["size"]]
+
+
 class FreeUpScreen(ListScreen):
-    """Every game EmulationStation lists (ours or copied over), least played
+    """Every game RomM-o-Cera downloaded that EmulationStation lists (never one copied
+    over another way: the app doesn't delete what it didn't download), least played
     and biggest first. Always picking: A picks, X: delete the picked / pick
     enough to free N GB, Y: sort. Saves and states are never touched."""
     ROWS, ROW_H = 9, 56
@@ -140,13 +152,8 @@ class FreeUpScreen(ListScreen):
         self.load()
 
     def load(self):
-        def scan():
-            games = rommlib.es_game_list(self.systems)
-            for g in games:
-                g["size"] = sum(rommlib.path_size(p) for p in rommlib.game_files(g["path"]))
-            return [g for g in games if g["size"]]
         self.load_error = None
-        self.app.bg(scan, self._loaded, self.load_failed("items"))
+        self.app.bg(lambda: freeable_games(self.app.library, self.systems), self._loaded, self.load_failed("items"))
 
     def _loaded(self, items):
         self.items = items
@@ -228,8 +235,8 @@ class FreeUpScreen(ListScreen):
             app.space_freed()
             self.load()
         app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "game"),
-                            "Frees about %s. Their files go (playlist discs and tracks too); saves, states and "
-                            "screenshots are kept. EmulationStation drops them from its lists when you leave "
+                            "Frees about %s. The files RomM-o-Cera downloaded for them go (playlist discs and "
+                            "tracks too); saves, states, screenshots and anything else are kept. EmulationStation drops them from its lists when you leave "
                             "RomM-o-Cera." % human_size(size), "Delete %d" % len(todo),
                             lambda: (setattr(self, "busy", True), app.bg(run, done, err)), danger=True)
 
@@ -275,7 +282,8 @@ class FreeUpScreen(ListScreen):
         head = "%s · %s free" % (plural(len(self.items), "game"), human_size(free))
         if not self.items:
             text(c, self.f.h3, head, (56, 86), theme.TEXT)
-            text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
+            scroll_text(c, self.f.body, "No games RomM-o-Cera downloaded here. Games put here another way "
+                        "are deleted from EmulationStation.", pygame.Rect(56, 130, W - 112, 120), theme.DIM)
             return
         row = lambda g: (g["name"], "%s · %s" % (self.app.system_name(g["system"]), _lastplayed_label(g["lastplayed"])),  # noqa: E731
                          human_size(g["size"]))

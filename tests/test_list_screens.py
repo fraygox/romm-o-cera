@@ -572,6 +572,7 @@ def test_every_list_picks_several_the_same_way(app, rb, name, monkeypatch):
     """X opens the list's menu, whose "Pick several" starts picking; then A
     picks and moves on, X's menu starts with what to do with the picks, B
     stops picking (the picks stay ticked) and a second B goes back."""
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)       # findings in the app's downloads
     app.push(rb.Screen(app))
     scr = _picking(rb, app, name, 12, monkeypatch)
     app.push(scr)
@@ -603,6 +604,7 @@ def test_every_list_picks_several_the_same_way(app, rb, name, monkeypatch):
 
 @pytest.mark.parametrize("name", PICKING)
 def test_a_tap_picks_while_picking(app, rb, name, monkeypatch):
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)       # findings in the app's downloads
     scr = _picking(rb, app, name, 12, monkeypatch)
     app.push(scr)
     scr.picking = True
@@ -655,6 +657,7 @@ def test_free_up_space_is_always_picking(app, rb, monkeypatch):
 def test_check_findings_amber_ones_download_again_together(app, rb, monkeypatch):
     """Picked findings download again together, the amber "differs" ones too;
     a finding RomM hasn't got can't be picked."""
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)       # findings in the app's downloads
     found = [dict(f, rom={"id": k, "name": "G%02d" % k}, severity="damaged" if k == 0 else "differs")
              for k, f in enumerate(_findings(3))]
     found.append(dict(_findings(4)[3], severity="differs"))           # rom None

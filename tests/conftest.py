@@ -207,3 +207,7 @@ def pytest_collection_modifyitems(config, items):
         out += slow[w::n] + rest[:max(0, share - len(slow[w::n]))]
         rest = rest[max(0, share - len(slow[w::n])):]
     items[:] = out + rest
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "theirs: a leftovers test about files the app didn't make")

@@ -202,6 +202,9 @@ def test_uninstall_only_touches_the_game(isolated):
     open(outside, "w").write("keep")
     os.symlink(outside, os.path.join(sysdir, "Evil.chd"))     # must not follow out of roms/
     rom = {"id": 7, "name": "Game", "fs_name": "Game.m3u", "fs_name_no_ext": "Game"}
+    with pytest.raises(rommlib.NotDownloadedHere):            # found by name only: never deleted
+        lib.uninstall(rom, "psx")
+    lib.mark(rom, "psx", lib.paths_for(rom, "psx"))           # the app's own download
     paths, freed = lib.uninstall(rom, "psx")
     left = sorted(os.listdir(sysdir))
     assert left == ["Evil.chd", "Other.chd"] and freed > 0

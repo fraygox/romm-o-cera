@@ -147,8 +147,9 @@ def _folder_rom():
 def test_cancelling_a_folder_game_removes_only_the_files_it_made(isolated, installed):
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     cue = os.path.join(sysdir, "Game", "Game.cue")
-    if installed:                              # a repair over a copy already there: the cue stays
+    if installed:                              # a repair over the app's copy already there: the cue stays
         _w(cue, b"OLD")                        # not RomM's size: downloaded again over it
+        rommlib.Library().mark(_folder_rom(), "psx", [os.path.dirname(cue)])
     holder = {}
 
     def answer(url, h):

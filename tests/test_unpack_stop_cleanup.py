@@ -111,11 +111,15 @@ def test_a_stopped_7z_unpack_is_not_downloaded_again(isolated, monkeypatch, made
     monkeypatch.setattr(d, "_free_bytes", lambda p: 1 << 40)
     monkeypatch.setattr(d, "_will_extract", lambda j, p: True)
     j = rommlib.Job(dict(detail), "psx")
-    if made:
-        j.made = [dest]
+    if not made:                       # not the app's: never reused, written over or deleted
+        with pytest.raises(rommlib.RommError, match="wasn't downloaded by RomM-o-Cera"):
+            d._process(j)
+        assert open(dest, "rb").read() == body and api.asked == []
+        return
+    j.made = [dest]
     post = d._process(j)
     assert post["path"] == dest
-    assert (api.asked == []) == made, api.asked
+    assert api.asked == [], api.asked
 
 
 def test_the_space_check_counts_a_kept_archive(isolated, monkeypatch):
@@ -263,6 +267,7 @@ def test_free_up_space_counts_a_delete_installed_json_cant_record(isolated, monk
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     g = _w(os.path.join(sysdir, "Game.iso"), b"x" * 5000)
     lib = rommlib.Library()
+    lib.mark({"id": 1, "name": "Game", "fs_name": "Game.iso"}, "psx", [g])      # the app's download
 
     def unreadable(self, fn):
         raise rommlib.LibraryUnreadable("installed.json can't be read right now, so nothing was recorded; try again")
@@ -284,6 +289,7 @@ def test_free_up_space_deletes_the_rest_when_one_file_wont_go(isolated, monkeypa
     t1 = _w(os.path.join(sysdir, "Game (Track 1).bin"), b"1" * 100)
     t2 = _w(os.path.join(sysdir, "Game (Track 2).bin"), b"2" * 100)
     cue_size = os.path.getsize(cue)
+    rommlib.Library().mark({"id": 1, "name": "Game", "fs_name": "Game.cue"}, "psx", [cue, t1, t2])
     real = os.remove
 
     def remove(p, *a, **k):
@@ -340,6 +346,7 @@ def test_a_job_waiting_for_space_doesnt_hash_the_file_there_each_time(isolated, 
     dest = _w(os.path.join(rommlib.ROMS_ROOT, "psx", "G.iso"), body)
     good = {"id": 1, "name": "G", "fs_name": "G.iso", "fs_size_bytes": 1000,
             "files": [{"file_name": "G.iso", "file_size_bytes": 1000, "sha1_hash": hashlib.sha1(body).hexdigest()}]}
+    rommlib.Library().mark(good, "psx", [dest])                         # the app's own copy
     api = _Api(good, answer=lambda url, h: _Resp(body, 200))
     d = _downloader(api)
     calls = []

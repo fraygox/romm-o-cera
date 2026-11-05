@@ -194,21 +194,30 @@ class AuditScreen(ListScreen):
             h.append(("Y", "Download all damaged again"))
         return self.list_hints(*h)
 
+    def ours(self, f):
+        """The finding is in a game the app downloaded (its records): only those are downloaded
+        again over; a copy put here another way is never written over or deleted by the app."""
+        p = os.path.normpath(f["path"])
+        recs = self.app.library.snapshot().values()
+        return any(p == os.path.normpath(q) or p.startswith(os.path.normpath(q) + os.sep)
+                   for r in recs if isinstance(r, dict) for q in r.get("paths") or [])
+
     def redownloadable(self):
-        """What "Download all damaged again" takes: not a file the box couldn't read (the
-        drive may be failing or gone: downloading every game again onto it wouldn't help)."""
+        """What "Download all damaged again" takes: the app's own downloads, not a file the box
+        couldn't read (the drive may be failing or gone: downloading every game again onto it
+        wouldn't help)."""
         return [f for f in (self.findings or []) if f["severity"] == "damaged" and f.get("rom")
-                and not f.get("io_error") and f["path"] not in self.queued]
+                and not f.get("io_error") and f["path"] not in self.queued and self.ours(f)]
 
     def jump_label(self, f):
         return f["system"]
 
     def pickable(self, f):
-        return bool(f.get("rom")) and f["path"] not in self.queued
+        return bool(f.get("rom")) and f["path"] not in self.queued and self.ours(f)
 
     def unpickable_why(self, f):
         return "Already queued" if f["path"] in self.queued else \
-            "Not in RomM under this name — can't download it again"
+            "Not in RomM under this name — can't download it again" if not f.get("rom") else NOT_OURS
 
     def list_actions(self):
         n = len({f["rom"]["id"] for f in self.redownloadable()})
@@ -279,6 +288,8 @@ class AuditScreen(ListScreen):
             app.toast("Not in RomM under this name — can't download it again", theme.AMBER)
         elif f["path"] in self.queued:
             app.toast("Already queued")
+        elif not self.ours(f):
+            app.toast(NOT_OURS, theme.AMBER)
         else:
             name = f["rom"].get("name") or os.path.basename(f["path"])
             if self.inside_folder(f):
@@ -374,6 +385,8 @@ WHY = {"damaged": "It's broken or cut short, so it may not start or may stop par
                   "replaces it; saves and states follow.",
        "differs": "It isn't RomM's copy: another dump or a trimmed image. It may well play. Downloading it "
                   "again replaces it with RomM's; saves and states follow."}
+NOT_OURS = ("Not downloaded by RomM-o-Cera, so it never writes over it: delete or move it (from "
+            "EmulationStation or a file manager), then download RomM's copy")
 WHY_IO = ("The box got an error reading this file. The drive or card may be failing, loose or unplugged, "
           "so it isn't in Download all damaged again. Check the drive first; downloading this one again "
           "writes a fresh copy.")
@@ -601,8 +614,10 @@ class CheckScreen(AuditScreen):
         p.prose(it["problem"].replace(" · ", ". ") + ".", label="What's wrong", lines=3)
         if failed:
             p.prose(failed.rstrip(".") + ".", label="Downloading it again failed", lines=3)
-        p.prose(WHY_IO if it.get("io_error") else WHY.get(it["severity"], "") if it.get("rom") else
-                "RomM has no game under this file name, so it can't be downloaded again from here.", lines=4)
+        p.prose(WHY_IO if it.get("io_error") else
+                "RomM has no game under this file name, so it can't be downloaded again from here."
+                if not it.get("rom") else WHY.get(it["severity"], "") if self.ours(it) else
+                NOT_OURS + ".", lines=4)
 
     @staticmethod
     def kind(f):

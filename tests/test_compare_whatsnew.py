@@ -169,6 +169,7 @@ def test_get_the_newer_one_of_a_compressed_game_replaces_the_chd(rb, app, monkey
     open(os.path.join(sysdir, "Gamma.bin"), "w").write("new")
     d = object.__new__(rommlib.Downloader)
     d.es, d.library = {"psx": {".cue", ".chd", ".m3u"}}, rommlib.Library()
+    d.library.mark(dict(gamma["rom"]), "psx", [gamma["path"]])        # the app made that CHD
     d._replace_old(types.SimpleNamespace(system="psx", replace=queued[0]), [cue])
     assert sorted(os.listdir(sysdir)) == ["Gamma.bin", "Gamma.cue"]
 
@@ -177,6 +178,7 @@ def test_download_again_of_a_converted_game_replaces_its_current_files(rb, app, 
     rom = {"id": 9, "name": "Zeta", "fs_name": "Zeta.zip", "fs_name_no_ext": "Zeta", "platform_id": 7}
     chd = os.path.join(rommlib.ROMS_ROOT, "psx", "Zeta.chd")
     monkeypatch.setattr(app.library, "paths_for", lambda r, system: [chd])
+    monkeypatch.setattr(app.library, "downloaded", lambda r: True)           # the app's own download
     monkeypatch.setattr(app.library, "group_for", lambda rid: None)
     monkeypatch.setattr(rommlib, "path_size", lambda p: 10)
     menu = rb.ManageMenu(app, rom)

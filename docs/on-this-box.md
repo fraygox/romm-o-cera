@@ -15,9 +15,12 @@ newest first instead), with the cover and details from RomM beside the list,
 as in a game list. **A** opens the same menu as a game on the box in a game list:
 **Play now** ([Browsing and downloading](browsing-and-downloading.md#play-now)), **Delete**, **Download again** and **More like this** (while RomM's record
 can't be fetched, only Delete). To delete several at once, pick them (X ›
-Pick several, see [Controls](controls.md#picking-several)). Any game marked ✓
-in a list (including ones you copied over before) can also be deleted from
-its game list. Saves and states are always kept. Deleting a game RomM-o-Cera
+Pick several, see [Controls](controls.md#picking-several)). Any game it
+downloaded can also be deleted from its game list. A game put on the box
+another way (copied over by hand, say) is marked ✓ and plays, but
+RomM-o-Cera never deletes, replaces or writes over it: its menu says so, and
+you delete it from EmulationStation or a file manager. Saves and states are
+always kept. Deleting a game RomM-o-Cera
 downloaded also deletes the art, video and manual it had EmulationStation keep
 for it (`images/`, `videos/`, `manuals/`, named after the game), unless another
 game still uses them; the confirm counts them in what it frees. Media you added
@@ -34,17 +37,21 @@ empty part is free space; its striped end is the **Keep free on disk**
 reserve (Settings) that downloads never use, so you can see how much is left
 for downloads.
 
-- **Free up space**: every game EmulationStation lists, including ones copied
-  over another way, least played first (**Y** sorts by size or name
+- **Free up space**: every game RomM-o-Cera downloaded that EmulationStation
+  lists (never one put here another way), least played first (**Y** sorts by size or name
   instead). **A** picks games, or the X Actions menu picks the least played, biggest
   ones until 10, 20, 50 or 100 GB would be freed; check the ticks, then X
-  deletes them in one go, after asking. Saves and states are kept.
-- **Clean up leftovers**: partial files and empty folders (empty, or holding
+  deletes them in one go, after asking: only the files the app downloaded for
+  them (a playlist's discs too, but never one it didn't download). Saves and
+  states are kept.
+- **Clean up leftovers**: only what RomM-o-Cera left: partial files and empty folders (empty, or holding
   only files the system makes by itself, like `Thumbs.db` or `.DS_Store`; a
   folder with a manual, cover, save or any other file of yours is never one) that interrupted
   downloads or conversions left behind (including a half-made `.ps3` game
   folder, or a game left part-unpacked when the app closed or the power
-  went: **Unfinished unpack**), and **copies of games already here converted**: an archive, image
+  went: **Unfinished unpack**; a partial download only when it's one of the app's own downloads, and
+  any partial file only once it's been unchanged for an hour), and **copies of games already here
+  converted** that the app downloaded: an archive, image
   or loose tracks next to the same game's `.chd`, `.rvz`, `.iso.squashfs`,
   `.zcci`, `.zar`, `.wux`, `.wua` or `.ps3` folder (say `Game.7z` beside `Game.rvz`). Each
   copy names the converted game it duplicates. A copy is only offered when
@@ -123,9 +130,12 @@ quick check; **X** Actions has **Quick check**, **Full check** and
 the list starts with **Check now**. B stops a check that's running; when it
 finishes, Check games shows what it found. If the drive stops answering or is
 swapped mid-check, the check stops and saves nothing. **Download again** on a
-finding replaces the file it shows, even when RomM's copy comes under another
-name or format (a zipped cue/bin for a damaged `.chd`); its row says
-**downloaded** once RomM's copy is in, and the next check looks at it.
+finding of a game RomM-o-Cera downloaded replaces the file it shows, even when
+RomM's copy comes under another name or format (a zipped cue/bin for a
+damaged `.chd`); its row says **downloaded** once RomM's copy is in, and the
+next check looks at it. A finding in a copy put here another way is shown,
+but never downloaded again over: delete or move that copy first, then
+download RomM's.
 
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files

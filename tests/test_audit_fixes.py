@@ -112,6 +112,7 @@ def test_a_corrupt_deflate_stream_is_damaged_and_the_check_goes_on(isolated, no_
 
 
 def test_an_io_error_is_its_own_finding_and_not_in_the_bulk_download(isolated, no_es, monkeypatch, rb):
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)       # findings in the app's downloads
     bad = _put("gba", "Sector Cart (USA).gba", b"x" * 64)
     _put("gba", "Zz Cart (USA).gba", b"y" * 10)
     real = os.path.getsize
@@ -292,6 +293,7 @@ def test_the_confirm_names_releases_matched_by_title(isolated, rb, monkeypatch):
 
 
 def test_a_file_inside_a_game_folder_isnt_said_to_be_deleted(isolated, rb, monkeypatch):
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)       # findings in the app's downloads
     app = _app(rb, monkeypatch)
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     scr.app, scr.queued = app, set()

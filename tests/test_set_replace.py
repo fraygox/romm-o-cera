@@ -367,6 +367,7 @@ def test_delete_game_says_what_went_when_installed_json_cant_be_written(isolated
     came out as a bare OSError: "not deleted, nothing freed"."""
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     g = _touch(os.path.join(sysdir, "Game.iso"), 5000)
+    rommlib.Library().mark({"id": 1, "name": "Game", "fs_name": "Game.iso"}, "psx", [g])
 
     def full(self, fn):
         raise OSError(28, "No space left on device")

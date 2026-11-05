@@ -200,6 +200,15 @@ class ManageMenu(ActionMenu):
             ])
             return
 
+        if paths and not lib.downloaded(rom):
+            # found by its name, not downloaded here: the app never deletes or replaces it
+            super().__init__(app, name, [
+                app.play_entry(rom, system, name),
+                ("Delete from this box", "Not downloaded by RomM-o-Cera: delete it from EmulationStation", None),
+                ("Download RomM's copy", "Move or delete the copy here first: the app never writes over it",
+                 None),
+            ])
+            return
         media = lib.made_media(rom, system, paths) if paths else []
         size += sum(rommlib.path_size(p) for p in media)
 
@@ -401,12 +410,6 @@ class DownloadConfirm(Confirm):
         body = app.plan_text(rom, system)
         if st[0] == "installed":
             body = "Already on this box. Download again anyway?  " + body
-            mine = {os.path.normpath(p) for p in (app.library.snapshot().get(str(rom["id"])) or {}).get("paths") or []}
-            theirs = [p for p in self._replace or [] if os.path.normpath(p) not in mine]
-            if theirs:
-                # found by its name, not downloaded here: say what goes, it may be something else
-                body += "  %s wasn't downloaded by RomM-o-Cera: it's deleted once RomM's copy is in." % (
-                    os.path.basename(theirs[0]) + (" and %d more" % (len(theirs) - 1) if len(theirs) > 1 else ""))
         var = app.library.variants(rom, system)
         if var:
             body += "  You already have %s%s." % (var[0], " and %d more" % (len(var) - 1) if len(var) > 1 else "")

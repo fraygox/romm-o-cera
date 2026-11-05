@@ -147,32 +147,13 @@ def named_game(path, system=None):
     return False
 
 
-def _named_files(p, system):
-    """The files of a folder found by its name that are its game: those named like the
-    folder (named_game) and the files their sheets and playlists name inside it."""
-    stem, root = os.path.basename(os.path.normpath(p)).lower(), os.path.normpath(p) + os.sep
-    out = set()
-    for dp, dns, fns in os.walk(p):
-        for n in fns:
-            f = os.path.normpath(os.path.join(dp, n))
-            if n.lower().startswith(stem) and is_game_name(n, system) and not _points_out(f, p):
-                out.add(f)
-                low = n.lower()
-                refs = _es.m3u_paths(f) if low.endswith(".m3u") else \
-                    _discs.sheet_sources(f) if low.endswith(SHEET_EXTS) else []
-                out.update(os.path.normpath(q) for q in refs if os.path.normpath(q).startswith(root))
-    return out
-
-
-def remove_game_path(p, system=None, named_only=False):
+def remove_game_path(p, system=None):
     """Delete one path of a game. A file (or a link) goes; a folder ES lists as one
     game ("Game.ps3", FOLDER_GAME_EXTS) goes whole. A plain folder ("Game/", a disc's
     cue and tracks) loses only its game files (is_game_name): the owner's notes,
     manuals, pictures and saves in it stay, and so does the folder then (an emptied
-    one, and its emptied sub folders, go). named_only (a folder found by its name, not
-    downloaded here): only the files named like it and those its sheets name go; any
-    other game file in it is the owner's and stays. Returns (bytes freed, files kept).
-    A file that won't go doesn't stop the rest; the first error is raised after."""
+    one, and its emptied sub folders, go). Returns (bytes freed, files kept). A file
+    that won't go doesn't stop the rest; the first error is raised after."""
     if os.path.islink(p) or not os.path.isdir(p):
         size = _core.path_size(p) if not os.path.islink(p) else 0
         if os.path.lexists(p):
@@ -183,11 +164,10 @@ def remove_game_path(p, system=None, named_only=False):
         shutil.rmtree(p)
         return size, []
     freed, kept, err = 0, [], None
-    only = _named_files(p, system) if named_only else None
     for dp, dns, fns in os.walk(p, topdown=False):
         for n in fns:
             f = os.path.join(dp, n)
-            if not is_game_name(n, system) or (only is not None and os.path.normpath(f) not in only):
+            if not is_game_name(n, system):
                 kept.append(f)
                 continue
             try:
@@ -238,6 +218,15 @@ class LibraryUnreadable(_core.RommError):
     copied aside): it's never written over (that would lose every record in it).
     From a delete, paths and freed say what went before that was found."""
     paths, freed, failed = (), 0, ()
+
+
+class NotDownloadedHere(_core.RommError):
+    """A game found on the box by its name, not downloaded by the app: never deleted,
+    replaced or overwritten by it (it may be another game, a hack, the owner's own copy)."""
+
+
+NOT_OURS = "wasn't downloaded by RomM-o-Cera, so it doesn't delete it: delete it from EmulationStation " \
+    "or a file manager if you're sure"
 
 
 class GameBusy(_core.RommError):
@@ -585,6 +574,14 @@ class Library:
         self._stems[system] = (sig, recheck, stems)
         return stems
 
+    def downloaded(self, rom):
+        """True when the app downloaded this game and its record still names a file
+        that's there: only such a game is ever deleted or replaced by the app."""
+        with self.lock:
+            self._reload()
+            rec = self.installed.get(str(rom["id"]))
+        return bool(rec) and any(os.path.lexists(p) for p in rec.get("paths") or [])
+
     def is_installed(self, rom, system):
         with self.lock:
             self._reload()
@@ -788,18 +785,27 @@ class Library:
         file that won't go doesn't stop the rest: the record keeps what's left
         and UninstallIncomplete says what that is."""
         sysdir = os.path.join(_core.ROMS_ROOT, system)
-        paths = [p for p in self.paths_for(rom, system) if _core._inside(p, sysdir)]
-        self._refuse_busy(paths)
         with self.lock:
             self._reload()
-            ours = {os.path.normpath(q) for q in (self.installed.get(str(rom["id"])) or {}).get("paths") or []}
+            rec = self.installed.get(str(rom["id"])) or {}
+        # only what the app downloaded (its record): a copy found by its name is the owner's
+        paths = [p for p in rec.get("paths") or [] if os.path.lexists(p) and _core._inside(p, sysdir)]
+        # its playlist takes the discs it names that the app downloaded too (a set's other discs)
+        theirs = {os.path.normpath(q) for r in self.snapshot().values() if isinstance(r, dict)
+                  for q in r.get("paths") or []}
+        for m in [p for p in paths if p.lower().endswith(".m3u") and os.path.isfile(p)]:
+            paths += [q for q in _es.m3u_paths(m) if os.path.normpath(q) in theirs and q not in paths
+                      and os.path.lexists(q) and _core._inside(q, sysdir)]
+        if not paths:
+            if self.paths_for(rom, system):
+                raise NotDownloadedHere("%s %s" % (rom.get("name") or rom.get("fs_name"), NOT_OURS))
+            return [], 0
+        self._refuse_busy(paths)
         gone, failed, freed = [], [], 0
         for p in paths:
             size = _core.path_size(p)
             try:
-                # a folder keeps the owner's own files; one found by its name keeps every
-                # file but those named like it (another game of theirs may be in it)
-                remove_game_path(p, system, named_only=os.path.normpath(p) not in ours)
+                remove_game_path(p, system)        # a folder keeps the owner's own files
             except OSError as e:
                 failed.append((p, e))
                 if os.path.lexists(p):

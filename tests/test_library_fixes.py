@@ -192,6 +192,10 @@ def test_deleting_a_game_found_by_name_keeps_its_saves_media_and_other_discs(iso
     m3u = _file("psx", "Dolor (USA).m3u", b"Other (USA).chd\n")
     paths = lib.paths_for(rom, "psx")
     assert sorted(paths) == sorted([cue, m3u])                  # the playlist goes, its "discs" don't
+    with pytest.raises(rommlib.NotDownloadedHere):              # not downloaded by the app: never deleted
+        lib.uninstall(rom, "psx")
+    assert all(os.path.exists(p) for p in keep + [other, cue, m3u])
+    lib.mark(rom, "psx", paths)                                 # the app's own: it goes, saves and the rest stay
     lib.uninstall(rom, "psx")
     assert all(os.path.exists(p) for p in keep + [other]) and not os.path.exists(cue)
 
@@ -463,6 +467,7 @@ def _unwritable(monkeypatch):
 def test_a_delete_that_cant_be_recorded_says_the_files_went(isolated, monkeypatch):
     lib = rommlib.Library()
     p = _file("psx", "Game.chd", b"x" * 10)
+    lib.mark(_rom(1, "Game.chd"), "psx", [p])
     _unwritable(monkeypatch)
     with pytest.raises(rommlib.LibraryUnreadable) as e:
         lib.uninstall(_rom(1, "Game.chd"), "psx")

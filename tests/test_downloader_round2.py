@@ -187,6 +187,7 @@ def test_replacing_old_copies_goes_on_past_one_that_cant_be_recorded(isolated, m
     d = _downloader()
     j = rommlib.Job({"id": 9, "name": "Game", "fs_name": "Game (Rev 1).sfc"}, "snes")
     j.replace = list(olds)
+    d.library.mark(j.rom, "snes", olds)                          # the app's own old copies
     calls = []
     real = d.library.update
 

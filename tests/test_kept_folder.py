@@ -177,7 +177,9 @@ def test_an_unpack_beside_the_owners_files_cut_short_never_deletes_them(isolated
 
 def test_check_games_row_says_its_download_failed(isolated, rb):
     job = rommlib.Job(dict(ROM), "psx")
-    app = types.SimpleNamespace(downloader=types.SimpleNamespace(enqueue=lambda *a, **k: job))
+    app = types.SimpleNamespace(downloader=types.SimpleNamespace(enqueue=lambda *a, **k: job),
+                                library=rommlib.Library())
+    rommlib.Library().mark(ROM, "psx", [os.path.join(_sysdir(), GAME + ".chd")])     # the app's own
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     scr.app, scr.queued = app, rb.QueuedAgain()
     f = {"path": os.path.join(_sysdir(), GAME + ".chd"), "system": "psx", "severity": "damaged",
@@ -224,23 +226,24 @@ def test_download_again_never_unpacks_in_among_another_game_named_like_this_one(
     # still never unpacked in among the other game
     j, arc = _download_again(d)
     j.replace = [os.path.join(_sysdir(), GAME)]
-    with pytest.raises(rommlib.RommError, match=r"holds another game \(MyOther.bin\).*Move or rename the folder"):
+    with pytest.raises(rommlib.RommError, match=r"not unpacking.*Move or rename"):
         d._post(j, {"kind": "file", "path": arc, "heavy": True})
     assert sorted(os.listdir(os.path.join(_sysdir(), GAME))) == ["MyOther.bin", "MyOther.cue"]
     assert open(other, "rb").read().startswith(b"FILE")
 
 
-def test_download_again_replaces_the_damaged_file_check_games_named(isolated):
-    """The owner's cut-short Lamp Run (USA).bin beside their notes: Check games' Download again
-    names it, and RomM's copy takes its place; the notes stay."""
+def test_download_again_never_writes_over_the_owners_damaged_file(isolated):
+    """The owner's cut-short Lamp Run (USA).bin beside their notes (not downloaded by the app):
+    Check games' Download again names it, but the app never writes over a file it didn't
+    download: refused, saying to move it, and everything stays as it was."""
     b = _w(os.path.join(_sysdir(), GAME, GAME + ".bin"), b"short")
     _w(os.path.join(_sysdir(), GAME, "notes.txt"), b"notes")
     d = _downloader()
     j, arc = _download_again(d)
     j.replace = [b]
-    d._post(j, {"kind": "file", "path": arc, "heavy": True})
-    assert j.state == rommlib.Job.DONE, j.message
-    assert open(b).read() == "B" * 2352
+    with pytest.raises(rommlib.RommError, match="Move or rename it"):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert open(b).read() == "short"
     assert open(os.path.join(_sysdir(), GAME, "notes.txt")).read() == "notes"
 
 
@@ -282,14 +285,53 @@ def test_a_folder_named_like_a_game_holding_any_file_not_named_so_isnt_that_game
     assert not lib.is_installed(ROM, "psx") and lib.paths_for(ROM, "psx") == []
 
 
-def test_deleting_a_game_found_by_its_folder_takes_only_its_own_files(isolated):
+def test_a_game_found_by_its_folder_is_never_deleted(isolated):
+    """Not downloaded by the app (no record): Delete refuses and nothing goes, whatever is in it."""
     d = os.path.join(_sysdir(), GAME)
-    _w(os.path.join(d, GAME + ".cue"), CUE.encode())
-    _w(os.path.join(d, GAME + ".bin"), b"B" * 2352)
-    other = _w(os.path.join(d, "Other Game.chd"), b"another game of the owner's")
-    cheat = _w(os.path.join(d, "cheats.cht"), b"cheat")
+    cue = _w(os.path.join(d, GAME + ".cue"), CUE.encode())
+    other = _w(os.path.join(d, GAME + " (Hack).bin"), b"the owner's hack")
     lib = rommlib.Library()
-    assert lib.paths_for(ROM, "psx") == [d]
-    lib.uninstall(ROM, "psx")
-    assert sorted(os.listdir(d)) == ["Other Game.chd", "cheats.cht"]
-    assert open(other, "rb").read() == b"another game of the owner's" and open(cheat, "rb").read() == b"cheat"
+    assert lib.paths_for(ROM, "psx") == [d] and not lib.downloaded(ROM)
+    with pytest.raises(rommlib.NotDownloadedHere):
+        lib.uninstall(ROM, "psx")
+    assert os.path.exists(cue) and open(other, "rb").read() == b"the owner's hack"
+
+
+def test_free_up_space_offers_only_games_the_app_downloaded(isolated, monkeypatch):
+    """Free up space listed the owner's own playlist (My Mix.m3u) as a game, and deleting it
+    took another game's CHD it listed. Only the app's downloads are offered now."""
+    from rbui.screens.space import freeable_games
+    mine = _w(os.path.join(_sysdir(), "My Mix.m3u"), b"Other (USA).chd\n")
+    _w(os.path.join(_sysdir(), "Other (USA).chd"), b"o" * 100)
+    ours = _w(os.path.join(_sysdir(), GAME + ".chd"), b"c" * 100)
+    rommlib.Library().mark(ROM, "psx", [ours])
+    monkeypatch.setattr(rommlib, "es_game_list", lambda systems=None: [
+        {"system": "psx", "path": p, "name": os.path.basename(p), "lastplayed": None, "playcount": 0}
+        for p in (mine, ours)])
+    assert [g["path"] for g in freeable_games(rommlib.Library())] == [ours]
+
+
+def test_deleting_the_apps_playlist_never_takes_a_disc_it_didnt_download(isolated):
+    """The app's own playlist, edited by the owner to also list another game's CHD: deleting it
+    took that CHD. Only the files the app downloaded go."""
+    disc = _w(os.path.join(_sysdir(), GAME + ".chd"), b"c" * 100)
+    other = _w(os.path.join(_sysdir(), "Other (USA).chd"), b"o" * 100)
+    m3u = _w(os.path.join(_sysdir(), GAME + ".m3u"), ("%s.chd\nOther (USA).chd\n" % GAME).encode())
+    lib = rommlib.Library()
+    lib.mark(ROM, "psx", [m3u, disc])
+    rommlib.delete_game("psx", m3u, lib)
+    assert not os.path.exists(disc) and not os.path.exists(m3u)
+    assert open(other, "rb").read() == b"o" * 100
+
+
+def test_check_games_never_downloads_again_over_a_copy_the_app_didnt_download(isolated, rb):
+    app = types.SimpleNamespace(library=rommlib.Library())
+    scr = rb.AuditScreen.__new__(rb.AuditScreen)
+    scr.app, scr.queued = app, rb.QueuedAgain()
+    f = {"path": os.path.join(_sysdir(), GAME + ".chd"), "system": "psx", "severity": "damaged",
+         "problem": "Incomplete disc image", "rom": dict(ROM)}
+    scr.findings = [f]
+    assert not scr.pickable(f) and scr.redownloadable() == []
+    assert "Not downloaded by RomM-o-Cera" in scr.unpickable_why(f)
+    rommlib.Library().mark(ROM, "psx", [f["path"]])
+    assert scr.pickable(f) and scr.redownloadable() == [f]

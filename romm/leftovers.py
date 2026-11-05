@@ -131,6 +131,27 @@ def recorded_paths():
     return [os.path.normpath(p) for rec in recs.values() for p in rec.get("paths") or []]
 
 
+def app_download_paths():
+    """Where the downloads the app knows of (queued, paused, finished, failed, cancelled: its saved
+    queue and history) go: their .part files are its own. Normalised paths."""
+    try:
+        with open(_core.QUEUE_PATH) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    out = set()
+    for e in (data.get("jobs") or []) + (data.get("history") or []):
+        try:
+            dest = _core.rom_dest(e.get("rom") or {}, e.get("system"))
+        except Exception:
+            dest = None
+        if dest:
+            out.add(os.path.normpath(dest))
+    return out
+
+
 def path_overlaps(path, others):
     """path is one of others (normalised paths), inside one, or holds one."""
     q = os.path.normpath(path)
@@ -660,6 +681,7 @@ def find_leftovers(pending_roms=(), chd_busy=None):
             keep.add(os.path.normpath(dest))
         pending.add((None if rom.get("id") is None else str(rom.get("id")), system))
     recorded = recorded_paths()                  # None: can't tell, so no unfinished move is offered
+    mine = app_download_paths()                  # where the app's downloads go: their .part is its own
     out = []
 
     def kept(p):
@@ -708,8 +730,9 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                         copies = False                   # a playlist or sheet that can't be read: no copies here
                     else:
                         refs[os.path.normpath(p).lower()] = got
+                # (only an original the app downloaded: one put here another way is never its to delete)
                 copy = _converted_copy(fn, here) if copies and not kept(p) and os.path.normpath(p) not in queued \
-                    else None
+                    and recorded is not None and path_overlaps(p, recorded) else None
                 if copy and not _converted_ok(os.path.join(dp, copy), p, here, dp, checked):
                     copy = None                          # not proven whole and the same game: keep this
                 if copy:
@@ -721,7 +744,7 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                     except OSError:
                         pass
                     continue
-                if low.endswith((".chd.part", ".tmp.chd")):
+                if low.endswith((".chd.part", ".tmp.chd")):          # the conversion worker's own names
                     kind = "Unfinished CHD"
                     if busy:
                         continue
@@ -730,6 +753,8 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                     if busy:
                         continue
                 elif low.endswith(".part"):
+                    if os.path.normpath(p[:-len(".part")]) not in mine and not path_overlaps(p, mine):
+                        continue                         # not one of the app's downloads: someone else's
                     kind = "Partial download"
                 elif low.endswith(".tmp") and fn.startswith("."):
                     kind = "Temporary file"

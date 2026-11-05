@@ -1404,6 +1404,7 @@ class Downloader:
         target = _core.rom_dest(detail, system)
         if not target:
             raise _core.RommError("RomM gave no usable file name for this game")
+        self._never_over_theirs(j, target)
         # A RomM rom that is a *folder* (multi-file GDI/cue+bin set, or a folder
         # holding a single file) is pulled file by file, keeping its layout; the
         # whole-rom /content endpoint would hand back a zip or an extensionless
@@ -1444,6 +1445,8 @@ class Downloader:
         j.after_warn, j.pending_chd, j.move_markers = None, None, []
         j.defer_chd = True                       # its conversion is queued below, once it's recorded
         recorded = False
+        # only the app's own copy is ever replaced (deleted once RomM's is in), whoever asked
+        j.replace = [p for p in j.replace or [] if self._ours(j, p)] or None
         if j.replace is None:
             j.replace = self._recorded_copy(j) or None
         try:
@@ -1882,6 +1885,26 @@ class Downloader:
             j.moving = False
             _leftovers.drop_move_markers(j.move_markers)
         return out
+
+    def _ours(self, j, path):
+        """path is this job's own (made by it) or the app's download of this game (its record,
+        or inside one of its recorded folders)."""
+        p = os.path.normpath(path)
+        mine = {os.path.normpath(x) for x in j.made if isinstance(x, str)}
+        rec = self.library.snapshot().get(str((j.rom or {}).get("id"))) or {}
+        mine |= {os.path.normpath(x) for x in rec.get("paths") or []}
+        return any(p == m or p.startswith(m + os.sep) for m in mine)
+
+    def _never_over_theirs(self, j, target):
+        """The download's file or folder name is taken by something the app didn't download
+        for this game (the owner's own zip of it, another game, a copy put there by hand):
+        refused, never written over, reused or deleted after unpacking."""
+        if not os.path.lexists(target) or self._ours(j, target):
+            return
+        if os.path.isdir(target) and not os.path.islink(target) and not _library.holds_game(target, j.system):
+            return            # empty, or only the owner's notes (kept when the game was compressed): files go beside
+        raise _core.RommError("%s is already on the box and wasn't downloaded by RomM-o-Cera; not writing over "
+                              "it. Move or rename it, then try again" % os.path.basename(os.path.normpath(target)))
 
     def _other_game_in(self, j, folder, target, members):
         """A game file in folder (one the app didn't download) that this download

@@ -88,7 +88,8 @@ def test_a_game_the_app_didnt_download_keeps_its_media(isolated):
     _file("snes", "Amet Cart (USA).sfc")
     img = _file("snes", "images/Amet Cart (USA)-image.png")
     assert lib.made_media(_rom(3, "Amet Cart (USA).sfc"), "snes") == []      # found by name only: no record
-    lib.uninstall(_rom(3, "Amet Cart (USA).sfc"), "snes")
+    with pytest.raises(rommlib.NotDownloadedHere):                          # nor is the game itself deleted
+        lib.uninstall(_rom(3, "Amet Cart (USA).sfc"), "snes")
     assert os.path.exists(img)
 
 
@@ -122,7 +123,9 @@ def test_uninstall_leaves_the_owners_files_and_their_folder(isolated):
 
 def test_delete_game_leaves_the_owners_files_and_their_folder(isolated):
     folder, game, mine = _folder_game()
-    rommlib.delete_game("megacd", folder, rommlib.Library())
+    lib = rommlib.Library()
+    lib.mark(_rom(5, "Consec Tur (USA).zip"), "megacd", [folder])
+    rommlib.delete_game("megacd", folder, lib)
     assert not any(os.path.exists(p) for p in game) and all(os.path.exists(p) for p in mine)
 
 
