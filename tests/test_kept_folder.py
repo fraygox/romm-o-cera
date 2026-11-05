@@ -353,7 +353,8 @@ def test_check_games_downloads_again_over_a_copy_the_app_didnt_download_and_says
     assert jobs[0][2] == sorted([os.path.normpath(cue), os.path.normpath(track)])
     assert os.path.exists(notes)
     scr.queued = rb.QueuedAgain()
-    assert "weren't" not in scr.theirs_note([f]) and "wasn't downloaded by RomM-o-Cera" in scr.theirs_note([f])
+    note = scr.theirs_note([f])
+    assert "Not downloaded by RomM-o-Cera (1 game)" in note and GAME + ".bin" in note and "notes.txt" not in note
     rommlib.Library().mark(ROM, "psx", [track])
     jobs.clear()
     scr.redownload(f)

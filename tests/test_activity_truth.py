@@ -253,3 +253,16 @@ def test_restored_downloads_arent_announced_again(rb, app):
     assert toasts == []
     j.requeue()
     assert not j.restored
+
+
+def test_retried_download_starts_the_converter_when_it_finishes(rb, app):
+    j = _job(app, "Ipsum (USA)", rommlib.Job.FAILED)
+    app.toast = lambda *a, **k: None
+    spawned = []
+    app.spawn_helper = lambda *a, **k: spawned.append(a)
+    app.headless = False
+    app.tick_downloads()                      # the failure is announced
+    j.requeue()
+    j.state, j.chd_queued = rommlib.Job.DONE, True
+    app.tick_downloads()                      # the retry's success must start rb_chd again
+    assert ("rb_chd.py",) in spawned

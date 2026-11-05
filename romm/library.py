@@ -197,6 +197,17 @@ def remove_game_path(p, system=None):
     return freed, kept
 
 
+_PART_OF_GAME = re.compile(r"^(?:\s*\((?:disc|disk|cd|track)\s*\d+\))?$", re.I)
+
+
+def _same_game_name(name, stem):
+    """name (a file in a folder named stem) is that game's own: the folder's name exactly, or
+    with a disc or track number ("Game (Disc 2).cue", "Game (Track 03).bin"). "Game [T-En].cue",
+    "Game (Rev 1).cue", "Game (Hack).bin" are other releases or the owner's own: not taken."""
+    low = os.path.splitext(name.lower())[0]
+    return low.startswith(stem) and bool(_PART_OF_GAME.match(low[len(stem):]))
+
+
 def their_files(paths, system, owned=()):
     """The exact files of a game put on the box another way, for a confirm to list and an
     explicit delete or replace to take: a file, and the tracks its .cue/.gdi names; a playlist
@@ -230,7 +241,7 @@ def their_files(paths, system, owned=()):
                 dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS]
                 for n in sorted(fns):
                     f = os.path.join(dp, n)
-                    if n.lower().startswith(stem) and is_game_name(n, system) and not _points_out(f, p):
+                    if _same_game_name(n, stem) and is_game_name(n, system) and not _points_out(f, p):
                         with_tracks(f, p)
         elif p.lower().endswith(".m3u"):
             add(p)

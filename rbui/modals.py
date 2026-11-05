@@ -219,14 +219,14 @@ class ManageMenu(ActionMenu):
 
             def delete_theirs():
                 app.modal = Confirm(app, "Delete %s?" % name,
-                                    "Not downloaded by RomM-o-Cera. These go from roms/%s (%s): %s. Anything else "
+                                    "Not downloaded by RomM-o-Cera, or changed since it was. These go from roms/%s (%s): %s. Anything else "
                                     "beside or in its folder stays (notes, saves, patches, other games); saves "
                                     "and states are kept.%s" % (system, human_size(tsize), files_list(theirs, system),
                                                                 playlists_note(system, theirs)),
                                     "Delete", lambda: app.delete_theirs(rom, system, theirs, then), danger=True)
             super().__init__(app, name, [
                 app.play_entry(rom, system, name),
-                ("Delete from this box", "Not downloaded by RomM-o-Cera: frees %s (%s)" % (
+                ("Delete from this box", "Not downloaded by RomM-o-Cera, or changed since: frees %s (%s)" % (
                     human_size(tsize), plural_files(len(theirs))), delete_theirs if theirs else None),
                 ("Download again", "Replaces these files with RomM's copy", (lambda: setattr(
                     app, "modal", DownloadConfirm(app, rom, replace=list(theirs)))) if theirs else None),
@@ -246,8 +246,10 @@ class ManageMenu(ActionMenu):
             app.play_entry(rom, system, name),
             ("Delete from this box", "Frees %s (%d file%s)" % (human_size(size), nf, "" if nf == 1 else "s"),
              delete if paths else None),
+            # (the app's own copy: the download replaces what of it is still as it wrote it, checked
+            # when it runs, never a file put in its place meanwhile)
             ("Download again", "Replaces what's on the box", lambda: setattr(
-                app, "modal", DownloadConfirm(app, rom, replace=list(paths) or None))),
+                app, "modal", DownloadConfirm(app, rom))),
         ])
 
 

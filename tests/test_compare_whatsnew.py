@@ -187,7 +187,7 @@ def test_download_again_of_a_converted_game_replaces_its_current_files(rb, app, 
     queued = []
     monkeypatch.setattr(app.downloader, "enqueue", lambda rom, system, replace=None, **k: queued.append(replace))
     app.modal.action("ok")
-    assert queued == [[chd]]
+    assert queued == [None]                     # the download replaces the app's own copy, checked when it runs
 
 
 def test_get_the_newer_one_under_another_name_replaces_the_file_here(rb, app, monkeypatch):

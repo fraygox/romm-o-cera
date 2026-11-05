@@ -392,6 +392,7 @@ class Job:
     def requeue(self):
         self.state, self.message, self.pause, self.resume = Job.QUEUED, "", False, False
         self.restored = False         # this session's now: its outcome is announced
+        self._announced = False       # a retry's outcome is announced afresh (Done starts rb_chd)
         self.short_space = 0
         self.user_paused, self.force = False, False
         self.cancel = threading.Event()
@@ -679,6 +680,7 @@ class Downloader:
                 if j.rom["id"] == rom["id"] and j.active:
                     if replace:
                         j.replace = sorted(set(j.replace or []) | set(replace))
+                        self._pin(j, replace)
                     return j
             for j in self.jobs:                      # re-use a paused/failed entry in place
                 if j.rom["id"] == rom["id"] and j.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
@@ -692,9 +694,22 @@ class Downloader:
                 self.cv.notify_all()
             if replace:
                 j.replace = sorted(set(j.replace or []) | set(replace))
+                self._pin(j, replace)
         if save:
             self.save_queue()
         return j
+
+    @staticmethod
+    def _pin(j, paths):
+        """What each file the user confirmed replacing was when they confirmed (file_sig): one
+        changed or swapped since (a queued download runs later) is no longer the one they named."""
+        pins = dict(getattr(j, "replace_pins", None) or {})
+        for p in paths:
+            try:
+                pins[os.path.normpath(p)] = _library.file_sig(p)
+            except OSError:
+                pins[os.path.normpath(p)] = None
+        j.replace_pins = pins
 
     def move(self, job, where):
         """where: "top", "up" or "down" (among the jobs not yet finished)."""
@@ -890,6 +905,7 @@ class Downloader:
             pend = [{"rom": dict({k: j.rom.get(k) for k in self.SLIM_KEYS}, _es_media=_library.es_media(j.rom)),
                      "system": j.system,
                      "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None,
+                     "replace_pins": getattr(j, "replace_pins", None) or None,
                      "made": list(j.made) or None, "checked": list(getattr(j, "checked", None) or []) or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
             # finished ones (Activity's list) survive a restart too: the last HISTORY_KEEP of them
@@ -965,6 +981,10 @@ class Downloader:
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
                 j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"), save=False)
+                if it.get("replace"):
+                    # what the files were when the user confirmed, not now (swapped while it was closed)
+                    j.replace_pins = dict(it.get("replace_pins") or {}) or \
+                        {os.path.normpath(p): None for p in it.get("replace") or []}
                 if it.get("made") and not j.made:         # what it had created before the restart
                     j.made = [p for p in it["made"] if isinstance(p, str)]
                     j.checked = [p for p in it.get("checked") or [] if isinstance(p, str)]
@@ -1468,7 +1488,7 @@ class Downloader:
         recorded = False
         # what the user confirmed replacing (Check games, Download again, Compare: their confirm
         # listed it) stays; with nothing named, only the app's own recorded copy is replaced
-        j.replace = [p for p in j.replace or [] if os.path.lexists(p)] or None
+        j.replace = [p for p in j.replace or [] if os.path.lexists(p) and self._ours(j, p)] or None
         if j.replace is None:
             j.replace = [p for p in self._recorded_copy(j) if self._ours(j, p)] or None
         try:
@@ -1925,7 +1945,12 @@ class Downloader:
         if any(p == m or p.startswith(m + os.sep) for m in mine):
             return True
         if p in {os.path.normpath(x) for x in getattr(j, "replace", None) or [] if isinstance(x, str)}:
-            return True                          # a file the user confirmed replacing with RomM's copy
+            # a file the user confirmed replacing with RomM's copy, still as it was when they did
+            pin = (getattr(j, "replace_pins", None) or {}).get(p, "unpinned")
+            try:
+                return pin == "unpinned" or (pin is not None and _library.file_sig(p) == list(pin))
+            except OSError:
+                return False
         # the app's own download of this game, as it wrote it: a file put at its path since isn't
         rec = self.library.snapshot().get(str((j.rom or {}).get("id"))) or {}
         of = _library.owned_files(rec)

@@ -127,6 +127,7 @@ def freeable_games(library, systems=None):
     tracks). g["ours"]: the app downloaded it."""
     ours = library.owned()                        # as it wrote them: a file put in one's place isn't
     games = rommlib.es_game_list(systems)
+    games = [g for g in games if g["system"] not in rommlib.UNSEEN_CATCH_ALL]   # launchers, not game files
     for g in games:
         g["ours"] = library.owns(g["path"], ours)
         # what deleting it takes: the app's own files, or exactly a game's own put here another way
@@ -237,12 +238,21 @@ class FreeUpScreen(ListScreen):
             app.toast(str(e), theme.RED)
             app.space_freed()
             self.load()
+        theirs = [g for g in todo if not g.get("ours", True)]
+        names = []
+        for g in theirs:                         # name what goes for games put here another way
+            base = os.path.join(rommlib.ROMS_ROOT, g["system"])
+            for f in app.library.their_files_at([g["path"]], g["system"]):
+                names.append(os.path.relpath(f, base))
+        named = ""
+        if names:
+            named = " Not downloaded by RomM-o-Cera (%d): %s%s." % (
+                len(theirs), ", ".join(names[:8]), " and %d more" % (len(names) - 8) if len(names) > 8 else "")
         app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "game"),
-                            "Frees about %s. Their files go: for a game RomM-o-Cera downloaded, the files it wrote "
-                            "(playlist discs and tracks too); for one put here another way (%d of them), its "
-                            "game file and the tracks its sheet names, and a playlist alone. Saves, states, "
-                            "screenshots and anything else are kept. EmulationStation drops them from its lists when you leave "
-                            "RomM-o-Cera." % (human_size(size), sum(1 for g in todo if not g.get("ours", True))), "Delete %d" % len(todo),
+                            "Frees about %s. Games RomM-o-Cera downloaded lose the files it wrote; "
+                            "for the others only their game file, its sheet's tracks or a playlist go. Saves, states, "
+                            "screenshots and anything else are kept.%s EmulationStation drops them from its lists "
+                            "when you leave RomM-o-Cera." % (human_size(size), named), "Delete %d" % len(todo),
                             lambda: (setattr(self, "busy", True), app.bg(run, done, err)), danger=True)
 
     def pick_entries(self, games):
@@ -378,7 +388,11 @@ class LeftoversScreen(ListScreen):
         def done(freed):
             self.picks.clear()
             self.picking = False
-            app.toast("Cleaned up %d — %s freed" % (len(items), human_size(freed)), theme.GREEN)
+            kept = getattr(freed, "kept", 0)
+            app.toast("Cleaned up %d — %s freed%s" % (
+                getattr(freed, "removed", len(items)), human_size(freed),
+                "; %d kept: they changed since the list was made" % kept if kept else ""),
+                theme.AMBER if kept else theme.GREEN)
             app.space_freed()
             self.load()
         app.bg(lambda: rommlib.delete_leftovers(items), done)

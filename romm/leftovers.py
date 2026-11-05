@@ -804,11 +804,17 @@ def _unfinished_move(marker, sysdir, system, pending, recorded):
     return {"path": lands, "kind": "Unfinished unpack", "size": size, "marker": marker}
 
 
+class Freed(int):
+    """Bytes freed (an int), with .removed (items actually deleted) and .kept (the rest: they
+    changed since the list was made, or were already gone)."""
+    removed = kept = 0
+
+
 def delete_leftovers(items):
-    """Delete find_leftovers() entries; returns bytes freed. A copy of a
+    """Delete find_leftovers() entries; returns bytes freed (a Freed: .removed, .kept). A copy of a
     converted game is checked again first, all of them before any is deleted
     (a track's check reads its sheet): the converted game may have changed since."""
-    freed = 0
+    freed = removed = 0
     still, checked = set(), {}
     for it in items:
         conv, p = it.get("converted"), it["path"]
@@ -833,6 +839,7 @@ def delete_leftovers(items):
                 continue
             got = drop_unfinished_move(mk, sysdir)
             freed += got or 0
+            removed += 1
             continue
         if it["kind"] == "Unfinished unpack" and not stage_stale(p):
             continue                                 # an unpack started there since (a thread id came back)
@@ -852,6 +859,7 @@ def delete_leftovers(items):
             elif os.path.lexists(p):
                 os.remove(p)
             freed += it.get("size") or 0
+            removed += 1
         except OSError:
             continue
         d = os.path.dirname(p)                          # a game folder only the leftover kept
@@ -859,5 +867,7 @@ def delete_leftovers(items):
                 and os.path.isdir(d) and not os.listdir(d):
             os.rmdir(d)
             d = os.path.dirname(d)
-    _core.log("LEFTOVERS: removed %d (%s)" % (len(items), _core.human_size(freed)))
-    return freed
+    _core.log("LEFTOVERS: removed %d of %d (%s)" % (removed, len(items), _core.human_size(freed)))
+    res = Freed(freed)
+    res.removed, res.kept = removed, len(items) - removed
+    return res

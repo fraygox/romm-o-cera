@@ -79,3 +79,35 @@ def test_the_game_menu_offers_delete_and_download_again_naming_the_files(app, rb
     assert "Lamp Run (USA).chd" in app.modal.body and "Not downloaded by RomM-o-Cera" in app.modal.body
     labels["Download again"][2]()
     assert app.modal._replace == [chd] and "these go: Lamp Run (USA).chd" in app.modal.body
+
+
+def test_a_translation_or_revision_in_the_folder_is_never_one_of_the_games_files(isolated):
+    """Round 10: Pyramid Plunder's folder with a [T-En] translation cue/bin and a (Rev 1): Delete
+    took them as the game's (they start with its name)."""
+    d = os.path.join(_sys(), GAME)
+    cue = _w(os.path.join(d, GAME + ".cue"), b'FILE "Track 01.bin" BINARY\n')
+    t1 = _w(os.path.join(d, "Track 01.bin"))
+    disc2 = _w(os.path.join(d, GAME + " (Disc 2).cue"), b'FILE "Track 02.bin" BINARY\n')
+    t2 = _w(os.path.join(d, "Track 02.bin"))
+    keep = [_w(os.path.join(d, GAME + " [T-En].cue"), b'FILE "Track 01 (T-En).bin" BINARY\n'),
+            _w(os.path.join(d, "Track 01 (T-En).bin")), _w(os.path.join(d, GAME + " (Rev 1).cue")),
+            _w(os.path.join(d, GAME + " (Hack).bin")), _w(os.path.join(d, "Track 99.bin"))]
+    got = rommlib.Library().their_files(ROM, "psx")
+    assert sorted(got) == sorted([cue, t1, disc2, t2])
+    assert not set(keep) & set(got)
+
+
+def test_a_file_swapped_after_the_confirm_is_never_replaced(isolated):
+    """Round 10: Download again confirmed, queued for later; the owner put their own file in its
+    place meanwhile; when the download ran it deleted it. What was confirmed is pinned."""
+    import threading
+    p = _w(os.path.join(_sys(), GAME + ".chd"), b"theirs, confirmed")
+    d = rommlib.Downloader.__new__(rommlib.Downloader)
+    d.api, d.cfg, d.es, d.unopenable = None, dict(rommlib.DEFAULT_CONFIG, chd=False), {}, {}
+    d.library, d.persist, d.qlock, d.cv = rommlib.Library(), False, threading.Lock(), threading.Condition()
+    d.hold, d.rate_limit, d.unpacking_bytes, d.jobs, d._closed = False, 0, 0, [], False
+    j = d.enqueue(dict(ROM), "psx", replace=[p], save=False)
+    assert d._ours(j, p)
+    os.remove(p)
+    _w(p, b"a different file put there later")
+    assert not d._ours(j, p)

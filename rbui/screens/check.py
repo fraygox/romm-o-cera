@@ -266,14 +266,15 @@ class AuditScreen(ListScreen):
         return shown + (" and %d more" % (len(rel) - 8) if len(rel) > 8 else "")
 
     def theirs_note(self, todo):
-        """The confirm's word on games the app didn't download: their files are replaced."""
-        n = len({f["rom"]["id"] for f in todo if not self.ours(f)})
-        if not n:
+        """The confirm's word on games the app didn't download: the files RomM's copies replace."""
+        theirs = [f for f in {f["rom"]["id"]: f for f in todo}.values() if not self.ours(f)]
+        if not theirs:
             return ""
-        return " %s weren't downloaded by RomM-o-Cera: their game files are replaced (notes, saves and " \
-               "other files beside them stay)." % plural(n, "game") if n > 1 else \
-               " 1 game wasn't downloaded by RomM-o-Cera: its game files are replaced (notes, saves and " \
-               "other files beside it stay)."
+        files = [os.path.relpath(p, os.path.join(rommlib.ROMS_ROOT, f["system"]))
+                 for f in theirs for p in self.replaced(f)]
+        shown = ", ".join(files[:8]) + (" and %d more" % (len(files) - 8) if len(files) > 8 else "")
+        return " Not downloaded by RomM-o-Cera (%s), so these files are replaced: %s. Notes, saves and other " \
+               "files beside them stay." % (plural(len(theirs), "game"), shown)
 
     def redownload(self, f):
         app = self.app
