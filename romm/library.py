@@ -270,9 +270,10 @@ def owned_files(rec):
     out = set()
     for p, sig in files.items():
         try:
-            # the same file (its inode), whatever happened to it since: one the app downloaded that
-            # got cut short or damaged is still its own; one put there in its place is a new file
-            if file_sig(p)[1] == list(sig)[1]:
+            # the same file: its inode (reused at once on ext4 by a file put in its place), size and
+            # modification time. Damage in place (bit rot) keeps all three; a copy put there, or the
+            # file cut short or rewritten by something else, doesn't: it's no longer the app's to touch
+            if file_sig(p) == list(sig):
                 out.add(os.path.normpath(p))
         except (OSError, TypeError, IndexError):
             pass
@@ -284,8 +285,8 @@ class NotDownloadedHere(_core.RommError):
     replaced or overwritten by it (it may be another game, a hack, the owner's own copy)."""
 
 
-NOT_OURS = "wasn't downloaded by RomM-o-Cera, so it doesn't delete it: delete it from EmulationStation " \
-    "or a file manager if you're sure"
+NOT_OURS = "wasn't downloaded by RomM-o-Cera, or was changed since, so it doesn't delete it: delete it from " \
+    "EmulationStation or a file manager if you're sure"
 
 
 class GameBusy(_core.RommError):

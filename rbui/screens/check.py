@@ -197,10 +197,7 @@ class AuditScreen(ListScreen):
     def ours(self, f):
         """The finding is in a game the app downloaded (its records): only those are downloaded
         again over; a copy put here another way is never written over or deleted by the app."""
-        p = os.path.normpath(f["path"])
-        recs = self.app.library.snapshot().values()
-        return any(p == os.path.normpath(q) or p.startswith(os.path.normpath(q) + os.sep)
-                   for r in recs if isinstance(r, dict) for q in r.get("paths") or [])
+        return self.app.library.owns(f["path"])    # as the app wrote it (a file put in its place isn't)
 
     def redownloadable(self):
         """What "Download all damaged again" takes: the app's own downloads, not a file the box

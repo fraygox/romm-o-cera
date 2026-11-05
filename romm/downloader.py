@@ -1465,7 +1465,7 @@ class Downloader:
         # only the app's own copy is ever replaced (deleted once RomM's is in), whoever asked
         j.replace = [p for p in j.replace or [] if self._ours(j, p)] or None
         if j.replace is None:
-            j.replace = self._recorded_copy(j) or None
+            j.replace = [p for p in self._recorded_copy(j) if self._ours(j, p)] or None
         try:
             if post["kind"] == "folder":
                 results = self._postprocess_folder(j, post["path"])
@@ -1885,7 +1885,8 @@ class Downloader:
                                       % (os.path.basename(lands), other))
         j.move_markers = list(before)
         os.makedirs(target, exist_ok=True)
-        self._extract(path, target, j, lands=lands, keep_existing=new_owner, keep_lands=bool(owner))
+        self._extract(path, target, j, lands=lands, keep_existing=new_owner, keep_lands=bool(owner),
+                      resumed=resumed)
         # the files are in place: whatever goes wrong now leaves a game that plays
         out = [target] if len(top) > 1 else [os.path.join(sysdir, list(top)[0])]
         try:
@@ -1969,12 +1970,7 @@ class Downloader:
             # another game never lets this one's files in among that one's)
             if os.path.lexists(o) and (o == d or o.startswith(d + os.sep) or d.startswith(o + os.sep)):
                 return True
-        for rid, rec in self.library.snapshot().items():
-            for p in rec.get("paths", []):
-                q = os.path.normpath(p)
-                if q == d or q.startswith(d + os.sep) or d.startswith(q + os.sep):
-                    return str(rid) == str(j.rom.get("id"))
-        return False                             # there, but not ours: put there another way
+        return self._ours(j, d)                  # this game's own download, as it wrote it; else not ours
 
     def _postprocess_folder(self, j, folder):
         j.chd_task = None
@@ -2017,7 +2013,7 @@ class Downloader:
                 return p
         return "7zr"
 
-    def _extract(self, path, target, j, lands=None, keep_existing=False, keep_lands=False):
+    def _extract(self, path, target, j, lands=None, keep_existing=False, keep_lands=False, resumed=False):
         """Unpack the archive into target: into a private folder there first (a
         pause, cancel or kill until then leaves only that folder, swept later),
         then each file moved into place, which nothing interrupts. lands: where
@@ -2049,8 +2045,9 @@ class Downloader:
                             if os.path.isdir(dest) != os.path.isdir(p) and os.path.lexists(dest):
                                 raise _core.RommError("%s is in the way of the archive's %s"
                                                       % (os.path.relpath(dest, target), "folder" if os.path.isdir(p) else "file"))
-                            if keep_existing and not os.path.isdir(p) and os.path.lexists(dest):
-                                raise _core.RommError(self._not_over(dest, target))
+                            if not os.path.isdir(p) and os.path.lexists(dest) and (
+                                    keep_existing or not (resumed or self._ours(j, dest))):
+                                raise _core.RommError(self._not_over(dest, target))   # never over the owner's
                             moves.append((p, dest))
                         self._move_into_place(j, moves, path, lands, keep=keep_lands)
                     finally:
@@ -2091,7 +2088,10 @@ class Downloader:
                     parent = os.path.realpath(os.path.dirname(dest))    # resolves links that exist
                     if (parent != real and not parent.startswith(real + os.sep)) or os.path.islink(dest):
                         raise _core.RommError("Unsafe path in archive (through a link): %s" % rel)
-                    if keep_existing and os.path.lexists(dest):
+                    # never over a file this job (or this game's own download) didn't write: one put
+                    # there by hand, a hack under the game's name. A resumed unpack's own half-moved
+                    # files are its own (its marker)
+                    if os.path.lexists(dest) and (keep_existing or not (resumed or self._ours(j, dest))):
                         raise _core.RommError(self._not_over(dest, target))
                 self._move_into_place(j, moves, path, lands, keep=keep_lands)
             finally:

@@ -803,8 +803,8 @@ def test_an_archive_never_unpacks_into_another_games_folder(isolated, case):
     j = rommlib.Job({"id": 7, "name": "Game (Rev 1)"}, "psx")
     if case == "replacing":
         j.replace = [os.path.join(folder, "Game (USA).cue")]
-    if case in ("other_game", "foreign"):
-        with pytest.raises(rommlib.RommError, match="already on the box"):
+    if case in ("other_game", "foreign", "replacing"):    # (replacing: a copy the app didn't download)
+        with pytest.raises(rommlib.RommError, match="already on the box|already in psx and isn't this game's"):
             d._postprocess_file(j, arc)
         assert open(os.path.join(folder, "Game (USA).cue")).read() == "ORIGINAL"
         assert sorted(os.listdir(folder)) == ["Game (USA).cue"]

@@ -124,7 +124,8 @@ def test_an_unpack_cut_short_leaves_the_installed_copy_whole(isolated, monkeypat
 
 def test_a_finished_unpack_replaces_the_installed_copy(isolated):
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
-    _w(os.path.join(sysdir, "Game", "Game.bin"), b"old bin")
+    old = _w(os.path.join(sysdir, "Game", "Game.bin"), b"old bin")
+    rommlib.Library().mark({"id": 1, "name": "Game"}, "psx", [os.path.dirname(old)], files=[old])   # the app's copy
     arc = _zip(os.path.join(sysdir, "Game.zip"), {"Game/Game.cue": "new cue", "Game/Game.bin": "new bin",
                                                    "Game/sub/": ""})
     _downloader()._extract(arc, sysdir, rommlib.Job({"id": 1}, "psx"))

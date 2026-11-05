@@ -179,7 +179,7 @@ def test_check_games_row_says_its_download_failed(isolated, rb):
     job = rommlib.Job(dict(ROM), "psx")
     app = types.SimpleNamespace(downloader=types.SimpleNamespace(enqueue=lambda *a, **k: job),
                                 library=rommlib.Library())
-    rommlib.Library().mark(ROM, "psx", [os.path.join(_sysdir(), GAME + ".chd")])     # the app's own
+    rommlib.Library().mark(ROM, "psx", [_w(os.path.join(_sysdir(), GAME + ".chd"), b"chd")])   # the app's own
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     scr.app, scr.queued = app, rb.QueuedAgain()
     f = {"path": os.path.join(_sysdir(), GAME + ".chd"), "system": "psx", "severity": "damaged",
@@ -328,7 +328,7 @@ def test_check_games_never_downloads_again_over_a_copy_the_app_didnt_download(is
     app = types.SimpleNamespace(library=rommlib.Library())
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     scr.app, scr.queued = app, rb.QueuedAgain()
-    f = {"path": os.path.join(_sysdir(), GAME + ".chd"), "system": "psx", "severity": "damaged",
+    f = {"path": _w(os.path.join(_sysdir(), GAME + ".chd"), b"chd"), "system": "psx", "severity": "damaged",
          "problem": "Incomplete disc image", "rom": dict(ROM)}
     scr.findings = [f]
     assert not scr.pickable(f) and scr.redownloadable() == []
@@ -397,13 +397,35 @@ def test_download_again_never_writes_over_a_file_put_where_the_apps_was(isolated
         d._never_over_theirs(j, arc)
 
 
-def test_the_apps_own_download_cut_short_is_still_its_own(isolated):
-    """Round 7: truncating the app's .z64 made Delete say it wasn't downloaded by the app. The
-    same file (its inode), however damaged, is still the app's to delete or replace."""
+def test_the_apps_own_download_changed_since_is_left_alone_and_said_so(isolated):
+    """A file at the app's path that was cut short or rewritten by something else (its size and
+    time changed) can't be told from one put there in its place (ext4 hands the freed inode to
+    the next file): never deleted, and the refusal says it changed since."""
     p = _w(os.path.join(_sysdir(), GAME + ".chd"), b"x" * 1000)
     lib = rommlib.Library()
     lib.mark(ROM, "psx", [p])
     os.truncate(p, 10)
-    assert lib.downloaded(ROM)
-    lib.uninstall(ROM, "psx")
-    assert not os.path.exists(p)
+    assert not lib.downloaded(ROM)
+    with pytest.raises(rommlib.NotDownloadedHere, match="or was changed since"):
+        lib.uninstall(ROM, "psx")
+    assert os.path.getsize(p) == 10
+
+def test_download_again_never_unpacks_over_the_owners_file_at_the_apps_unpacked_path(isolated):
+    """Round 8: the app's unpacked .z64 replaced by the owner's own (same path); Check games'
+    Download again unpacked RomM's over it. The unpack writes only over the job's own files."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "n64")
+    z64 = _w(os.path.join(sysdir, "Fission (World).z64"), b"the app's" * 100)
+    rom = {"id": 8, "name": "Fission", "fs_name": "Fission (World).zip", "fs_name_no_ext": "Fission (World)"}
+    lib = rommlib.Library()
+    lib.mark(rom, "n64", [z64])
+    os.remove(z64)
+    _w(z64, b"the owner's own hack")
+    d = _downloader()
+    d.es = {"n64": {".z64", ".n64", ".v64"}}           # ES doesn't list the zip: it's unpacked
+    arc = _zip(os.path.join(sysdir, "Fission (World).zip"), {"Fission (World).z64": "R" * 900})
+    j = rommlib.Job(dict(rom), "n64")
+    j.made, j.replace = [arc], [z64]                    # Check games named the file
+    d.jobs.append(j)
+    with pytest.raises(rommlib.RommError, match="not unpacking over it"):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert open(z64, "rb").read() == b"the owner's own hack"
