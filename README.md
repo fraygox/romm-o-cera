@@ -133,7 +133,8 @@ went missing. Your config, queue and logs are never touched.
 
 **Update channel** (Settings, Updates): *Stable* gets releases. *Nightly* also
 gets builds of the newest changes as they land: fixes sooner, less tested.
-Press Updates to get the newest one now. Back on Stable you keep the nightly
+Press Updates to get the newest one now. A nightly shows the day it was built
+(What's new: "Built", Settings: its date), not its base release's. Back on Stable you keep the nightly
 until a release is newer. From the shell, `… install.sh | VERSION=nightly sh`
 installs the newest nightly and sets the channel to Nightly, so the box keeps
 following it.

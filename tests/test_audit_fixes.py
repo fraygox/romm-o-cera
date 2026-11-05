@@ -12,6 +12,7 @@ import zlib
 import pytest
 
 import rommlib
+from conftest import whole_chd
 from test_review_batch import _drawn, _sync
 
 
@@ -222,19 +223,19 @@ def _set_detail():
 
 
 def test_a_chd_of_one_disc_is_compared_with_that_disc_only(isolated, monkeypatch):
-    chd = _put("psx", "Set (USA)/Set (USA) (Disc 1).chd", b"x")
+    chd = _put("psx", "Set (USA)/Set (USA) (Disc 1).chd", whole_chd())
 
     class A:
         def rom(self, rid):
             return _set_detail()
     monkeypatch.setattr(rommlib, "_chd_frames", lambda p, c: ("cd", 200000))
     assert rommlib._chd_vs_romm(A(), chd, {"id": 1}, "chdman") is False
-    two = _put("psx", "Set (USA)/Set (USA) (Disc 2).chd", b"x")
+    two = _put("psx", "Set (USA)/Set (USA) (Disc 2).chd", whole_chd())
     assert rommlib._chd_vs_romm(A(), two, {"id": 1}, "chdman") is False
     monkeypatch.setattr(rommlib, "_chd_frames", lambda p, c: ("cd", 100000))
     assert rommlib._chd_vs_romm(A(), two, {"id": 1}, "chdman") == (100000, 200000)
     # a CHD that can't be told apart from the set's discs: not compared, never "incomplete"
-    odd = _put("psx", "Set (USA)/Whatever.chd", b"x")
+    odd = _put("psx", "Set (USA)/Whatever.chd", whole_chd())
     assert rommlib._chd_vs_romm(A(), odd, {"id": 1}, "chdman") is None
 
 
@@ -255,7 +256,7 @@ def test_a_zip_with_one_top_folder_is_found_where_it_unpacked(isolated, no_es):
 def test_converted_discs_in_a_folder_have_no_missing_tracks(isolated, no_es, monkeypatch):
     monkeypatch.setattr(rommlib, "_chd_frames", lambda p, c: None)
     monkeypatch.setattr(rommlib, "disc_incomplete", lambda p, c="chdman": None)
-    _put("psx", "Rope (USA)/Rope.chd", b"x")            # named by hand, not like the tracks
+    _put("psx", "Rope (USA)/Rope.chd", whole_chd())            # named by hand, not like the tracks
     api = Api([(1, "Rope (USA).zip", [_rec("Rope (USA).zip", 30, archive_members=[
         {"name": "Rope (USA).cue", "size": 10}, {"name": "Rope (USA) (Track 1).bin", "size": 20},
         {"name": "Rope (USA) (Track 2).bin", "size": 20}])])])
@@ -529,17 +530,17 @@ def _two_disc_set():
 
 
 def test_a_disc_still_missing_beside_a_converted_one_is_missing(isolated, no_es, no_chdman):
-    _put("psx", "Set Run (USA)/Set Run (USA) (Disc 1).chd", b"x")
+    _put("psx", "Set Run (USA)/Set Run (USA) (Disc 1).chd", whole_chd())
     got, _ = _run(_two_disc_set(), {"psx": [1]})
     assert sorted(got) == ["Set Run (USA) (Disc 2).bin", "Set Run (USA) (Disc 2).cue"]
     assert all(f["problem"].startswith("Missing file") for f in got.values())
-    _put("psx", "Set Run (USA)/Set Run (USA) (Disc 2).chd", b"x")       # both converted: nothing missing
+    _put("psx", "Set Run (USA)/Set Run (USA) (Disc 2).chd", whole_chd())       # both converted: nothing missing
     got, _ = _run(_two_disc_set(), {"psx": [1]})
     assert got == {}
 
 
 def test_one_disc_converted_under_another_name_is_converted(isolated, no_es, no_chdman):
-    _put("psx", "Lone Disc (USA)/Lone Disc (USA) [fixed].chd", b"x")
+    _put("psx", "Lone Disc (USA)/Lone Disc (USA) [fixed].chd", whole_chd())
     api = Api([(1, "Lone Disc (USA).zip", [_rec("Lone Disc (USA).zip", 30, archive_members=[
         {"name": "Lone Disc (USA).cue", "size": 10}, {"name": "Lone Disc (USA) (Track 1).bin", "size": 20}])])])
     got, _ = _run(api, {"psx": [1]})
@@ -547,7 +548,7 @@ def test_one_disc_converted_under_another_name_is_converted(isolated, no_es, no_
 
 
 def test_a_folder_game_asks_romm_for_its_record_once(isolated, no_es, no_chdman):
-    _put("psx", "Solo Disc (USA)/Solo Disc (USA).chd", b"x")
+    _put("psx", "Solo Disc (USA)/Solo Disc (USA).chd", whole_chd())
     calls = []
 
     class Counting(Api):
@@ -595,7 +596,7 @@ def test_a_bug_in_the_check_is_not_verified_not_damage_or_a_pass(isolated, no_es
 def test_not_verified_counts_games_not_discs(isolated, no_es, no_chdman):
     mem = []
     for d in (1, 2, 3):
-        _put("psx", "Trio Run (USA)/Trio Run (USA) (Disc %d).chd" % d, b"x")
+        _put("psx", "Trio Run (USA)/Trio Run (USA) (Disc %d).chd" % d, whole_chd())
         mem += [{"name": "Trio Run (USA) (Disc %d).cue" % d, "size": 10},
                 {"name": "Trio Run (USA) (Disc %d).bin" % d, "size": 20}]
     api = Api([(1, "Trio Run (USA).zip", [_rec("Trio Run (USA).zip", 90, archive_members=mem)])])

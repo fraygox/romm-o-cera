@@ -87,6 +87,40 @@ def check_result(st, findings, deep):
     return head + ("every game looks right" if deep else "nothing wrong found"), theme.GREEN
 
 
+class QueuedAgain:
+    """The findings queued to download again (path -> its job). One counts while its
+    download waits, runs or is done; once that failed or was cancelled it can be
+    queued again (its row says so instead of "queued")."""
+
+    def __init__(self):
+        self.jobs = {}
+
+    def add(self, path, job=None):
+        self.jobs[path] = job
+
+    def __contains__(self, path):
+        if path not in self.jobs:
+            return False
+        j = self.jobs[path]
+        return j is None or getattr(j, "state", None) not in (rommlib.Job.FAILED, rommlib.Job.CANCELLED)
+
+    def done(self, path):
+        """Its download finished (RomM's copy is on the box now)."""
+        j = self.jobs.get(path)
+        return j is not None and getattr(j, "state", None) == rommlib.Job.DONE
+
+    def tag(self, path):
+        """The row's tag while it counts: "downloaded" once done, else "queued"."""
+        return "downloaded" if self.done(path) else "queued"
+
+    def failed(self, path):
+        """Why the download queued for this finding failed (its job's message), else None."""
+        j = self.jobs.get(path)
+        if j is not None and getattr(j, "state", None) == rommlib.Job.FAILED:
+            return getattr(j, "message", "") or "It didn't finish"
+        return None
+
+
 class AuditScreen(ListScreen):
     """Check what's on the box against RomM; damaged games can be downloaded
     again. Red: damaged or incomplete. Amber: not RomM's copy (another dump,
@@ -106,7 +140,7 @@ class AuditScreen(ListScreen):
         self.findings = None
         self.stats = None
         self.sel = self.scroll = 0
-        self.queued = set()
+        self.queued = QueuedAgain()
         self.t0 = time.time()
         by_sys = {}
         for p in app.platforms:
@@ -213,8 +247,11 @@ class AuditScreen(ListScreen):
 
     def redownload(self, f):
         app = self.app
-        app.downloader.enqueue(dict(f["rom"]), f["system"], replace=[f["path"]] if self.renamed(f) else None)
-        self.queued.add(f["path"])
+        # always the broken file shown, which the user asked to replace: RomM's copy can land under
+        # another name, or unpack beside it (a zipped cue/bin for a junk .chd of that name); the
+        # downloader never deletes a path the new copy holds
+        job = app.downloader.enqueue(dict(f["rom"]), f["system"], replace=[f["path"]])
+        self.queued.add(f["path"], job)
 
     def action(self, a):
         app = self.app
@@ -323,7 +360,7 @@ class AuditScreen(ListScreen):
             col = theme.RED if f["severity"] == "damaged" else theme.AMBER
             queued = f["path"] in self.queued
             list_row(c, self.f, r, on, os.path.relpath(f["path"], os.path.join(rommlib.ROMS_ROOT, f["system"])),
-                     f["problem"], sub_color=col, slot="check", tag="queued" if queued else f["system"],
+                     f["problem"], sub_color=col, slot="check", tag=(self.queued.tag(f["path"]) if isinstance(self.queued, QueuedAgain) else "queued") if queued else f["system"],
                      tag_color=theme.GREEN if queued else theme.DIM,
                      mark=lambda ctr, f=f, col=col: self.draw_pick(c, f, ctr) or circle(c, col, ctr, 5) or True)
 
@@ -358,7 +395,7 @@ class CheckScreen(AuditScreen):
         Screen.__init__(self, app)
         self.deep = False
         self.cancel = threading.Event()
-        self.queued = set()
+        self.queued = QueuedAgain()
         self.sel = self.scroll = 0
         self.last = None
         self.findings, self.stats = [], {}
@@ -500,8 +537,10 @@ class CheckScreen(AuditScreen):
                 continue
             col = getattr(theme, self.kind(f)[1])
             queued = f["path"] in self.queued
+            failed = not queued and isinstance(self.queued, QueuedAgain) and self.queued.failed(f["path"])
             list_row(c, self.f, r, on, rows[i][0], rows[i][1], sub_color=col, slot="check",
-                     tag="queued" if queued else rows[i][2], tag_color=theme.GREEN if queued else theme.DIM,
+                     tag=(self.queued.tag(f["path"]) if isinstance(self.queued, QueuedAgain) else "queued") if queued else "failed" if failed else rows[i][2],
+                     tag_color=theme.GREEN if queued else theme.RED if failed else theme.DIM,
                      mark=(lambda ctr, f=f: self.draw_pick(c, f, ctr)) if self.showing_picks() else None)
             state_stripe(c, r, col)                  # red or amber, as Activity marks its rows
         self.draw_panel(c, pan, self.current())
@@ -533,12 +572,21 @@ class CheckScreen(AuditScreen):
             if st.get("unmatched"):
                 p.prose("%s: only their tracks and disc images were looked at, not their sizes or checksums "
                         "against RomM." % unmatched_line(st), label="Not in RomM", lines=4)
+                names = [n for n in st.get("unmatched_names") or [] if isinstance(n, str)]
+                if names:              # which they are (an older version's check didn't keep their names)
+                    more = _count(st.get("unmatched")) - len(names)
+                    p.prose(" · ".join(names) + (" · and %d more" % more if more > 0 else ""),
+                            label="Which games")
             return
         if it is None or not self.findings:
             return
         kind, col = self.kind(it)
-        p.title(self.name(it), "Queued to download again" if it["path"] in self.queued else kind,
-                theme.GREEN if it["path"] in self.queued else getattr(theme, col))
+        failed = self.queued.failed(it["path"]) if isinstance(self.queued, QueuedAgain) else None
+        done = isinstance(self.queued, QueuedAgain) and self.queued.done(it["path"])
+        p.title(self.name(it), "Downloaded again: Quick check to see it" if done else
+                "Queued to download again" if it["path"] in self.queued else
+                "Download failed" if failed else kind,
+                theme.GREEN if it["path"] in self.queued else theme.RED if failed else getattr(theme, col))
         try:
             here = human_size(os.path.getsize(it["path"]))
         except OSError:
@@ -551,6 +599,8 @@ class CheckScreen(AuditScreen):
         p.facts([("File", "roms/%s/%s" % (it["system"], os.path.relpath(
             it["path"], os.path.join(rommlib.ROMS_ROOT, it["system"]))))], cols=1, lines=2)
         p.prose(it["problem"].replace(" · ", ". ") + ".", label="What's wrong", lines=3)
+        if failed:
+            p.prose(failed.rstrip(".") + ".", label="Downloading it again failed", lines=3)
         p.prose(WHY_IO if it.get("io_error") else WHY.get(it["severity"], "") if it.get("rom") else
                 "RomM has no game under this file name, so it can't be downloaded again from here.", lines=4)
 

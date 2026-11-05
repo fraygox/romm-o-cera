@@ -190,9 +190,10 @@ _state = {"task": None, "since": 0.0, "file": "", "step": "", "pct": None, "paus
 def status(**kw):
     """What the worker is doing, for the app's Conversions screen."""
     _state.update(kw)
+    cur = {k: _state[k] for k in ("task", "since", "file", "step", "pct", "paused")}
+    cur["pid"] = os.getpid()          # the app tells a worker that died mid-task (killed, crashed) by it
     try:
-        rommlib.atomic_write_json(rommlib.chd_current_path(), {k: _state[k] for k in ("task", "since", "file", "step", "pct", "paused")},
-                                  sync=False)        # rewritten every few seconds
+        rommlib.atomic_write_json(rommlib.chd_current_path(), cur, sync=False)        # rewritten every few seconds
     except OSError:
         pass
 
@@ -236,7 +237,8 @@ def chdman(*args):
 
 def dolphin_tool(*args):
     """Run dolphin-tool like chdman, with its own throwaway Dolphin user folder
-    (it would otherwise create one in Batocera's Dolphin config area)."""
+    (it would otherwise create one in Batocera's Dolphin config area), removed
+    after the run so Clean up leftovers never finds it."""
     exe = rommlib.dolphin_tool_path()
     if not exe:
         raise ToolMissing("dolphin-tool")
@@ -245,7 +247,10 @@ def dolphin_tool(*args):
     args = list(args)
     if args and args[0] in ("convert", "verify"):
         args[1:1] = ["-u", user]
-    return run_tool([exe] + args, keep_stdout=True)
+    try:
+        return run_tool([exe] + args, keep_stdout=True)
+    finally:
+        shutil.rmtree(user, ignore_errors=True)
 
 
 def _die_with_parent():
@@ -359,6 +364,37 @@ def disc_title(name):
     return re.sub(r"\s{2,}", " ", (name[:m.start()] + name[m.end():]).strip())
 
 
+_downloaded = [None, frozenset()]                # (installed.json's stat, the paths it records)
+
+
+def downloaded_paths():
+    """Every path installed.json records (what the app downloaded), re-read when it changes."""
+    try:
+        st = os.stat(os.path.join(rommlib.DATA_DIR, "installed.json"))
+        sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        sig = None
+    if sig != _downloaded[0]:
+        try:
+            recs = rommlib.Library().installed.values()
+            _downloaded[1] = frozenset(os.path.normpath(p) for r in recs for p in (r.get("paths") or []))
+        except Exception:
+            _downloaded[1] = frozenset()
+        _downloaded[0] = sig
+    return _downloaded[1]
+
+
+def folder_names_game(folder_root, srcs):
+    """A folder's name is its game's (what its disc's CHD or playlist is called) when the app
+    downloaded that folder, or its disc is called that too. Else the disc keeps its own name:
+    "Pyramid Plunder/MyOther.cue" is MyOther, whatever the folder is called."""
+    name = os.path.basename(folder_root).lower()
+    if any(DISC_TAG.split(os.path.splitext(os.path.basename(s))[0], 1)[0].rstrip().lower() == name
+           for s in srcs):
+        return True
+    return os.path.normpath(folder_root) in downloaded_paths()
+
+
 def plan_outputs(system, mode, srcs, roots):
     """Where a task's outputs go: (folder_root, out_dir, [(src, out)]). A game
     folder's one disc becomes <folder>.chd in its parent; several discs, or a
@@ -373,6 +409,7 @@ def plan_outputs(system, mode, srcs, roots):
     out_dir = os.path.dirname(folder_root) if folder_root else os.path.dirname(srcs[0])
     multi = len(srcs) > 1
     stems = [os.path.splitext(os.path.basename(src))[0] if multi or not folder_root
+             or not folder_names_game(folder_root, srcs)
              else os.path.basename(folder_root)                 # game name, not track name
              for src in srcs]
     if multi:
@@ -1085,6 +1122,24 @@ def _listed(path):
     return names or None
 
 
+# what a kept game folder still holding one of these is still a game (rommlib.is_game_name's
+# disc and cart files, for a UI older than it)
+_GAME_FILE_EXTS = (".cue", ".bin", ".img", ".iso", ".gdi", ".ccd", ".mdf", ".mds", ".toc", ".chd", ".cso",
+                   ".pbp", ".ecm", ".raw", ".m3u", ".zip", ".7z", ".rvz", ".wbfs", ".nrg", ".cdi")
+
+
+def _still_a_game(path, system):
+    """A file left in a converted game's kept folder is (part of) a game: the folder is
+    still one, and its gamelist entry stays where it is."""
+    test = getattr(rommlib, "is_game_name", None)      # next release: rommlib.is_game_name only
+    if test is not None:
+        try:
+            return test(path, system)
+        except Exception:
+            pass
+    return path.lower().endswith(_GAME_FILE_EXTS)
+
+
 def _disposable(path, gone, made):
     """A file left in a game folder that may go with it once the game is one file:
     OS junk, a checksum list naming only the converted tracks, or a playlist
@@ -1109,6 +1164,17 @@ def _disposable(path, gone, made):
         entries = [e for e in entries if e and not e.startswith("#")]
         return bool(entries) and all(resolve(e) in made for e in entries)
     return False
+
+
+def _move_playlist(src, to):
+    """Write playlist src at to, its entries pointing at the same files from there."""
+    d = os.path.dirname(src)
+    with open(src, encoding="utf-8-sig", errors="surrogateescape") as f:
+        lines = [ln.strip() for ln in f.read().splitlines()]
+    lines = [os.path.relpath(os.path.normpath(os.path.join(d, ln.replace("\\", "/"))), os.path.dirname(to))
+             if ln and not ln.startswith("#") else ln for ln in lines]
+    rommlib.atomic_write_text(to, "\n".join(lines).strip("\n") + "\n", errors="surrogateescape")
+    _sync_dir(os.path.dirname(to))
 
 
 def convert(task):
@@ -1260,7 +1326,7 @@ def convert(task):
         note("chd: WAIT for space %s (needs ~%s, %s free, keeping %s free)" % (
             os.path.basename(srcs[0]), rommlib.human_size(need), rommlib.human_size(free),
             rommlib.human_size(keep)))
-        _state["wait"] = "space"
+        _state["wait"], _state["room"] = "space", (out_dir, need)
         return None
     # what the sources are now: if one is replaced (a fresh download landing) or
     # deleted (Free up space) while this runs, nothing may be committed on top
@@ -1404,13 +1470,31 @@ def convert(task):
     in_size = sum(os.path.getsize(p) for s in srcs for p in goes[s] if os.path.isfile(p))
     out_size = sum(rommlib.path_size(m) for m in made)
     hide = []
+    moved = set()                                # playlists of the folder now written beside the CHDs
+    # a playlist in the game's folder naming just these discs (the download's, or the owner's
+    # own under a name of their choosing) moves out beside the CHDs as the entry: never deleted
+    inner_list = None
+    made_low = {os.path.normpath(m).lower() for m in made}
+    for m in m3us:
+        to = os.path.join(out_dir, os.path.basename(m))
+        if folder_root and m.startswith(folder_root + "/") and _disposable(m, set(), made_low) \
+                and not os.path.lexists(to) \
+                and not [o for o in m3us if not o.startswith(folder_root + "/")]:   # one entry
+            _move_playlist(m, to)
+            moved.add(os.path.normpath(m))
+            note("chd: moved playlist %s beside the CHDs" % os.path.relpath(m, folder_root))
+            inner_list = to
+            break
     if multi:
         # an existing playlist (now rewritten) stays the entry; else write one
         outside = [m for m in m3us if not (folder_root and m.startswith(folder_root + "/"))]
         if outside:
             primary = outside[0]
+        elif inner_list:
+            primary = inner_list
         else:
-            name = task.get("name") or (os.path.basename(folder_root) if folder_root else
+            name = task.get("name") or (os.path.basename(folder_root)
+                                        if folder_root and folder_names_game(folder_root, srcs) else
                                         DISC_TAG.split(os.path.splitext(os.path.basename(srcs[0]))[0],
                                                        1)[0].rstrip())
             primary = os.path.join(out_dir, name + ".m3u")
@@ -1429,7 +1513,8 @@ def convert(task):
         for s, o in plan:
             rommlib.migrate_saves(system, s, o)
     else:
-        primary = made[0]
+        primary = inner_list or made[0]
+        hide = made if inner_list else []
         rommlib.migrate_saves(system, srcs[0], primary)
     # each disc's entry follows the playlist when there is one, else its own CHD
     # (an .m3u name already taken: the discs stay listed one by one)
@@ -1458,13 +1543,19 @@ def convert(task):
         # (a playlist only when there's one outside to list the game, or one CHD: the
         # discs listed one by one keep theirs)
         low_made = {os.path.normpath(m).lower() for m in made} if hide or not multi else set()
-        spare = [f for f in rest if _disposable(f, low_gone, low_made)]
+        # (a playlist goes only once it's beside the CHDs: moved out, or the one CHD's entry)
+        spare = [f for f in rest if _disposable(f, low_gone, low_made)
+                 and (not f.lower().endswith(".m3u") or os.path.normpath(f) in moved)]
         lists = [f for f in spare if f.lower().endswith(".m3u")]
         folder_goes = len(spare) == len(rest)
         for m in lists:
             rename[m] = primary                  # a second listing of the game: the CHD's entry now
     if folder_goes:
         rename[folder_root] = primary            # the whole game folder becomes this file
+    elif folder_root and rest and not any(_still_a_game(f, system) for f in rest if f not in spare):
+        # kept only for the user's own files (a manual, notes): no game is in it any more, so
+        # an entry naming the folder (the download's, handed over later) follows the CHD
+        rename[folder_root] = primary
     rommlib.append_gamelist({"system": system, "rename": rename, "hide": hide})
     # our record of the game points at the new file even when its folder stays for other files
     try:
@@ -1535,14 +1626,50 @@ def main():
         with rommlib.try_lock(rommlib.chd_lock_path()) as fd:
             if fd is None:
                 return                          # another worker has it
-            if work(fd, waiting):
-                return                          # gave up for now (no room, no chdman): tasks stay queued
+            gave_up = work(fd, waiting)
+        if gave_up:
+            if _state["wait"] == "space" and wait_for_room():
+                continue                        # room now (or the queue changed): try again
+            return                              # no chdman, or another worker waits already: tasks stay queued
         # a task queued while we were giving up the lock would find it taken
         # and not start a worker: look once more after releasing it (the app
         # starts one again once a missing tool is here)
         _readmit(waiting)
         if not pending(waiting):
             return
+
+
+ROOM_POLL = 30        # seconds between free-space checks while a conversion waits for room
+
+
+def _queue_head():
+    try:
+        return min((t for t in os.listdir(rommlib.CHD_QUEUE_DIR) if t.endswith(".json")), default=None)
+    except OSError:
+        return None
+
+
+def wait_for_room(sleep=None):
+    """A conversion is waiting for space: wait here, without the conversion lock
+    (Clean up leftovers and Start now aren't blocked by a worker that's only
+    waiting), until there's room for it however it was freed (in the app, over
+    the network, by hand), or the queue changes. True: look at the queue again;
+    False: another worker waits already (its own lock), or the queue is empty."""
+    head = _queue_head()
+    out_dir, need = _state.get("room") or (rommlib.ROMS_ROOT, 0)
+    with rommlib.try_lock(os.path.join(rommlib.DATA_DIR, "chd-wait.lock")) as fd:
+        if fd is None:
+            return False
+        while True:
+            (sleep or time.sleep)(ROOM_POLL)
+            now = _queue_head()
+            if now is None:
+                return False
+            if now != head:
+                return True                     # put first, taken out, or done by another worker
+            cfg = rommlib.load_config()
+            if rommlib.free_bytes(out_dir) - need >= rommlib.keep_free_bytes(cfg):
+                return True
 
 
 def _wait(waiting, name, spec, cur):
@@ -1613,7 +1740,7 @@ def work(fd, waiting=None):
                 if _state["wait"] == "memory":
                     time.sleep(MEMORY_RETRY)  # a game needs the memory: look again in a while
                     continue
-                return True                   # no room: the app starts us again once space is freed
+                return True                   # no room: main() waits for some (wait_for_room)
             record(tasks[0], task, "ok" if res else ("skipped" if "SKIP" in _state["last"] or
                                                      "skip" in _state["last"].lower() else "failed"))
             if res:

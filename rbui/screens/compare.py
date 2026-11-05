@@ -77,6 +77,8 @@ def say(it, recorded=False):
     """The one plain sentence about an item."""
     st, rom = it["status"], it.get("rom") or {}
     if st == rommlib.MATCHES:
+        if it.get("renamed"):
+            return "The same file RomM has, here under another name. Nothing to do."
         return "The same file RomM has. Nothing to do."
     if st == rommlib.COMPRESSED:
         fmt = rommlib.rom_format(rom)
@@ -100,7 +102,9 @@ def say(it, recorded=False):
                 "RomM has a different copy under the same name.") + (
             " Getting it replaces the file here; saves are kept." if r else shared)
     if st == rommlib.DIFFERS:
-        return ("RomM has a copy under the same name at another size. It may be the older one, or this "
+        return ("This copy isn't the size of RomM's file: it may have been cut short or changed since it "
+                "was downloaded." if recorded else
+                "RomM has a copy under the same name at another size. It may be the older one, or this "
                 "one may be trimmed or cut.") + (" Getting RomM's replaces the file here; saves are kept."
                                                  if replaceable(it) else shared)
     return "RomM has no game by this name: it was put here another way. It still plays."
@@ -356,7 +360,7 @@ class CompareScreen(ListScreen):
     def recorded(self, it):
         """The app downloaded this one (its install record), for what the panel says."""
         rom = it.get("rom")
-        if not rom or it["status"] != rommlib.NEWER:
+        if not rom or it["status"] not in (rommlib.NEWER, rommlib.DIFFERS):
             return False
         if "_rec" not in it:
             it["_rec"] = str(rom.get("id")) in self.app.library.snapshot()
@@ -454,7 +458,10 @@ class CompareScreen(ListScreen):
         added = time_ago(self.added(it)) or "not known"
         if rom:
             pairs = [("Here", here), ("In RomM", "%s · %s" % (rommlib.rom_format(rom), human_size(rom.get("fs_size_bytes")))),
-                     ("Folder", "roms/" + system_of(it)), ("RomM's file", rom.get("fs_name") or "not known"),
+                     # a copy under another name: which file it is, beside RomM's name for it
+                     ("File" if it.get("renamed") else "Folder",
+                      os.path.basename(it["path"]) if it.get("renamed") else "roms/" + system_of(it)),
+                     ("RomM's file", rom.get("fs_name") or "not known"),
                      ("Added here", added),
                      ("Updated in RomM", time_ago(rommlib.utc_seconds(rom.get("updated_at"))) or "not known")]
         else:

@@ -11,8 +11,8 @@ from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.game import GameScreen
 from rbui.screens.games import GAME_LIST, GAME_PANEL, GameListScreen
 from rbui.screens.box_data import (RESULT_LABELS, conversion_rows, conversion_status, installed_games, plural,
-                                   reason, result_line)
-from rbui.modals import ActionMenu, Confirm, ManageMenu
+                                   reason, result_line, room_note)
+from rbui.modals import ActionMenu, Confirm, ManageMenu, media_note, playlists_note
 from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_head, list_row, split
 
 
@@ -153,9 +153,13 @@ class InstalledScreen(ListScreen):
                                 lambda: app.uninstall_group(it["group"], it["system"], it["name"], self.load),
                                 danger=True)
             return
+        paths = app.library.paths_for(rom, it["system"])
+        media = app.library.made_media(rom, it["system"], paths) if paths else []
         app.modal = Confirm(app, "Delete %s?" % it["name"],
-                            "Removes it from roms/%s (%s). Saves and states are kept."
-                            % (it["system"], human_size(it["size"])), "Delete",
+                            "Removes it from roms/%s%s (%s). Saves and states are kept.%s"
+                            % (it["system"], media_note(media),
+                               human_size(it["size"] + sum(rommlib.path_size(p) for p in media)),
+                               playlists_note(it["system"], paths)), "Delete",
                             lambda: app.uninstall(rom, it["system"], self.load), danger=True)
 
     def menu(self, it):
@@ -371,7 +375,9 @@ class ConversionsScreen(ListScreen):
             p.fact("Size now", human_size(r["size"]))
         if r.get("time"):
             p.fact("Finished", time.strftime("%Y-%m-%d %H:%M", time.localtime(r["time"])))
-        if r["kind"] in ("queued", "running"):
+        if r.get("wait") == "space":
+            p.prose(room_note(r), lines=4)
+        elif r["kind"] in ("queued", "running"):
             p.prose(self.NEXT.get(r["kind"]) if not r.get("tool") else
                     "It starts once %s is installed (Settings)." % r["tool"], lines=3)
         elif r["kind"] == "ok":
@@ -401,6 +407,8 @@ class ConversionsScreen(ListScreen):
         if k == "running":
             st, frac = conversion_status(r)
             return st, col, "%s · %s" % (mode, human_size(r["size"])), frac
+        if k == "queued" and r.get("wait") == "space":
+            return "Waiting for space", theme.AMBER, "%s · %s" % (mode, human_size(r["size"])), 0
         if k == "queued":
             return ("Waiting for %s" % r["tool"] if r.get("tool") else "Queued"), col, \
                 "%s · %s" % (mode, human_size(r["size"])), 0

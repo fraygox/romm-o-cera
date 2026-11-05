@@ -264,7 +264,8 @@ def test_check_games_asks_for_records_side_by_side_with_the_same_findings(isolat
     assert after == before and one.records.most == 1 and par.records.most > 1
     findings, stats = after
     assert stats == {"checked": 21, "matched": 20, "unmatched": 1, "unverified": 1,
-                     "unverified_tools": ["RomM"], "unverified_by": {"RomM": 1}}
+                     "unverified_tools": ["RomM"], "unverified_by": {"RomM": 1},
+                     "unmatched_names": ["gba/Homebrew.gba"]}
     probs = {os.path.basename(f["path"]): f["problem"] for f in findings}
     assert "G7.gba" not in probs                       # RomM not sending a record isn't damage
     assert probs["G3.gba"].startswith("Smaller") and probs["G11.gba"].startswith("Smaller")

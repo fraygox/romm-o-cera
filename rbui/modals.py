@@ -7,9 +7,9 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import chevron, focus_box, hline, marquee, rom_title, rrect, scroll_text, text
+from rbui.draw import chevron, focus_box, glyph_width, hline, marquee, measure, rom_title, rrect, scroll_text, text
 from rbui.widgets.chips import switch
-from rbui.widgets.hero import verb_button
+from rbui.widgets.hero import already_queued, verb_button
 
 
 # ------------------------------------------------------------------ modals
@@ -86,8 +86,9 @@ class ActionMenu:
         self.app.hit(r, None)                    # taps on the dialog itself don't close it
         rrect(c, theme.PANEL, r, 18)
         rrect(c, theme.LINE, r, 18, 1)
-        marquee(c, f.h2, self.title, (r.left + 28, r.top + 24), theme.TEXT, maxw=r.width - 56, bg=theme.PANEL,
-                slot=("menu-title", id(self)))
+        tf = f.h2 if measure(f.h2, self.title) <= r.width - 56 else f.h3     # as Confirm's title
+        marquee(c, tf, self.title, (r.left + 28, r.top + 24 + (f.h2.get_height() - tf.get_height()) / theme.K / 2),
+                theme.TEXT, maxw=r.width - 56, bg=theme.PANEL, slot=("menu-title", id(self)))
         view = r.height - 96                     # what the rows get
         off = getattr(self, "off", 0)
         if self.entries:                         # keep the selected row in view
@@ -144,6 +145,25 @@ class ActionMenu:
                         focused=on, bg=theme.PANEL_HI, slot="menu-label")
 
 
+def media_note(media):
+    """For a delete's confirm: the art, video and manual of the game that go with it."""
+    if not media:
+        return ""
+    return " and its %d art, video and manual file%s" % (len(media), "" if len(media) == 1 else "s")
+
+
+def playlists_note(system, paths):
+    """For a delete's confirm: a user's own playlist naming the game stays (it isn't ours),
+    and ES goes on listing it."""
+    names = rommlib.playlists_naming(system, paths) if paths else []
+    if not names:
+        return ""
+    if len(names) == 1:
+        return " %s still points at it: it is kept, and ES lists it with nothing to start." % names[0]
+    return " %s and %d more playlists still point at it: they are kept, and ES lists them with " \
+           "nothing to start." % (names[0], len(names) - 1)
+
+
 class ManageMenu(ActionMenu):
     """For a game already on the box. then: runs after a delete (a list to reload)."""
 
@@ -161,13 +181,15 @@ class ManageMenu(ActionMenu):
                 for p in lib.paths_for({"id": rid, "fs_name": None, "fs_name_no_ext": None}, system):
                     if p not in allp:
                         allp.append(p)
-            gsize = sum(rommlib.path_size(p) for p in allp)
+            gmedia = lib.made_media(rom, system, allp) if allp else []
+            gsize = sum(rommlib.path_size(p) for p in allp + gmedia)
             title = group.get("title") or name
 
             def delete_set():
                 app.modal = Confirm(app, "Delete all %d discs of %s?" % (n, title),
-                                    "Removes the discs and their playlist from roms/%s (%s). Saves and "
-                                    "states are kept." % (system, human_size(gsize)), "Delete",
+                                    "Removes the discs and their playlist from roms/%s%s (%s). Saves and "
+                                    "states are kept.%s" % (system, media_note(gmedia), human_size(gsize),
+                                                            playlists_note(system, allp)), "Delete",
                                     lambda: app.uninstall_group(group, system, title, then), danger=True)
             super().__init__(app, title, [
                 app.play_entry(rom, system, title),
@@ -176,16 +198,19 @@ class ManageMenu(ActionMenu):
             ])
             return
 
+        media = lib.made_media(rom, system, paths) if paths else []
+        size += sum(rommlib.path_size(p) for p in media)
+
         def delete():
             files = ", ".join(os.path.basename(p) for p in paths[:3]) + ("…" if len(paths) > 3 else "")
             app.modal = Confirm(app, "Delete %s?" % name,
-                                "Removes %s from roms/%s (%s). Saves and states are kept."
-                                % (files, system, human_size(size)),
+                                "Removes %s from roms/%s%s (%s). Saves and states are kept.%s"
+                                % (files, system, media_note(media), human_size(size), playlists_note(system, paths)),
                                 "Delete", lambda: app.uninstall(rom, system, then), danger=True)
+        nf = len(paths) + len(media)
         super().__init__(app, name, [
             app.play_entry(rom, system, name),
-            ("Delete from this box", "Frees %s (%d file%s)" % (human_size(size), len(paths),
-                                                         "" if len(paths) == 1 else "s"),
+            ("Delete from this box", "Frees %s (%d file%s)" % (human_size(size), nf, "" if nf == 1 else "s"),
              delete if paths else None),
             ("Download again", "Replaces what's on the box", lambda: setattr(
                 app, "modal", DownloadConfirm(app, rom, replace=list(paths) or None))),
@@ -214,14 +239,20 @@ class Confirm:
         self.app.hit(r, None)
         rrect(c, theme.PANEL, r, 18)
         rrect(c, theme.LINE, r, 18, 1)
-        marquee(c, f.h2, self.title, (r.left + 32, r.top + 28), theme.TEXT, maxw=r.width - 64, bg=theme.PANEL,
-                slot=("confirm-title", id(self)))
+        # a long title (a game's full name) takes the smaller heading before it slides: a sliding
+        # title reads as cut off at its edge
+        tf = f.h2 if measure(f.h2, self.title) <= r.width - 64 else f.h3
+        marquee(c, tf, self.title, (r.left + 32, r.top + 28 + (f.h2.get_height() - tf.get_height()) / theme.K / 2),
+                theme.TEXT, maxw=r.width - 64, bg=theme.PANEL, slot=("confirm-title", id(self)))
         # a body longer than its four lines scrolls by itself (never cut)
         scroll_text(c, f.body, self.body, (r.left + 32, r.top + 74, r.width - 64, 4 * 26 + 2), theme.DIM,
                     key=self.title, line_h=26, slot=("confirm", id(self)))
         bx = r.left + 32
         by = r.bottom - 58
-        okr = verb_button(c, f, (bx, by, 260, 40), self.ok_label, "danger" if self.danger else "go")
+        # as wide as its glyph and label need (a keyboard's Enter is wider than a pad's A), up to Back's
+        need = 18 + glyph_width(f, "A") + 12 + int(measure(f.h3, self.ok_label)) + 22
+        okr = verb_button(c, f, (bx, by, max(260, min(need, r.width - 64 - 16 - 180)), 40), self.ok_label,
+                          "danger" if self.danger else "go")
         self.app.hit(okr, lambda: self.action("ok"))
         nr = verb_button(c, f, (okr.right + 16, by, 180, 40), "Keep" if self.danger else "Back", "quiet",
                          glyph="B")                  # deleting: B keeps it
@@ -337,7 +368,7 @@ class DownloadConfirm(Confirm):
                              "OK", lambda: None)
             return
         if st[0] == "active":
-            super().__init__(app, name, "Already downloading.", "OK", lambda: None)
+            super().__init__(app, name, already_queued(st[1]) + ".", "OK", lambda: None)
             return
         self.app = app
         self._rom, self._replace, self._group = rom, replace, group
@@ -368,6 +399,12 @@ class DownloadConfirm(Confirm):
         body = app.plan_text(rom, system)
         if st[0] == "installed":
             body = "Already on this box. Download again anyway?  " + body
+            mine = {os.path.normpath(p) for p in (app.library.snapshot().get(str(rom["id"])) or {}).get("paths") or []}
+            theirs = [p for p in self._replace or [] if os.path.normpath(p) not in mine]
+            if theirs:
+                # found by its name, not downloaded here: say what goes, it may be something else
+                body += "  %s wasn't downloaded by RomM-o-Cera: it's deleted once RomM's copy is in." % (
+                    os.path.basename(theirs[0]) + (" and %d more" % (len(theirs) - 1) if len(theirs) > 1 else ""))
         var = app.library.variants(rom, system)
         if var:
             body += "  You already have %s%s." % (var[0], " and %d more" % (len(var) - 1) if len(var) > 1 else "")

@@ -17,6 +17,15 @@ import pytest
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, APP)
+
+
+def whole_chd(pad=b""):
+    """The smallest file a quick check takes for a whole CHD: a v5 header (one hunk, an
+    uncompressed map right after it, no metadata), then `pad` (to tell copies apart)."""
+    h = b"MComprHD" + (124).to_bytes(4, "big") + (5).to_bytes(4, "big") + bytes(16)
+    h += (2448).to_bytes(8, "big") + (124).to_bytes(8, "big") + bytes(8)
+    h += (2448).to_bytes(4, "big") + (2448).to_bytes(4, "big")
+    return h + bytes(124 - len(h)) + bytes(4) + pad
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")

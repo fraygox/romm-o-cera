@@ -15,7 +15,9 @@ from . import (core as _core, discs as _discs, es as _es, ps3 as _ps3, convert a
 # never games, whatever folder they sit in: notes, pictures, saves, Batocera's pad configs
 UNSEEN_IGNORE = (".txt", ".nfo", ".diz", ".md", ".pdf", ".xml", ".htm", ".html", ".jpg", ".jpeg",
                  ".png", ".gif", ".bmp", ".webp", ".srm", ".sav", ".state", ".ini", ".log", ".db",
-                 ".keys", ".p2k.cfg", ".sfv", ".md5", ".sha1", ".url", ".lnk")
+                 ".keys", ".p2k.cfg", ".sfv", ".md5", ".sha1", ".url", ".lnk",
+                 # saves and memory cards
+                 ".rtc", ".eep", ".fla", ".sra", ".mpk", ".dsv", ".mcr", ".mcd", ".p2s", ".sstate")
 # loose disc-image parts named like the game ES lists beside them (Game.ccd + Game.img/.sub)
 UNSEEN_COMPANIONS = {".bin", ".img", ".sub", ".sbi", ".mdf", ".ecm"}
 # housekeeping, never games: backups (gamelist.xml.bak-…, X.bak-gdi), parked or half-done files
@@ -64,7 +66,9 @@ def _unseen_why(kind, system, ext, to, path=None):
 
 def find_unseen(es, cancel=None):
     """Files in roms/<system>/ EmulationStation silently ignores: [{"system",
-    "path", "kind", "ext", "to", "size", "why"}], by system then path.
+    "path", "kind", "ext", "to", "size", "why", "twin"}], by system then path. twin: for an
+    archive, the file of the same name ES lists beside it (the game already here, or another of
+    that name), else None.
     kind: "archive" (a .zip/.7z/.rar the system doesn't list: unpack it),
     "wrong" (a loose file in the system folder whose extension at most three
     other systems list: move it to one of "to"), "unknown" (no system lists it, only launchers like ports do, or so
@@ -135,8 +139,13 @@ def find_unseen(es, cancel=None):
                 except OSError:
                     continue
                 why = _unseen_why(kind, system, ext, to, p)
+                # the same game already here in a form ES lists (Game.chd beside Game.zip)
+                twin = next((q for q in sorted(listed) if kind == "archive"
+                             and os.path.splitext(q)[0].lower() == os.path.splitext(low)[0]), None)
+                if twin:
+                    why = "same name as %s here" % twin
                 out.append({"system": system, "path": p, "kind": kind, "ext": ext,
-                            "to": to if kind == "wrong" else [], "size": size, "why": why})
+                            "to": to if kind == "wrong" else [], "size": size, "why": why, "twin": twin})
     return out
 
 
@@ -180,6 +189,19 @@ def unpack_unseen(dl, finding):
     ext = os.path.splitext(path)[1].lower()
     if ext not in _core.ARCHIVE_EXTS or system in _core.ZIP_NATIVE or dl._accepts(system, ext):
         raise _core.RommError("ES lists %s files in %s/: nothing to unpack" % (ext, system))
+    # the same game already here in a form ES lists (Game.chd beside Game.zip): unpacking it
+    # would list the game twice
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    try:
+        twin = sorted(n for n in os.listdir(os.path.dirname(path))
+                      if os.path.splitext(n)[0].lower() == stem and n != os.path.basename(path)
+                      and dl._accepts(system, os.path.splitext(n)[1].lower()))
+    except OSError:
+        twin = []
+    if twin:
+        raise _core.RommError("%s has the same name as %s here: unpacked, ES would list both as one "
+                              "game. Same game: delete the archive. Another game: rename one of them"
+                              % (os.path.basename(path), twin[0]))
     # not a RomM game: id None matches no install record, so "already on the
     # box under that name" refuses to unpack over any game that's there
     j = _downloader.Job({"id": None, "name": os.path.splitext(os.path.basename(path))[0],

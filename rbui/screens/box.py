@@ -260,8 +260,9 @@ class OnThisBoxScreen(Screen):
             return
         yy = p.top + 72
         for g in self.games[:7]:
-            text(c, self.f.row, g["name"], (x, yy), theme.DIM, maxw=p.width - 240)
-            tag(c, self.f.tiny, self.app.system_name(g["system"]) if g["system"] else "?", (p.right - 128, yy + 3), "topright", color=theme.DIM)
+            tr = tag(c, self.f.tiny, self.app.system_name(g["system"]) if g["system"] else "?",
+                     (p.right - 128, yy + 3), "topright", color=theme.DIM)
+            text(c, self.f.row, g["name"], (x, yy), theme.DIM, maxw=max(80, tr.left - 12 - x))   # clear of a long system tag
             text(c, self.f.small, human_size(g["size"]), (p.right - 28, yy + 3), theme.DIM, "topright")
             yy += 44
         if len(self.games) > 7:

@@ -436,7 +436,8 @@ class GameListScreen(ListScreen):
                       lambda: self._more_like(cur)))
         shown = self.total if self.dense or self.static is not None else self.server_total
         if shown != 0:
-            e.append(("Game night", ("Roll one of these {:,} games for tonight".format(shown) if shown else
+            e.append(("Game night", (("Roll one of these {:,} games for tonight".format(shown) if shown != 1 else
+                                      "Roll the one game in this list") if shown else
                                      "Roll a game from this list for tonight"), self.game_night))
         tot = self.server_total
         if self.pills:
@@ -449,7 +450,8 @@ class GameListScreen(ListScreen):
         elif tot:
             if tot <= self.BULK_MAX:
                 e.append(("Download every game in this list",
-                          "{:,} games, skipping any already on this box".format(tot), self._download_all))
+                          ("{:,} games, skipping any already on this box".format(tot) if tot != 1 else
+                           "1 game, skipped if it's already on this box"), self._download_all))
             else:
                 e.append(("Download every game in this list",
                           "{:,} is more than 1,000. Narrow it with the filters below.".format(tot), None))
@@ -637,7 +639,7 @@ class GameListScreen(ListScreen):
         elif self.dense:
             cnt = "{:,}{} not on this box".format(self.total, "" if self.exhausted else "+")
         else:
-            cnt = "{:,} games".format(self.total) if self.total else \
+            cnt = "{:,} game{}".format(self.total, "" if self.total == 1 else "s") if self.total else \
                 "Couldn't load: %s" % self.load_error if self.load_error else "No games found"
         flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
                                    (self.players, "%d+ players" % self.players),

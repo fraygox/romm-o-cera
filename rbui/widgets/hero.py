@@ -154,10 +154,23 @@ def time_ago(ts, now=None, minutes=False):
             return "%d %s%s ago" % (n, unit, "" if n == 1 else "s")
 
 
+def already_queued(j):
+    """What asking for a game that's in the download queue already says: where it stands."""
+    J = rommlib.Job
+    state = getattr(j, "state", None)
+    if state == J.QUEUED and j.short_space:
+        return "Already queued: it waits for %s of space" % human_size(j.short_space)
+    if state == J.QUEUED:
+        return "Already in the download queue"
+    if state in (J.VERIFYING, J.EXTRACTING):
+        return "Already downloaded: it's being unpacked"
+    return "Already downloading"
+
+
 def press_verb(app, rom, status=None):
     """What pressing a game's verb does: Play now when it's on the box (or says why it can't
     start), the download prompt when it isn't, a word while it downloads."""
-    st = (status or app.rom_status(rom))[0]
+    st, j = (status or app.rom_status(rom))[:2]
     if not app.system_for(rom):
         app.toast("No Batocera system for this platform", theme.AMBER)
     elif st == "installed":
@@ -167,7 +180,7 @@ def press_verb(app, rom, status=None):
         else:
             app.toast(why, theme.AMBER)
     elif st == "active":
-        app.toast("Already downloading", theme.AMBER)
+        app.toast(already_queued(j), theme.AMBER)
     else:
         from rbui.modals import DownloadConfirm
         app.modal = DownloadConfirm(app, rom)

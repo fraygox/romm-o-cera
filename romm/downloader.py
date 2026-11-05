@@ -336,9 +336,14 @@ def fit_in_space(items, free, reserve=_core.SPACE_MARGIN):
 
 # ----------------------------------------------------------- downloads
 
+HISTORY_KEEP = 50                   # finished downloads Activity still lists after a restart
+
+
 class Job:
     QUEUED, DOWNLOADING, VERIFYING, EXTRACTING, DONE, FAILED, CANCELLED, PAUSED = (
         "Queued", "Downloading", "Verifying", "Extracting", "Done", "Failed", "Cancelled", "Paused")
+    FINISHED = (DONE, FAILED, CANCELLED)
+    restored = False              # listed by an earlier session (Activity's history): never announced
 
     def __init__(self, rom, system, group=None):
         self.rom = rom
@@ -386,6 +391,7 @@ class Job:
 
     def requeue(self):
         self.state, self.message, self.pause, self.resume = Job.QUEUED, "", False, False
+        self.restored = False         # this session's now: its outcome is announced
         self.short_space = 0
         self.user_paused, self.force = False, False
         self.cancel = threading.Event()
@@ -631,6 +637,8 @@ class Downloader:
                  "platform_slug", "regions", "summary", "metadatum", "path_cover_small",
                  "path_cover_large", "has_multiple_files", "has_nested_single_file", "_members",
                  "languages", "has_manual", "path_manual")
+    HISTORY_KEYS = ("id", "name", "fs_name", "fs_name_no_ext", "fs_size_bytes", "platform_id", "platform_slug",
+                    "path_cover_small", "path_cover_large", "has_multiple_files")    # enough to list it again
 
     def __init__(self, api, library, cfg, persist=True):
         self.api = api
@@ -862,7 +870,10 @@ class Downloader:
         with self.cv:
             n = len(self.jobs)
             self.jobs = [j for j in self.jobs if j.active or j.state == Job.PAUSED]
-            return n - len(self.jobs)
+            n -= len(self.jobs)
+        if n:
+            self.save_queue()              # the history on disk goes too
+        return n
 
     # -- persistence: pending jobs survive exit, reboot, or a hand-over to rb_dl.py
     def save_queue(self):
@@ -881,8 +892,13 @@ class Downloader:
                      "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None,
                      "made": list(j.made) or None, "checked": list(getattr(j, "checked", None) or []) or None}
                     for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
+            # finished ones (Activity's list) survive a restart too: the last HISTORY_KEEP of them
+            done = [{"rom": {k: j.rom.get(k) for k in self.HISTORY_KEYS if j.rom.get(k) is not None},
+                     "system": j.system, "group": j.group, "state": j.state, "message": j.message,
+                     "verified": j.verified, "chd_task": j.chd_task, "chd_mode": getattr(j, "chd_mode", None)}
+                    for j in list(self.jobs) if j.state in Job.FINISHED][-HISTORY_KEEP:]
             os.makedirs(_core.DATA_DIR, exist_ok=True)
-            _core.atomic_write_json(_core.QUEUE_PATH, {"held": self.hold, "jobs": pend})
+            _core.atomic_write_json(_core.QUEUE_PATH, {"held": self.hold, "jobs": pend, "history": done})
 
     @staticmethod
     def saved_queue():
@@ -905,12 +921,46 @@ class Downloader:
             return False
         return bool(isinstance(data, dict) and data.get("held"))
 
+    @staticmethod
+    def saved_history():
+        try:
+            with open(_core.QUEUE_PATH) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return []
+        got = data.get("history") if isinstance(data, dict) else None
+        return got if isinstance(got, list) else []
+
+    def _restore_history(self):
+        """The finished downloads a previous session listed, back in Activity
+        (oldest first, before anything this session adds). Never announced
+        again: restored is True."""
+        if getattr(self, "_history_loaded", False):
+            return
+        self._history_loaded = True
+        old = []
+        for it in self.saved_history():
+            rom = it.get("rom") if isinstance(it, dict) else None
+            if not (isinstance(rom, dict) and rom.get("id") and it.get("system")
+                    and it.get("state") in Job.FINISHED):
+                continue
+            j = Job(rom, it["system"], it.get("group"))
+            j.state, j.message, j.verified = it["state"], it.get("message") or "", it.get("verified")
+            j.chd_task, j.chd_mode, j.restored = it.get("chd_task"), it.get("chd_mode"), True
+            j.done_bytes = j.total_bytes
+            old.append(j)
+        if old:
+            with self.cv:
+                self.jobs[:0] = old
+
     def resume(self):
         """Re-queue what a previous session (or rb_dl.py) left pending; a queue
-        that was paused with "Pause all" stays paused."""
+        that was paused with "Pause all" stays paused. The finished ones it
+        listed come back too, as history."""
         if self.saved_held():
             with self.cv:
                 self.hold = True
+        self._restore_history()
         n = 0
         for it in self.saved_queue():
             if it.get("rom", {}).get("id") and it.get("system"):
@@ -1394,6 +1444,8 @@ class Downloader:
         j.after_warn, j.pending_chd, j.move_markers = None, None, []
         j.defer_chd = True                       # its conversion is queued below, once it's recorded
         recorded = False
+        if j.replace is None:
+            j.replace = self._recorded_copy(j) or None
         try:
             if post["kind"] == "folder":
                 results = self._postprocess_folder(j, post["path"])
@@ -1404,7 +1456,9 @@ class Downloader:
                         raise Cancelled()
                 try:
                     results = self._postprocess_file(j, post["path"])
-                except DamagedArchive:
+                except _core.RommError:
+                    # damaged, or refused before any file moved in (in the way, an unsafe
+                    # layout): the job's archive goes, never left in roms/ where ES can't use it
                     self._drop_damaged(j, post["path"])
                     raise
             # every file of the game is whole and in place: from here on no failure
@@ -1451,10 +1505,12 @@ class Downloader:
                                        " WARNING: " + warn if warn else ""))
 
     def _drop_damaged(self, j, path):
-        """The job's own download of an archive that won't unpack goes (and out
-        of j.made), so Retry downloads it again instead of reusing it on its size
-        (_kept_download). A file that was there before the job is never deleted:
-        not being the job's, it's reused only when RomM's checksum vouches for it."""
+        """The job's own download of an archive that won't unpack (damaged, or its
+        unpack refused) goes (and out of j.made), so Retry downloads it again instead
+        of reusing it on its size (_kept_download), and a failed job never leaves an
+        archive in roms/. A file that was there before the job is never deleted:
+        not being the job's, it's reused only when RomM's checksum vouches for it.
+        Nor one the unpack already removed (its files are in)."""
         p = os.path.normpath(path)
         if p not in {os.path.normpath(x) for x in j.made if isinstance(x, str)}:
             return
@@ -1467,7 +1523,7 @@ class Downloader:
             return                           # still there: it's still the job's to delete on cancel
         j.made = [x for x in j.made if not (isinstance(x, str) and os.path.normpath(x) == p)]
         j.checked = [x for x in getattr(j, "checked", None) or [] if os.path.normpath(x) != p]
-        _core.log("UNPACK %s: damaged archive removed, downloaded again on retry" % j.name)
+        _core.log("UNPACK %s: its archive removed (Retry downloads it again)" % j.name)
         self.save_queue()
 
     # -- multi-disc sets -----------------------------------------------
@@ -1587,6 +1643,25 @@ class Downloader:
             _core.log("REPLACED %s -> %s" % (old, new))
         j.replace = None
         return warn
+
+    def _recorded_copy(self, j):
+        """A game downloaded again (Check games, a disc of a set) replaces the copy
+        its own record names, as the game page's Download again does: e.g. the CHD
+        made here from its cue/bin, which the new download would only sit beside.
+        Only paths no other game's record holds, inside roms/<system>."""
+        try:
+            recs = self.library.snapshot()
+        except (_core.RommError, OSError):
+            return []
+        me = str((j.rom or {}).get("id"))
+        sysdir = os.path.join(_core.ROMS_ROOT, j.system)
+        rec = recs.get(me)
+        mine = (rec.get("paths") or []) if isinstance(rec, dict) else []
+        others = {os.path.normpath(p) for rid, rec in recs.items() if rid != me and isinstance(rec, dict)
+                  for p in rec.get("paths") or []}
+        return [p for p in mine if isinstance(p, str) and os.path.normpath(p) not in others
+                and not p.lower().endswith(".m3u")                 # a set's playlist stays (fix_m3us)
+                and os.path.lexists(p) and _core._inside(p, sysdir)]
 
     def _others_files(self, j):
         """Files replacing a disc of a set must never delete: those another disc's record holds
@@ -1761,12 +1836,28 @@ class Downloader:
         resumed = os.path.normpath(lands) in before.values()
         if resumed:
             _core.log("UNPACK %s: finishing an earlier unpack into %s that was cut off" % (j.name, lands))
+        # a folder of that name with no game in it (the owner's manual or notes, kept when
+        # the game was compressed to one file beside it) takes the game's files beside
+        # them: none of them is ever written over, nor deleted with an unpack cut short
+        owner = resumed and any((_leftovers.read_move_marker(m) or {}).get("keep") for m in before
+                                if os.path.normpath(before[m]) == os.path.normpath(lands))
+        new_owner = False
         if os.path.lexists(lands) and not resumed and not self._may_unpack_into(j, lands):
-            raise _core.RommError("%s is already on the box under that name; not unpacking over it"
-                            % os.path.basename(lands))
+            if not (os.path.isdir(lands) and not os.path.islink(lands) and not _library.holds_game(lands, system)):
+                raise _core.RommError("%s is already on the box under that name and isn't this "
+                                      "download's; not unpacking over it. Move or rename it, then "
+                                      "download again" % os.path.basename(lands))
+            owner = new_owner = True
+            _core.log("UNPACK %s: %s holds no game, only other files: unpacking beside them" % (j.name, lands))
+        if not resumed and not new_owner and os.path.isdir(lands) and not os.path.islink(lands):
+            other = self._other_game_in(j, lands, target, members)
+            if other:
+                raise _core.RommError("%s holds another game (%s), not this download's; not unpacking "
+                                      "in among it. Move or rename the folder, then download again"
+                                      % (os.path.basename(lands), other))
         j.move_markers = list(before)
         os.makedirs(target, exist_ok=True)
-        self._extract(path, target, j, lands=lands)
+        self._extract(path, target, j, lands=lands, keep_existing=new_owner, keep_lands=bool(owner))
         # the files are in place: whatever goes wrong now leaves a game that plays
         out = [target] if len(top) > 1 else [os.path.join(sysdir, list(top)[0])]
         try:
@@ -1792,6 +1883,26 @@ class Downloader:
             _leftovers.drop_move_markers(j.move_markers)
         return out
 
+    def _other_game_in(self, j, folder, target, members):
+        """A game file in folder (one the app didn't download) that this download
+        neither brings nor replaces: another game, which unpacking would mix this
+        one in with (and Download again "replace" by unpacking beside). Its name
+        relative to folder, else None."""
+        d = os.path.normpath(folder)
+        for rec in self.library.snapshot().values():
+            if any(os.path.normpath(p) == d or os.path.normpath(p).startswith(d + os.sep)
+                   for p in rec.get("paths") or []):
+                return None                      # the app's own download: its files
+        brings = {os.path.normpath(os.path.join(target, archive_member_path(m))).lower() for m in members}
+        replaced = {os.path.normpath(p).lower() for p in j.replace or []}
+        for dp, dns, fns in os.walk(d):
+            dns[:] = [n for n in dns if n.lower() not in _core.MEDIA_DIRS]
+            for n in sorted(fns):
+                q = os.path.normpath(os.path.join(dp, n))
+                if q.lower() not in brings and q.lower() not in replaced and _library.is_game_name(q, j.system):
+                    return os.path.relpath(q, d)
+        return None
+
     def _may_unpack_into(self, j, dest):
         """An existing folder/file may receive this download only when it's this
         same RomM game's (re-download, repair), the copy Check games replaces,
@@ -1801,7 +1912,9 @@ class Downloader:
             return True
         for old in j.replace or []:
             o = os.path.normpath(old)
-            if o == d or o.startswith(d + os.sep) or d.startswith(o + os.sep):
+            # (only a copy that's there: a missing file Check games named in a folder holding
+            # another game never lets this one's files in among that one's)
+            if os.path.lexists(o) and (o == d or o.startswith(d + os.sep) or d.startswith(o + os.sep)):
                 return True
         for rid, rec in self.library.snapshot().items():
             for p in rec.get("paths", []):
@@ -1851,11 +1964,14 @@ class Downloader:
                 return p
         return "7zr"
 
-    def _extract(self, path, target, j, lands=None):
+    def _extract(self, path, target, j, lands=None, keep_existing=False, keep_lands=False):
         """Unpack the archive into target: into a private folder there first (a
         pause, cancel or kill until then leaves only that folder, swept later),
         then each file moved into place, which nothing interrupts. lands: where
-        the game lands, for the move marker (see leftovers.write_move_marker)."""
+        the game lands, for the move marker (see leftovers.write_move_marker).
+        keep_existing: lands holds the owner's files, so no file there is written
+        over (refused before any is moved); keep_lands: nor is lands ever deleted
+        as an unfinished unpack."""
         _leftovers.sweep_stages(target)        # what an unpack killed half-way here left
         if path.lower().endswith(".zip"):
             try:
@@ -1880,8 +1996,10 @@ class Downloader:
                             if os.path.isdir(dest) != os.path.isdir(p) and os.path.lexists(dest):
                                 raise _core.RommError("%s is in the way of the archive's %s"
                                                       % (os.path.relpath(dest, target), "folder" if os.path.isdir(p) else "file"))
+                            if keep_existing and not os.path.isdir(p) and os.path.lexists(dest):
+                                raise _core.RommError(self._not_over(dest, target))
                             moves.append((p, dest))
-                        self._move_into_place(j, moves, path, lands)
+                        self._move_into_place(j, moves, path, lands, keep=keep_lands)
                     finally:
                         shutil.rmtree(stage, ignore_errors=True)
             except (zipfile.BadZipFile, zlib.error, EOFError) as e:     # a bad CRC, a cut-off stream
@@ -1920,9 +2038,16 @@ class Downloader:
                     parent = os.path.realpath(os.path.dirname(dest))    # resolves links that exist
                     if (parent != real and not parent.startswith(real + os.sep)) or os.path.islink(dest):
                         raise _core.RommError("Unsafe path in archive (through a link): %s" % rel)
-                self._move_into_place(j, moves, path, lands)
+                    if keep_existing and os.path.lexists(dest):
+                        raise _core.RommError(self._not_over(dest, target))
+                self._move_into_place(j, moves, path, lands, keep=keep_lands)
             finally:
                 shutil.rmtree(stage, ignore_errors=True)
+
+    @staticmethod
+    def _not_over(dest, target):
+        return "%s is already in %s and isn't this game's; not unpacking over it" % (
+            os.path.relpath(dest, target), os.path.basename(os.path.normpath(target)))
 
     @staticmethod
     def _unzip_member(z, info, stage, j):
@@ -1980,7 +2105,7 @@ class Downloader:
         if rc != 0:
             raise DamagedArchive("7z extract failed (rc %d)" % rc)
 
-    def _move_into_place(self, j, moves, archive, lands):
+    def _move_into_place(self, j, moves, archive, lands, keep=False):
         """Move the staged files (src, dest) into place. The last point a pause or
         cancel stops the unpack is before the first one: from there the job is
         "moving" (whatever closes waits for it, see MOVE_WAIT) until _post has
@@ -1992,7 +2117,7 @@ class Downloader:
         try:
             marker = None
             if lands is not None:
-                keep = _leftovers.path_overlaps(lands,[os.path.normpath(p) for p in getattr(j, "replace", None) or []])
+                keep = keep or _leftovers.path_overlaps(lands, [os.path.normpath(p) for p in getattr(j, "replace", None) or []])
                 marker = _leftovers.write_move_marker(os.path.dirname(os.path.normpath(lands)), lands, archive,
                                                       j.rom.get("id"), keep=keep)
                 j.move_markers = list(getattr(j, "move_markers", None) or []) + [marker]

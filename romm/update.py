@@ -620,6 +620,20 @@ def version_parts(label):
     return base, ("build " + build) if build else ""
 
 
+def version_date(label=None):
+    """(word, struct_time) of when this version was made: ("Built", its day) for a
+    nightly (its label's stamp: n20261103.0143.c0a5797 was built on 3 Nov), else
+    ("Released", RELEASE_DATE): a nightly is days or weeks newer than its base release."""
+    build = str(rommlib.VERSION_LABEL if label is None else label).partition("+")[2]
+    m = re.match(r"^n(\d{8})\.\d{4}\.\w+$", build)
+    if m:
+        try:
+            return "Built", time.strptime(m.group(1), "%Y%m%d")
+        except ValueError:
+            pass
+    return "Released", time.strptime(rommlib.RELEASE_DATE, "%Y-%m-%d")
+
+
 def short_version(label):
     """A version label short enough for a line: "v0.10.0", "v0.10.0 nightly", "v0.10.0 build"."""
     base, build = version_parts(label)

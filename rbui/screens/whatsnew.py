@@ -103,9 +103,9 @@ class WhatsNewScreen(Screen):
         nightly = rommlib.config_value(self.app.cfg, "update_channel") == "nightly"
         base, build = rommlib.version_parts(rommlib.VERSION_LABEL)     # a nightly's label won't fit a title
         r.title("v" + base, sub=build or None)
-        released = time.strptime(rommlib.RELEASE_DATE, "%Y-%m-%d")
+        word, made = rommlib.version_date()               # a nightly: the day it was built
         r.facts([("Channel", "Nightly" if nightly else "Stable"),
-                 ("Released", "%d %s %d" % (released.tm_mday, time.strftime("%b", released), released.tm_year))]
+                 (word, "%d %s %d" % (made.tm_mday, time.strftime("%b", made), made.tm_year))]
                 + ([("Updated from", rommlib.short_version(self.prev))] if self.prev else []),
                 cols=2, lines=2 if self.prev else 1)
         r.rule()

@@ -17,7 +17,14 @@ as in a game list. **A** opens the same menu as a game on the box in a game list
 can't be fetched, only Delete). To delete several at once, pick them (X ›
 Pick several, see [Controls](controls.md#picking-several)). Any game marked ✓
 in a list (including ones you copied over before) can also be deleted from
-its game list. Saves and states are always kept.
+its game list. Saves and states are always kept. Deleting a game RomM-o-Cera
+downloaded also deletes the art, video and manual it had EmulationStation keep
+for it (`images/`, `videos/`, `manuals/`, named after the game), unless another
+game still uses them; the confirm counts them in what it frees. Media you added
+under other names stays. A game folder that also holds your own files (notes, a
+manual, pictures, saves) keeps them, and the folder stays. A playlist (`.m3u`) of
+your own that lists the game is never deleted: the confirm names it, and ES goes
+on listing it with nothing to start.
 
 ## Space
 
@@ -52,7 +59,8 @@ for downloads.
   beside one isn't offered. A `.zar` or `.wua` must pass its footer check, a
   `.ps3` folder what RPCS3 boots it by. A file an `.m3u` playlist or another
   `.cue`/`.gdi`/`.ccd` still points at is never offered (point the playlist at
-  the converted files first), nor a `.sbi` or `.sub`. Never while a conversion runs, never for a
+  the converted files first), nor a `.sbi` or `.sub`, nor a `.zip` holding
+  anything besides the disc (a memory card, a walkthrough). Never while a conversion runs, never for a
   file a queued conversion will use, and not on arcade systems (where
   `game.zip` and `game.chd` belong together). Partial downloads still queued
   are kept so they can resume. **A** deletes one, **Y** all of them, and the
@@ -114,7 +122,10 @@ quick check; **X** Actions has **Quick check**, **Full check** and
 [Games ES can't see](#games-es-cant-see) opens with A. Before the first check,
 the list starts with **Check now**. B stops a check that's running; when it
 finishes, Check games shows what it found. If the drive stops answering or is
-swapped mid-check, the check stops and saves nothing.
+swapped mid-check, the check stops and saves nothing. **Download again** on a
+finding replaces the file it shows, even when RomM's copy comes under another
+name or format (a zipped cue/bin for a damaged `.chd`); its row says
+**downloaded** once RomM's copy is in, and the next check looks at it.
 
 **Quick check** looks for missing tracks, damaged zips, disc images cut short
 (an interrupted copy: shorter than the disc's own filesystem says) and files
@@ -145,7 +156,10 @@ If RomM can't be reached, or a list can't be read, the screen says so in red
 instead of showing an empty, all-clear list. Go back and open it again to retry.
 
 Games that weren't fully verified (say `chdman verify` didn't finish) or
-aren't in RomM under the same file name are listed under **Not fully checked**.
+aren't in RomM under the same file name are listed under **Not fully checked**;
+its panel names the games that aren't in RomM. Even for those, a quick check
+reads every CHD's own header: a file that only has a `.chd` name, or a CHD cut
+short (its index past the end of the file), is **Damaged**.
 A file the box can't read shows as **Can't be read** and is left out of
 **Download all damaged again**. A quick check keeps the last full check's
 findings for files that haven't changed.
@@ -158,7 +172,22 @@ Damaged games can be downloaded again, one at a time (**A**) or all at once
 again, amber ones included, pick them (X › Pick several) and choose
 **Download … again** from the X Actions menu. A damaged game RomM names differently is found
 by its RetroAchievements hash, else by the matching title, disc and region;
-saves move to the new name and playlists follow.
+saves move to the new name and playlists follow. A game downloaded again
+replaces the copy the app put on the box (say the CHD it compressed the game
+to), not just the file named in the finding. Its row says **queued** while the
+download waits or runs; if the download fails, the row says **failed** and the
+panel says why, and it can be downloaded again.
+
+A folder with no game file in it (only a manual, notes or pictures) isn't a
+game: Check games doesn't flag it and the app doesn't count it as on the box.
+That's the folder compressing keeps for your own files when it puts the game's
+CHD beside it ([Disc compression](disc-compression.md)). Downloading the game
+again unpacks into that folder beside your files, and never writes over one of
+them: if the download has a file of the same name, it stops and says so. A
+folder of that name holding another game (its disc sheets named otherwise) is
+never taken for this game: it isn't counted as on the box, checked or deleted
+as it, and a download never unpacks into it; it asks you to move or rename the
+folder first.
 
 Red findings are certain (a part the game needs to boot is missing); amber
 ones are worth a look (some complete discs list dummy files past their end;
@@ -174,7 +203,9 @@ takes (its list in `es_systems.cfg`: PS2 and PSP take no `.zip`, N64 takes no
 - **Archives the system doesn't take** (a `.zip`/`.7z`/`.rar` in `ps2/`, say).
   **Unpack** shows what's inside, then unpacks it exactly as after a download:
   same safety checks (no paths or links out of the folder, never into a game
-  that's already there under that name), converted to CHD/RVZ/… if that's on,
+  that's already there under that name, nor beside a file of the same name ES
+  lists, like a `.chd`: it says to delete the archive if that's the same game,
+  or rename one of them if not), converted to CHD/RVZ/… if that's on,
   and the archive is deleted once it's out.
 - **Games in the wrong system folder** (a GameCube image in `n64/`): a loose
   file whose extension one to three other systems take. **Move to …** offers
@@ -210,7 +241,9 @@ Also in Downloads (L2/R2). The conversion running now, with its progress and
 time left, then the queue and recent results. **A** on a queued one offers
 **Convert next** or **Remove from the queue** (the original stays as it is);
 on a failed one, **Try again**. **X** starts the queue now (when nothing is
-playing and there's room), and **Y** clears the finished results.
+playing and there's room), and **Y** clears the finished results. One that
+waits for room says *Waiting for space*, with what it needs; it starts by
+itself once there's room.
 Conversions run only while no game is playing, and pause while
 EmulationStation is busy. See [Disc compression](disc-compression.md).
 

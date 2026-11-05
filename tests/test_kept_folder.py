@@ -1,0 +1,271 @@
+"""A game's folder kept for the owner's files once the game was compressed to
+one file beside it (or a folder made by hand with only notes in it) isn't the
+game: Check games doesn't call it damaged, the library doesn't count it as on
+the box, a download of the game again unpacks beside the owner's files (never
+over them) and replaces the copy its record names, a refused unpack leaves no
+archive behind, and Check games' row says when its download failed."""
+import os
+import threading
+import types
+import zipfile
+
+import pytest
+
+import rommlib
+from test_audit_fixes import Api, _put
+
+
+def _w(p, data=b""):
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "wb") as f:
+        f.write(data)
+    return p
+
+
+def _zip(path, members):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        for n, data in members.items():
+            z.writestr(n, data)
+    return path
+
+
+def _downloader():
+    d = rommlib.Downloader.__new__(rommlib.Downloader)     # no worker thread
+    d.api, d.cfg, d.es, d.unopenable = None, dict(rommlib.DEFAULT_CONFIG, chd=False), {}, {}
+    d.library, d.persist, d.qlock, d.cv = rommlib.Library(), False, threading.Lock(), threading.Condition()
+    d.hold, d.rate_limit, d.unpacking_bytes, d.jobs, d._closed = False, 0, 0, [], False
+    return d
+
+
+GAME = "Lamp Run (USA)"
+CUE = 'FILE "%s.bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n' % GAME
+ROM = {"id": 5, "name": "Lamp Run", "fs_name": GAME + ".zip", "fs_name_no_ext": GAME}
+
+
+def _sysdir():
+    return os.path.join(rommlib.ROMS_ROOT, "psx")
+
+
+def _compressed_with_manual():
+    """What the CHD worker leaves: the CHD beside the game's folder, kept for the
+    owner's manual, and the record pointing at the CHD."""
+    chd = _w(os.path.join(_sysdir(), GAME + ".chd"), b"chd")
+    manual = _w(os.path.join(_sysdir(), GAME, "Lamp Run manual.pdf"), b"manual")
+    rommlib.Library().mark(ROM, "psx", [chd])
+    return chd, manual
+
+
+# ------------------------------------------------------------ (a) Check games
+
+def test_check_games_doesnt_call_a_kept_folder_a_damaged_game(isolated, monkeypatch):
+    monkeypatch.setattr(rommlib, "es_hashes", lambda system: {})
+    _compressed_with_manual()
+    api = Api([(1, GAME + ".zip", [{"file_name": GAME + ".zip", "file_size_bytes": 100, "category": None,
+                                    "archive_members": [{"name": GAME + ".cue", "size": len(CUE)},
+                                                        {"name": GAME + ".bin", "size": 2352}]}])])
+    findings, stats = rommlib.audit(api, {"psx": [1]})
+    folder = os.path.join(_sysdir(), GAME)
+    assert not [f for f in findings if f["path"].startswith(folder + os.sep) or "Missing" in f["problem"]]
+    assert stats["checked"] == 1                       # the CHD; the folder isn't a game of its own
+
+
+def test_a_folder_with_a_game_file_left_in_it_is_still_checked(isolated, monkeypatch):
+    monkeypatch.setattr(rommlib, "es_hashes", lambda system: {})
+    _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), CUE.encode())    # its track gone
+    api = Api([(1, GAME + ".zip", [{"file_name": GAME + ".zip", "file_size_bytes": 100, "category": None,
+                                    "archive_members": [{"name": GAME + ".cue", "size": len(CUE)},
+                                                        {"name": GAME + ".bin", "size": 2352}]}])])
+    findings, _ = rommlib.audit(api, {"psx": [1]})
+    assert any("Missing" in f["problem"] for f in findings)
+
+
+# ------------------------------------------------------------ (d) on the box?
+
+def test_a_folder_holding_only_notes_isnt_the_game_on_the_box(isolated):
+    _w(os.path.join(_sysdir(), GAME, "notes.txt"), b"my notes")
+    lib = rommlib.Library()
+    assert not lib.is_installed(ROM, "psx")
+    assert lib.paths_for(ROM, "psx") == []
+    assert not rommlib.holds_game(os.path.join(_sysdir(), GAME), "psx")
+    _w(os.path.join(_sysdir(), GAME, "images", GAME + ".bin"), b"not a game: a media folder")
+    lib.rescan("psx")
+    assert not lib.is_installed(ROM, "psx")
+    cue = _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), CUE.encode())
+    lib.rescan("psx")
+    assert lib.is_installed(ROM, "psx") and rommlib.holds_game(cue, "psx")
+    assert lib.paths_for(ROM, "psx") == [os.path.join(_sysdir(), GAME)]
+
+
+# ------------------------------------------------------------ (b) downloading it again
+
+def _download_again(d, members=None):
+    arc = _zip(os.path.join(_sysdir(), GAME + ".zip"),
+               members or {GAME + ".cue": CUE, GAME + ".bin": "B" * 2352})
+    j = rommlib.Job(dict(ROM), "psx")
+    j.made = [arc]                                      # the job's own download
+    d.jobs.append(j)
+    return j, arc
+
+
+def test_downloading_it_again_unpacks_beside_the_owners_files_and_replaces_the_chd(isolated):
+    chd, manual = _compressed_with_manual()
+    d = _downloader()
+    j, arc = _download_again(d)
+    d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert j.state == rommlib.Job.DONE, j.message
+    folder = os.path.join(_sysdir(), GAME)
+    assert sorted(os.listdir(folder)) == sorted([GAME + ".cue", GAME + ".bin", "Lamp Run manual.pdf"])
+    assert open(manual, "rb").read() == b"manual"          # the owner's file stays as it was
+    assert not os.path.exists(arc)
+    assert not os.path.exists(chd)                         # our own old copy: replaced, as Download again does
+    assert d.library.snapshot()["5"]["paths"] == [folder]
+
+
+def test_an_owners_file_is_never_unpacked_over(isolated):
+    _w(os.path.join(_sysdir(), GAME, "readme.txt"), b"the owner's")
+    d = _downloader()
+    j, arc = _download_again(d, {GAME + ".cue": CUE, GAME + ".bin": "B" * 2352, "readme.txt": "the archive's"})
+    with pytest.raises(rommlib.RommError, match="readme.txt is already in"):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    folder = os.path.join(_sysdir(), GAME)
+    assert os.listdir(folder) == ["readme.txt"] and open(os.path.join(folder, "readme.txt")).read() == "the owner's"
+    assert not os.path.exists(arc)                        # a refused unpack leaves no archive in roms/
+
+
+def test_a_refused_unpack_leaves_no_archive_behind(isolated):
+    """Another game's folder (a game file in it, not ours): refused, and the job's
+    archive goes, where ES (no zips on this system) would never show it."""
+    other = _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), b"someone else's copy")
+    d = _downloader()
+    j, arc = _download_again(d)
+    with pytest.raises(rommlib.RommError, match="already on the box") as e:
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    d._failed(j, e.value)
+    assert j.state == rommlib.Job.FAILED
+    assert not os.path.exists(arc) and arc not in j.made
+    assert open(other, "rb").read() == b"someone else's copy"
+
+
+def test_a_file_there_before_the_job_isnt_deleted_when_its_unpack_is_refused(isolated):
+    _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), b"someone else's copy")
+    d = _downloader()
+    j, arc = _download_again(d)
+    j.made = []                                           # the archive was there before the job
+    with pytest.raises(rommlib.RommError):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert os.path.exists(arc)
+
+
+def test_an_unpack_beside_the_owners_files_cut_short_never_deletes_them(isolated):
+    _compressed_with_manual()
+    d = _downloader()
+    j, arc = _download_again(d)
+    real = d._move_into_place
+
+    def killed(j_, moves, archive, lands, keep=False):
+        real(j_, moves[:1], archive, lands, keep=keep)    # one file in, then the box lost power
+        raise rommlib.Cancelled()
+    d._move_into_place = killed
+    with pytest.raises(rommlib.Cancelled):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    d._failed(j, rommlib.Cancelled())                     # the cancel's clean-up
+    assert os.path.exists(os.path.join(_sysdir(), GAME, "Lamp Run manual.pdf"))
+
+
+# ------------------------------------------------------------ (c) Check games' row
+
+def test_check_games_row_says_its_download_failed(isolated, rb):
+    job = rommlib.Job(dict(ROM), "psx")
+    app = types.SimpleNamespace(downloader=types.SimpleNamespace(enqueue=lambda *a, **k: job))
+    scr = rb.AuditScreen.__new__(rb.AuditScreen)
+    scr.app, scr.queued = app, rb.QueuedAgain()
+    f = {"path": os.path.join(_sysdir(), GAME + ".chd"), "system": "psx", "severity": "damaged",
+         "problem": "Incomplete disc image", "rom": dict(ROM)}
+    scr.findings = [f]
+    scr.redownload(f)
+    assert f["path"] in scr.queued and not scr.pickable(f) and scr.queued.failed(f["path"]) is None
+    job.state, job.message = rommlib.Job.FAILED, "Lamp Run (USA) is already on the box under that name"
+    assert f["path"] not in scr.queued and scr.pickable(f)
+    assert scr.queued.failed(f["path"]) == job.message
+    assert scr.redownloadable() == [f]                     # downloadable again
+    job.state = rommlib.Job.CANCELLED
+    assert f["path"] not in scr.queued and scr.queued.failed(f["path"]) is None
+
+
+def test_check_games_download_again_replaces_the_broken_file_shown(isolated, rb, monkeypatch):
+    """A junk .chd named like RomM's zipped cue/bin: Download again names it to replace (the
+    downloader never deletes what the new copy holds), and the row says downloaded once done."""
+    import types
+    got = []
+    app = types.SimpleNamespace(downloader=types.SimpleNamespace(
+        enqueue=lambda rom, system, replace=None: got.append(replace) or types.SimpleNamespace(state=rommlib.Job.DONE)))
+    scr = rb.AuditScreen.__new__(rb.AuditScreen)
+    from rbui.screens.check import QueuedAgain
+    scr.app, scr.queued = app, QueuedAgain()
+    path = os.path.join(rommlib.ROMS_ROOT, "psx", "Breaker (USA).chd")
+    scr.redownload({"rom": {"id": 1, "fs_name": "Breaker (USA).zip"}, "system": "psx", "path": path})
+    assert got == [[path]]
+    assert scr.queued.tag(path) == "downloaded" and path in scr.queued
+
+
+def test_download_again_never_unpacks_in_among_another_game_named_like_this_one(isolated):
+    """Lamp Run (USA)/ holding the owner's MyOther.cue/.bin: Check games calls Lamp Run's cue
+    missing there. Downloading it again unpacked into that folder, mixing the two games (or,
+    before, failed every time with no hint). Now it's refused, saying what to do."""
+    other = _w(os.path.join(_sysdir(), GAME, "MyOther.cue"), b"FILE \"MyOther.bin\" BINARY\n")
+    _w(os.path.join(_sysdir(), GAME, "MyOther.bin"), b"o" * 2352)
+    d = _downloader()
+    j, arc = _download_again(d)
+    j.replace = [os.path.join(_sysdir(), GAME, GAME + ".cue")]      # the file Check games found missing
+    with pytest.raises(rommlib.RommError, match="Move or rename it, then download again"):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    # the game page's Download again names the whole folder (taken for the game by its name):
+    # still never unpacked in among the other game
+    j, arc = _download_again(d)
+    j.replace = [os.path.join(_sysdir(), GAME)]
+    with pytest.raises(rommlib.RommError, match=r"holds another game \(MyOther.bin\).*Move or rename the folder"):
+        d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert sorted(os.listdir(os.path.join(_sysdir(), GAME))) == ["MyOther.bin", "MyOther.cue"]
+    assert open(other, "rb").read().startswith(b"FILE")
+
+
+def test_download_again_replaces_the_damaged_file_check_games_named(isolated):
+    """The owner's cut-short Lamp Run (USA).bin beside their notes: Check games' Download again
+    names it, and RomM's copy takes its place; the notes stay."""
+    b = _w(os.path.join(_sysdir(), GAME, GAME + ".bin"), b"short")
+    _w(os.path.join(_sysdir(), GAME, "notes.txt"), b"notes")
+    d = _downloader()
+    j, arc = _download_again(d)
+    j.replace = [b]
+    d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert j.state == rommlib.Job.DONE, j.message
+    assert open(b).read() == "B" * 2352
+    assert open(os.path.join(_sysdir(), GAME, "notes.txt")).read() == "notes"
+
+
+def test_a_folder_named_like_a_game_holding_another_game_isnt_that_game(isolated):
+    """Lamp Run (USA)/ holding the owner's MyGame.cue/.bin: it was taken for RomM's Lamp Run
+    by its name, so Delete from this box deleted MyGame. A folder found by name is the game
+    only when one of its sheets carries its name."""
+    d = os.path.join(_sysdir(), GAME)
+    _w(os.path.join(d, "MyGame.cue"), b'FILE "MyGame.bin" BINARY\n')
+    _w(os.path.join(d, "MyGame.bin"), b"m" * 2352)
+    lib = rommlib.Library()
+    assert not lib.is_installed(ROM, "psx") and lib.paths_for(ROM, "psx") == []
+    assert rommlib.holds_game(d, "psx") and not rommlib.named_game(d, "psx")
+    _w(os.path.join(d, GAME + " (Disc 1).cue"), CUE.encode())          # now it's Lamp Run's too
+    lib.rescan("psx")
+    assert lib.is_installed(ROM, "psx") and lib.paths_for(ROM, "psx") == [d]
+
+
+def test_a_playlist_left_pointing_out_of_the_folder_isnt_a_game_in_it(isolated):
+    """Compressing kept the folder for a playlist whose name was taken beside it, pointing at
+    ../Lamp Run (USA).chd: the folder was the game again, Check games called its cue missing,
+    and Download again was refused. The playlist lists the CHD; the folder holds no game."""
+    d = os.path.join(_sysdir(), GAME)
+    _w(os.path.join(d, "Mine.m3u"), b"../Lamp Run (USA).chd\n")
+    _w(os.path.join(d, "notes.txt"), b"notes")
+    assert not rommlib.holds_game(d, "psx") and not rommlib.named_game(d, "psx")
+    _w(os.path.join(d, "Mine.m3u"), b"Lamp Run (USA).cue\n")          # one listing a disc in it is
+    assert rommlib.holds_game(d, "psx")

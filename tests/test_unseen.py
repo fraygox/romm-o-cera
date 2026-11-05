@@ -172,10 +172,22 @@ def test_unpack_refuses_to_mix_into_another_game(isolated):
     arc = _zip("ps2/Lorem Racer.zip", {"Lorem Racer.iso": b"new"})
     other = _w("ps2/Lorem Racer.iso", b"someone else's copy")
     f = _by_name(rommlib.find_unseen(ES))["ps2/Lorem Racer.zip"]
-    with pytest.raises(rommlib.RommError, match="already on the box"):
+    with pytest.raises(rommlib.RommError, match="same name as Lorem Racer.iso"):
         rommlib.unpack_unseen(_dl(), f)
     assert os.path.exists(arc) and open(other, "rb").read() == b"someone else's copy"
     assert not os.path.exists(rommlib.CHD_QUEUE_DIR) or not os.listdir(rommlib.CHD_QUEUE_DIR)
+
+
+def test_unpack_refuses_an_archive_of_a_game_already_here_as_a_chd(isolated):
+    """Ipsum.zip beside Ipsum.chd: unpacking made an Ipsum/ folder too, and ES listed the game
+    twice (its compression then skipped: the CHD's name was taken)."""
+    arc = _zip("psp/Ipsum.zip", {"Ipsum.cue": 'FILE "Ipsum.bin" BINARY\n', "Ipsum.bin": b"\0" * 64})
+    _w("psp/Ipsum.chd", b"chd")
+    f = _by_name(rommlib.find_unseen(dict(ES, psp=ES["psp"] | {".chd"})))["psp/Ipsum.zip"]
+    assert f["twin"] == "Ipsum.chd" and f["why"] == "same name as Ipsum.chd here"     # said up front
+    with pytest.raises(rommlib.RommError, match="same name as Ipsum.chd here.*Another game: rename one of them"):
+        rommlib.unpack_unseen(_dl(dict(ES, psp=ES["psp"] | {".chd"})), f)
+    assert os.path.exists(arc) and not os.path.exists(os.path.join(rommlib.ROMS_ROOT, "psp", "Ipsum"))
 
 
 def test_unpack_refuses_unsafe_archives(isolated):

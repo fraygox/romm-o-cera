@@ -106,6 +106,15 @@ class CoverLoader:
             self.run_one()
 
 
+def kept_note(paths):
+    """After a delete: a game folder that stays because it holds the owner's own files."""
+    kept = [p for p in paths or [] if os.path.isdir(p)]
+    if not kept:
+        return ""
+    return ". Its folder %s stays: it holds your own files" % os.path.relpath(kept[0], os.path.dirname(
+        rommlib.ROMS_ROOT))
+
+
 def plural_games(jobs):
     """"1 game" / "3 games": what the closing wait names (a count, never a name that could overflow)."""
     return "1 game" if len(jobs) == 1 else "%d games" % len(jobs)
@@ -126,7 +135,7 @@ class App:
         self.canvas = pygame.Surface((S(W), S(H)))
         self.scaled_covers = {}
         self.details, self.detail_busy = {}, False     # RomM's full record per rom id (files, archive members)
-        self.es_count = {}                             # {system: games ES lists}, refreshed by Platforms
+        self.here_count = {}                           # {platform id: its games on the box}, refreshed by Platforms
         self.fonts = Fonts()
         draw.FONTS["f"] = self.fonts
         self.cfg = rommlib.load_config()
@@ -482,7 +491,8 @@ class App:
     def uninstall(self, rom, system, then=None):
         def done(res):
             paths, freed = res
-            self.toast("Deleted %s — %s freed" % (rom.get("name"), human_size(freed)), theme.GREEN)
+            self.toast("Deleted %s — %s freed%s" % (rom.get("name"), human_size(freed), kept_note(paths)),
+                       theme.GREEN)
             self.space_freed()
             if then:
                 then()
@@ -492,7 +502,7 @@ class App:
         """Every disc of a set and its playlist; like uninstall(), conversions
         waiting for room hear about the space."""
         def done(res):
-            self.toast("Deleted %s — %s freed" % (title, human_size(res[1])), theme.GREEN)
+            self.toast("Deleted %s — %s freed%s" % (title, human_size(res[1]), kept_note(res[0])), theme.GREEN)
             self.space_freed()
             if then:
                 then()
@@ -569,15 +579,17 @@ class App:
 
     def rom_status(self, rom):
         """("active"|"failed"|"installed"|"remote", job or None). A finished
-        download counts as installed only while its files are still there."""
+        download counts as installed only while its files are still there; a game
+        on the box stays installed when a later download of it failed (Download
+        again refused: what's there still plays, and can be deleted)."""
         j = self.downloader.job_for(rom["id"])
         if j and j.active:
             return "active", j
-        if j and j.state == rommlib.Job.FAILED:
-            return "failed", j
         system = self.system_for(rom)
         if system and self.library.is_installed(rom, system):
             return "installed", j if j and j.state == rommlib.Job.DONE else None
+        if j and j.state == rommlib.Job.FAILED:
+            return "failed", j
         return "remote", None
 
     def set_title(self, rom):
@@ -1083,6 +1095,8 @@ class App:
 
     def tick_downloads(self):
         for j in self.downloader.jobs:
+            if getattr(j, "restored", False):
+                continue                             # an earlier session's, back from the saved history
             if j.state == rommlib.Job.DONE and not getattr(j, "_announced", False):
                 j._announced = True
                 self.toast_ready(j)
@@ -1095,6 +1109,23 @@ class App:
             elif j.state == rommlib.Job.FAILED and not getattr(j, "_announced", False):
                 j._announced = True
                 self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)
+        self.watch_conversions()
+
+    CONV_WATCH = 10.0           # seconds between looks for a conversion worker that died mid-task
+
+    def watch_conversions(self, now=None):
+        """A conversion worker killed or crashed mid-task (its chd-current.json names
+        a process that's gone) is started again, so the task doesn't sit there as
+        converting until the app is closed. One small file read every CONV_WATCH."""
+        now = time.monotonic() if now is None else now
+        if self.headless or now - getattr(self, "_conv_watch_at", -self.CONV_WATCH) < self.CONV_WATCH:
+            return False
+        self._conv_watch_at = now
+        if not rommlib.conversion_worker_gone():
+            return False
+        rommlib.log("chd: the conversion worker stopped mid-task; starting it again")
+        self.spawn_helper("rb_chd.py")           # it clears the stale file and takes the task up again
+        return True
 
     def toast_ready(self, j):
         """A finished download: "Ready", and when it can start now, where Play

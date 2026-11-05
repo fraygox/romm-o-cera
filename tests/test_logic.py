@@ -1014,6 +1014,13 @@ def test_sweep_ui_sort_infodialog_clamp_and_status(isolated, rb, monkeypatch):
     app.downloader.jobs.append(j)
     app.platform_by_id = {1: {"_system": "gba"}}
     assert app.rom_status(rom)[0] == "remote"
+    # a later download that failed (refused: a folder in the way) never hides what's here
+    j.state = rommlib.Job.FAILED
+    assert app.rom_status(rom)[0] == "failed"
+    os.makedirs(os.path.join(rommlib.ROMS_ROOT, "gba"), exist_ok=True)
+    open(os.path.join(rommlib.ROMS_ROOT, "gba", "Gone.zip"), "w").write("rom")
+    app.library.rescan("gba")
+    assert app.rom_status(rom)[0] == "installed"
 
 
 def test_cover_cache_lru_prune(isolated, monkeypatch):

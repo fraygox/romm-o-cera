@@ -464,6 +464,11 @@ def _chd_verified(path):
         return _CHD_VERIFIED[key]
 
 
+# what a zip offered as a copy of a converted game may hold: the disc's own files
+COPY_MEMBER_EXTS = tuple(sorted(_core.DISC_EXTS | {".bin", ".img", ".sub", ".raw", ".wav", ".ogg", ".mp3",
+                                                   ".flac", ".ape", ".sbi", ".ecm", ".mds", ".gcm", ".3ds"}))
+
+
 def _copy_zip_members(path):
     """[(lower-case member name, size)] of the files in a zip; None if it can't be read."""
     try:
@@ -545,6 +550,14 @@ def _converted_ok(path, orig, here, dp, checked):
         return checked[key]
     ok = False
     low = path.lower()
+    # a zip holding anything but the disc (the owner's memory card, a walkthrough) isn't a
+    # copy of it: deleting it would take those with it
+    extra = next((n for n, _ in _copy_zip_members(orig) or [] if not n.endswith(COPY_MEMBER_EXTS)), None) \
+        if orig.lower().endswith(".zip") else None
+    if extra is not None:
+        _core.log("LEFTOVERS: %s holds %s besides the game: not offered as a copy" % (orig, extra))
+        checked[key] = False
+        return False
     try:
         if os.path.isdir(path):
             ok = low.endswith(".ps3") and _ps3.ps3_folder_check(path) is None

@@ -3,8 +3,8 @@
 ## Finding games
 
 - **Platforms**: only those with a Batocera system. Each card shows how many
-  games RomM has and how many of that system's games are already on the box
-  (green). **Y** searches the platform under the cursor, **X** picks a random
+  games RomM has and how many of them are already on the box (green: the
+  games its list ticks ✓). **Y** searches the platform under the cursor, **X** picks a random
   game from it.
 - **Collections**: shelves of cover mosaics, a shelf per kind of collection
   (Top lists, Themes, Series, your own kinds, Smart, Browse by), each tile
@@ -216,7 +216,9 @@ its count:
 
 - **Matches RomM**: the same file RomM has, or *Matches RomM (compressed)*:
   RomM's game, compressed here by the app (a .chd from RomM's .zip). Nothing
-  to do.
+  to do. A file you renamed by hand still matches when it's the same size as
+  one of RomM's games and RomM's checksum agrees; the panel says it's under
+  another name, and the file keeps yours.
 - **Newer in RomM**: the app downloaded this game and RomM's file has changed
   since. **A** (*Get the newer one*) downloads it again through the usual
   download dialog and replaces the copy here; saves are kept. On a disc of a
@@ -224,9 +226,11 @@ its count:
   game whose files are all shared with another RomM entry can't be replaced
   from here: its files here are shared with another game, so there's nothing
   of its own to replace.
-- **Differs from RomM's**: a file with RomM's name at another size that the
-  app didn't install (copied over by hand, say). **A** (*Get RomM's copy*)
-  downloads RomM's one.
+- **Differs from RomM's**: a file in RomM's format at another size than
+  RomM's: one the app downloaded that was cut short or changed since, or one
+  with RomM's name that the app didn't install (copied over by hand, say).
+  Compare goes by the file as it is now, so a damaged download never shows
+  as a match. **A** (*Get RomM's copy*) downloads RomM's one.
 - **Not in RomM** (platforms only): a game put on the box another way. It
   still plays.
 
@@ -269,9 +273,12 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
   [Disc compression](disc-compression.md)).
 - An archive never unpacks into another game's folder. If its folder name is
   already taken by a different game, the download stops with "… is already on
-  the box under that name" instead of mixing the two. Archives that would
+  the box under that name" instead of mixing the two. A folder of that name
+  with no game in it (only your manual or notes) takes the game's files beside
+  yours, never over one of them. Archives that would
   unpack over EmulationStation's files, and 7z/rar archives that contain
-  links, are refused.
+  links, are refused. A download refused like this deletes the archive it
+  fetched, so none is left in the system's folder.
 - Manuals (PDF) come along from RomM and open from the game's menu in
   EmulationStation.
 
@@ -303,6 +310,9 @@ before starting a game (a system with missing BIOS files), it asks then too.
 **Select** opens it from anywhere (Home's Downloads too). The line on top says
 when everything is done (downloads at their smoothed speed, plus the running
 conversion and the ones queued behind it), with one bar for all of it.
+When that can't be told yet it says what's going on instead (Downloading,
+Unpacking, Downloads wait for space, Compressing waits for space), and once
+nothing is left, how many downloads failed, if any.
 Downloads are on the left, what this box is compressing on the right;
 **left/right** moves between them.
 
@@ -318,22 +328,29 @@ deletes the partial files and any file the download had already finished
 replace cancelled halfway keeps the old copy whole. Each game shows what it's being compressed to (CHD,
 RVZ, squashfs, .zcci, .zar, .wux, .wua, a `.ps3` folder) and when that's done. A
 finished game's menu has [Play now](#play-now). A failed download says why
-under its name.
+under its name. The list, finished ones too (the last 50), is still there
+after the app closes or the box restarts, until you clear it. A finished game
+you've deleted since says **Deleted since** instead of Ready to play.
 
 On the right, **Compressing**: the running conversion with its progress and time
 left (**A** pauses or resumes it, **X** stops it: what's made so far goes, the
 original stays, and Conversions can queue it again), the queue (**A** converts
-it next, **X** takes it out), what finished lately, and **Compress games…**
+it next, **X** takes it out; one that waits for room says so), what finished
+lately, and **Compress games…**
 (**Y**) to pick games already on the box. A pause lasts until you resume, even
 across restarts; conversions also pause by themselves while a game runs. L2/R2
-opens **Conversions** ([On this box](on-this-box.md#conversions)).
+opens **Conversions** ([On this box](on-this-box.md#conversions)). A
+conversion whose worker was killed or crashed halfway shows as queued again
+and starts over within seconds while the app is open (when it's closed, the
+next time the app starts or closes).
 
 ### Space
 
 **Keep free on disk** (Settings, default 20 GB): downloads and conversions
 never leave less than this free. A download that doesn't fit waits ("Waiting
 for space") and starts once there's room; smaller ones behind it keep going.
-Activity shows the space free (or how much the queue is short by), and
+Activity shows the space free, or the same "waiting for … of space" as the
+download that waits, or else how much more the whole queue needs, and
 adding a game the queue can't fit warns you. An archive counts what it
 really unpacks to: RomM's list of its contents, or, when RomM has none (Wii U,
 for one), the zip's own list, read from RomM in the background before the
@@ -343,7 +360,9 @@ Wii U game counts as a whole disc image ("up to 23.3 GB", the size of every
 `.wud`) and anything else about 2.2 times the download. A zip is deleted
 once it's unpacked, so the queue counts only the biggest zip beside its
 contents, plus what every game unpacks to. Conversions waiting for room
-start as soon as you free some.
+start as soon as you free some (within about 30 seconds, however you free
+it, with the app open or closed). Asking again for a game that's already
+queued says where it stands (queued, waiting for space, downloading).
 
 ### Download hours
 

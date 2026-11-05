@@ -169,11 +169,21 @@ def test_rvz_conversion_verified_junk_and_mismatch_refused(isolated, tmp_path, m
     monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")   # nothing busy in ES
     monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG, rvz=True, keep_free_gb=0))
     sysdir = os.path.join(rommlib.ROMS_ROOT, "gamecube")
+    users, real_run = [], rb_chd.run_tool
+
+    def run_tool(argv, keep_stdout=False):
+        if "-u" in argv:
+            u = argv[argv.index("-u") + 1]
+            users.append((u, os.path.isdir(u)))
+        return real_run(argv, keep_stdout)
+    monkeypatch.setattr(rb_chd, "run_tool", run_tool)
     good = _gc(os.path.join(sysdir, "Commodo Cab (USA).iso"))
     assert rb_chd.convert({"system": "gamecube", "mode": "rvz", "sources": [good], "roots": [good]}) is True
     out = os.path.join(sysdir, "Commodo Cab (USA).rvz")
     assert os.path.exists(out) and not os.path.exists(good) and not os.path.exists(out + ".part")
-    assert os.path.isdir(os.path.join(rommlib.DATA_DIR, "tmp", "dolphin-user"))     # never Batocera's own
+    user = os.path.join(rommlib.DATA_DIR, "tmp", "dolphin-user")
+    assert users and all(u == (user, True) for u in users)      # never Batocera's own
+    assert not os.path.exists(user)             # gone after: Clean up leftovers never offers it
     junk = _gc(os.path.join(sysdir, "Not A Disc.iso"), b"PS2 stuff" * 100)
     assert rb_chd.convert({"system": "gamecube", "mode": "rvz", "sources": [junk], "roots": [junk]}) is False
     assert os.path.exists(junk) and not os.path.exists(os.path.join(sysdir, "Not A Disc.rvz"))

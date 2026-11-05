@@ -83,7 +83,7 @@ class Notes:
         elif not short:
             self.alerts.pop("space", None)         # room again before anyone saw it
         for j in d.jobs:
-            if id(j) in self.seen:
+            if id(j) in self.seen or getattr(j, "restored", False):    # restored: an earlier run's
                 continue
             if j.state == rommlib.Job.DONE:
                 self.ready.append(j.name)
@@ -168,7 +168,7 @@ def download(cfg):
         os.remove(rommlib.DL_STATUS)
     except OSError:
         pass
-    done = sum(1 for j in d.jobs if j.state == rommlib.Job.DONE)
+    done = sum(1 for j in d.jobs if j.state == rommlib.Job.DONE and not getattr(j, "restored", False))
     rommlib.log("dl-worker: %s (%d done)" % ("handed back to the app" if stopped else "queue finished", done))
     if os.path.exists(rommlib.DL_STOP):
         os.remove(rommlib.DL_STOP)

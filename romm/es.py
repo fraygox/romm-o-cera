@@ -2,7 +2,6 @@
 import json
 import os
 import re
-import shutil
 import urllib.parse
 import xml.etree.ElementTree as ET
 
@@ -245,6 +244,28 @@ def m3u_paths(path):
     return [os.path.normpath(os.path.join(d, e)) for e in m3u_lines(path)]
 
 
+def playlists_naming(system, paths):
+    """The other .m3u files in roms/<system> (not among `paths`: a user's own playlist)
+    that list one of `paths`: ES keeps listing them, pointing at nothing, once the game
+    goes. Their file names, sorted; they're never deleted (not ours)."""
+    sysdir = os.path.join(_core.ROMS_ROOT, system)
+    ours = {os.path.normpath(p) for p in paths}
+    out = []
+    for dp, dns, fns in os.walk(sysdir):
+        if os.path.normpath(dp) == os.path.normpath(sysdir):
+            dns[:] = [d for d in dns if d not in _core.GAMELIST_MEDIA_DIRS]
+        for n in fns:
+            p = os.path.normpath(os.path.join(dp, n))
+            if not n.lower().endswith(".m3u") or p in ours:
+                continue
+            try:
+                if ours & set(m3u_paths(p)):
+                    out.append(n)
+            except OSError:
+                pass
+    return sorted(out)
+
+
 def game_files(path):
     """Everything that makes up the game ES lists at `path`: a playlist's
     discs, a cue/gdi's tracks — never anything outside its system folder."""
@@ -300,6 +321,16 @@ def _went_anyway(e, name, gone, freed, failed, why):
     return e
 
 
+def _remove_keeping_folders(p, system=None):
+    """delete_game without a Library to tell game files from the owner's: a file goes,
+    a folder only when it's empty."""
+    if os.path.islink(p) or not os.path.isdir(p):
+        if os.path.lexists(p):
+            os.remove(p)
+    elif not os.listdir(p):
+        os.rmdir(p)
+
+
 def delete_game(system, path, library=None):
     """Delete a game ES lists (any game, not only ours): its files, then any
     game folder left empty. Saves and states live elsewhere and are kept. A file
@@ -312,20 +343,18 @@ def delete_game(system, path, library=None):
     files = [p for p in game_files(path) if _core._inside(p, sysdir)]
     name = os.path.splitext(os.path.basename(path))[0]
     gone, failed, freed = [], [], 0
+    remove = library.remove_path if library is not None else _remove_keeping_folders
     for p in files:
         size = _core.path_size(p)
         try:
-            if os.path.isdir(p) and not os.path.islink(p):
-                shutil.rmtree(p)
-            elif os.path.lexists(p):
-                os.remove(p)
+            remove(p, system)                 # a game's folder keeps the owner's own files (notes, a manual)
         except OSError as e:
             failed.append((p, e))
             if os.path.lexists(p):
                 freed += max(0, size - _core.path_size(p))
                 continue
         gone.append(p)
-        freed += size
+        freed += max(0, size - _core.path_size(p)) if os.path.lexists(p) else size
     for p in sorted({os.path.dirname(p) for p in gone}, key=len, reverse=True):
         d = p
         try:

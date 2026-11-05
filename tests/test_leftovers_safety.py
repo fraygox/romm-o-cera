@@ -158,6 +158,19 @@ def test_a_zip_beside_a_chd_is_compared_by_its_tracks_and_a_7z_never(isolated):
     assert offered() == {"psx/Elit (USA).zip": "Already here as Elit (USA).chd"}
 
 
+def test_a_zip_holding_the_owners_files_besides_the_disc_is_never_offered(isolated):
+    """RomM's cue/bin zipped with the owner's memory card and walkthrough beside the CHD: it
+    was offered as a copy, and deleting it lost them."""
+    d = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(d)
+    with zipfile.ZipFile(os.path.join(d, "Elit (USA).zip"), "w") as z:
+        z.writestr("Elit (USA).cue", CUE % "Elit (USA).bin")
+        z.writestr("Elit (USA).bin", b"\4" * 2352 * 300)
+        z.writestr("MY SAVE card1.mcr", b"save")
+    fake_chd(os.path.join(d, "Elit (USA).chd"))
+    assert offered() == {}
+
+
 def test_discs_a_playlist_lists_are_never_offered(isolated):
     """Deleting the cues an .m3u lists leaves EmulationStation a playlist of missing discs."""
     d = os.path.join(rommlib.ROMS_ROOT, "psx")

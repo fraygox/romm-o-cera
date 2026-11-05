@@ -989,18 +989,53 @@ CONVERT_LABELS = {c.mode: c.label for c in CONVERTERS}
 CONVERT_OUTPUTS = {c.mode: c.outputs for c in CONVERTERS}
 
 
+def _published_current():
+    try:
+        with open(_core.chd_current_path()) as f:
+            cur = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return cur if isinstance(cur, dict) else {}
+
+
+def _worker_alive(pid):
+    """True while pid is a running rb_chd.py: a killed one's is gone, or a zombie
+    (an empty cmdline) until the app that started it reaps it, or another program's."""
+    try:
+        with open("/proc/%d/cmdline" % int(pid), "rb") as f:
+            return b"rb_chd" in f.read()
+    except (OSError, ValueError, TypeError, OverflowError):
+        if not os.path.isdir("/proc/self"):
+            return True                      # no /proc to tell by: trust the file
+        return False
+
+
+def conversion_current():
+    """chd-current.json, the task the conversion worker is on ({} when idle), or {}
+    when the worker that wrote it is gone (killed or crashed mid-task: the task is
+    still queued, and conversion_worker_gone() says to start one again). A file
+    without "pid" (an older worker) is trusted."""
+    cur = _published_current()
+    if cur.get("pid") is not None and not _worker_alive(cur["pid"]):
+        return {}
+    return cur
+
+
+def conversion_worker_gone():
+    """True when chd-current.json names a worker that's no longer running (it
+    died mid-task): the caller starts one again; the new one clears the file."""
+    cur = _published_current()
+    return bool(cur.get("task")) and cur.get("pid") is not None and not _worker_alive(cur["pid"])
+
+
 def chd_status(task_name, library=None, rom_id=None, mode=None):
     """Where a download's conversion stands: "queued", "compressing", "done",
     or None (no task / gave up — the original files stay). mode: the task's
     conversion (any when unknown), for recognising its output."""
     if not task_name:
         return None
-    try:
-        with open(_core.chd_current_path()) as f:
-            if json.load(f).get("task") == task_name:
-                return "compressing"
-    except (OSError, ValueError):
-        pass
+    if conversion_current().get("task") == task_name:
+        return "compressing"
     if os.path.exists(os.path.join(_core.CHD_QUEUE_DIR, task_name)):
         return "queued"
     if library is not None and rom_id is not None:
@@ -1036,13 +1071,8 @@ def conversions_state(recent=60):
     *.json task in queue order, task None when its file can't be read
     (half-written, or taken meanwhile); "results": the last `recent` lines of
     chd-results.jsonl, oldest first. A missing or unreadable file reads as
-    empty."""
-    cur = {}
-    try:
-        with open(_core.chd_current_path()) as f:
-            cur = json.load(f)
-    except (OSError, ValueError):
-        pass
+    empty; so does the task of a worker that died on it (conversion_current)."""
+    cur = conversion_current()
     try:
         names = sorted(n for n in os.listdir(_core.CHD_QUEUE_DIR) if n.endswith(".json"))
     except OSError:
@@ -1169,11 +1199,7 @@ def start_conversions(python=None):
 
 
 def _converting_now(name):
-    try:
-        with open(_core.chd_current_path()) as f:
-            return json.load(f).get("task") == name
-    except (OSError, ValueError, AttributeError):
-        return False
+    return conversion_current().get("task") == name
 
 
 def queue_task_first(name):

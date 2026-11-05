@@ -1,11 +1,14 @@
 """What's on the box against RomM: Compare per platform or collection, which
 backlog games fit now, and how often a game was played here."""
+import hashlib
 import os
 import re
 import time
+import zipfile
+import zlib
 
 from . import (core as _core, config as _config, es as _es, convert as _convert, library as _library,
-               downloader as _downloader, unseen as _unseen, api as _api)
+               downloader as _downloader, unseen as _unseen, api as _api, audit as _audit)
 
 
 # ------------------------------------------------------------ Compare with RomM
@@ -80,8 +83,8 @@ def local_games(system):
             continue
         try:
             is_dir = e.is_dir()
-            if is_dir and name in _core.MEDIA_DIRS:
-                continue
+            if is_dir and (name in _core.MEDIA_DIRS or not _library.holds_game(e.path, system)):
+                continue                                  # a folder of notes or a manual: not a game
             if not is_dir and low.endswith(skip_ext):
                 continue
             st = e.stat()
@@ -136,7 +139,10 @@ def box_copy(library, rom, system):
     paths = library.paths_for(rom, system)
     if not paths:
         return None
-    ext = _lower_ext(_primary([p for p in paths if _lower_ext(p) != ".m3u"] or paths))
+    main = _primary([p for p in paths if _lower_ext(p) != ".m3u"] or paths)
+    ext = _lower_ext(main)
+    if os.path.isdir(main) and ext not in _library.FOLDER_GAME_EXTS:
+        ext = ""                                 # "Lorem 1.1 (USA)/": a folder, not a ".1 (usa)" file
     return {"paths": paths, "size": sum(_core.path_size(p) for p in paths),
             "format": ext[1:].upper() if ext else "folder"}
 
@@ -168,25 +174,106 @@ def _changed(rom, rec):
     return bool(old and new and old != new)
 
 
+def _cut(rom, g):
+    """The box's copy is one file in RomM's format at a size RomM's file isn't: not the file
+    RomM has, as it is now (cut short, or changed since it came here)."""
+    want = rom.get("fs_size_bytes")
+    return bool(len(g["paths"]) == 1 and g["size"] and want and g["size"] != want
+                and _lower_ext(g["path"]) == _rom_ext(rom))
+
+
+# the hashes RomM keeps of a game's file, checked first to last (a zip's are its member's)
+_HASHES = (("sha1_hash", "sha1"), ("md5_hash", "md5"), ("crc_hash", "crc"))
+
+
+def _same_bytes(path, roms):
+    """The first of roms (RomM's games at this file's size) a hash RomM keeps says is this
+    very file, or None. Reads the file once (a single-member zip: its member's CRC from the
+    zip's directory when RomM keeps a crc, else the member); a zip of several files can't be
+    told (RomM's hash is of them all together)."""
+    def got(algo):
+        if algo not in cache:
+            cache[algo] = _digest(path, algo)
+        return cache[algo]
+    cache = {}
+    for r in roms:
+        for field, algo in _HASHES:
+            want = (r.get(field) or "").lower()
+            if want:
+                have = got(algo)
+                if have is not None and have == (want.zfill(8) if algo == "crc" else want):
+                    return r
+                break                                # the best hash RomM keeps decides
+    return None
+
+
+def _digest(path, algo):
+    """A file's hash as RomM keeps it (hex; a crc 8 digits), or None when it can't be read
+    or told (a zip of several files, an archive RomM hashes by what's inside)."""
+    low = path.lower()
+    try:
+        if low.endswith(".zip"):
+            with zipfile.ZipFile(path) as z:
+                infos = [i for i in z.infolist() if not i.is_dir()]
+                if len(infos) != 1:
+                    return None
+                if algo == "crc":
+                    return "%08x" % infos[0].CRC
+                with z.open(infos[0]) as fh:
+                    return _hash_stream(fh, algo)
+        if low.endswith(_downloader.CONTENT_HASHED):
+            return None
+        with open(path, "rb") as fh:
+            return _hash_stream(fh, algo)
+    except (OSError, zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError, zlib.error):
+        return None
+
+
+def _hash_stream(fh, algo):
+    if algo == "crc":
+        c = 0
+        for b in iter(lambda: fh.read(1 << 22), b""):
+            c = zlib.crc32(b, c)
+        return "%08x" % c
+    h = hashlib.new(algo)
+    for b in iter(lambda: fh.read(1 << 22), b""):
+        h.update(b)
+    return h.hexdigest()
+
+
 def _compressed(rom, paths, outs):
+    """RomM's game compressed here: a converted format RomM's file isn't in, whose
+    CHDs are whole ones (a header read: random bytes or a cut-short CHD named like
+    the game differ from RomM's, never match it)."""
     exts = {_lower_ext(p) for p in paths} - {".m3u"}
-    return bool(exts & outs) and _rom_ext(rom) not in exts
+    return bool(exts & outs) and _rom_ext(rom) not in exts and not any(
+        _lower_ext(p) == ".chd" and os.path.isfile(p) and _audit.chd_header_problem(p) for p in paths)
 
 
-def compare_games(roms, records, local, system, scope="platform"):
-    """Each game on the box against RomM's games (pure; quick on 10,000-game
-    platforms). roms: RomM's games of the platform(s) or collection (list
+def _bad_conversion(rom, paths, outs):
+    """In a converted format RomM's file isn't in, but not a whole one (_compressed)."""
+    exts = {_lower_ext(p) for p in paths} - {".m3u"}
+    return bool(exts & outs) and _rom_ext(rom) not in exts and not _compressed(rom, paths, outs)
+
+
+def compare_games(roms, records, local, system, scope="platform", cancel=None):
+    """Each game on the box against RomM's games (quick on 10,000-game
+    platforms: no file is read, but for the hash below). roms: RomM's games of the platform(s) or collection (list
     records, COMPARE_FIELDS is enough); records: Library.snapshot();
     local: local_games(system). A game the app installed is matched by its
-    record, any other by file name. Statuses: "matches"; "compressed" (the
+    record, any other by file name, or else (one file at the size of a RomM
+    game no other copy here is) by a hash RomM keeps: "renamed" on the item,
+    the one case that reads a file. Statuses: "matches"; "compressed" (the
     app converted RomM's file: .chd from RomM's .zip/.cue); "newer" (RomM's
-    file changed since the app installed it: size or hash); "differs" (a game
-    the app didn't install, with RomM's file name at another size: which one is
-    newer can't be told, RomM's dates change on any edit and the file's is the
-    copy's); "not_in_romm" (no
+    file changed since the app installed it: size or hash); "differs" (one file
+    in RomM's format at another size than RomM's: one the app installed was cut
+    or changed since; for one it didn't, which is newer can't be told, RomM's
+    dates change on any edit and the file's is the copy's); "not_in_romm" (no
     RomM game for it). scope="collection": games that aren't in it are left
-    out instead of "not_in_romm". Returns {"items": [{"status", "label",
-    "name", "path", "paths", "size", "rom" (RomM's record, of the
+    out instead of "not_in_romm". cancel: stops hashing (the rest are "not_in_romm").
+    Returns {"items": [{"status", "label",
+    "name", "path", "paths", "size", "renamed" (True: RomM's file under another
+    name, matched by its hash), "rom" (RomM's record, of the
     worst-off disc for a set, or None), "rom_ids", "parts": [{"rom", "status", "paths"
     (the files of that RomM game alone: a record's own, never another record's
     or another disc's, nor a set's playlist)}]}], by name, "counts": {status: n}}."""
@@ -267,21 +354,24 @@ def compare_games(roms, records, local, system, scope="platform"):
                     put(g, NOT_IN_ROMM, None)
                 continue
             paths = list(rec.get("paths") or []) + g["paths"]
-            status = NEWER if _changed(rom, rec) else COMPRESSED if _compressed(rom, paths, outs) else MATCHES
+            status = NEWER if _changed(rom, rec) else COMPRESSED if _compressed(rom, paths, outs) else \
+                DIFFERS if _cut(rom, g) or _bad_conversion(rom, paths, outs) else MATCHES
             # a disc of a set never owns the set's playlist (deleting it takes every disc)
             put(g, status, rom, [p for p in rec.get("paths") or []
                                  if _top(p, sysdir) in g_tops(g) and claims.get(p) == 1
                                  and not (rec.get("group") and _lower_ext(p) == ".m3u")])
+    unnamed = []
     for g in local:
         if id(g) in claimed:
             continue
         rom = by_names(g)
-        if rom is None:
-            if scope == "platform":
-                put(g, NOT_IN_ROMM, None)
+        if rom is None or not all(_library.named_game(p, system) for p in g["paths"] if os.path.isdir(p)):
+            unnamed.append(g)                   # (a folder named like RomM's game holding another one)
             continue
         if _compressed(rom, g["paths"], outs):
             status = COMPRESSED
+        elif _bad_conversion(rom, g["paths"], outs):
+            status = DIFFERS            # a damaged CHD (or random bytes) under RomM's game's name
         elif len(g["paths"]) == 1 and g["size"] and rom.get("fs_size_bytes") and \
                 os.path.basename(g["path"]).lower() == (rom.get("fs_name") or "").lower() and \
                 g["size"] != rom["fs_size_bytes"]:
@@ -289,6 +379,26 @@ def compare_games(roms, records, local, system, scope="platform"):
         else:
             status = MATCHES
         put(g, status, rom)
+    # a copy under a name of its own: RomM's game at its size that nothing here is yet, told by its hash
+    taken = {str(x["rom"]["id"]) for it in found.values() for x in it["parts"]} | \
+        {str(rid) for rid, rec in records.items() if isinstance(rec, dict) and rec.get("system") == system
+         and any(os.path.exists(p) for p in rec.get("paths") or [])}
+    by_size = {}
+    for r in by_id.values():
+        if r.get("fs_size_bytes") and str(r["id"]) not in taken:
+            by_size.setdefault(r["fs_size_bytes"], []).append(r)
+    for g in unnamed:
+        rom = None
+        if len(g["paths"]) == 1 and g["size"] and by_size.get(g["size"]) and \
+                not (cancel is not None and cancel.is_set()):
+            rom = _same_bytes(g["path"], by_size[g["size"]])
+        if rom is None:
+            if scope == "platform":
+                put(g, NOT_IN_ROMM, None)
+            continue
+        by_size[g["size"]].remove(rom)
+        put(g, MATCHES, rom)
+        found[id(g)]["renamed"] = True
     items = []
     counts = dict.fromkeys(COMPARE_LABELS, 0)
     for it in found.values():
@@ -302,7 +412,7 @@ def compare_games(roms, records, local, system, scope="platform"):
                 x["paths"] = [p for p in held[i] if p not in others and _lower_ext(p) != ".m3u"]
         worst = max(parts, key=lambda x: _RANK[x["status"]], default=None)      # first of the worst
         items.append({"status": it["status"], "label": COMPARE_LABELS[it["status"]], "name": g["name"],
-                      "path": g["path"], "paths": g["paths"], "size": g["size"],
+                      "path": g["path"], "paths": g["paths"], "size": g["size"], "renamed": bool(it.get("renamed")),
                       "rom": worst["rom"] if worst else None, "rom_ids": [x["rom"]["id"] for x in parts],
                       "parts": parts})
     items.sort(key=lambda it: it["name"].lower())
@@ -333,7 +443,7 @@ def compare_platform(api, library, system, platform_ids, cancel=None):
     roms = api.roms_all(platform_ids=list(platform_ids), cancel=cancel, fields=COMPARE_FIELDS)
     if roms is None:
         return None
-    return compare_games(roms, library.snapshot(), local_games(system), system)
+    return compare_games(roms, library.snapshot(), local_games(system), system, cancel=cancel)
 
 
 def compare_collection(api, library, collection, system_of, cancel=None):
@@ -354,7 +464,7 @@ def compare_collection(api, library, collection, system_of, cancel=None):
     for s, rs in sorted(by_system.items()):
         if cancel is not None and cancel.is_set():
             return None
-        got = compare_games(rs, snap, local_games(s), s, scope="collection")
+        got = compare_games(rs, snap, local_games(s), s, scope="collection", cancel=cancel)
         out["items"] += got["items"]
         for k, n in got["counts"].items():
             out["counts"][k] += n

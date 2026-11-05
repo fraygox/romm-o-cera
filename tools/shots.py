@@ -191,6 +191,29 @@ def fake_conversions():
                           "sources": ["Misplaced.iso"], "mode": "rvz", "retry": {"mode": "rvz"}}) + "\n")
 
 
+def conversions_waiting_for_room():
+    """A conversion the worker can't start for lack of space (it waits for room), a
+    download waiting for space too: what Activity and Conversions say then."""
+    import json as _j
+    no_conversions()
+    os.makedirs(rommlib.CHD_QUEUE_DIR, exist_ok=True)
+    src = os.path.join(R, "psx/Juniper Glacier Chronicles (USA) (Disc 1).cue")
+    mk("psx/Juniper Glacier Chronicles (USA) (Disc 1).cue", 66 * MB)
+    with open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-wait.json"), "w") as f:
+        _j.dump({"system": "psx", "mode": "createcd", "sources": [src]}, f)
+    with open(os.path.join(rommlib.DATA_DIR, "chd-results.jsonl"), "w") as f:
+        f.write(_j.dumps({"time": time.time() - 600, "task": "0-a.json", "result": "ok", "mode": "createcd",
+                          "sources": ["Indigo Pagoda 2 (USA).cue"], "in_size": 430 * MB, "out_size": 210 * MB}) + "\n")
+        f.write(_j.dumps({"time": time.time() - 60, "task": "1-wait.json", "result": "waiting", "mode": "createcd",
+                          "message": "WAIT for space Juniper Glacier Chronicles (USA) (Disc 1).cue (needs ~66.1 MB, "
+                                     "5.0 GB free, keeping 5.0 GB free)", "sources": [src]}) + "\n")
+    j = J({"id": 4242, "name": "Pebble Otter (Europe)", "fs_name": "Pebble Otter (Europe).zip",
+           "fs_size_bytes": 80 * MB}, "psx")
+    j.state, j.short_space, j.retry_at, j.message = J.QUEUED, 86 * MB, LATER, "Waiting for space"
+    app.downloader.jobs.__init__([j])
+    app.downloader.hold = False
+
+
 def no_conversions():
     """Nothing queued, running or finished: the empty Activity screen."""
     import shutil as _sh
@@ -220,7 +243,9 @@ def fake_audit():
          "problem": "Disc image cut short: boot files missing"},
         {"system": "psx", "path": os.path.join(R, "psx/Cobalt Comet Rally (USA).chd"), "severity": "differs", "rom": None,
          "problem": "Smaller than RomM's copy (a trimmed image?)"}],
-        {"checked": 412, "matched": 398, "unmatched": 14}, False)
+        {"checked": 412, "matched": 398, "unmatched": 14,
+         "unmatched_names": ["psx/Pebble Otter (My hack).chd", "gba/Kettle Derby (Homebrew).gba",
+                             "nes/Marble Teapot (Homebrew).nes"]}, False)
     with open(rommlib.audit_path()) as f:              # a fixed time: screenshots don't change by the minute
         d = json.load(f)
     d["time"] = 1791057600                             # 2026-10-03 20:00 UTC
@@ -280,6 +305,23 @@ def install_some(plat=None):
         mk(os.path.relpath(p, R), int(r.get("fs_size_bytes") or 300 * MB) // (1 if sy in CART_EXT else 2))
         lib.mark(r, sy, [p])
     return r
+
+
+def delete_with_media():
+    """Delete from this box for a game the app downloaded: its art and video go too, and the
+    owner's own playlist naming it is named (and kept)."""
+    plat = first_platform()
+    r = install_some(plat)
+    sy = plat["_system"]
+    stem = r["fs_name_no_ext"]
+    for k in ("image", "thumb", "marquee"):
+        mk("%s/images/%s-%s.png" % (sy, stem, k), 300 * 1024)
+    mk("%s/videos/%s-video.mp4" % (sy, stem), 3 * MB)
+    with open(os.path.join(R, sy, "%s (My playlist).m3u" % stem.split(" (")[0]), "w") as f:
+        f.write(stem + CART_EXT.get(sy, ".chd") + "\n")
+    app.push(show_list(plat))
+    app.modal = rb.ManageMenu(app, r)
+    app._after = lambda: [app.dispatch(k) for k in ("down", "ok")]
 
 
 def compare_box():
@@ -645,6 +687,9 @@ SCENES = [
                                   setattr(app, "_after", lambda: (setattr(app.stack[-1], "picking", True),
                                                                   [app.dispatch(k) for k in ("ok", "ok", "x")])))),
     ("conversions", lambda: (fake_conversions(), app.push(rb.OnThisBoxScreen(app)), app.push(rb.ConversionsScreen(app)))),
+    ("downloads-space", lambda: (conversions_waiting_for_room(), app.push(rb.DownloadsScreen(app)))),
+    ("conversions-space", lambda: (conversions_waiting_for_room(), app.push(rb.OnThisBoxScreen(app)),
+                                   app.push(rb.ConversionsScreen(app)))),
     ("downloads-cancel", paused_cancel),
     ("downloads-empty", lambda: (app.downloader.jobs.clear(), no_conversions(), app.push(rb.DownloadsScreen(app)))),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
@@ -749,9 +794,21 @@ SCENES = [
     ("game-page-plain", lambda: game_page(plain=True)),
     ("game-page-actions", lambda: (game_page(here=True), setattr(app, "_after", lambda: app.dispatch("x")))),
     ("toast", lambda: app.toast("Picked 3 games (4.2 GB) — check the list, then {X} to delete them")),
+    ("confirm-long-verb", lambda: setattr(app, "modal", rb.Confirm(
+        app, "Go back to v0.9.0+n20261013.1653.af9aecd?", "Swaps the previous version back in, then restarts.",
+        "Go back and restart", lambda: None, danger=True))),
     ("confirm-danger", lambda: setattr(app, "modal", rb.Confirm(
         app, "Delete 3 games?", "Frees about 4.2 GB. Saves and states are kept.",
         "Delete 3", lambda: None, danger=True))),
+    ("confirm-long-title", lambda: setattr(app, "modal", rb.Confirm(
+        app, "Download Copper Lighthouse (USA) (Disc 1) again?", "Missing file: Copper Lighthouse (USA) "
+        "(Disc 1) (Track 2).bin. RomM's copy of the game is downloaded into its folder again.",
+        "Download again", lambda: None))),
+    ("delete-confirm-media", delete_with_media),
+    ("check-games-notes", lambda: (fake_audit(), fake_unseen(), app.push(rb.OnThisBoxScreen(app)),
+                                   app.push(rb.CheckScreen(app)),
+                                   setattr(app, "_after", lambda: app.stack[-1].__setattr__(
+                                       "sel", len(app.stack[-1].listed()) - 1)))),
 ]
 wanted = set(filter(None, args.scenes.split(",")))
 # The Themes page's examples: a theme each, on one of the main screens (screenshots/themes/).

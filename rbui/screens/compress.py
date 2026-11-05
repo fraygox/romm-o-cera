@@ -178,14 +178,23 @@ def compress_queue(app, cands, done=None):
         prep = sum(1 for c in cands if c.get("prep") and c["enabled"])
         if n > prep:
             app.spawn_helper("rb_chd.py")
-            app.toast("Queued %s: they compress in the background (On this box, Conversions)"
-                      % plural(n - prep, "game") + ("; %d Xbox made bootable" % prep if prep else ""), theme.GREEN)
+            app.toast("Queued %s: %s in the background (On this box, Conversions)"
+                      % (plural(n - prep, "game"), "it compresses" if n - prep == 1 else "they compress") + ("; %d Xbox made bootable" % prep if prep else ""), theme.GREEN)
         else:
             app.toast("Made %s bootable" % plural(n, "Xbox game"), theme.GREEN)
         if done:
             done()
     app.bg(run, ok)
 
+
+
+def cand_title(c):
+    """A compress candidate's name: its own, else its folder's ("Lorem 1.1 (USA)": a folder's
+    dots aren't an extension), else its file's without the extension."""
+    base = os.path.basename(c["root"].rstrip("/"))
+    if c.get("name"):
+        return c["name"]
+    return base if c["root"] not in (c.get("files") or ()) else os.path.splitext(base)[0]
 
 class CompressScreen(ListScreen):
     """Compress games already here: every system with disc images a converter
@@ -311,7 +320,7 @@ class CompressScreen(ListScreen):
         for cd in games:
             if p.room() < (24 if shown == len(games) - 1 else 48):      # room for "and N more" under it
                 break
-            p.pair(cd["name"] or os.path.splitext(os.path.basename(cd["root"]))[0], human_size(cd["size"]),
+            p.pair(cand_title(cd), human_size(cd["size"]),
                    theme.FAINT, theme.DIM)
             shown += 1
         if shown < len(games):
@@ -400,7 +409,7 @@ class CompressSystemScreen(ListScreen):
         return self.trail(self.app.system_name(self.system))
 
     def title_of(self, c):
-        return c["name"] or os.path.splitext(os.path.basename(c["root"]))[0]
+        return cand_title(c)
 
     def pick_key(self, c):
         return c["root"]

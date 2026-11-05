@@ -404,12 +404,19 @@ def test_activity_says_what_didnt_go_through_for_a_finished_game(isolated, rb, m
     scr = DownloadsScreen(app)
     j = SimpleNamespace(state=rommlib.Job.DONE, message="Ready to play, but installed.json can't be updated now",
                         system="psx", group=None, verified=False, rom={"id": 1}, force=False)
+    monkeypatch.setattr(app.library, "is_installed", lambda rom, system: True)
     assert scr.status(j) == ("Ready to play", rb.theme.AMBER)
     assert scr.detail(j) == ("installed.json can't be updated now", rb.theme.AMBER)     # a file name stays as it is
     j.message = "Ready to play, but the old copy is still there"
     assert scr.detail(j) == ("The old copy is still there", rb.theme.AMBER)
     from rbui.screens.downloads import sentence
     assert sentence("its ES entry is late") == "Its ES entry is late"            # never "es"
+    # deleted since: the row says so instead of "Ready to play" (asked again after a few seconds)
+    monkeypatch.setattr(app.library, "is_installed", lambda rom, system: False)
+    j.message = ""
+    assert scr.status(j) == ("Ready to play", rb.theme.GREEN)                    # cached for now
+    scr._here.clear()
+    assert scr.status(j) == ("Deleted since", rb.theme.FAINT)
 
 
 # ------------------------------------------------------------ round 3: stopping an unpack, the move into place

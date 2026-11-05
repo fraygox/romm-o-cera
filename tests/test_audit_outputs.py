@@ -319,7 +319,7 @@ def test_ps3_folders_are_matched_to_romms_disc_and_checked(isolated):
     disc = lambda n: (n + ".zip", [_zip_rec(n + ".zip", n + ".iso", 1 << 30)])     # noqa: E731
     got, stats = _check("ps3", [disc("Whole (USA)"), disc("NoBoot (USA)"), disc("BadSfo (USA)"),
                                 ("NoSfb (USA).iso", [_iso_rec("NoSfb (USA).iso", 1 << 30)])])
-    assert stats == {"checked": 5, "matched": 4, "unmatched": 1}
+    assert stats == {"checked": 5, "matched": 4, "unmatched": 1, "unmatched_names": ["ps3/Homebrew.ps3"]}
     assert sorted(got) == [
         ("BadSfo (USA).ps3", "damaged", "Damaged file: PS3_GAME/PARAM.SFO"),
         ("NoBoot (USA).ps3", "damaged", "Missing file: PS3_GAME/USRDIR/EBOOT.BIN"),

@@ -68,11 +68,11 @@ class UnseenScreen(ListScreen):
             super().action(a)
 
     def pick_entries(self, todo):
-        arcs = [i for i in todo if i["kind"] == "archive"]
+        arcs = [i for i in todo if i["kind"] == "archive" and not i.get("twin")]
         size = sum(i["size"] for i in todo)
         return [("Unpack %s" % plural(len(arcs), "archive"),
                  "%s, as after a download" % human_size(sum(i["size"] for i in arcs)) if arcs
-                 else "None of the picked files is an archive", (lambda: self.ask_unpack_many(arcs)) if arcs else None),
+                 else "None of the picked files is an archive to unpack", (lambda: self.ask_unpack_many(arcs)) if arcs else None),
                 ("Delete %s" % plural(len(todo), "file"), "%s, after you confirm" % human_size(size),
                  lambda: self.ask_delete_many(todo))]
 
@@ -152,7 +152,9 @@ class UnseenScreen(ListScreen):
         if self.busy:
             app.toast("Still working on the last one…", theme.AMBER)
             return
-        if it["kind"] == "archive":
+        if it.get("twin"):
+            entries = [delete, leave]
+        elif it["kind"] == "archive":
             entries = [("Unpack", "Shows what's inside first; unpacked here as after a download",
                         lambda: self.ask_unpack(it)), delete, leave]
         elif it["kind"] == "wrong":
@@ -264,7 +266,10 @@ class UnseenScreen(ListScreen):
         p.title(os.path.basename(it["path"]), "%s · roms/%s" % (human_size(it["size"]), it["system"]))
         p.prose(row(it)[1] + ".", label="Why ES can't see it", color=theme.AMBER if it["kind"] != "unknown" else None,
                 lines=3)
-        p.prose(self.FIX.get(it["kind"], ""), label="What you can do", lines=4)
+        p.prose(("%s, which ES lists, has the same name: unpacked, the two would be listed as one game. If "
+                 "it's the same game, delete the archive; if it's another, rename one of them." % it["twin"])
+                if it.get("twin")
+                else self.FIX.get(it["kind"], ""), label="What you can do", lines=4)
         if it["kind"] == "wrong" and it.get("to"):
             p.fact("Systems that take it", ", ".join(self.app.system_name(s) for s in it["to"][:self.MOVE_CHOICES]))
 

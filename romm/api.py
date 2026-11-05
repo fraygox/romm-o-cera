@@ -1,4 +1,5 @@
 """The RomM API client, and pairing a box with a code."""
+import hashlib
 import os
 import queue
 import random
@@ -327,7 +328,12 @@ class Api:
         keys = ("path_cover_large", "path_cover_small") if large else \
             ("path_cover_small", "path_cover_large")
         path = rom.get(keys[0]) or rom.get(keys[1])
-        return self.fetch_asset(path, "%d%s" % (rom["id"], "-L" if large else ""))
+        if not path or not isinstance(path, str):
+            return None
+        # keyed by the server and the path too (RomM's carries ?ts= of the cover's last change):
+        # another RomM's game with the same id, or a cover replaced in RomM, is a new file
+        tag = hashlib.sha1((self.base + path).encode("utf-8", "replace")).hexdigest()[:12]
+        return self.fetch_asset(path, "%d-%s%s" % (rom["id"], tag, "-L" if large else ""))
 
     def fetch_screenshot(self, rom, i):
         """Cached copy of a rom's i-th screenshot (screenshot_paths(rom)), as
@@ -335,7 +341,6 @@ class Api:
         paths = _mine.screenshot_paths(rom)
         if not 0 <= i < len(paths):
             return None
-        import hashlib
         tag = hashlib.sha1(paths[i].encode("utf-8", "replace")).hexdigest()[:12]   # a new shot: a new file
         return self.fetch_asset(paths[i], "%d-shot-%s" % (rom["id"], tag))
 
@@ -345,7 +350,6 @@ class Api:
         paths = _mine.collection_cover_paths(coll)
         if not 0 <= i < len(paths):
             return None
-        import hashlib
         return self.fetch_asset(paths[i], "coll-%s" % hashlib.sha1(paths[i].encode("utf-8", "replace")).hexdigest()[:16])
 
     def fetch_asset(self, path, key, cap=None):

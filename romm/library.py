@@ -6,6 +6,7 @@ import re
 import shutil
 import threading
 import time
+import xml.etree.ElementTree as ET
 
 from . import core as _core, config as _config, es as _es, convert as _convert
 
@@ -78,6 +79,118 @@ def is_game_name(name, system=None):
     exts = _system_exts(system) or ()
     # a cart's double extension: "X.p8.png" is a .p8 game even where ES lists only .p8
     return ext in exts or (low.endswith((".p8.png", ".vx.png")) and os.path.splitext(low[:-4])[1] in exts)
+
+
+def holds_game(path, system=None):
+    """A folder in roms/<system> is (part of) a game only when a game file is in it,
+    at any depth outside media folders. One holding only notes, a manual or pictures
+    isn't: a game's folder kept for the owner's files once the game was compressed
+    to one file beside it, or a folder made by hand. A file: is_game_name."""
+    if not os.path.isdir(path):
+        return is_game_name(os.path.basename(path), system)
+    try:
+        for dp, dns, fns in os.walk(path):
+            dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS and not in_progress_name(d)]
+            if any(is_game_name(f, system) and not _points_out(os.path.join(dp, f), path) for f in fns):
+                return True
+    except OSError:
+        return True                  # can't tell: as before, the name decides
+    return False
+
+
+SHEET_EXTS = (".cue", ".gdi", ".ccd", ".toc", ".m3u")
+
+
+def _points_out(p, folder):
+    """A playlist in folder whose every entry lies outside it (one compressing left beside
+    the game's CHDs, pointing at them): it lists a game elsewhere, it isn't one here."""
+    if not p.lower().endswith(".m3u"):
+        return False
+    try:
+        targets = _es.m3u_paths(p)
+    except OSError:
+        return False
+    root = os.path.normpath(folder) + os.sep
+    return bool(targets) and not any(os.path.normpath(q).startswith(root) for q in targets)
+
+
+def named_game(path, system=None):
+    """A folder found by its name (not one the app downloaded) is that game only when it
+    holds a game (holds_game) and, when it holds disc sheets (.cue/.gdi/.ccd/.toc/.m3u),
+    one of them carries its name too: "Lorem (USA)/Lorem (USA).cue" or "... (Disc 2).cue".
+    A folder named like a RomM game holding MyGame.cue is the owner's other game: never
+    counted, checked, replaced or deleted as RomM's. A file: is_game_name."""
+    if not os.path.isdir(path) or os.path.splitext(os.path.normpath(path))[1].lower() in FOLDER_GAME_EXTS:
+        return holds_game(path, system)
+    if not holds_game(path, system):
+        return False
+    stem, sheets = os.path.basename(os.path.normpath(path)).lower(), False
+    try:
+        for dp, dns, fns in os.walk(path):
+            dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS and not in_progress_name(d)]
+            for f in fns:
+                if f.lower().endswith(SHEET_EXTS) and not _points_out(os.path.join(dp, f), path):
+                    if f.lower().startswith(stem):
+                        return True
+                    sheets = True
+    except OSError:
+        return True
+    return not sheets
+
+
+def remove_game_path(p, system=None):
+    """Delete one path of a game. A file (or a link) goes; a folder ES lists as one
+    game ("Game.ps3", FOLDER_GAME_EXTS) goes whole. A plain folder ("Game/", a disc's
+    cue and tracks) loses only its game files (is_game_name): the owner's notes,
+    manuals, pictures and saves in it stay, and so does the folder then (an emptied
+    one, and its emptied sub folders, go). Returns (bytes freed, files kept). A file
+    that won't go doesn't stop the rest; the first error is raised after."""
+    if os.path.islink(p) or not os.path.isdir(p):
+        size = _core.path_size(p) if not os.path.islink(p) else 0
+        if os.path.lexists(p):
+            os.remove(p)
+        return size, []
+    if os.path.splitext(os.path.normpath(p))[1].lower() in FOLDER_GAME_EXTS:
+        size = _core.path_size(p)
+        shutil.rmtree(p)
+        return size, []
+    freed, kept, err = 0, [], None
+    for dp, dns, fns in os.walk(p, topdown=False):
+        for n in fns:
+            f = os.path.join(dp, n)
+            if not is_game_name(n, system):
+                kept.append(f)
+                continue
+            try:
+                size = os.path.getsize(f) if not os.path.islink(f) else 0
+                os.remove(f)
+                freed += size
+            except OSError as e:
+                err = err or e
+        for n in dns:
+            d = os.path.join(dp, n)
+            try:
+                if os.path.islink(d):
+                    os.remove(d)
+                elif not os.listdir(d):
+                    os.rmdir(d)
+            except OSError:
+                pass
+    try:
+        if not os.listdir(p):
+            os.rmdir(p)
+    except OSError:
+        pass
+    if err is not None:
+        raise err
+    return freed, kept
+
+
+def _is_dir(entry):
+    try:
+        return entry.is_dir()
+    except OSError:
+        return False
 
 
 # ------------------------------------------------------- installed tracking
@@ -425,10 +538,12 @@ class Library:
             return ent[2]
         stems = set()
         try:
-            for n in os.listdir(d):
-                if is_game_name(n, system):
-                    stems.add(_core.stem_of(n).lower())
-                    stems.add(n.lower())
+            with os.scandir(d) as it:
+                for e in it:
+                    n = e.name
+                    if is_game_name(n, system) and (not _is_dir(e) or named_game(e.path, system)):
+                        stems.add(_core.stem_of(n).lower())
+                        stems.add(n.lower())
         except OSError:
             pass
         # changed within the last moment: another change in the same timestamp tick
@@ -571,7 +686,8 @@ class Library:
             names.discard("")
             try:
                 for n in sorted(os.listdir(sysdir)):
-                    if is_game_name(n, system) and (n.lower() in names or os.path.splitext(n)[0].lower() in names):
+                    if is_game_name(n, system) and (n.lower() in names or os.path.splitext(n)[0].lower() in names) \
+                            and named_game(os.path.join(sysdir, n), system):
                         out.append(os.path.join(sysdir, n))
             except OSError:
                 pass
@@ -620,10 +736,26 @@ class Library:
                                       paths, freed, failed)
         return paths, freed
 
+    @staticmethod
+    def remove_path(p, system=None):
+        """remove_game_path(), for es.delete_game (es can't import this module)."""
+        return remove_game_path(p, system)
+
+    def made_media(self, rom, system, paths=None):
+        """game_media_files() of a game the app downloaded (it has an install record):
+        the art, video and manual ES keeps for it under the names it gives what the app
+        sends. Nothing for a game found only by name (its media may be the user's)."""
+        with self.lock:
+            self._reload()
+            if str(rom["id"]) not in self.installed:
+                return []
+        sysdir = os.path.join(_core.ROMS_ROOT, system)
+        return game_media_files(sysdir, self.paths_for(rom, system) if paths is None else paths)
+
     def uninstall(self, rom, system):
         """Delete the rom's files (never saves/states, never outside
-        roms/<system>), queue their gamelist entries for removal and drop its
-        record. Refused (GameBusy) while its conversion is queued or running. A
+        roms/<system>) and the media ES keeps for it from the app (made_media),
+        queue their gamelist entries for removal and drop its record. Refused (GameBusy) while its conversion is queued or running. A
         file that won't go doesn't stop the rest: the record keeps what's left
         and UninstallIncomplete says what that is."""
         sysdir = os.path.join(_core.ROMS_ROOT, system)
@@ -633,18 +765,22 @@ class Library:
         for p in paths:
             size = _core.path_size(p)
             try:
-                if os.path.isdir(p) and not os.path.islink(p):
-                    shutil.rmtree(p)
-                elif os.path.lexists(p):
-                    os.remove(p)
+                remove_game_path(p, system)        # a folder keeps the owner's own files
             except OSError as e:
                 failed.append((p, e))
                 if os.path.lexists(p):
                     freed += max(0, size - _core.path_size(p))
                     continue
             gone.append(p)
-            freed += size
+            freed += max(0, size - _core.path_size(p)) if os.path.lexists(p) else size
         rid = str(rom["id"])
+        for f in self.made_media(rom, system, gone) if gone and not failed else ():
+            size = _core.path_size(f)
+            try:
+                os.remove(f)                      # its art, video and manual: nothing else uses them
+                freed += size
+            except OSError:
+                pass
         gone_set = set(gone)
 
         def drop(inst):
@@ -1093,6 +1229,57 @@ def es_media_file(sysdir, game_path, tag):
 
 def es_media_file_here(sysdir, game_path, tag):
     return es_media_file(sysdir, game_path, tag) is not None
+
+
+MADE_MEDIA_TAGS = ("image", "thumbnail", "video", "manual") + EXTRA_ART     # what a download fills
+
+
+def game_media_files(sysdir, paths):
+    """The media files ES keeps under the names it gives what the app sends it for a game
+    made of `paths` (images/<stem>-image.png, videos/<stem>-video.mp4, manuals/...; the stem
+    of each of its files), that nothing staying still uses: no other file or folder in the
+    system folder has that stem (ES would name its media the same), and no other
+    gamelist.xml entry names the file. A gamelist.xml that can't be read keeps them all.
+    Media under any other name (a user's own) is never in it."""
+    stems = {os.path.splitext(os.path.basename(os.path.normpath(p)))[0] for p in paths}
+    stems.discard("")
+    found = []
+    for tag in MADE_MEDIA_TAGS:
+        d = os.path.join(sysdir, {"video": "videos", "manual": "manuals"}.get(tag, "images"))
+        for stem in sorted(stems):
+            for x in ES_MEDIA_FILE_EXTS.get(tag, IMAGE_EXTS):
+                f = os.path.join(d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x))
+                if os.path.isfile(f) and f not in (g for _, g in found):
+                    found.append((stem, f))
+    if not found:
+        return []
+    gone = {os.path.normpath(p) for p in paths}
+    kept = set()
+    for dp, dns, fns in os.walk(sysdir):
+        if os.path.normpath(dp) == os.path.normpath(sysdir):
+            dns[:] = [d for d in dns if d not in _core.GAMELIST_MEDIA_DIRS]
+        system = os.path.basename(os.path.normpath(sysdir))
+        for n, folder in [(n, False) for n in fns] + [(n, True) for n in dns]:
+            q = os.path.normpath(os.path.join(dp, n))
+            if q in gone or any(q.startswith(g + os.sep) for g in gone):
+                continue
+            # only a game still here shares its media's names: a folder kept for the user's
+            # notes, or a note named like the game, doesn't
+            if holds_game(q, system) if folder else is_game_name(n, system):
+                kept.add(os.path.splitext(n)[0])
+    found = [f for stem, f in found if stem not in kept]
+    try:
+        root = ET.parse(os.path.join(sysdir, "gamelist.xml")).getroot()
+    except OSError:
+        root = None
+    except ET.ParseError:
+        return []
+    for g in root.findall("game") if root is not None else ():
+        if os.path.normpath(os.path.join(sysdir, g.findtext("path") or "")) in gone:
+            continue
+        named = {os.path.normpath(os.path.join(sysdir, (c.text or "").strip())) for c in g if (c.text or "").strip()}
+        found = [f for f in found if os.path.normpath(f) not in named]
+    return found
 
 
 def same_file(a, b):

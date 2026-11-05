@@ -10,12 +10,13 @@ import time
 import pytest
 
 import rommlib
+from conftest import whole_chd
 
 
 def _touch(path, size=1):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(b"x" * size)
+    with open(path, "wb") as f:      # a .chd: a whole one (Compare reads its header)
+        f.write(whole_chd() if path.endswith(".chd") else b"x" * size)
     return path
 
 

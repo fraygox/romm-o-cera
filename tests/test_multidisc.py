@@ -13,6 +13,7 @@ import pytest
 
 import rommlib
 import rb_finalize
+from conftest import whole_chd
 
 PSX_ES = {"psx": {".cue", ".chd", ".m3u", ".pbp"}, "gba": {".gba", ".zip"}}
 
@@ -497,7 +498,7 @@ def test_audit_skips_converted_and_trimmed(isolated, mock_url):
     # converted to CHD inside its folder: tracks gone on purpose
     for n in os.listdir(folder):
         os.remove(os.path.join(folder, n))
-    open(os.path.join(folder, disc["fs_name_no_ext"] + ".chd"), "w").close()
+    open(os.path.join(folder, disc["fs_name_no_ext"] + ".chd"), "wb").write(whole_chd())
     plats = {p["fs_slug"]: p["id"] for p in api.platforms()}
     assert rommlib.audit(api, {"psx": [plats["ps1"]]})[0] == []
 

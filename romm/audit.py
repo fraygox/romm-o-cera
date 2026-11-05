@@ -13,7 +13,7 @@ import zipfile
 import zlib
 
 from . import (core as _core, discs as _discs, es as _es, api as _api, convert as _convert, library as _library,
-               downloader as _downloader)
+               downloader as _downloader, leftovers as _leftovers)
 
 
 def _guess_unpacked(detail, system):
@@ -146,6 +146,42 @@ def find_in_romm(api, system, platform_ids, path, ra_hash=None):
 def _pct(cut):
     have, need = cut[0], cut[1]
     return (round(100 * (1 - have / need)), "{:,}".format(have), "{:,}".format(need))
+
+
+UNMATCHED_NAMES = 500                # games not in RomM a check names (stats["unmatched_names"]), at most
+CHD_HEADER_LENGTHS = {1: 76, 2: 80, 3: 120, 4: 108, 5: 124}     # by CHD version
+
+
+def chd_header_problem(path):
+    """A quick check's look at a CHD's own header (no chdman, a few bytes read): why it
+    can't be a whole CHD — no "MComprHD" header (not a CHD at all), a version or
+    header size no CHD has, or a v5 CHD whose index (hunk map) or metadata lies past
+    the end of the file (cut short) — else None. A whole disc CHD (leftovers.chd_layout)
+    passes at once; anything subtler is left to chdman verify (a full check)."""
+    try:
+        with open(path, "rb") as f:
+            end = os.fstat(f.fileno()).st_size
+            h = f.read(_leftovers.CHD_V5_HEADER)
+            if len(h) < 16 or h[:8] != _leftovers.CHD_MAGIC:
+                return "Not a CHD: the file has no CHD header (won't load)"
+            hlen, version = int.from_bytes(h[8:12], "big"), int.from_bytes(h[12:16], "big")
+            if CHD_HEADER_LENGTHS.get(version) != hlen or end < hlen:
+                return "Damaged CHD: its header is not one chdman writes (won't load)"
+            if version != 5 or _leftovers.chd_layout(path) is not None:
+                return None
+            compressed = any(h[16:20])
+            logical, mapoff, metaoff = (int.from_bytes(h[i:i + 8], "big") for i in (32, 40, 48))
+            hunk = int.from_bytes(h[56:60], "big")
+            short = not logical or not hunk or not hlen <= mapoff < end or metaoff >= end
+            if not short and compressed:
+                f.seek(mapoff)
+                mh = f.read(16)
+                short = len(mh) < 16 or mapoff + 16 + int.from_bytes(mh[:4], "big") > end
+            elif not short:
+                short = mapoff + 4 * -(-logical // hunk) > end
+    except OSError:
+        return None                           # the check's own reads say why
+    return "Damaged CHD: cut short (its index lies past the end of the file)" if short else None
 
 
 def _chd_frames(path, chdman):
@@ -521,6 +557,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
     findings, stats = [], {"checked": 0, "matched": 0, "unmatched": 0}
     game_now = [None]                   # the game being checked: unverified counts games, not files
     unv = {}                            # tool -> the games it left unverified
+    bad_chds = set()                    # CHDs whose own header says they're damaged: not verified again
 
     def unverified(tool):
         games = unv.setdefault(tool, set())
@@ -572,6 +609,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
 
     def verified(system, path, rom):
         """A converted CHD in a full check: flagged only when chdman says it's bad."""
+        if path in bad_chds:
+            return
         ok = _chd_verify(chdman, path, cancel)
         if ok == UNVERIFIED_SLOW:
             unverified(UNVERIFIED_SLOW)
@@ -694,6 +733,11 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         for img in _images_in(path, cancel, strict=True):
             cur["path"] = img
             irom = find(_base(img), os.path.splitext(n)[0], low, path=img)
+            bad = chd_header_problem(img) if img.lower().endswith(".chd") else None
+            if bad:                            # any CHD, RomM's or not: it won't load
+                bad_chds.add(img)
+                add(system, img, bad, irom)
+                continue
             if img.lower().endswith(".chd") and irom and \
                     not (irom.get("fs_name") or "").lower().endswith(".chd"):
                 exact = _chd_vs_romm(api, img, irom, chdman, detail_of)
@@ -723,6 +767,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 pass
         if not rom:
             stats["unmatched"] += game
+            if game and len(stats.setdefault("unmatched_names", [])) < UNMATCHED_NAMES:
+                stats["unmatched_names"].append("%s/%s" % (system, n))     # shown in Not fully checked
             return
         stats["matched"] += game
         if os.path.isfile(path) and low.endswith(".chd") and \
@@ -799,7 +845,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
                 if not covered[fp]:
                     add(system, fp, "Missing file: %s" % os.path.basename(fp), rom)
                 continue
-            if _discs.xbox_cut(system, fp, f):
+            if fp in bad_chds or _discs.xbox_cut(system, fp, f):
                 continue          # cut to its game partition here: RomM's size and hashes are the full disc's
             size, need = os.path.getsize(fp), f.get("file_size_bytes")
             if need and size != need:
@@ -833,7 +879,10 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         for system in sorted(platforms_by_system):
             sysdir = os.path.join(_core.ROMS_ROOT, system)
             try:
-                names = [n for n in sorted(os.listdir(sysdir)) if not _not_a_game(n)]
+                # a folder with no game file in it (one kept for the owner's manual or notes
+                # when its game was compressed beside it) isn't a game, damaged or not
+                names = [n for n in sorted(os.listdir(sysdir)) if not _not_a_game(n)
+                         and _library.named_game(os.path.join(sysdir, n), system)]
             except (FileNotFoundError, NotADirectoryError):
                 still_there(_core.ROMS_ROOT, root_fd)      # no folder for the system, or no drive at all?
                 continue
@@ -1202,6 +1251,8 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
         isdir = os.path.isdir(path)
         if not isdir and exts is not None and os.path.splitext(low)[1] not in exts:
             continue
+        if isdir and not _library.named_game(path, system):
+            continue                       # no game file in it (notes, a manual), or another game: not this one
         stats["on_box"] += 1
         stem = n if isdir else os.path.splitext(n)[0]
         rom = index.get(low) or index.get(stem.lower())

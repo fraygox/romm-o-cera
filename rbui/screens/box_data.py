@@ -116,13 +116,36 @@ def conversion_rows():
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0] if srcs else n,
                      "discs": len(srcs), "size": size, "cur": cur if n == cur.get("task") else None})
     rows.sort(key=lambda r: r["kind"] != "running")
+    # a "waiting" result is where its task stood then: shown on its queued row while it's
+    # still queued, and gone from the results once the task has a later one (done, failed)
+    latest, listed = {}, {r["name"]: r for r in rows}
+    for d in state["results"]:
+        latest[d.get("task")] = d
     for d in reversed(state["results"]):
+        if d.get("result") == "waiting":
+            r = listed.get(d.get("task"))
+            if r is not None or latest.get(d.get("task")) is not d:
+                if r is not None and r["kind"] == "queued" and latest.get(d.get("task")) is d \
+                        and "for space" in (d.get("message") or ""):
+                    r["wait"], r["message"] = "space", d.get("message") or ""   # rb_chd.wait_for_room
+                continue
         srcs = d.get("sources") or [""]
         rows.append({"kind": d.get("result"), "name": d.get("task"), "task": d.get("retry"),
                      "title": os.path.splitext(os.path.basename(srcs[0]))[0], "discs": len(srcs),
                      "message": d.get("message") or "", "time": d.get("time", 0), "mode": d.get("mode"),
                      "sizes": rommlib.result_sizes(d)})
     return rows
+
+
+_ROOM = re.compile(r"needs ~([^,]+), ([^,]+) free, keeping ([^)]+) free")
+
+
+def room_note(r):
+    """A conversion waiting for space, in a sentence: what it needs, from the worker's note."""
+    m = _ROOM.search(r.get("message") or "")
+    need = ("It needs about %s beside the original until the copy checks out (%s free, keeping %s free). "
+            % m.groups()) if m else "The copy sits beside the original until it checks out. "
+    return "Waiting for space. " + need + "It starts by itself as soon as there's room."
 
 
 def conversion_left(r):
@@ -154,7 +177,7 @@ def conversion_status(r):
         st += " %d%%" % pct
         left = conversion_left(r)
         if left is not None:
-            st += " · about %d min left" % max(1, round(left / 60))
+            st += " · %s left" % time_left(left)         # as the Activity headline counts it
     return st, (pct or 0) / 100.0
 
 

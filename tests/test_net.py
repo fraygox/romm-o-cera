@@ -396,3 +396,19 @@ def test_an_image_that_wont_decode_is_no_cover_not_a_retry_loop(app, rb):
     app.cover({"id": 10})
     _run(app)
     assert app.covers[10] is None and 10 not in app.cover_retry and len(calls) == 2
+
+
+def test_cover_cache_key_follows_server_and_cover(isolated, monkeypatch):
+    """A cached cover is the server's and that cover's: another RomM's game with the same id,
+    or a cover replaced in RomM (a new ?ts=), is fetched again instead of showing the old art."""
+    keys = []
+    monkeypatch.setattr(rommlib.Api, "fetch_asset", lambda self, path, key, cap=None: keys.append(key))
+    rom = {"id": 15, "path_cover_small": "/assets/roms/15/cover/small.png?ts=1"}
+    rommlib.Api("http://a.example", "t").fetch_cover(rom)
+    rommlib.Api("http://a.example", "t").fetch_cover(rom)
+    rommlib.Api("http://b.example", "t").fetch_cover(rom)
+    rommlib.Api("http://a.example", "t").fetch_cover(dict(rom, path_cover_small=rom["path_cover_small"][:-1] + "2"))
+    rommlib.Api("http://a.example", "t").fetch_cover(rom, large=True)
+    assert keys[0] == keys[1] and len(set(keys)) == 4
+    assert all(k.startswith("15-") for k in keys) and keys[4].endswith("-L")
+    assert rommlib.Api("http://a.example", "t").fetch_cover({"id": 1}) is None

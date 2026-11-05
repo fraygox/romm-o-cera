@@ -7,7 +7,7 @@ import time
 import pygame
 import rommlib
 from rommlib import human_size
-from rbui import APP_NAME, server, theme
+from rbui import APP_NAME, pads, server, theme
 from rbui.theme import S, THEMES
 from rbui.draw import card, chevron, hline, marquee, measure, rich_text, rrect, scroll_text, scrollbar, text
 from rbui.pads import style_from_names, STYLE_NAMES
@@ -747,9 +747,10 @@ class SettingsScreen(Screen):
             self.draw_help_panel(c, p, a)
         hline(c, theme.LINE, (p.left + 28, a), (p.right - 28, a))
         text(c, self.f.h3, APP_NAME, (p.left + 28, a + 14), theme.TEXT)
-        ver = "v%s · %s · by %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE, rommlib.AUTHOR)
+        day = time.strftime("%Y-%m-%d", rommlib.version_date()[1])   # a nightly's: the day it was built
+        ver = "v%s · %s · by %s" % (rommlib.VERSION_LABEL, day, rommlib.AUTHOR)
         if measure(self.f.small, ver) > p.width - 56:          # a nightly's long label: the author gives way
-            ver = "v%s · %s" % (rommlib.VERSION_LABEL, rommlib.RELEASE_DATE)
+            ver = "v%s · %s" % (rommlib.VERSION_LABEL, day)
         text(c, self.f.small, ver, (p.left + 28, a + 44), theme.ACCENT_HI, maxw=p.width - 56)
         upd = ("%s is out: Updates installs it." % self.app.update_tag) if self.app.update_tag else \
             rommlib.PROJECT_URL.replace("https://", "")
@@ -757,7 +758,8 @@ class SettingsScreen(Screen):
              maxw=p.width - 56)
         text(c, self.f.small, "%s · %d platforms" % (self.app.error or self.app.status_label(), len(self.app.platforms)),
              (p.left + 28, a + 92), theme.FAINT, maxw=p.width - 56)
-        rich_text(c, self.f, self.f.small, "Hotkey + {START} exits", (p.left + 28, a + 116), theme.FAINT)
+        rich_text(c, self.f, self.f.small, "Alt+F4 exits" if pads.INPUT_MODE["kb"] else "Hotkey + {START} exits",
+                  (p.left + 28, a + 116), theme.FAINT)
 
     def draw_help_panel(self, c, p, a):
         """A row's section, name, help and current value."""

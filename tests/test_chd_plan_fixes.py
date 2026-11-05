@@ -107,7 +107,7 @@ def test_the_planner_never_offers_two_games_that_make_the_same_file(isolated):
     import rb_chd_plan
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     _sheet(os.path.join(sysdir, "Mira.cue"), "Mira.bin")
-    _sheet(os.path.join(sysdir, "Mira", "Mira (USA).cue"), "Mira (USA).bin")
+    _sheet(os.path.join(sysdir, "Mira", "Mira (Disc 1).cue"), "Mira (Disc 1).bin")
     skipped = []
     cands = rb_chd_plan.candidates(["psx"], skipped=skipped)
     assert len(cands) == 1
@@ -118,7 +118,7 @@ def test_the_planner_leaves_out_a_game_whose_output_a_queued_task_makes(isolated
     import rb_chd_plan
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     a = _sheet(os.path.join(sysdir, "Mira.cue"), "Mira.bin")
-    _sheet(os.path.join(sysdir, "Mira", "Mira (USA).cue"), "Mira (USA).bin")
+    _sheet(os.path.join(sysdir, "Mira", "Mira (Disc 1).cue"), "Mira (Disc 1).bin")
     os.makedirs(rommlib.CHD_QUEUE_DIR)
     json.dump({"system": "psx", "mode": "createcd", "sources": [a], "roots": [a]},
               open(os.path.join(rommlib.CHD_QUEUE_DIR, "1-00-00000.json"), "w"))
@@ -238,7 +238,8 @@ def test_a_lone_bare_disc_folder_never_takes_its_game_folder_with_it(isolated, m
     (name,) = os.listdir(rommlib.CHD_QUEUE_DIR)
     _quiet(monkeypatch, rb_chd)
     assert rb_chd.convert(json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, name)))) is True
-    assert sorted(os.listdir(os.path.join(sysdir, "Hale"))) == ["Disc 1.chd", "cover.jpg", "manual.pdf"]
+    # (a folder not downloaded, and not named like its disc: the disc keeps its own name)
+    assert sorted(os.listdir(os.path.join(sysdir, "Hale"))) == ["cover.jpg", "manual.pdf", "x.chd"]
 
 
 def test_the_worker_names_a_loose_set_s_playlist_by_any_disc_tag(isolated, monkeypatch, fake_es):
@@ -566,7 +567,7 @@ def test_two_games_whose_outputs_differ_only_in_case_are_not_both_offered(isolat
     import rb_chd_plan
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     a = _sheet(os.path.join(sysdir, "Mira.cue"), "Mira.bin")
-    _sheet(os.path.join(sysdir, "mira", "x.cue"), "x.bin")
+    _sheet(os.path.join(sysdir, "mira", "mira.cue"), "mira.bin")
     _old(*[os.path.join(dp, f) for dp, _, fs in os.walk(sysdir) for f in fs])
     skipped = []
     assert len(rb_chd_plan.candidates(["psx"], skipped=skipped)) == 1
@@ -946,8 +947,12 @@ def test_a_game_folder_s_own_files_are_never_deleted_with_it(isolated, monkeypat
     assert open(os.path.join(d, extra), "rb").read() == data
     assert sorted(os.listdir(sysdir)) == ["Orin (USA)", "Orin (USA).chd"]
     assert not os.path.exists(cue) and not os.path.exists(os.path.join(d, "Orin (USA).bin"))
-    ren = _renames()                     # the game's entry follows its CHD; the folder isn't renamed
-    assert ren[cue] == os.path.join(sysdir, "Orin (USA).chd") and d not in ren
+    ren = _renames()                     # the game's entry follows its CHD
+    chd = os.path.join(sysdir, "Orin (USA).chd")
+    assert ren[cue] == chd
+    # an entry naming the folder follows it too once only the user's files are left there;
+    # a file that may be a game (unknown.zzz) keeps the folder a game of its own
+    assert ren.get(d) == (None if rommlib.is_game_name(extra, "psx") else chd)
     assert "kept folder" in open(rommlib.LOG_PATH).read()
 
 
@@ -1003,6 +1008,61 @@ def test_a_playlist_inside_a_kept_game_folder_never_lists_the_game_twice(isolate
     if manual:
         assert os.listdir(d) == ["manual.pdf"]
     assert _renames()[inner] == os.path.join(sysdir, "Pell.m3u")
+
+
+@pytest.mark.parametrize("discs", [1, 2])
+def test_the_owners_own_playlist_in_a_game_folder_moves_out_and_is_never_deleted(isolated, monkeypatch,
+                                                                                fake_es, discs):
+    """Two Disc/ holding its discs and the owner's My Two Disc.m3u: compressing it moved the
+    discs out and deleted the playlist (the app wrote its own Two Disc.m3u). Now the owner's
+    playlist moves beside the CHDs, still under their name, and is the game's one entry."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    d = os.path.join(sysdir, "Two Disc")
+    names = ["Two Disc (Disc %d)" % n for n in range(1, discs + 1)] if discs > 1 else ["Two Disc"]
+    cues = [_sheet(os.path.join(d, n + ".cue"), n + ".bin") for n in names]
+    mine = os.path.join(d, "My Two Disc.m3u")
+    open(mine, "w").write("# mine\n" + "".join(n + ".cue\n" for n in names))
+    _quiet(monkeypatch, rb_chd)
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": cues, "roots": [d]}) is True
+    moved = os.path.join(sysdir, "My Two Disc.m3u")
+    assert sorted(os.listdir(sysdir)) == sorted([n + ".chd" for n in names] + ["My Two Disc.m3u"])
+    assert open(moved).read() == "# mine\n" + "".join(n + ".chd\n" for n in names)
+    ren = _renames()
+    assert ren[mine] == moved and ren[d] == moved and ren[cues[0]] == moved
+    assert "moved playlist My Two Disc.m3u" in open(rommlib.LOG_PATH).read()
+
+
+def test_a_playlist_in_the_folder_whose_name_is_taken_beside_it_stays_in_the_folder(isolated, monkeypatch,
+                                                                                  fake_es):
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    d = os.path.join(sysdir, "Two Disc")
+    cues = [_sheet(os.path.join(d, "Two Disc (Disc %d).cue" % n), "Two Disc (Disc %d).bin" % n) for n in (1, 2)]
+    mine = os.path.join(d, "Mine.m3u")
+    open(mine, "w").write("Two Disc (Disc 1).cue\nTwo Disc (Disc 2).cue\n")
+    open(os.path.join(sysdir, "Mine.m3u"), "w").write("Other.cue\n")       # someone else's
+    _quiet(monkeypatch, rb_chd)
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": cues, "roots": [d]}) is True
+    assert open(mine).read().splitlines() == ["../Two Disc (Disc 1).chd", "../Two Disc (Disc 2).chd"]
+    assert open(os.path.join(sysdir, "Mine.m3u")).read() == "Other.cue\n"
+
+
+@pytest.mark.parametrize("downloaded", [False, True])
+def test_a_folder_named_like_a_game_holding_another_disc_names_the_chd_after_the_disc(isolated, monkeypatch,
+                                                                                    fake_es, downloaded):
+    """Pyramid (USA)/MyOther.cue became Pyramid (USA).chd: Compare then took the other disc for
+    RomM's Pyramid, and the real one's download was never compressed. A folder the app didn't
+    download, its disc named otherwise, gives the disc's own name; a downloaded one, the game's."""
+    import rb_chd
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    d = os.path.join(sysdir, "Pyramid (USA)")
+    cue = _sheet(os.path.join(d, "MyOther.cue"), "MyOther.bin")
+    if downloaded:
+        rommlib.Library().mark({"id": 7, "name": "Pyramid", "fs_name": "Pyramid (USA).zip"}, "psx", [d])
+    _quiet(monkeypatch, rb_chd)
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": [cue], "roots": [d]}) is True
+    assert os.listdir(sysdir) == ["Pyramid (USA).chd" if downloaded else "MyOther.chd"]
 
 
 # ------------------------------------------- cut-short images (header says more, no directory)
@@ -1178,3 +1238,19 @@ def test_a_sheet_chdman_refused_is_listed_with_its_words_until_it_changes(isolat
     _old(cue)
     rb_chd.record("2.json", task, "ok")                     # a later result replaces the failure
     assert [c["files"] for c in rb_chd_plan.candidates(["psx"])] == [[cue]]
+
+
+def test_a_download_s_entry_naming_a_kept_folder_follows_its_chd(isolated, monkeypatch, fake_es):
+    """The download's ES entry (paths: the folder) handed over after the CHD: with the folder kept
+    for the user's notes, it still names the CHD, so ES gets its name and art (it was deferred forever)."""
+    import rb_chd
+    import rb_finalize
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    d, cue = _folder_game(sysdir, "notes.txt")
+    _quiet(monkeypatch, rb_chd)
+    entry = {"system": "psx", "paths": [d], "name": "Orin"}
+    assert rb_chd.convert({"system": "psx", "mode": "createcd", "sources": [cue], "roots": [d]}) is True
+    ren = {"system": "psx", "rename": _renames()}
+    out = rb_finalize.route_renames([entry, ren])
+    assert out[0]["paths"] == [os.path.join(sysdir, "Orin (USA).chd")]
+    assert os.path.isfile(os.path.join(d, "notes.txt"))

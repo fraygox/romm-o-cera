@@ -201,23 +201,61 @@ def test_chd_waits_for_space(isolated, monkeypatch):
     assert os.path.exists(src) and "WAIT for space" in open(rommlib.LOG_PATH).read()
 
 
-def test_chd_worker_stops_when_no_room(isolated, monkeypatch):
-    """No room for the next conversion: the worker leaves its task queued and exits (the app
-    starts it again once space is freed) instead of trying again at once, over and over."""
+def test_chd_worker_waits_for_room_then_carries_on(isolated, monkeypatch):
+    """No room for the next conversion: the worker leaves its task queued and, without the
+    conversion lock, looks at the free space now and then (not trying the task over and over).
+    Space freed any way at all (here: by hand, nothing tells the app) starts it; a second
+    worker meanwhile leaves the waiting to the first."""
     import rb_chd
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
     src = _cue(os.path.join(sysdir, "Big (USA)"), "Big (USA)", 400, 400)
     monkeypatch.setattr(rb_chd, "busy_reason", lambda: "")
     monkeypatch.setattr(rb_chd, "chdman", lambda *a: pytest.fail("no room: must wait"))
-    monkeypatch.setattr(rommlib, "free_bytes", lambda p=None: 5 * GiB)
+    free = {"n": 5 * GiB, "looks": 0}
+
+    def free_bytes(p=None):
+        free["looks"] += 1
+        return free["n"]
+    monkeypatch.setattr(rommlib, "free_bytes", free_bytes)
     monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG))   # keeps 20 GB free
     rommlib.publish_queue_task({"system": "psx", "mode": "createcd", "sources": [src],
                                 "roots": [os.path.dirname(src)]}, "0001-big.json")
-    tries = []
-    real = rb_chd.convert
-    monkeypatch.setattr(rb_chd, "convert", lambda t: (tries.append(1), real(t))[1])
+    tries, real = [], rb_chd.convert
+
+    def convert(t):
+        tries.append(free["n"])
+        return real(t) if len(tries) == 1 else True          # the second try: room, converted
+    monkeypatch.setattr(rb_chd, "convert", convert)
+    naps = []
+
+    def nap(secs):
+        naps.append(secs)
+        with rommlib.try_lock(rommlib.chd_lock_path()) as fd:
+            assert fd is not None                            # waiting never holds the conversion lock
+            with rommlib.try_lock(os.path.join(rommlib.DATA_DIR, "chd-wait.lock")) as other:
+                assert other is None                         # ... but its own: one waiter at a time
+        if len(naps) == 3:
+            free["n"] = 40 * GiB                             # the owner deletes something
+    real_wait = rb_chd.wait_for_room
+    monkeypatch.setattr(rb_chd, "wait_for_room", lambda: real_wait(sleep=nap))
     rb_chd.main()
-    assert tries == [1] and rommlib.conversions_pending() and os.path.exists(src)
+    assert tries == [5 * GiB, 40 * GiB] and naps == [rb_chd.ROOM_POLL] * 3
+    assert not rommlib.conversions_pending()
+
+
+def test_a_second_chd_worker_leaves_the_waiting_to_the_first(isolated, monkeypatch):
+    import rb_chd
+    src = _cue(os.path.join(rommlib.ROMS_ROOT, "psx", "Big (USA)"), "Big (USA)", 400, 400)
+    monkeypatch.setattr(rb_chd, "busy_reason", lambda: "")
+    monkeypatch.setattr(rommlib, "free_bytes", lambda p=None: 5 * GiB)
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(rommlib.DEFAULT_CONFIG))
+    rommlib.publish_queue_task({"system": "psx", "mode": "createcd", "sources": [src],
+                                "roots": [os.path.dirname(src)]}, "0001-big.json")
+    monkeypatch.setattr(rb_chd.time, "sleep", lambda s: pytest.fail("the first worker waits, not this one"))
+    with rommlib.try_lock(os.path.join(rommlib.DATA_DIR, "chd-wait.lock")) as fd:
+        assert fd is not None
+        rb_chd.main()
+    assert rommlib.conversions_pending() and os.path.exists(src)
 
 
 def test_chd_space_check_skips_outputs_already_made(isolated, monkeypatch):

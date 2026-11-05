@@ -1,14 +1,17 @@
 """Compare with RomM: sets of discs, direction of a changed file, same names on two platforms, folders."""
 import os
+
+import pytest
 import time
 
 import rommlib
+from conftest import whole_chd
 
 
 def _touch(path, size=1):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(b"x" * size)
+    with open(path, "wb") as f:      # a .chd: a whole one (Compare reads its header)
+        f.write(whole_chd() if path.endswith(".chd") else b"x" * size)
     return path
 
 
@@ -310,3 +313,116 @@ def test_a_set_disc_never_owns_the_playlist(isolated):
     assert len(it) == 1
     own = {x["rom"]["id"]: x["paths"] for x in it[0]["parts"]}
     assert own == {1: [d1], 2: [d2]}
+
+
+def _zip(path, member, data):
+    import zipfile
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(member, data)
+    return path
+
+
+def test_a_download_cut_short_behind_the_apps_back_differs(isolated):
+    """Its record still holds RomM's size and hashes from the day it came: the file as it is
+    now decides, never the stamp."""
+    import zlib
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    data = os.urandom(20000)
+    p = _zip(os.path.join(sysdir, "Cut (World).zip"), "Cut (World).gba", data)
+    size = os.path.getsize(p)
+    rom = _rom(7, "Cut (World).zip", size=size, crc_hash="%08x" % zlib.crc32(data))
+    lib = rommlib.Library()
+    lib.mark(rom, "gba", [p])
+    run = lambda: rommlib.compare_games([rom], lib.snapshot(), rommlib.local_games("gba"), "gba")["items"][0]
+    assert run()["status"] == "matches"
+    with open(p, "r+b") as f:
+        f.truncate(size // 2)
+    it = run()
+    assert it["status"] == "differs" and it["parts"][0]["paths"] == [p]      # Get RomM's copy replaces it
+    # RomM's file changed too: getting the newer one is still the thing to do
+    assert rommlib.compare_games([dict(rom, fs_size_bytes=size + 9)], lib.snapshot(),
+                                 rommlib.local_games("gba"), "gba")["items"][0]["status"] == "newer"
+
+
+def test_an_unpacked_or_compressed_download_isnt_called_cut(isolated):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    p = _touch(os.path.join(sysdir, "Unpacked (World).gba"), 50)
+    lib = rommlib.Library()
+    rom = _rom(8, "Unpacked (World).zip", size=30)                 # RomM's zip, unpacked here
+    lib.mark(rom, "gba", [p])
+    assert rommlib.compare_games([rom], lib.snapshot(), rommlib.local_games("gba"), "gba")["items"][0][
+        "status"] == "matches"
+
+
+def test_a_copy_renamed_by_hand_is_romms_game_by_its_hash(isolated, rb):
+    import hashlib
+    import zlib
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    data = os.urandom(30000)
+    p = _zip(os.path.join(sysdir, "Mine.zip"), "Homebrew (World).gba", data)
+    size = os.path.getsize(p)
+    rom = _rom(3, "Homebrew (World) (v1.0).zip", size=size, crc_hash="%08x" % zlib.crc32(data))
+    other = _rom(4, "Other (World).zip", size=size, crc_hash="deadbeef")      # the same size, not the same game
+    got = rommlib.compare_games([other, rom], {}, rommlib.local_games("gba"), "gba")
+    it = got["items"][0]
+    assert it["status"] == "matches" and it["renamed"] and it["rom"]["id"] == 3 and it["paths"] == [p]
+    assert rb.compare.say(it) == "The same file RomM has, here under another name. Nothing to do."
+    assert os.path.exists(p)                                       # never renamed
+    # by sha1 on a plain file; a different size or hash stays "not in RomM"
+    q = _touch(os.path.join(sysdir, "Plain.gba"), 64)
+    sha = hashlib.sha1(b"x" * 64).hexdigest()
+    plain = _rom(5, "Plain (World).gba", size=64, sha1_hash=sha.upper())
+    st = {i["name"]: i for i in rommlib.compare_games([plain, rom], {}, rommlib.local_games("gba"), "gba")["items"]}
+    assert st["Plain.gba"]["status"] == "matches" and st["Plain.gba"]["renamed"]
+    for wrong in (dict(plain, sha1_hash="0" * 40), dict(plain, fs_size_bytes=65)):
+        st = {i["name"]: i for i in rommlib.compare_games([wrong], {}, rommlib.local_games("gba"), "gba")["items"]}
+        assert st["Plain.gba"]["status"] == "not_in_romm" and not st["Plain.gba"]["renamed"]
+    assert os.path.exists(q)
+
+
+def test_a_renamed_copy_never_takes_a_game_already_here(isolated):
+    import zlib
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    data = os.urandom(5000)
+    a = _zip(os.path.join(sysdir, "Twice (World).zip"), "t.gba", data)
+    _zip(os.path.join(sysdir, "Copy.zip"), "t.gba", data)
+    rom = _rom(6, "Twice (World).zip", size=os.path.getsize(a), crc_hash="%08x" % zlib.crc32(data))
+    st = {i["name"]: i["status"] for i in rommlib.compare_games([rom], {}, rommlib.local_games("gba"), "gba")["items"]}
+    assert st == {"Twice (World).zip": "matches", "Copy.zip": "not_in_romm"}
+
+
+@pytest.mark.parametrize("ours", [False, True])
+def test_a_chd_that_isnt_a_whole_one_never_matches(isolated, ours):
+    """Random bytes named like RomM's game (.chd), or the app's own CHD cut short: Compare said
+    "Matches RomM (compressed)" while Check games called it damaged."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    rom = _rom(1, "Wave (World).zip")
+    chd = os.path.join(sysdir, "Wave (World).chd")
+    os.makedirs(sysdir, exist_ok=True)
+    open(chd, "wb").write(whole_chd()[:60] if ours else os.urandom(3000))
+    lib = rommlib.Library()
+    if ours:
+        lib.mark(rom, "psx", [chd])
+    it = rommlib.compare_games([rom], lib.snapshot(), rommlib.local_games("psx"), "psx")["items"][0]
+    assert it["status"] == "differs"
+
+
+def test_a_folder_of_notes_or_of_another_game_named_like_romms_never_matches(isolated):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    rom = _rom(1, "Pyra (USA).zip")
+    d = os.path.join(sysdir, "Pyra (USA)")
+    _touch(os.path.join(d, "Pyra manual.pdf"))
+    got = rommlib.compare_games([rom], {}, rommlib.local_games("psx"), "psx")
+    assert got["items"] == [] or all(i["status"] != "matches" for i in got["items"])
+    _touch(os.path.join(d, "MyGame.cue"))
+    got = rommlib.compare_games([rom], {}, rommlib.local_games("psx"), "psx")
+    assert [i["status"] for i in got["items"]] == ["not_in_romm"]
+
+
+def test_a_folders_dots_arent_its_format(isolated):
+    """"Breaker 1.1 (USA)/" showed as "On this box: 1 (USA) (UNL)"."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    rom = _rom(1, "Breaker 1.1 (USA).zip")
+    _touch(os.path.join(sysdir, "Breaker 1.1 (USA)", "Breaker 1.1 (USA).cue"))
+    assert rommlib.box_copy(rommlib.Library(), rom, "psx")["format"] == "folder"

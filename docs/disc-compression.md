@@ -251,10 +251,17 @@ Titles from the eShop (NUS format: `.app`/`.tmd` folders) aren't handled yet.
   compressed file or the original files). If it's a different disc or game,
   rename one of them so they get different names.
 - A `.cue` or `.gdi` naming a file outside the game's folder is refused.
-- A game in its own folder becomes one file beside that folder. The folder goes
+- A game in its own folder becomes one file beside that folder, named after the
+  folder when RomM-o-Cera downloaded it or the disc is called that too
+  (`Lorem (USA)/Lorem (USA) (Disc 1).cue`); otherwise the disc keeps its own
+  name (`Lorem (USA)/MyOther.cue` becomes `MyOther.chd`). A playlist (`.m3u`) in
+  the folder that lists its discs moves out beside the compressed discs, under
+  its own name, and is the game's entry; if that name is taken beside the folder
+  it stays in the folder, pointing at them. The folder goes
   only when nothing but system junk is left in it (`Thumbs.db`, `.DS_Store`,
   `desktop.ini`); manuals, covers, readmes, saves and anything else you put
-  there stay in the folder.
+  there stay in the folder. A folder left with only such files isn't a game:
+  Check games doesn't flag it and the CHD beside it is the game.
 - A disc image that is certainly cut short is never converted: Compress lists
   it under can't convert, and Check games can download it again.
 

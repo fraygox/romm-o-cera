@@ -7,9 +7,17 @@ Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/
 
 - Compress no longer replaces or deletes a file it didn't make: a game whose compressed name is already taken (another copy, or another disc or game with the same name) is listed under "can't convert" with what to do. A conversion cut off by an older version is listed there too, once.
 - Compressing a game in its own folder keeps the folder when it holds anything of yours (manuals, covers, readmes, saves); the compressed game goes beside it.
+- A folder with no game file in it (only a manual, notes or pictures) is no longer taken for the game: Check games doesn't call it damaged, and the game isn't counted as on the box. Downloading the game again unpacks beside your files there (never over them) and replaces the CHD the app made of it; a download refused for its folder no longer leaves its archive in the system's folder. If you downloaded such a game again with an older version and got "already on the box under that name", delete the leftover `.zip` beside its CHD.
 - Clean up leftovers offers the originals of a converted game only when the converted file checks out (for a CHD: its header, its size against the disc, and chdman verify) and nothing still uses them; a .7z kept beside a CHD is no longer offered.
 - Compare says "Differs from RomM's" for a copy the app didn't download that isn't the same as RomM's, and "Newer in RomM" only when RomM's file changed since the app downloaded it.
 - Closing the app or updating stops an unpack in progress instead of waiting for it; it starts again later and nothing half-unpacked is left behind.
+- Compressing a game in a folder never deletes a playlist of yours in it: it moves beside the compressed discs and lists the game. A folder's disc is named after the folder only when the app downloaded it or the disc has that name too, so another game in a folder named like a RomM game is no longer taken for it.
+- A folder named like a RomM game but holding another game (`Lorem (USA)/MyGame.cue`) is no longer taken for RomM's game: it isn't counted as on the box, checked, compared, replaced or deleted as that game, and a download of the game never unpacks in among it (it says to move or rename the folder). A playlist left in a game's folder pointing at its CHDs isn't taken for the game either.
+- Games ES can't see › Unpack refuses an archive with the same name as a file ES lists beside it (its `.chd`, say), which would list two games as one, and says what to do. Memory cards and other saves are no longer listed there.
+- Clean up leftovers never offers a zip that holds anything besides the disc (a memory card, a walkthrough) as a copy of a converted game.
+- Compare says "Differs from RomM's" for a CHD that isn't a whole one (cut short, or not a CHD at all), and a folder holding only your own files is no longer shown as a match.
+- Download again says when what it replaces wasn't downloaded by the app, and a game whose later download failed still shows as on the box, with Play now and Delete.
+- Known limit: a converted disc is checked against its own checksums and RomM's size, not RomM's contents. A different disc of exactly the same size (another revision, say) put in place of a game's CHD passes Full check, and Clean up leftovers would offer that game's archive beside it as a copy.
 - Known limit: a PS3 disc left partly decrypted by another tool is caught in most layouts but not all (see the PS3 page).
 
 ## v0.11.2 (2026-10-17)

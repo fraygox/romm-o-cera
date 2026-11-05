@@ -429,7 +429,7 @@ class HomeScreen(Screen):
 
     def draw_card(self, c, coll, rect, on):
         return collection_card(c, self.app, coll["full"], self.art.cells(coll), rect, on,
-                               sub="{:,} games".format(coll["count"]))
+                               sub="{:,} game{}".format(coll["count"], "" if coll["count"] == 1 else "s"))
 
     def draw_panel(self, c, key, shelf, it):
         app = self.app
@@ -494,7 +494,7 @@ class HomeScreen(Screen):
         mw = mh * 232 // 300
         mosaic(p.c, self.app, self.art.cells(coll), (p.x + (p.w - mw) // 2, p.y, mw, mh))
         p.space(mh + 16)
-        p.title(coll["full"], sub="{:,} games".format(coll["count"]), center=True)
+        p.title(coll["full"], sub="{:,} game{}".format(coll["count"], "" if coll["count"] == 1 else "s"), center=True)
 
     def status_line(self, key, rom):
         """Your RomM status of the game, how recently it was played here, else RomM's reason
@@ -560,6 +560,31 @@ class ShelfSource:
         self.home.game_night()
 
 
+def here_counts(app):
+    """{platform id: how many of its RomM games are on the box}, by the rule its game list
+    ticks them (Library.is_installed: an install record, or a game file by RomM's name), not
+    ES's count of the folder (games RomM doesn't have, or ES not reloaded yet). Only a
+    platform whose folder holds a game is listed from RomM (game ids kept, nothing more)."""
+    lib, out = app.library, {}
+    for p in list(app.platforms):
+        system = p.get("_system")
+        try:
+            any_game = bool(system) and any(rommlib.is_game_name(n, system)
+                                            for n in os.listdir(os.path.join(rommlib.ROMS_ROOT, system)))
+        except OSError:
+            any_game = False
+        if not any_game or not p.get("rom_count"):
+            out[p["id"]] = 0
+            continue
+        try:
+            got = app.api.roms_all(platform_ids=[p["id"]], keep=lambda r, s=system: lib.is_installed(r, s),
+                                   fields=("id",))
+        except (rommlib.RommError, OSError):
+            continue                                   # unknown: its card shows no count
+        out[p["id"]] = len(got or [])
+    return out
+
+
 class PlatformScreen(Screen):
     COLS, CW, CH, GAP = 4, 284, 98, 14
 
@@ -567,7 +592,7 @@ class PlatformScreen(Screen):
         super().__init__(app)
         self.sel = 0
         self.scroll = 0
-        app.bg(rommlib.es_counts, lambda n: setattr(app, "es_count", n), lambda e: None)
+        app.bg(lambda: here_counts(app), lambda n: app.here_count.update(n), lambda e: None)
 
     def crumbs(self):
         return ["Platforms"]
@@ -618,17 +643,19 @@ class PlatformScreen(Screen):
             for k, ln in enumerate(lines):
                 text(c, self.f.h3, ln, (r.left + 18, r.top + 14 + k * 24), theme.TEXT if on else theme.DIM)
             games = "{:,} game{}".format(p["rom_count"], "" if p["rom_count"] == 1 else "s")
-            used = r.left + 18 + measure(self.f.small, games) + 10
+            here = self.app.here_count.get(p["id"])
+            hx = r.left + 18 + measure(self.f.small, games) + 16
+            # what's on the box comes before the folder: "games", then the count, then the tag
+            used = (hx + 11 + measure(self.f.small, "{:,}".format(here)) if here else
+                    r.left + 18 + measure(self.f.small, games)) + 10
             room = r.right - 14
             for label in ("roms/" + p["_system"], p["_system"]):    # the folder gives way, never "games"
                 if used + measure(self.f.tiny, label) + 12 <= room:
                     room = tag(c, self.f.tiny, label, (r.right - 14, r.bottom - 30), "topright").left - 10
                     break
             text(c, self.f.small, games, (r.left + 18, r.bottom - 28), theme.DIM if on else theme.FAINT)
-            here = self.app.es_count.get(p["_system"])
-            hx = r.left + 18 + measure(self.f.small, games) + 16
             if here and hx + 11 + measure(self.f.small, "{:,}".format(here)) <= room:
-                installed_mark(c, (hx, r.bottom - 19), 7)     # games EmulationStation lists there
+                installed_mark(c, (hx, r.bottom - 19), 7)     # its games on the box, as its list ticks them
                 text(c, self.f.small, "{:,}".format(here), (hx + 11, r.bottom - 28), theme.GREEN)
         # scrollbar
         total_rows = (len(plats) + self.COLS - 1) // self.COLS

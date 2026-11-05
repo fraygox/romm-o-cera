@@ -526,3 +526,24 @@ def test_a_download_again_of_one_disc_and_an_empty_replace_list(app, rb, monkeyp
     m = rb.ManageMenu(app, rom)
     dict((e[0], e[2]) for e in _entries(m))["Download this disc again"]()
     assert got[-1] == (None, group)
+
+
+def test_download_again_says_when_it_deletes_a_file_the_app_didnt_download(app, rb, monkeypatch):
+    """The owner's own CHD (another game) named like RomM's: Download again deleted it with
+    only "Already on this box" said. It names the file and says the app didn't download it."""
+    rom = _rom()
+    app.details[rom["id"]] = {}
+    monkeypatch.setattr(app, "rom_status", lambda r: ("installed", None))
+    theirs = os.path.join(rommlib.ROMS_ROOT, "psx", "Lorem Quest (USA).chd")
+    dc = rb.DownloadConfirm(app, rom, replace=[theirs])
+    assert "Lorem Quest (USA).chd wasn't downloaded by RomM-o-Cera: it's deleted once RomM's copy is in" in dc.body
+    app.library.mark(rom, "psx", [theirs])                      # the app's own: nothing more to say
+    dc = rb.DownloadConfirm(app, rom, replace=[theirs])
+    assert "wasn't downloaded" not in dc.body
+
+
+def test_a_compress_candidates_folder_keeps_its_dots(rb):
+    from rbui.screens.compress import cand_title
+    assert cand_title({"name": None, "root": "/r/psx/Breaker 1.1 (USA)", "files": ["/r/psx/Breaker 1.1 (USA)/x.cue"]}) \
+        == "Breaker 1.1 (USA)"
+    assert cand_title({"name": None, "root": "/r/psx/Lorem.cue", "files": ["/r/psx/Lorem.cue"]}) == "Lorem"

@@ -337,6 +337,20 @@ class DownloadsScreen(ListScreen):
         app.modal = Confirm(app, "Cancel download?", body, "Cancel download", lambda: d.cancel_job(j), danger=True)
 
     # -- what a download row says
+
+    def still_here(self, j, now=None):
+        """A finished download's game is still on the box (it may have been deleted since):
+        asked of the library at most every few seconds per job, as rows draw every frame."""
+        now = time.time() if now is None else now
+        cache = self.__dict__.setdefault("_here", {})
+        t, here = cache.get(id(j), (0.0, True))
+        if now - t > 5:
+            try:
+                here = self.app.library.is_installed(j.rom, j.system)
+            except Exception:
+                here = True
+            cache[id(j)] = (now, here)
+        return here
     def status(self, j):
         """(the short status at the right of a row, its colour: the row's state colour)."""
         J, d = rommlib.Job, self.app.downloader
@@ -364,6 +378,8 @@ class DownloadsScreen(ListScreen):
                 return "Retry %d of %d in %d s" % (j.attempts, len(rommlib.RETRY_DELAYS), wait + 1), theme.AMBER
             return "Queued", theme.DIM
         if j.state == J.DONE:
+            if not self.still_here(j):
+                return "Deleted since", theme.FAINT
             if ", but " in (j.message or ""):            # in and playable; a step after it didn't go through
                 return "Ready to play", theme.AMBER
             return "Ready to play", theme.GREEN
@@ -458,14 +474,18 @@ class DownloadsScreen(ListScreen):
         secs = dl + cv if dl is not None and cv is not None else None
         allb = total + ctotal
         return {"live": len(live), "convs": len(convs), "secs": secs, "dl_secs": dl,
-                "frac": (done + cdone) / allb if allb else 0.0}
+                "frac": (done + cdone) / allb if allb else 0.0, "running": bool(run),
+                "conv_space": bool(queue) and queue[0].get("wait") == "space"}
 
     def headline(self, o):
-        """(the line on top, its colour)."""
-        d = self.app.downloader
+        """(the line on top, its colour): never at odds with the rows under it."""
+        d, J = self.app.downloader, rommlib.Job
         if d.hold and d.pending_count():
             return "Downloads are paused: {X} Actions resumes them", theme.AMBER
         if not o["live"] and not o["convs"]:
+            failed = sum(1 for j in d.jobs if j.state == J.FAILED)
+            if failed:
+                return "%s failed" % plural(failed, "download"), theme.RED
             return ("All done" if d.jobs else "Nothing running"), theme.DIM
         if not o["live"] and self.held:
             return "Compressing is paused", theme.AMBER
@@ -473,7 +493,22 @@ class DownloadsScreen(ListScreen):
             return "Everything's done in %s" % time_left(o["secs"]), theme.TEXT
         if o["live"] and o["dl_secs"] is not None:
             return "Downloads done in %s" % time_left(o["dl_secs"]), theme.TEXT
-        return ("Waiting to download" if o["live"] else "Compressing"), theme.DIM
+        if o["live"]:
+            states = {j.state for j in d.jobs}
+            if J.DOWNLOADING in states:
+                return "Downloading", theme.TEXT
+            if J.EXTRACTING in states:
+                return "Unpacking", theme.TEXT
+            if J.VERIFYING in states:
+                return "Checking downloads", theme.TEXT
+            if any(getattr(j, "short_space", 0) for j in d.jobs if j.state == J.QUEUED):
+                return "Downloads wait for space", theme.AMBER
+            return "Waiting to download", theme.DIM
+        if o["running"]:
+            return "Compressing", theme.TEXT
+        if o["conv_space"]:
+            return "Compressing waits for space", theme.AMBER
+        return "Waiting to compress", theme.DIM
 
     def draw_head(self, c, o):
         f = self.f
@@ -483,7 +518,8 @@ class DownloadsScreen(ListScreen):
         queued = self.app.downloader.active_count()          # as the header counts them
         paused = sum(1 for j in jobs if j.state == rommlib.Job.PAUSED)
         parts = (["%d in the queue" % queued] if queued else []) + (["%d paused" % paused] if paused else []) + \
-            (["%d compressing" % o["convs"]] if o["convs"] else [])
+            (["%d compressing" % o["convs"]] if o["convs"] and o.get("running", True) else
+             ["%d to compress" % o["convs"]] if o["convs"] else [])       # none running: they only wait
         n = self.pick_count()
         if n:
             parts.append("%d picked" % n)
@@ -510,8 +546,12 @@ class DownloadsScreen(ListScreen):
 
     def draw_list(self, c, lst, jobs):
         f, fc = self.f, self._fc
-        note, ncol = ("%s free" % human_size(fc["free"]), theme.FAINT) if fc["fits"] else \
-            ("short by %s: downloads wait for space" % human_size(fc["short"]), theme.AMBER)
+        # a download waiting for space says the same number as its row; otherwise the
+        # whole queue's shortfall, said as the queue's
+        waits = max((j.short_space for j in jobs if j.state == rommlib.Job.QUEUED and j.short_space), default=0)
+        note, ncol = ("waiting for %s of space" % human_size(waits), theme.AMBER) if waits else \
+            ("%s free" % human_size(fc["free"]), theme.FAINT) if fc["fits"] else \
+            ("the queue needs %s more space" % human_size(fc["short"]), theme.AMBER)
         on_list = self.focus == "list"
         list_head(c, f, lst, "Downloads", note, ncol, color=theme.TEXT if on_list else theme.DIM)
         y0 = lst.top + 44
@@ -573,7 +613,8 @@ class DownloadsScreen(ListScreen):
                 p.card("Compressing is paused", "%s waiting · {A} resumes" % plural(len(self.queued()), "game"),
                        on=on, tap=tap, sub_color=theme.AMBER)
             else:
-                wait = "waits for %s" % it["tool"] if it.get("tool") else "waits its turn"
+                wait = "waits for %s" % it["tool"] if it.get("tool") else \
+                    "waits for space" if it.get("wait") == "space" else "waits its turn"
                 p.card(self.conv_title(it), "to %s · %s · %s" % (self.mode(it), human_size(it["size"]), wait),
                        on=on, tap=tap)
         more = len(self.queued()) - sum(1 for it in items if it["kind"] == "queued")
