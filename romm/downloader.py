@@ -1403,6 +1403,10 @@ class Downloader:
         j.state = Job.DOWNLOADING
         target = _core.rom_dest(detail, system)
         if not target:
+            name = _core.safe_name(detail.get("fs_name") or "")
+            if name and os.path.islink(os.path.join(sysdir, name)):
+                raise _core.RommError("%s on the box is a link the app didn't make; not writing through it. "
+                                      "Move or remove it, then try again" % name)
             raise _core.RommError("RomM gave no usable file name for this game")
         self._never_over_theirs(j, target)
         ext = os.path.splitext(target)[1].lower()

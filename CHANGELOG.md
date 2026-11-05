@@ -22,6 +22,8 @@ Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/
 - Changing a setting when the disk is full says it couldn't be saved instead of closing the app.
 - A game whose later download failed still shows as on the box, with Play now (and Delete, when the app downloaded it).
 - A file the app downloaded that something else cut short or rewrote since (its size and time changed) can't be told from one put in its place, so the app leaves it alone and says it "was changed since": delete it from EmulationStation or a file manager. Damage in place (a flipped byte) keeps it the app's, so Check games can still download it again.
+- Known limit: a CHD of another disc copied over a game's CHD can pass Check games, and Compare goes by names only; neither ever replaces or deletes it.
+- Known limit: Compare can show a folder named like a game, holding only a sheet of yours whose tracks are missing, as a match (Check games flags it).
 - Known limit: a game downloaded before this version has no list of its files, so deleting it still takes the game files in its folder (not your notes, saves, patches or cheats).
 - Known limit: a converted disc is checked against its own checksums and RomM's size, not RomM's contents. A different disc of exactly the same size (another revision, say) put in place of a game's CHD passes Full check, and Clean up leftovers would offer that game's archive beside it as a copy.
 - Known limit: a PS3 disc left partly decrypted by another tool is caught in most layouts but not all (see the PS3 page).

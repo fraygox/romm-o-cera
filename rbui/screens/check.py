@@ -307,7 +307,7 @@ class AuditScreen(ListScreen):
     def redownload_all(self):
         todo = self.redownloadable()
         n = len({f["rom"]["id"] for f in todo})
-        self.redownload_many(todo, "Download %d damaged games again?" % n,
+        self.redownload_many(todo, "Download %s again?" % plural(n, "damaged game"),
                              "RomM's copies replace the damaged ones. Games that only differ from RomM "
                              "(amber) are left alone." + self.by_name_note(todo))
 
@@ -382,7 +382,7 @@ WHY = {"damaged": "It's broken or cut short, so it may not start or may stop par
                   "replaces it; saves and states follow.",
        "differs": "It isn't RomM's copy: another dump or a trimmed image. It may well play. Downloading it "
                   "again replaces it with RomM's; saves and states follow."}
-NOT_OURS = ("Not downloaded by RomM-o-Cera, so it never writes over it: delete or move it (from "
+NOT_OURS = ("Not downloaded by RomM-o-Cera, or changed since it was, so it never writes over it: delete or move it (from "
             "EmulationStation or a file manager), then download RomM's copy")
 WHY_IO = ("The box got an error reading this file. The drive or card may be failing, loose or unplugged, "
           "so it isn't in Download all damaged again. Check the drive first; downloading this one again "

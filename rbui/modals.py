@@ -204,7 +204,8 @@ class ManageMenu(ActionMenu):
             # found by its name, not downloaded here: the app never deletes or replaces it
             super().__init__(app, name, [
                 app.play_entry(rom, system, name),
-                ("Delete from this box", "Not downloaded by RomM-o-Cera: delete it from EmulationStation", None),
+                ("Delete from this box", "Not downloaded by RomM-o-Cera, or changed since: delete it from "
+                 "EmulationStation", None),
                 ("Download RomM's copy", "Move or delete the copy here first: the app never writes over it",
                  None),
             ])
