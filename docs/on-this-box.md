@@ -184,8 +184,8 @@ That's the folder compressing keeps for your own files when it puts the game's
 CHD beside it ([Disc compression](disc-compression.md)). Downloading the game
 again unpacks into that folder beside your files, and never writes over one of
 them: if the download has a file of the same name, it stops and says so. A
-folder of that name holding another game (its disc sheets named otherwise) is
-never taken for this game: it isn't counted as on the box, checked or deleted
+folder of that name with no game file named like it in it (another game, a
+cheat, a patch, a save) is never taken for this game: it isn't counted as on the box, checked or deleted
 as it, and a download never unpacks into it; it asks you to move or rename the
 folder first.
 

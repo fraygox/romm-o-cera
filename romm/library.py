@@ -8,7 +8,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 
-from . import core as _core, config as _config, es as _es, convert as _convert
+from . import core as _core, config as _config, discs as _discs, es as _es, convert as _convert
 
 
 # Filename tags that mark something other than a finished release. Matched as
@@ -40,6 +40,9 @@ NOT_GAME_EXTS = frozenset({
 _STATE_RE = re.compile(r"\.state(?:\d+|\.auto)?$", re.I)        # .state, .state1, .state.auto
 # folders named like a file ("Game.ps3"): the folder "extensions" ES lists as one game
 FOLDER_GAME_EXTS = frozenset({".ps3", ".xbox360", ".wiiu", ".pc", ".psvita", ".daphne", ".scummvm"})
+# systems whose games are folders of files named anyhow (a PS3 game folder, a port)
+FOLDER_GAME_SYSTEMS = {"ps3", "psvita", "xbox360", "wiiu", "switch", "windows", "windows_installers",
+                       "steam", "flatpak", "ports", "pygame", "lutris", "epic", "heroic", "vita3k"}
 
 
 def in_progress_name(name):
@@ -52,6 +55,12 @@ def in_progress_name(name):
 # are .p8.png / .vx.png pictures): what they take when ES's own list can't be read.
 GAME_EXTS_FALLBACK = {"pico8": frozenset({".p8", ".png"}), "voxatron": frozenset({".vx", ".png"})}
 _ES_EXTS = {}          # es_systems.cfg in use -> {system: extensions ES lists}, read once
+
+
+def lists_playlists(system):
+    """True unless ES's list for system is known and takes no .m3u."""
+    exts = _system_exts(system)
+    return exts is None or ".m3u" in exts
 
 
 def _system_exts(system):
@@ -115,36 +124,55 @@ def _points_out(p, folder):
 
 
 def named_game(path, system=None):
-    """A folder found by its name (not one the app downloaded) is that game only when it
-    holds a game (holds_game) and, when it holds disc sheets (.cue/.gdi/.ccd/.toc/.m3u),
-    one of them carries its name too: "Lorem (USA)/Lorem (USA).cue" or "... (Disc 2).cue".
-    A folder named like a RomM game holding MyGame.cue is the owner's other game: never
-    counted, checked, replaced or deleted as RomM's. A file: is_game_name."""
-    if not os.path.isdir(path) or os.path.splitext(os.path.normpath(path))[1].lower() in FOLDER_GAME_EXTS:
+    """A folder found by its name (not one the app downloaded) is that game only when a
+    game file in it carries its name too: "Lorem (USA)/Lorem (USA).cue", "... (Track 2).bin",
+    "... (Disc 2).chd". Anything else in a folder named like a RomM game (another game's
+    MyGame.chd, a cheat, a patch, a soundtrack, a save) is the owner's: the folder is never
+    counted, checked, compared, replaced or deleted as RomM's game. A playlist pointing out of
+    the folder doesn't count. A folder game ("Game.ps3", a PS3 or Wii U system's folder):
+    holds_game. A file: is_game_name."""
+    if not os.path.isdir(path) or os.path.splitext(os.path.normpath(path))[1].lower() in FOLDER_GAME_EXTS \
+            or system in FOLDER_GAME_SYSTEMS:
         return holds_game(path, system)
-    if not holds_game(path, system):
-        return False
-    stem, sheets = os.path.basename(os.path.normpath(path)).lower(), False
+    stem = os.path.basename(os.path.normpath(path)).lower()
     try:
         for dp, dns, fns in os.walk(path):
             dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS and not in_progress_name(d)]
             for f in fns:
-                if f.lower().endswith(SHEET_EXTS) and not _points_out(os.path.join(dp, f), path):
-                    if f.lower().startswith(stem):
-                        return True
-                    sheets = True
+                if f.lower().startswith(stem) and is_game_name(f, system) \
+                        and not _points_out(os.path.join(dp, f), path):
+                    return True
     except OSError:
-        return True
-    return not sheets
+        return True                  # can't tell: as before, the name decides
+    return False
 
 
-def remove_game_path(p, system=None):
+def _named_files(p, system):
+    """The files of a folder found by its name that are its game: those named like the
+    folder (named_game) and the files their sheets and playlists name inside it."""
+    stem, root = os.path.basename(os.path.normpath(p)).lower(), os.path.normpath(p) + os.sep
+    out = set()
+    for dp, dns, fns in os.walk(p):
+        for n in fns:
+            f = os.path.normpath(os.path.join(dp, n))
+            if n.lower().startswith(stem) and is_game_name(n, system) and not _points_out(f, p):
+                out.add(f)
+                low = n.lower()
+                refs = _es.m3u_paths(f) if low.endswith(".m3u") else \
+                    _discs.sheet_sources(f) if low.endswith(SHEET_EXTS) else []
+                out.update(os.path.normpath(q) for q in refs if os.path.normpath(q).startswith(root))
+    return out
+
+
+def remove_game_path(p, system=None, named_only=False):
     """Delete one path of a game. A file (or a link) goes; a folder ES lists as one
     game ("Game.ps3", FOLDER_GAME_EXTS) goes whole. A plain folder ("Game/", a disc's
     cue and tracks) loses only its game files (is_game_name): the owner's notes,
     manuals, pictures and saves in it stay, and so does the folder then (an emptied
-    one, and its emptied sub folders, go). Returns (bytes freed, files kept). A file
-    that won't go doesn't stop the rest; the first error is raised after."""
+    one, and its emptied sub folders, go). named_only (a folder found by its name, not
+    downloaded here): only the files named like it and those its sheets name go; any
+    other game file in it is the owner's and stays. Returns (bytes freed, files kept).
+    A file that won't go doesn't stop the rest; the first error is raised after."""
     if os.path.islink(p) or not os.path.isdir(p):
         size = _core.path_size(p) if not os.path.islink(p) else 0
         if os.path.lexists(p):
@@ -155,10 +183,11 @@ def remove_game_path(p, system=None):
         shutil.rmtree(p)
         return size, []
     freed, kept, err = 0, [], None
+    only = _named_files(p, system) if named_only else None
     for dp, dns, fns in os.walk(p, topdown=False):
         for n in fns:
             f = os.path.join(dp, n)
-            if not is_game_name(n, system):
+            if not is_game_name(n, system) or (only is not None and os.path.normpath(f) not in only):
                 kept.append(f)
                 continue
             try:
@@ -761,11 +790,16 @@ class Library:
         sysdir = os.path.join(_core.ROMS_ROOT, system)
         paths = [p for p in self.paths_for(rom, system) if _core._inside(p, sysdir)]
         self._refuse_busy(paths)
+        with self.lock:
+            self._reload()
+            ours = {os.path.normpath(q) for q in (self.installed.get(str(rom["id"])) or {}).get("paths") or []}
         gone, failed, freed = [], [], 0
         for p in paths:
             size = _core.path_size(p)
             try:
-                remove_game_path(p, system)        # a folder keeps the owner's own files
+                # a folder keeps the owner's own files; one found by its name keeps every
+                # file but those named like it (another game of theirs may be in it)
+                remove_game_path(p, system, named_only=os.path.normpath(p) not in ours)
             except OSError as e:
                 failed.append((p, e))
                 if os.path.lexists(p):

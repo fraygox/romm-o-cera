@@ -416,8 +416,9 @@ class LeftoversScreen(ListScreen):
         p.prose((it["note"] + ". " if it.get("note") else "") + why, label="Why it's here", lines=4)
         p.prose(gone, label="If you delete it", lines=3)
 
-    WHY = {"Partial download": ("A download that stopped before it finished: the connection dropped, or it was "
-                                "cancelled. Downloads still queued or paused aren't listed here.",
+    WHY = {"Partial download": ("A partial download (a .part file) unchanged for over an hour: one that stopped "
+                                "before it finished, the connection dropped or it was cancelled. Downloads still "
+                                "queued or paused aren't listed here.",
                                 "It frees the space. Downloading the game again starts over."),
            "Empty folder": ("A game folder with nothing left in it, or only files the system makes by itself "
                              "(Thumbs.db, .DS_Store).", "Nothing you can play changes."),
@@ -428,7 +429,8 @@ class LeftoversScreen(ListScreen):
                                         "It frees the space; the converted game stays and plays as before."),
            "Unfinished conversion": ("A conversion that was stopped before it finished. The original it came from "
                                      "is still here.", "It frees the space; the original stays."),
-           "Unfinished CHD": ("A CHD that was stopped before it finished. The original it came from is still here.",
+           "Unfinished CHD": ("A CHD that was stopped before it finished (a .chd.part file, unchanged for over an "
+                              "hour). The original it came from is still here.",
                               "It frees the space; the original stays."),
            "Unfinished unpack": ("Part of a game, left when its unpack was stopped (the app closed, the power "
                                  "went). It won't play, and unpacking or downloading that game again starts over.",

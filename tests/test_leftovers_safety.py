@@ -7,6 +7,7 @@ import os
 import shutil
 import struct
 import subprocess
+import time
 import zipfile
 
 import pytest
@@ -169,6 +170,22 @@ def test_a_zip_holding_the_owners_files_besides_the_disc_is_never_offered(isolat
         z.writestr("MY SAVE card1.mcr", b"save")
     fake_chd(os.path.join(d, "Elit (USA).chd"))
     assert offered() == {}
+
+
+def test_a_partial_file_changed_within_the_hour_is_never_offered(isolated, monkeypatch):
+    """Another program's .part (a browser download, the owner's own chdman run) was offered as
+    the app's partial download a minute after it was written."""
+    monkeypatch.setattr(rommlib, "PART_FRESH", 3600)
+    d = os.path.join(rommlib.ROMS_ROOT, "gba")
+    os.makedirs(d)
+    p = os.path.join(d, "MyHack.gba.part")
+    open(p, "wb").write(b"half")
+    def parts():
+        return [i["kind"] for i in rommlib.find_leftovers(chd_busy=False) if i["path"] == p]
+    assert parts() == []
+    t = time.time() - 7200
+    os.utime(p, (t, t))
+    assert parts() == ["Partial download"]
 
 
 def test_discs_a_playlist_lists_are_never_offered(isolated):

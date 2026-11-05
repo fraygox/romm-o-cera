@@ -461,6 +461,10 @@ class App:
             rommlib.save_config(self.cfg)
         except rommlib.ConfigUnreadable:
             self.toast("config.json can't be read: this change is not saved (Settings, Reset settings)", theme.AMBER)
+        except OSError as e:                     # a full disk: the file stays as it was
+            rommlib.log("config: not saved: %r" % e)
+            self.toast("Settings couldn't be saved (%s): this change lasts until the app closes"
+                       % ("the disk is full" if getattr(e, "errno", None) == 28 else e.strerror or e), theme.AMBER)
         self.input.set_swap(self.cfg["swap_ab"])
         self.make_custom_theme()
         apply_theme(self.theme_key())

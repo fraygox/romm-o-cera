@@ -82,8 +82,13 @@ def say(it, recorded=False):
         return "The same file RomM has. Nothing to do."
     if st == rommlib.COMPRESSED:
         fmt = rommlib.rom_format(rom)
+        # the compressed file, not a playlist listing it
+        main = next((p for p in it.get("paths") or () if not p.lower().endswith(".m3u")), it["path"])
+        if not recorded:
+            return ("A %s named like RomM's game: compressed from it, as far as names tell. Check games' "
+                    "Full check reads what's in it." % rommlib.path_format(main))
         return "RomM's %s, compressed here to %s to save space. The same game: nothing to do." % (
-            "files" if fmt == "Folder" else fmt, rommlib.path_format(it["path"]))
+            "files" if fmt == "Folder" else fmt, rommlib.path_format(main))
     shared = " Its files here are shared with another game, so there's nothing of its own to replace."
     if st == rommlib.NEWER:
         n, r = len(targets(it)), len(replaceable(it))

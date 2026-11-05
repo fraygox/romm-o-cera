@@ -158,10 +158,12 @@ def playlists_note(system, paths):
     names = rommlib.playlists_naming(system, paths) if paths else []
     if not names:
         return ""
+    listed = rommlib.lists_playlists(system)             # (a system ES lists no playlists for: it doesn't)
     if len(names) == 1:
-        return " %s still points at it: it is kept, and ES lists it with nothing to start." % names[0]
-    return " %s and %d more playlists still point at it: they are kept, and ES lists them with " \
-           "nothing to start." % (names[0], len(names) - 1)
+        return " %s still points at it: it is kept%s." % (
+            names[0], ", and ES lists it with nothing to start" if listed else "")
+    return " %s and %d more playlists still point at it: they are kept%s." % (
+        names[0], len(names) - 1, ", and ES lists them with nothing to start" if listed else "")
 
 
 class ManageMenu(ActionMenu):

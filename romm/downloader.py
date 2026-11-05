@@ -1846,14 +1846,14 @@ class Downloader:
             if not (os.path.isdir(lands) and not os.path.islink(lands) and not _library.holds_game(lands, system)):
                 raise _core.RommError("%s is already on the box under that name and isn't this "
                                       "download's; not unpacking over it. Move or rename it, then "
-                                      "download again" % os.path.basename(lands))
+                                      "try again" % os.path.basename(lands))
             owner = new_owner = True
             _core.log("UNPACK %s: %s holds no game, only other files: unpacking beside them" % (j.name, lands))
         if not resumed and not new_owner and os.path.isdir(lands) and not os.path.islink(lands):
             other = self._other_game_in(j, lands, target, members)
             if other:
                 raise _core.RommError("%s holds another game (%s), not this download's; not unpacking "
-                                      "in among it. Move or rename the folder, then download again"
+                                      "in among it. Move or rename the folder, then try again"
                                       % (os.path.basename(lands), other))
         j.move_markers = list(before)
         os.makedirs(target, exist_ok=True)

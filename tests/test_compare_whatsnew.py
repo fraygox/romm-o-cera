@@ -209,8 +209,10 @@ def test_format_labels_come_from_the_compare_module(rb):
     assert rommlib.rom_format({"fs_name": "Foo.7z"}) == "7Z"
     assert rommlib.rom_format({"fs_name": "Foo (USA)"}) == "Folder"
     it = _item(rommlib.COMPRESSED, "Beta", 2)
-    assert rb.compare.say(it) == ("RomM's ZIP, compressed here to CHD to save space. The same game: "
-                                  "nothing to do.")
+    assert rb.compare.say(it, recorded=True) == ("RomM's ZIP, compressed here to CHD to save space. The same "
+                                                 "game: nothing to do.")
+    # one the app didn't download: told by its name only, never claimed to be the same game
+    assert "Full check reads what's in it" in rb.compare.say(it) and "same game" not in rb.compare.say(it)
 
 
 def test_more_like_this_on_a_game_page_lists_romms_similar_games(rb, app, monkeypatch):

@@ -4,7 +4,7 @@ import subprocess
 import zipfile
 
 from . import (core as _core, discs as _discs, es as _es, ps3 as _ps3, convert as _convert,
-               leftovers as _leftovers, downloader as _downloader)
+               leftovers as _leftovers, downloader as _downloader, library as _library)
 
 
 # ------------------------------------------------- games ES can't see
@@ -89,7 +89,7 @@ def find_unseen(es, cancel=None):
         sysdir = os.path.join(_core.ROMS_ROOT, system)
         if exts is None or not os.path.isdir(sysdir) or os.path.islink(sysdir):
             continue
-        folders = system in _leftovers.FOLDER_GAME_SYSTEMS
+        folders = system in _library.FOLDER_GAME_SYSTEMS
         refs = set()
         for dp, dns, fns in os.walk(sysdir):
             if cancel is not None and cancel.is_set():

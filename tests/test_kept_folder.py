@@ -218,7 +218,7 @@ def test_download_again_never_unpacks_in_among_another_game_named_like_this_one(
     d = _downloader()
     j, arc = _download_again(d)
     j.replace = [os.path.join(_sysdir(), GAME, GAME + ".cue")]      # the file Check games found missing
-    with pytest.raises(rommlib.RommError, match="Move or rename it, then download again"):
+    with pytest.raises(rommlib.RommError, match="Move or rename it, then try again"):
         d._post(j, {"kind": "file", "path": arc, "heavy": True})
     # the game page's Download again names the whole folder (taken for the game by its name):
     # still never unpacked in among the other game
@@ -269,3 +269,27 @@ def test_a_playlist_left_pointing_out_of_the_folder_isnt_a_game_in_it(isolated):
     assert not rommlib.holds_game(d, "psx") and not rommlib.named_game(d, "psx")
     _w(os.path.join(d, "Mine.m3u"), b"Lamp Run (USA).cue\n")          # one listing a disc in it is
     assert rommlib.holds_game(d, "psx")
+
+
+@pytest.mark.parametrize("theirs", ["Other Game.chd", "Other.iso", "cheats.cht", "patch.ips", "soundtrack.mp3",
+                                    "mysave.bin"])
+def test_a_folder_named_like_a_game_holding_any_file_not_named_so_isnt_that_game(isolated, theirs):
+    """Round 4: any game-type file not named like the folder made it RomM's game again, and
+    Delete from this box deleted it (another game's CHD, a cheat, a save)."""
+    d = os.path.join(_sysdir(), GAME)
+    _w(os.path.join(d, theirs), b"theirs")
+    lib = rommlib.Library()
+    assert not lib.is_installed(ROM, "psx") and lib.paths_for(ROM, "psx") == []
+
+
+def test_deleting_a_game_found_by_its_folder_takes_only_its_own_files(isolated):
+    d = os.path.join(_sysdir(), GAME)
+    _w(os.path.join(d, GAME + ".cue"), CUE.encode())
+    _w(os.path.join(d, GAME + ".bin"), b"B" * 2352)
+    other = _w(os.path.join(d, "Other Game.chd"), b"another game of the owner's")
+    cheat = _w(os.path.join(d, "cheats.cht"), b"cheat")
+    lib = rommlib.Library()
+    assert lib.paths_for(ROM, "psx") == [d]
+    lib.uninstall(ROM, "psx")
+    assert sorted(os.listdir(d)) == ["Other Game.chd", "cheats.cht"]
+    assert open(other, "rb").read() == b"another game of the owner's" and open(cheat, "rb").read() == b"cheat"

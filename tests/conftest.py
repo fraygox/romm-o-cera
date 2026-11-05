@@ -56,6 +56,7 @@ def _fast_polls(monkeypatch):
     monkeypatch.setattr(rommlib, "WORKER_POLL", 0.05)
     monkeypatch.setattr(rb_chd, "TOOL_POLL", 0.05)
     monkeypatch.setattr(rb_chd_plan, "STILL_WRITTEN", 0)     # test files are always fresh
+    monkeypatch.setattr(rommlib, "PART_FRESH", 0)              # ... and so are their .part leftovers
 
 
 @pytest.fixture(autouse=True)

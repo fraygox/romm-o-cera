@@ -254,10 +254,6 @@ def sweep_stages(target):
 
 # Systems whose games are folders full of data (or that aren't games at all):
 # their empty folders can be part of a game — never offered for cleanup.
-FOLDER_GAME_SYSTEMS = {"ps3", "psvita", "xbox360", "wiiu", "switch", "windows", "windows_installers",
-                       "steam", "flatpak", "ports", "pygame", "lutris", "epic", "heroic", "vita3k"}
-
-
 # files an OS or file manager leaves in a folder by itself: a folder of only these is empty
 OS_JUNK = {"thumbs.db", "ehthumbs.db", ".ds_store", "desktop.ini", ".directory"}
 # rb_chd's cleaned cue copy (rb_chd.CHDMAN_CUE): a killed run's is removed by the next compression
@@ -463,6 +459,8 @@ def _chd_verified(path):
                 _core.log("LEFTOVERS: %s fails chdman verify: its originals aren't offered" % path)
         return _CHD_VERIFIED[key]
 
+
+PART_FRESH = 3600       # seconds a partial or temporary file must stay unchanged to be offered
 
 # what a zip offered as a copy of a converted game may hold: the disc's own files
 COPY_MEMBER_EXTS = tuple(sorted(_core.DISC_EXTS | {".bin", ".img", ".sub", ".raw", ".wav", ".ogg", ".mp3",
@@ -740,10 +738,14 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                 if kept(p):
                     continue
                 try:
+                    # changed within the hour: maybe still written by another program (a browser,
+                    # the owner's own chdman run), never offered
+                    if time.time() - os.path.getmtime(p) < PART_FRESH:
+                        continue
                     out.append({"path": p, "kind": kind, "size": os.path.getsize(p)})
                 except OSError:
                     pass
-            if dp != sysdir and not kept(dp) and system not in FOLDER_GAME_SYSTEMS \
+            if dp != sysdir and not kept(dp) and system not in _library.FOLDER_GAME_SYSTEMS \
                     and _leftover_folder(sysdir, dp):
                 junk = os_junk_only(dp)
                 if junk is not None:
