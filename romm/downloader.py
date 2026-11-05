@@ -1405,6 +1405,17 @@ class Downloader:
         if not target:
             raise _core.RommError("RomM gave no usable file name for this game")
         self._never_over_theirs(j, target)
+        ext = os.path.splitext(target)[1].lower()
+        if not is_folder and ext in _core.ARCHIVE_EXTS and system not in _core.ZIP_NATIVE \
+                and not self._accepts(system, ext):
+            # where a disc archive's files would unpack (a folder named after it): taken by a game
+            # the app didn't download, the unpack would be refused, so don't download it first
+            lands = os.path.splitext(target)[0]
+            if os.path.isdir(lands) and not os.path.islink(lands) and not self._ours(j, lands) \
+                    and _library.holds_game(lands, system) and not self._may_unpack_into(j, lands):
+                raise _core.RommError("%s is already on the box under that name and isn't this "
+                                      "download's; not unpacking over it. Move or rename it, then "
+                                      "try again" % os.path.basename(lands))
         # A RomM rom that is a *folder* (multi-file GDI/cue+bin set, or a folder
         # holding a single file) is pulled file by file, keeping its layout; the
         # whole-rom /content endpoint would hand back a zip or an extensionless
@@ -1412,6 +1423,7 @@ class Downloader:
         if is_folder:
             folder = target
             prefix = (detail.get("full_path") or "").rstrip("/") + "/"
+            j.wrote = []
             for f in files:
                 rel = f.get("full_path", "")
                 rel = rel[len(prefix):] if rel.startswith(prefix) else f["file_name"]
@@ -1421,9 +1433,11 @@ class Downloader:
                 if os.path.exists(dest) and os.path.getsize(dest) == f.get("file_size_bytes") \
                         and file_hash_ok(dest, f)[0] is not False:
                     j.done_bytes += f.get("file_size_bytes") or 0
+                    j.wrote = list(getattr(j, "wrote", None) or []) + [dest]     # (in its own folder)
                     continue
                 self._fetch_new(j, "/api/roms/%d/files/content/%s" % (
                     f["id"], urllib.parse.quote(f["file_name"])), dest, f.get("file_size_bytes"), f)
+                j.wrote = list(getattr(j, "wrote", None) or []) + [dest]
             return {"kind": "folder", "path": folder, "heavy": False}
         else:
             dest = target
@@ -1443,6 +1457,8 @@ class Downloader:
         conversion, done."""
         rom, system = j.rom, j.system
         j.after_warn, j.pending_chd, j.move_markers = None, None, []
+        if post.get("kind") != "folder":
+            j.wrote = []                         # (a folder game's were listed as it was fetched)
         j.defer_chd = True                       # its conversion is queued below, once it's recorded
         recorded = False
         # only the app's own copy is ever replaced (deleted once RomM's is in), whoever asked
@@ -1481,7 +1497,10 @@ class Downloader:
                 _core.log("gamelist %s: %r" % (j.name, e))
                 warn = warn or "its game info couldn't be handed to the game list"
             try:
-                self.library.mark(rom, system, results, group=j.group, meta=entry)
+                # what this download wrote: its unpacked or fetched files, and a file kept as it is
+                wrote = [r for r in results if os.path.isfile(r)] + list(getattr(j, "wrote", None) or [])
+                self.library.mark(rom, system, results, group=j.group, meta=entry,
+                                  files=[p for p in dict.fromkeys(wrote) if os.path.lexists(p)])
                 recorded = True
             except (_core.RommError, OSError) as e:
                 _core.log("mark %s: %s" % (j.name, e))
@@ -1578,6 +1597,11 @@ class Downloader:
                 r = inst.get(rid)
                 if r and m3u not in r["paths"]:
                     r["paths"].append(m3u)
+                if r and isinstance(r.get("files"), dict):
+                    try:
+                        r["files"][os.path.normpath(m3u)] = _library.file_sig(m3u)   # the app wrote it
+                    except OSError:
+                        pass
                 if r:
                     r["hidden_disc"] = True             # its disc's hide is queued above
         lib.update(add_m3u)
@@ -2150,6 +2174,7 @@ class Downloader:
                 else:
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
                     os.replace(src, dest)
+                    j.wrote = list(getattr(j, "wrote", None) or []) + [dest]
             if marker is not None:
                 _leftovers.mark_moved(marker)     # whole now: never offered as an unfinished unpack
         finally:

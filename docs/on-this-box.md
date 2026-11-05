@@ -25,7 +25,8 @@ downloaded also deletes the art, video and manual it had EmulationStation keep
 for it (`images/`, `videos/`, `manuals/`, named after the game), unless another
 game still uses them; the confirm counts them in what it frees. Media you added
 under other names stays. A game folder that also holds your own files (notes, a
-manual, pictures, saves) keeps them, and the folder stays. A playlist (`.m3u`) of
+manual, pictures, saves, patches, cheats, anything you added) keeps them, and
+the folder stays: only the files the download wrote go. A playlist (`.m3u`) of
 your own that lists the game is never deleted: the confirm names it, and ES goes
 on listing it with nothing to start.
 

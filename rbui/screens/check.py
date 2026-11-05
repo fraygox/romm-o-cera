@@ -463,8 +463,8 @@ class CheckScreen(AuditScreen):
             first = [("A", "Quick check")]
         elif it is NOTES:
             first = []
-        elif not it.get("rom") or it["path"] in self.queued:
-            first = []
+        elif not it.get("rom") or it["path"] in self.queued or not self.ours(it):
+            first = []                     # (one the app didn't download: the panel says why)
         else:
             first = [("A", "Download again")]
         y = [] if it is CHECK else [("Y", "Quick check")]

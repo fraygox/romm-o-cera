@@ -126,7 +126,9 @@ def freeable_games(library, systems=None):
     these are offered to delete. One put here another way is never the app's to delete."""
     ours = {os.path.normpath(p) for r in library.snapshot().values() if isinstance(r, dict)
             for p in r.get("paths") or []}
-    games = [g for g in rommlib.es_game_list(systems) if os.path.normpath(g["path"]) in ours]
+    games = [g for g in rommlib.es_game_list(systems)
+             if any(os.path.normpath(g["path"]) == o or os.path.normpath(g["path"]).startswith(o + os.sep)
+                    for o in ours)]                   # (a recorded folder: ES lists the sheet in it)
     for g in games:
         g["size"] = sum(rommlib.path_size(p) for p in rommlib.game_files(g["path"]))
     return [g for g in games if g["size"]]

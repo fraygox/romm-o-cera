@@ -3,7 +3,7 @@ import os
 import subprocess
 import zipfile
 
-from . import (core as _core, discs as _discs, es as _es, ps3 as _ps3, convert as _convert,
+from . import (core as _core, config as _config, discs as _discs, es as _es, ps3 as _ps3, convert as _convert,
                leftovers as _leftovers, downloader as _downloader, library as _library)
 
 
@@ -16,8 +16,9 @@ from . import (core as _core, discs as _discs, es as _es, ps3 as _ps3, convert a
 UNSEEN_IGNORE = (".txt", ".nfo", ".diz", ".md", ".pdf", ".xml", ".htm", ".html", ".jpg", ".jpeg",
                  ".png", ".gif", ".bmp", ".webp", ".srm", ".sav", ".state", ".ini", ".log", ".db",
                  ".keys", ".p2k.cfg", ".sfv", ".md5", ".sha1", ".url", ".lnk",
-                 # saves and memory cards
-                 ".rtc", ".eep", ".fla", ".sra", ".mpk", ".dsv", ".mcr", ".mcd", ".p2s", ".sstate")
+                 # saves and memory cards; patches and cheats RetroArch applies beside a game
+                 ".rtc", ".eep", ".fla", ".sra", ".mpk", ".dsv", ".mcr", ".mcd", ".p2s", ".sstate",
+                 ".ips", ".ups", ".bps", ".ppf", ".xdelta", ".aps", ".cht")
 # loose disc-image parts named like the game ES lists beside them (Game.ccd + Game.img/.sub)
 UNSEEN_COMPANIONS = {".bin", ".img", ".sub", ".sbi", ".mdf", ".ecm"}
 # housekeeping, never games: backups (gamelist.xml.bak-…, X.bak-gdi), parked or half-done files
@@ -213,6 +214,20 @@ def unpack_unseen(dl, finding):
             _ps3.ps3_check(path, dl.cfg)
         except _ps3.Ps3Error as e:
             raise _core.RommError("%s: %s" % (os.path.basename(path), e)) from None
+    # the space a download would need: what it unpacks to, and Keep free on disk left free
+    try:
+        need = sum(n or 0 for _, n in archive_contents(dl, path))
+    except Exception:
+        need = 0
+    keep = _config.keep_free_bytes(dl.cfg)
+    try:
+        free = dl._free_bytes(sysdir)
+    except OSError:
+        free = None
+    if free is not None and need and free - need < keep:
+        raise _core.RommError("%s unpacks to %s, and only %s is free (Keep free on disk is %s): free some space "
+                              "first" % (os.path.basename(path), _core.human_size(need), _core.human_size(free),
+                                         _core.human_size(keep)))
     out = dl._postprocess_file(j, path)
     if ps3 and j.chd_task:
         _core.log("UNSEEN queued %s for a PS3 game folder (%s)" % (path, j.chd_task))

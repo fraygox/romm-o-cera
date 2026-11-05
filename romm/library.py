@@ -36,7 +36,9 @@ _TEMP_RE = re.compile(r"\.tmp-\d+(?:-\d+)?$", re.I)
 NOT_GAME_EXTS = frozenset({
     ".srm", ".sav", ".rtc", ".eep", ".fla", ".sra", ".mpk", ".dsv", ".mcr", ".p2s", ".sstate",
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".mp4", ".avi", ".mkv", ".webm", ".pdf", ".cbz",
-    ".txt", ".nfo", ".xml", ".md5", ".sfv", ".sha1", ".log", ".cfg", ".ini", ".url", ".bak"})
+    ".txt", ".nfo", ".xml", ".md5", ".sfv", ".sha1", ".log", ".cfg", ".ini", ".url", ".bak",
+    # patches and cheats RetroArch applies beside a game: the owner's, never the game itself
+    ".ips", ".ups", ".bps", ".ppf", ".xdelta", ".aps", ".cht"})
 _STATE_RE = re.compile(r"\.state(?:\d+|\.auto)?$", re.I)        # .state, .state1, .state.auto
 # folders named like a file ("Game.ps3"): the folder "extensions" ES lists as one game
 FOLDER_GAME_EXTS = frozenset({".ps3", ".xbox360", ".wiiu", ".pc", ".psvita", ".daphne", ".scummvm"})
@@ -195,6 +197,35 @@ def remove_game_path(p, system=None):
     return freed, kept
 
 
+def remove_owned_in(folder, owned):
+    """Delete the files in folder that owned (normalised paths) names, then the sub folders and
+    the folder that leaves empty. Everything else in it stays. Returns bytes freed."""
+    freed, err = 0, None
+    for dp, dns, fns in os.walk(folder, topdown=False):
+        for n in fns:
+            f = os.path.join(dp, n)
+            if os.path.normpath(f) not in owned:
+                continue
+            try:
+                size = os.path.getsize(f) if not os.path.islink(f) else 0
+                os.remove(f)
+                freed += size
+            except OSError as e:
+                err = err or e
+        for n in dns:
+            try:
+                os.rmdir(os.path.join(dp, n))      # only succeeds when empty
+            except OSError:
+                pass
+    try:
+        os.rmdir(folder)
+    except OSError:
+        pass
+    if err is not None:
+        raise err
+    return freed
+
+
 def _is_dir(entry):
     try:
         return entry.is_dir()
@@ -218,6 +249,32 @@ class LibraryUnreadable(_core.RommError):
     copied aside): it's never written over (that would lose every record in it).
     From a delete, paths and freed say what went before that was found."""
     paths, freed, failed = (), 0, ()
+
+
+def file_sig(p):
+    """What tells the file the app wrote from another put at the same path later: [size, inode,
+    mtime in ns] (a folder: [None, inode, None]; an inode number can be reused, the three
+    together hardly)."""
+    st = os.lstat(p)
+    folder = os.path.isdir(p) and not os.path.islink(p)
+    return [None if folder else st.st_size, st.st_ino, None if folder else st.st_mtime_ns]
+
+
+def owned_files(rec):
+    """The paths of a record that are still the files the app wrote (their size and inode as
+    it recorded them), normalised; None for a record from before files were recorded (its
+    paths are taken as the app's, as then)."""
+    files = rec.get("files") if isinstance(rec, dict) else None
+    if not isinstance(files, dict):
+        return None
+    out = set()
+    for p, sig in files.items():
+        try:
+            if file_sig(p) == list(sig):
+                out.add(os.path.normpath(p))
+        except (OSError, TypeError):
+            pass
+    return out
 
 
 class NotDownloadedHere(_core.RommError):
@@ -574,6 +631,17 @@ class Library:
         self._stems[system] = (sig, recheck, stems)
         return stems
 
+    def owned(self):
+        """Every path the app wrote and that's still as it wrote it, normalised: a record's
+        files (owned_files), or for a record from before files were recorded, its paths."""
+        out = set()
+        for r in self.snapshot().values():
+            if not isinstance(r, dict):
+                continue
+            of = owned_files(r)
+            out |= of if of is not None else {os.path.normpath(q) for q in r.get("paths") or []}
+        return out
+
     def downloaded(self, rom):
         """True when the app downloaded this game and its record still names a file
         that's there: only such a game is ever deleted or replaced by the app."""
@@ -592,9 +660,19 @@ class Library:
         fs = (rom.get("fs_name") or "").lower()
         return fs in stems or (rom.get("fs_name_no_ext") or "").lower() in stems
 
-    def mark(self, rom, system, paths, group=None, meta=None):
+    def mark(self, rom, system, paths, group=None, meta=None, files=None):
+        """files: what this download wrote (each file unpacked or fetched): only those are ever
+        deleted or replaced later, and only while they're as it wrote them (file_sig). None:
+        the paths themselves (a file, or a folder taken as a whole)."""
         rec = {"system": system, "paths": list(paths), "name": rom.get("name"),
                "fs_name": rom.get("fs_name"), "when": time.strftime("%Y-%m-%d %H:%M:%S")}
+        sigs = {}
+        for p in (paths if files is None else files):
+            try:
+                sigs[os.path.normpath(p)] = file_sig(p)
+            except OSError:
+                pass
+        rec["files"] = sigs
         stamp = romm_stamp(rom)
         if stamp:
             rec["romm"] = stamp
@@ -613,6 +691,10 @@ class Library:
                     m3u in (r.get("paths") or []) for r in inst.values()
                     if isinstance(r, dict) and (r.get("group") or {}).get("id") == group.get("id")):
                 rec["paths"].append(m3u)
+                try:
+                    rec["files"][os.path.normpath(m3u)] = file_sig(m3u)     # the set's playlist, the app's
+                except OSError:
+                    pass
             inst[str(rom["id"])] = rec
         try:
             self.update(put)
@@ -663,7 +745,8 @@ class Library:
         def put(inst):
             rec = inst.get(str(rom["id"])) or {
                 "system": system, "name": rom.get("name"), "fs_name": rom.get("fs_name"),
-                "when": time.strftime("%Y-%m-%d %H:%M:%S")}
+                "when": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "files": {}}                      # already here, not downloaded: never the app's to delete
             rec["paths"] = list(dict.fromkeys([p for p in rec.get("paths") or [] if os.path.exists(p)] + paths))
             rec["group"] = group
             rec.setdefault("meta", gamelist_entry(rom, system, paths))
@@ -682,6 +765,25 @@ class Library:
                 ps = rec.get("paths") or []
                 if not any(p in rename for p in ps):
                     continue
+                files = rec.get("files")
+                if isinstance(files, dict):
+                    # what a converted file of the app's became is the app's too (the CHD, the playlist)
+                    for old, new in rename.items():
+                        o = os.path.normpath(old)
+                        mine = [k for k in files if k == o or k.startswith(o + os.sep)]
+                        if mine and new:
+                            for q in [new] + list(extra):
+                                try:
+                                    files[os.path.normpath(q)] = file_sig(q)
+                                except OSError:
+                                    pass
+                    for k in [k for k in files if not os.path.lexists(k)]:
+                        del files[k]
+                    for k in [k for k in files if k.lower().endswith(".m3u")]:
+                        try:
+                            files[k] = file_sig(k)           # its playlist, rewritten to the new files
+                        except OSError:
+                            pass
                 out = []
                 for p in ps:
                     for q in ([rename[p]] + list(extra)) if p in rename else [p]:
@@ -801,11 +903,23 @@ class Library:
                 raise NotDownloadedHere("%s %s" % (rom.get("name") or rom.get("fs_name"), NOT_OURS))
             return [], 0
         self._refuse_busy(paths)
+        owned = self.owned()
+        if paths:
+            # only what the app wrote, as it wrote it: a file put at the same path since, or added
+            # to the game's folder (a patch, a cheat, another game), is the owner's
+            keep = [p for p in paths if os.path.normpath(p) not in owned
+                    and not any(o.startswith(os.path.normpath(p) + os.sep) for o in owned)]
+            paths = [p for p in paths if p not in keep]
+            if not paths:
+                raise NotDownloadedHere("%s %s" % (rom.get("name") or rom.get("fs_name"), NOT_OURS))
         gone, failed, freed = [], [], 0
         for p in paths:
             size = _core.path_size(p)
             try:
-                remove_game_path(p, system)        # a folder keeps the owner's own files
+                if os.path.isdir(p) and not os.path.islink(p) and os.path.normpath(p) not in owned:
+                    remove_owned_in(p, owned)      # a plain folder: only the files the app put in it
+                else:
+                    remove_game_path(p, system)    # a folder keeps the owner's own files
             except OSError as e:
                 failed.append((p, e))
                 if os.path.lexists(p):

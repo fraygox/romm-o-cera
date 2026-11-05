@@ -335,3 +335,47 @@ def test_check_games_never_downloads_again_over_a_copy_the_app_didnt_download(is
     assert "Not downloaded by RomM-o-Cera" in scr.unpickable_why(f)
     rommlib.Library().mark(ROM, "psx", [f["path"]])
     assert scr.pickable(f) and scr.redownloadable() == [f]
+
+
+def test_deleting_a_downloaded_folder_game_leaves_what_the_owner_added_to_it(isolated):
+    """Round 6: the app's own BattleTech folder, with the owner's .ppf, (Fan Translation).ips,
+    .cht and a hack .bin added: Delete took all but the .txt. Only the files the download wrote
+    go now."""
+    d = _downloader()
+    j, arc = _download_again(d)
+    d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    folder = os.path.join(_sysdir(), GAME)
+    theirs = [_w(os.path.join(folder, n), b"theirs") for n in
+              (GAME + ".ppf", GAME + " (Fan Translation).ips", GAME + ".cht", GAME + " (Hack).bin")]
+    rommlib.Library().uninstall(ROM, "psx")
+    assert sorted(os.listdir(folder)) == sorted(os.path.basename(p) for p in theirs)
+
+
+def test_a_copy_put_where_a_stale_record_points_is_never_deleted(isolated):
+    """Round 6: a record left from a game deleted outside the app; the owner copies their own
+    game to that same path. Delete removed it: the record only had the path. It holds the
+    file's size and inode now, so a different file there isn't the app's."""
+    p = _w(os.path.join(_sysdir(), GAME + ".chd"), b"the app's")
+    lib = rommlib.Library()
+    lib.mark(ROM, "psx", [p])
+    os.remove(p)                                          # deleted outside the app
+    _w(p, b"the owner's own copy")
+    with pytest.raises(rommlib.NotDownloadedHere):
+        lib.uninstall(ROM, "psx")
+    assert open(p, "rb").read() == b"the owner's own copy"
+
+
+def test_a_download_whose_unpack_folder_holds_another_game_is_refused_before_downloading(isolated, monkeypatch):
+    """Round 6: Download again fetched all 50 MB, then refused to unpack into the owner's folder."""
+    from romm import downloader
+    monkeypatch.setattr(downloader, "needs_listing", lambda rom, system: False)
+    _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), b"someone else's copy")
+    d = _downloader()
+    d.es = {"psx": {".cue", ".chd", ".m3u"}}
+    d.api = types.SimpleNamespace(rom=lambda rid: dict(ROM, files=[{"file_name": GAME + ".zip", "category": None,
+                                                                    "file_size_bytes": 100}]))
+    d._free_bytes = lambda p: 1 << 40
+    j = rommlib.Job(dict(ROM), "psx")
+    with pytest.raises(rommlib.RommError, match="Move or rename it"):
+        d._process(j)
+    assert not os.path.exists(os.path.join(_sysdir(), GAME + ".zip.part"))

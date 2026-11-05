@@ -190,6 +190,18 @@ def test_unpack_refuses_an_archive_of_a_game_already_here_as_a_chd(isolated):
     assert os.path.exists(arc) and not os.path.exists(os.path.join(rommlib.ROMS_ROOT, "psp", "Ipsum"))
 
 
+def test_unpack_keeps_the_keep_free_reserve(isolated, monkeypatch):
+    """Unpack filled the disk to 0, past Keep free on disk, where a download waits for space."""
+    _zip("ps2/Bomb (USA).zip", {"Bomb (USA).iso": b"i" * 4096})
+    d = _dl()
+    monkeypatch.setattr(d, "_free_bytes", lambda p: 5000)
+    d.cfg = dict(d.cfg, keep_free_gb=0.000002)                       # ~2 KB kept free
+    f = _by_name(rommlib.find_unseen(ES))["ps2/Bomb (USA).zip"]
+    with pytest.raises(rommlib.RommError, match="free some space first"):
+        rommlib.unpack_unseen(d, f)
+    assert os.path.exists(f["path"])
+
+
 def test_unpack_refuses_unsafe_archives(isolated):
     _zip("ps2/Evil.zip", {"../escape.iso": b"x", "Evil.iso": b"y"})
     f = _by_name(rommlib.find_unseen(ES))["ps2/Evil.zip"]

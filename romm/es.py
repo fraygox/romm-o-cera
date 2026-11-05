@@ -344,8 +344,7 @@ def delete_game(system, path, library=None):
     if library is not None:
         # only files the app downloaded (its records, or inside a folder it downloaded): a playlist's
         # disc, a track or a sheet of someone else's stays, whatever lists it
-        ours = {os.path.normpath(q) for r in library.snapshot().values() if isinstance(r, dict)
-                for q in r.get("paths") or []}
+        ours = library.owned()               # as the app wrote them (a file put there since isn't)
         files = [p for p in files if any(os.path.normpath(p) == o or os.path.normpath(p).startswith(o + os.sep)
                                          for o in ours)]
     name = os.path.splitext(os.path.basename(path))[0]
