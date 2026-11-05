@@ -35,6 +35,7 @@ import sys
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "fraygox/romm-o-cera"
 CHANGELOG = os.path.join(HERE, "CHANGELOG.md")
+NOTES_SKIP = os.path.join(HERE, ".release-notes-skip")   # commits a later one superseded: not in the notes
 GROUPS = [("feat", "Features"), ("security", "Security"), ("perf", "Performance"), ("fix", "Fixes"),
           ("refactor", "Under the hood"), ("docs", "Documentation")]
 INSTALL = ("Update on the box: **Settings → Updates**, or "
@@ -82,11 +83,23 @@ def commits_since(tag):
             yield sha, body.strip()
 
 
+def notes_skip():
+    """The commit SHAs .release-notes-skip lists (comments after the SHA, # lines ignored)."""
+    try:
+        lines = open(NOTES_SKIP, encoding="utf-8").read().splitlines()
+    except OSError:
+        return []
+    return [ln.split()[0] for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+
+
 def draft_notes(tag):
     """Markdown grouped by commit type, oldest first: '- **fix:** Subject.'
     (subjects are written for users; the body is for developers)."""
     by = {k: [] for k, _ in GROUPS}
-    for _sha, body in commits_since(tag):
+    skip = notes_skip()
+    for sha, body in commits_since(tag):
+        if any(sha.startswith(s) for s in skip):
+            continue
         subject = body.partition("\n")[0]
         m = re.match(r"^(\w+)(?:\([^)]*\))?(!)?:\s*(.+)$", subject)
         if not m or m.group(1) in ("chore", "test", "ci", "build", "style") or re.match(r"^v\d", m.group(3)):

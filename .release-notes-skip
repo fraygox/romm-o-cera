@@ -1,0 +1,7 @@
+# Commits whose subject a later commit superseded: tools/release.py leaves them out of the
+# release and nightly notes (published history can't be reworded). One full or short SHA per
+# line, then why.
+9b38880 superseded by 40d395a (your games are acted on when you ask, with the files listed)
+3222063 superseded by 40d395a (the app does delete and replace games you put there, when asked)
+8742c38 superseded by 40d395a (Download again replaces your file when you confirm it); its crash fix is in CHANGELOG Unreleased
+a793841 superseded by 40d395a (same)
