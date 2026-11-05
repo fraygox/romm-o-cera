@@ -1466,8 +1466,9 @@ class Downloader:
             j.wrote = []                         # (a folder game's were listed as it was fetched)
         j.defer_chd = True                       # its conversion is queued below, once it's recorded
         recorded = False
-        # only the app's own copy is ever replaced (deleted once RomM's is in), whoever asked
-        j.replace = [p for p in j.replace or [] if self._ours(j, p)] or None
+        # what the user confirmed replacing (Check games, Download again, Compare: their confirm
+        # listed it) stays; with nothing named, only the app's own recorded copy is replaced
+        j.replace = [p for p in j.replace or [] if os.path.lexists(p)] or None
         if j.replace is None:
             j.replace = [p for p in self._recorded_copy(j) if self._ours(j, p)] or None
         try:
@@ -1923,6 +1924,8 @@ class Downloader:
         mine = {os.path.normpath(x) for x in j.made if isinstance(x, str)}
         if any(p == m or p.startswith(m + os.sep) for m in mine):
             return True
+        if p in {os.path.normpath(x) for x in getattr(j, "replace", None) or [] if isinstance(x, str)}:
+            return True                          # a file the user confirmed replacing with RomM's copy
         # the app's own download of this game, as it wrote it: a file put at its path since isn't
         rec = self.library.snapshot().get(str((j.rom or {}).get("id"))) or {}
         of = _library.owned_files(rec)

@@ -197,6 +197,76 @@ def remove_game_path(p, system=None):
     return freed, kept
 
 
+def their_files(paths, system, owned=()):
+    """The exact files of a game put on the box another way, for a confirm to list and an
+    explicit delete or replace to take: a file, and the tracks its .cue/.gdi names; a playlist
+    alone (never the discs it lists: those are games or files of their own); in a plain folder
+    the files named like it and the tracks their sheets name; a folder game ("Game.ps3") whole.
+    Never a file one of the app's own games holds (owned), nor anything else in a folder (notes,
+    saves, patches, cheats, another game). Normalised paths, inside roms/<system>."""
+    sysdir = os.path.join(_core.ROMS_ROOT, system)
+    owned = {os.path.normpath(o) for o in owned}
+    out = []
+
+    def add(q):
+        q = os.path.normpath(q)
+        if q not in out and q not in owned and os.path.lexists(q) and _core._inside(q, sysdir):
+            out.append(q)
+
+    def with_tracks(f, root):
+        add(f)
+        if f.lower().endswith((".cue", ".gdi")) and os.path.isfile(f):
+            for t in _discs.sheet_sources(f):
+                if os.path.normpath(t).startswith(os.path.normpath(root) + os.sep):
+                    add(t)
+    for p in paths:
+        p = os.path.normpath(p)
+        if os.path.isdir(p) and not os.path.islink(p):
+            if os.path.splitext(p)[1].lower() in FOLDER_GAME_EXTS or system in FOLDER_GAME_SYSTEMS:
+                add(p)
+                continue
+            stem = os.path.basename(p).lower()
+            for dp, dns, fns in os.walk(p):
+                dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS]
+                for n in sorted(fns):
+                    f = os.path.join(dp, n)
+                    if n.lower().startswith(stem) and is_game_name(n, system) and not _points_out(f, p):
+                        with_tracks(f, p)
+        elif p.lower().endswith(".m3u"):
+            add(p)
+        else:
+            with_tracks(p, os.path.dirname(p))
+    return out
+
+
+def remove_their_files(files, system):
+    """Delete exactly files (their_files, as a confirm listed them), then the folders that leaves
+    empty inside roms/<system>. Returns (deleted, bytes freed, [(path, error)])."""
+    sysdir = os.path.join(_core.ROMS_ROOT, system)
+    gone, failed, freed = [], [], 0
+    for f in files:
+        if not _core._inside(f, sysdir) or not os.path.lexists(f):
+            continue
+        try:
+            size = _core.path_size(f)
+            if os.path.isdir(f) and not os.path.islink(f):
+                shutil.rmtree(f)
+            else:
+                os.remove(f)
+            gone.append(f)
+            freed += size
+        except OSError as e:
+            failed.append((f, e))
+    for d in sorted({os.path.dirname(f) for f in gone}, key=len, reverse=True):
+        try:
+            while _core._inside(d, sysdir) and os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+                d = os.path.dirname(d)
+        except OSError:
+            pass
+    return gone, freed, failed
+
+
 def remove_owned_in(folder, owned):
     """Delete the files in folder that owned (normalised paths) names, then the sub folders and
     the folder that leaves empty. Everything else in it stays. Returns bytes freed."""
@@ -658,6 +728,35 @@ class Library:
         return of is None or any(os.path.normpath(p) in of or any(o.startswith(os.path.normpath(p) + os.sep)
                                                                   for o in of)
                                  for p in rec.get("paths") or [])
+
+    def their_files_at(self, paths, system):
+        """their_files() of the given paths (a game ES lists, picked in Free up space)."""
+        return their_files(paths, system, self.owned())
+
+    def their_files(self, rom, system):
+        """their_files() of a game found on the box by its name (not the app's download)."""
+        return their_files(self.paths_for(rom, system), system, self.owned())
+
+    def delete_theirs(self, rom, system, files):
+        """Delete a game put on the box another way: exactly files (what its confirm listed,
+        their_files), never more. Queues ES's removal of its entries and drops any record of it.
+        Returns (deleted paths, bytes freed)."""
+        entries = [p for p in self.paths_for(rom, system)]
+        self._refuse_busy(files)
+        mine = self.owned()
+        files = [f for f in files if os.path.normpath(f) not in mine]      # never one of the app's games
+        gone, freed, failed = remove_their_files(files, system)
+        _core.log("DELETE (not downloaded here) %s: %s (%s)%s" % (rom.get("name") or rom.get("fs_name"), gone,
+                                                                 _core.human_size(freed),
+                                                                 " FAILED %r" % failed if failed else ""))
+        drop = [p for p in entries if not os.path.lexists(p)]
+        if drop:
+            _core.append_gamelist({"system": system, "remove": drop})
+        self.rescan(system)
+        if failed:
+            raise UninstallIncomplete(_incomplete_msg(rom.get("name") or rom.get("fs_name"), failed),
+                                      gone, freed, failed)
+        return gone, freed
 
     def owns(self, path, owned=None):
         """path is the app's (owned()), or inside a folder of the app's, or holds a file of it."""

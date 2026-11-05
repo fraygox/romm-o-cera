@@ -122,18 +122,22 @@ class SpaceScreen(ListScreen):
 
 
 def freeable_games(library, systems=None):
-    """The games ES lists that RomM-o-Cera downloaded (its records), with their sizes: only
-    these are offered to delete. One put here another way is never the app's to delete."""
+    """Every game ES lists, with what deleting it frees: the app's own files, or for one put
+    here another way exactly its own files (their_files: a playlist alone, a sheet with its
+    tracks). g["ours"]: the app downloaded it."""
     ours = library.owned()                        # as it wrote them: a file put in one's place isn't
-    games = [g for g in rommlib.es_game_list(systems) if library.owns(g["path"], ours)]
+    games = rommlib.es_game_list(systems)
     for g in games:
-        g["size"] = sum(rommlib.path_size(p) for p in rommlib.game_files(g["path"]))
+        g["ours"] = library.owns(g["path"], ours)
+        # what deleting it takes: the app's own files, or exactly a game's own put here another way
+        files = [p for p in rommlib.game_files(g["path"]) if library.owns(p, ours)] if g["ours"] else \
+            library.their_files_at([g["path"]], g["system"])
+        g["size"] = sum(rommlib.path_size(p) for p in files)
     return [g for g in games if g["size"]]
 
 
 class FreeUpScreen(ListScreen):
-    """Every game RomM-o-Cera downloaded that EmulationStation lists (never one copied
-    over another way: the app doesn't delete what it didn't download), least played
+    """Every game EmulationStation lists (the app's or put here another way), least played
     and biggest first. Always picking: A picks, X: delete the picked / pick
     enough to free N GB, Y: sort. Saves and states are never touched."""
     ROWS, ROW_H = 9, 56
@@ -234,9 +238,11 @@ class FreeUpScreen(ListScreen):
             app.space_freed()
             self.load()
         app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "game"),
-                            "Frees about %s. The files RomM-o-Cera downloaded for them go (playlist discs and "
-                            "tracks too); saves, states, screenshots and anything else are kept. EmulationStation drops them from its lists when you leave "
-                            "RomM-o-Cera." % human_size(size), "Delete %d" % len(todo),
+                            "Frees about %s. Their files go: for a game RomM-o-Cera downloaded, the files it wrote "
+                            "(playlist discs and tracks too); for one put here another way (%d of them), its "
+                            "game file and the tracks its sheet names, and a playlist alone. Saves, states, "
+                            "screenshots and anything else are kept. EmulationStation drops them from its lists when you leave "
+                            "RomM-o-Cera." % (human_size(size), sum(1 for g in todo if not g.get("ours", True))), "Delete %d" % len(todo),
                             lambda: (setattr(self, "busy", True), app.bg(run, done, err)), danger=True)
 
     def pick_entries(self, games):
@@ -281,8 +287,7 @@ class FreeUpScreen(ListScreen):
         head = "%s · %s free" % (plural(len(self.items), "game"), human_size(free))
         if not self.items:
             text(c, self.f.h3, head, (56, 86), theme.TEXT)
-            scroll_text(c, self.f.body, "No games RomM-o-Cera downloaded here. Games put here another way "
-                        "are deleted from EmulationStation.", pygame.Rect(56, 130, W - 112, 120), theme.DIM)
+            text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
             return
         row = lambda g: (g["name"], "%s · %s" % (self.app.system_name(g["system"]), _lastplayed_label(g["lastplayed"])),  # noqa: E731
                          human_size(g["size"]))

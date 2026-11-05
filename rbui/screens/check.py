@@ -200,21 +200,21 @@ class AuditScreen(ListScreen):
         return self.app.library.owns(f["path"])    # as the app wrote it (a file put in its place isn't)
 
     def redownloadable(self):
-        """What "Download all damaged again" takes: the app's own downloads, not a file the box
+        """What "Download all damaged again" takes: not a file the box
         couldn't read (the drive may be failing or gone: downloading every game again onto it
         wouldn't help)."""
         return [f for f in (self.findings or []) if f["severity"] == "damaged" and f.get("rom")
-                and not f.get("io_error") and f["path"] not in self.queued and self.ours(f)]
+                and not f.get("io_error") and f["path"] not in self.queued]
 
     def jump_label(self, f):
         return f["system"]
 
     def pickable(self, f):
-        return bool(f.get("rom")) and f["path"] not in self.queued and self.ours(f)
+        return bool(f.get("rom")) and f["path"] not in self.queued
 
     def unpickable_why(self, f):
         return "Already queued" if f["path"] in self.queued else \
-            "Not in RomM under this name — can't download it again" if not f.get("rom") else NOT_OURS
+            "Not in RomM under this name — can't download it again" if not f.get("rom") else "Can't download it again"
 
     def list_actions(self):
         n = len({f["rom"]["id"] for f in self.redownloadable()})
@@ -229,7 +229,7 @@ class AuditScreen(ListScreen):
         return [("Download %d again" % len(todo), sub, (lambda: self.redownload_many(
             todo, "Download %s again?" % plural(len({f["rom"]["id"] for f in todo}), "picked game"),
             "RomM's copies replace the ones on the box (saves are kept), the ones that only differ "
-            "from RomM too." + self.by_name_note(todo))) if todo else None)]
+            "from RomM too." + self.by_name_note(todo) + self.theirs_note(todo))) if todo else None)]
 
     @staticmethod
     def by_name_note(todo):
@@ -251,12 +251,36 @@ class AuditScreen(ListScreen):
         new = (f["rom"].get("fs_name_no_ext") or os.path.splitext(f["rom"].get("fs_name") or "")[0]).lower()
         return bool(f.get("via")) or (new and new != os.path.splitext(os.path.basename(f["path"]))[0].lower())
 
+    def replaced(self, f):
+        """The files downloading this finding's game again replaces when the app didn't download
+        it: exactly the game's own files (their_files) and the broken file. [] for the app's own."""
+        if self.ours(f):
+            return []
+        mine = self.app.library.their_files(f["rom"], f["system"])
+        return sorted({os.path.normpath(p) for p in mine} | {os.path.normpath(f["path"])})
+
+    def replaced_text(self, f):
+        sysdir = os.path.join(rommlib.ROMS_ROOT, f["system"])
+        rel = [os.path.relpath(p, sysdir) for p in self.replaced(f)]
+        shown = ", ".join(rel[:8])
+        return shown + (" and %d more" % (len(rel) - 8) if len(rel) > 8 else "")
+
+    def theirs_note(self, todo):
+        """The confirm's word on games the app didn't download: their files are replaced."""
+        n = len({f["rom"]["id"] for f in todo if not self.ours(f)})
+        if not n:
+            return ""
+        return " %s weren't downloaded by RomM-o-Cera: their game files are replaced (notes, saves and " \
+               "other files beside them stay)." % plural(n, "game") if n > 1 else \
+               " 1 game wasn't downloaded by RomM-o-Cera: its game files are replaced (notes, saves and " \
+               "other files beside it stay)."
+
     def redownload(self, f):
         app = self.app
         # always the broken file shown, which the user asked to replace: RomM's copy can land under
         # another name, or unpack beside it (a zipped cue/bin for a junk .chd of that name); the
         # downloader never deletes a path the new copy holds
-        job = app.downloader.enqueue(dict(f["rom"]), f["system"], replace=[f["path"]])
+        job = app.downloader.enqueue(dict(f["rom"]), f["system"], replace=self.replaced(f) or [f["path"]])
         self.queued.add(f["path"], job)
 
     def action(self, a):
@@ -285,8 +309,6 @@ class AuditScreen(ListScreen):
             app.toast("Not in RomM under this name — can't download it again", theme.AMBER)
         elif f["path"] in self.queued:
             app.toast("Already queued")
-        elif not self.ours(f):
-            app.toast(NOT_OURS, theme.AMBER)
         else:
             name = f["rom"].get("name") or os.path.basename(f["path"])
             if self.inside_folder(f):
@@ -298,6 +320,8 @@ class AuditScreen(ListScreen):
                 how = "RomM's copy replaces the one on the box (saves are kept)."
             if f.get("via") == "name":
                 how += " RomM has it only under another name, matched by title: it's another release."
+            if not self.ours(f):
+                how += " It wasn't downloaded by RomM-o-Cera, so these files are replaced: %s." % self.replaced_text(f)
             if f.get("io_error"):
                 how = "The box couldn't read this file: check the drive or card first. " + how
             app.modal = Confirm(app, "Download %s again?" % name, "%s. %s" % (f["problem"].split(" · ")[0], how),
@@ -309,7 +333,7 @@ class AuditScreen(ListScreen):
         n = len({f["rom"]["id"] for f in todo})
         self.redownload_many(todo, "Download %s again?" % plural(n, "damaged game"),
                              "RomM's copies replace the damaged ones. Games that only differ from RomM "
-                             "(amber) are left alone." + self.by_name_note(todo))
+                             "(amber) are left alone." + self.by_name_note(todo) + self.theirs_note(todo))
 
     def redownload_many(self, todo, title, body):
         """Each game once (two findings can be one game), after a confirm."""
@@ -382,8 +406,6 @@ WHY = {"damaged": "It's broken or cut short, so it may not start or may stop par
                   "replaces it; saves and states follow.",
        "differs": "It isn't RomM's copy: another dump or a trimmed image. It may well play. Downloading it "
                   "again replaces it with RomM's; saves and states follow."}
-NOT_OURS = ("Not downloaded by RomM-o-Cera, or changed since it was, so it never writes over it: delete or move it (from "
-            "EmulationStation or a file manager), then download RomM's copy")
 WHY_IO = ("The box got an error reading this file. The drive or card may be failing, loose or unplugged, "
           "so it isn't in Download all damaged again. Check the drive first; downloading this one again "
           "writes a fresh copy.")
@@ -460,8 +482,8 @@ class CheckScreen(AuditScreen):
             first = [("A", "Quick check")]
         elif it is NOTES:
             first = []
-        elif not it.get("rom") or it["path"] in self.queued or not self.ours(it):
-            first = []                     # (one the app didn't download: the panel says why)
+        elif not it.get("rom") or it["path"] in self.queued:
+            first = []
         else:
             first = [("A", "Download again")]
         y = [] if it is CHECK else [("Y", "Quick check")]
@@ -613,8 +635,9 @@ class CheckScreen(AuditScreen):
             p.prose(failed.rstrip(".") + ".", label="Downloading it again failed", lines=3)
         p.prose(WHY_IO if it.get("io_error") else
                 "RomM has no game under this file name, so it can't be downloaded again from here."
-                if not it.get("rom") else WHY.get(it["severity"], "") if self.ours(it) else
-                NOT_OURS + ".", lines=4)
+                if not it.get("rom") else WHY.get(it["severity"], "") + ("" if self.ours(it) else
+                " It wasn't downloaded by RomM-o-Cera: downloading it again replaces its files (listed in the "
+                "confirm); notes, saves and other files beside it stay."), lines=5)
 
     @staticmethod
     def kind(f):

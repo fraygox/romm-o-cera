@@ -200,8 +200,9 @@ def test_check_games_download_again_replaces_the_broken_file_shown(isolated, rb,
     downloader never deletes what the new copy holds), and the row says downloaded once done."""
     import types
     got = []
-    app = types.SimpleNamespace(downloader=types.SimpleNamespace(
+    app = types.SimpleNamespace(library=rommlib.Library(), downloader=types.SimpleNamespace(
         enqueue=lambda rom, system, replace=None: got.append(replace) or types.SimpleNamespace(state=rommlib.Job.DONE)))
+    monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     from rbui.screens.check import QueuedAgain
     scr.app, scr.queued = app, QueuedAgain()
@@ -232,18 +233,19 @@ def test_download_again_never_unpacks_in_among_another_game_named_like_this_one(
     assert open(other, "rb").read().startswith(b"FILE")
 
 
-def test_download_again_never_writes_over_the_owners_damaged_file(isolated):
+def test_download_again_replaces_the_owners_damaged_file_it_was_asked_to(isolated):
     """The owner's cut-short Lamp Run (USA).bin beside their notes (not downloaded by the app):
-    Check games' Download again names it, but the app never writes over a file it didn't
-    download: refused, saying to move it, and everything stays as it was."""
+    Check games' Download again names it and its cue (the confirm lists them), and RomM's copy
+    takes their place; the notes stay."""
     b = _w(os.path.join(_sysdir(), GAME, GAME + ".bin"), b"short")
+    cue = _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), CUE.encode())
     _w(os.path.join(_sysdir(), GAME, "notes.txt"), b"notes")
     d = _downloader()
     j, arc = _download_again(d)
-    j.replace = [b]
-    with pytest.raises(rommlib.RommError, match="Move or rename it"):
-        d._post(j, {"kind": "file", "path": arc, "heavy": True})
-    assert open(b).read() == "short"
+    j.replace = [b, cue]
+    d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert j.state == rommlib.Job.DONE, j.message
+    assert open(b).read() == "B" * 2352
     assert open(os.path.join(_sysdir(), GAME, "notes.txt")).read() == "notes"
 
 
@@ -297,18 +299,23 @@ def test_a_game_found_by_its_folder_is_never_deleted(isolated):
     assert os.path.exists(cue) and open(other, "rb").read() == b"the owner's hack"
 
 
-def test_free_up_space_offers_only_games_the_app_downloaded(isolated, monkeypatch):
+def test_free_up_space_takes_only_a_playlists_own_file_for_one_put_here_another_way(isolated, monkeypatch):
     """Free up space listed the owner's own playlist (My Mix.m3u) as a game, and deleting it
-    took another game's CHD it listed. Only the app's downloads are offered now."""
+    took another game's CHD it listed. Games put here another way are listed (the user wants to
+    free space with them), and deleting one takes exactly its own files: a playlist alone."""
     from rbui.screens.space import freeable_games
     mine = _w(os.path.join(_sysdir(), "My Mix.m3u"), b"Other (USA).chd\n")
-    _w(os.path.join(_sysdir(), "Other (USA).chd"), b"o" * 100)
+    other = _w(os.path.join(_sysdir(), "Other (USA).chd"), b"o" * 100)
     ours = _w(os.path.join(_sysdir(), GAME + ".chd"), b"c" * 100)
-    rommlib.Library().mark(ROM, "psx", [ours])
+    lib = rommlib.Library()
+    lib.mark(ROM, "psx", [ours])
     monkeypatch.setattr(rommlib, "es_game_list", lambda systems=None: [
         {"system": "psx", "path": p, "name": os.path.basename(p), "lastplayed": None, "playcount": 0}
         for p in (mine, ours)])
-    assert [g["path"] for g in freeable_games(rommlib.Library())] == [ours]
+    got = {g["path"]: g for g in freeable_games(lib)}
+    assert got[ours]["ours"] and not got[mine]["ours"] and got[mine]["size"] == os.path.getsize(mine)
+    rommlib.delete_game("psx", mine, lib)
+    assert not os.path.exists(mine) and open(other, "rb").read() == b"o" * 100
 
 
 def test_deleting_the_apps_playlist_never_takes_a_disc_it_didnt_download(isolated):
@@ -324,17 +331,33 @@ def test_deleting_the_apps_playlist_never_takes_a_disc_it_didnt_download(isolate
     assert open(other, "rb").read() == b"o" * 100
 
 
-def test_check_games_never_downloads_again_over_a_copy_the_app_didnt_download(isolated, rb):
-    app = types.SimpleNamespace(library=rommlib.Library())
+def test_check_games_downloads_again_over_a_copy_the_app_didnt_download_and_says_so(isolated, rb):
+    """A game copied over by hand can be repaired: its game files (not the notes beside it) are
+    replaced, and the confirm says it wasn't downloaded by RomM-o-Cera and lists them."""
+    jobs = []
+    dl = types.SimpleNamespace(enqueue=lambda rom, system, replace=None: jobs.append((rom, system, replace)) or "job")
+    app = types.SimpleNamespace(library=rommlib.Library(), downloader=dl, modal=None, toast=lambda *a, **k: None)
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     scr.app, scr.queued = app, rb.QueuedAgain()
-    f = {"path": _w(os.path.join(_sysdir(), GAME + ".chd"), b"chd"), "system": "psx", "severity": "damaged",
-         "problem": "Incomplete disc image", "rom": dict(ROM)}
+    cue = _w(os.path.join(_sysdir(), GAME + ".cue"), b'FILE "%s.bin" BINARY\n' % GAME.encode())
+    track = _w(os.path.join(_sysdir(), GAME + ".bin"), b"bin")
+    notes = _w(os.path.join(_sysdir(), "notes.txt"), b"mine")
+    f = {"path": track, "system": "psx", "severity": "damaged", "problem": "Incomplete disc image",
+         "rom": dict(ROM)}
     scr.findings = [f]
-    assert not scr.pickable(f) and scr.redownloadable() == []
-    assert "Not downloaded by RomM-o-Cera" in scr.unpickable_why(f)
-    rommlib.Library().mark(ROM, "psx", [f["path"]])
     assert scr.pickable(f) and scr.redownloadable() == [f]
+    scr.open_finding(f)
+    body = app.modal.body if hasattr(app.modal, "body") else repr(vars(app.modal))
+    assert "wasn't downloaded by RomM-o-Cera" in body and GAME + ".bin" in body and "notes.txt" not in body
+    scr.redownload(f)
+    assert jobs[0][2] == sorted([os.path.normpath(cue), os.path.normpath(track)])
+    assert os.path.exists(notes)
+    scr.queued = rb.QueuedAgain()
+    assert "weren't" not in scr.theirs_note([f]) and "wasn't downloaded by RomM-o-Cera" in scr.theirs_note([f])
+    rommlib.Library().mark(ROM, "psx", [track])
+    jobs.clear()
+    scr.redownload(f)
+    assert jobs[0][2] == [track] and scr.theirs_note([f]) == ""
 
 
 def test_deleting_a_downloaded_folder_game_leaves_what_the_owner_added_to_it(isolated):
@@ -424,8 +447,16 @@ def test_download_again_never_unpacks_over_the_owners_file_at_the_apps_unpacked_
     d.es = {"n64": {".z64", ".n64", ".v64"}}           # ES doesn't list the zip: it's unpacked
     arc = _zip(os.path.join(sysdir, "Fission (World).zip"), {"Fission (World).z64": "R" * 900})
     j = rommlib.Job(dict(rom), "n64")
-    j.made, j.replace = [arc], [z64]                    # Check games named the file
+    j.made = [arc]                                      # nothing named to replace: an automatic redownload
     d.jobs.append(j)
     with pytest.raises(rommlib.RommError, match="not unpacking over it"):
         d._post(j, {"kind": "file", "path": arc, "heavy": True})
     assert open(z64, "rb").read() == b"the owner's own hack"
+    # asked for by name (Check games' confirm listed it): RomM's copy replaces it
+    arc = _zip(os.path.join(sysdir, "Fission (World).zip"), {"Fission (World).z64": "R" * 900})
+    j = rommlib.Job(dict(rom), "n64")
+    j.made, j.replace = [arc], [z64]
+    d.jobs.append(j)
+    d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert j.state == rommlib.Job.DONE, j.message
+    assert open(z64).read() == "R" * 900

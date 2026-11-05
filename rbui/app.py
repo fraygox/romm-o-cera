@@ -502,6 +502,16 @@ class App:
                 then()
         self.bg(lambda: self.library.uninstall(rom, system), done, self._uninstall_failed(then))
 
+    def delete_theirs(self, rom, system, files, then=None):
+        """A game put on the box another way: exactly the files its confirm listed."""
+        def done(res):
+            paths, freed = res
+            self.toast("Deleted %s — %s freed" % (rom.get("name"), human_size(freed)), theme.GREEN)
+            self.space_freed()
+            if then:
+                then()
+        self.bg(lambda: self.library.delete_theirs(rom, system, files), done, self._uninstall_failed(then))
+
     def uninstall_group(self, group, system, title, then=None):
         """Every disc of a set and its playlist; like uninstall(), conversions
         waiting for room hear about the space."""

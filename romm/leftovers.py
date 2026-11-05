@@ -730,9 +730,8 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                         copies = False                   # a playlist or sheet that can't be read: no copies here
                     else:
                         refs[os.path.normpath(p).lower()] = got
-                # (only an original the app downloaded: one put here another way is never its to delete)
                 copy = _converted_copy(fn, here) if copies and not kept(p) and os.path.normpath(p) not in queued \
-                    and recorded is not None and path_overlaps(p, recorded) else None
+                    else None
                 if copy and not _converted_ok(os.path.join(dp, copy), p, here, dp, checked):
                     copy = None                          # not proven whole and the same game: keep this
                 if copy:

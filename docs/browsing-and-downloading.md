@@ -166,8 +166,9 @@ your phone. Anything RomM doesn't have is left out.
   box's copy beside RomM's ("On this box: CHD · 257 MB · roms/psx", "In RomM:
   zip · 515 MB") and the strip says when you last played it here.
 - **X** opens the game's Actions: More like this, Game night (from the list
-  it came from), and for a game on the box Delete and Download again (for one RomM-o-Cera
-  downloaded: one put here another way is left to you).
+  it came from), and for a game on the box Delete and Download again (for one put here
+  another way, the confirm says it wasn't downloaded by RomM-o-Cera and lists
+  the files that go or get replaced).
 - **Left/right** go to the previous or next game of the list; **B** goes back.
 
 While picking several games, A still picks.
@@ -231,8 +232,9 @@ its count:
   RomM's: one the app downloaded that was cut short or changed since, or one
   with RomM's name that the app didn't install (copied over by hand, say).
   Compare goes by the file as it is now, so a damaged download never shows
-  as a match. **A** (*Get RomM's copy*) downloads RomM's one; a copy the app
-  didn't download is never written over, so move or delete it first.
+  as a match. **A** (*Get RomM's copy*) downloads RomM's one; for a copy the app
+  didn't download, the confirm says so and lists the files RomM's copy
+  replaces.
 - **Not in RomM** (platforms only): a game put on the box another way. It
   still plays.
 

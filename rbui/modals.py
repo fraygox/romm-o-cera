@@ -152,6 +152,17 @@ def media_note(media):
     return " and its %d art, video and manual file%s" % (len(media), "" if len(media) == 1 else "s")
 
 
+def plural_files(n):
+    return "%d file%s" % (n, "" if n == 1 else "s")
+
+
+def files_list(files, system):
+    """The files a confirm names, relative to roms/<system>: all of them, up to 8, then how many more."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+    names = [os.path.relpath(f, sysdir) for f in files]
+    return ", ".join(names[:8]) + (" and %d more" % (len(names) - 8) if len(names) > 8 else "")
+
+
 def playlists_note(system, paths):
     """For a delete's confirm: a user's own playlist naming the game stays (it isn't ours),
     and ES goes on listing it."""
@@ -201,13 +212,24 @@ class ManageMenu(ActionMenu):
             return
 
         if paths and not lib.downloaded(rom):
-            # found by its name, not downloaded here: the app never deletes or replaces it
+            # put here another way (or changed since the app downloaded it): it acts on it only when
+            # asked, and its confirm names every file that goes or gets replaced
+            theirs = lib.their_files(rom, system)
+            tsize = sum(rommlib.path_size(p) for p in theirs)
+
+            def delete_theirs():
+                app.modal = Confirm(app, "Delete %s?" % name,
+                                    "Not downloaded by RomM-o-Cera. These go from roms/%s (%s): %s. Anything else "
+                                    "beside or in its folder stays (notes, saves, patches, other games); saves "
+                                    "and states are kept.%s" % (system, human_size(tsize), files_list(theirs, system),
+                                                                playlists_note(system, theirs)),
+                                    "Delete", lambda: app.delete_theirs(rom, system, theirs, then), danger=True)
             super().__init__(app, name, [
                 app.play_entry(rom, system, name),
-                ("Delete from this box", "Not downloaded by RomM-o-Cera, or changed since: delete it from "
-                 "EmulationStation", None),
-                ("Download RomM's copy", "Move or delete the copy here first: the app never writes over it",
-                 None),
+                ("Delete from this box", "Not downloaded by RomM-o-Cera: frees %s (%s)" % (
+                    human_size(tsize), plural_files(len(theirs))), delete_theirs if theirs else None),
+                ("Download again", "Replaces these files with RomM's copy", (lambda: setattr(
+                    app, "modal", DownloadConfirm(app, rom, replace=list(theirs)))) if theirs else None),
             ])
             return
         media = lib.made_media(rom, system, paths) if paths else []
@@ -411,6 +433,9 @@ class DownloadConfirm(Confirm):
         body = app.plan_text(rom, system)
         if st[0] == "installed":
             body = "Already on this box. Download again anyway?  " + body
+            if self._replace and not app.library.downloaded(rom):
+                body += "  Not downloaded by RomM-o-Cera: once RomM's copy is in, these go: %s." % files_list(
+                    self._replace, system)
         var = app.library.variants(rom, system)
         if var:
             body += "  You already have %s%s." % (var[0], " and %d more" % (len(var) - 1) if len(var) > 1 else "")

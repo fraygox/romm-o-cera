@@ -331,12 +331,8 @@ def test_delete_game_forgets_filename_match(isolated):
     lib = rommlib.Library()
     rom = {"id": 9, "fs_name": "Tempor.zip", "fs_name_no_ext": "Tempor"}
     assert lib.is_installed(rom, "gba")                     # matched by filename, cached
-    with pytest.raises(rommlib.RommError, match="wasn't downloaded by RomM-o-Cera"):
-        rommlib.delete_game("gba", f, lib)                  # not the app's download: never deleted
-    assert os.path.exists(f) and lib.is_installed(rom, "gba")
-    lib.mark(rom, "gba", [f])
-    rommlib.delete_game("gba", f, lib)
-    assert not lib.is_installed(rom, "gba")
+    rommlib.delete_game("gba", f, lib)                      # picked in Free up space: its own file goes
+    assert not os.path.exists(f) and not lib.is_installed(rom, "gba")
 
 
 def test_es_game_list(isolated, fake_es):
@@ -626,8 +622,6 @@ def test_leftovers_offer_copies_of_converted_games_and_unfinished_folders(isolat
     (_converted_ok) is tested with real layouts in test_leftovers_safety.py."""
     from romm import leftovers
     monkeypatch.setattr(leftovers, "_converted_ok", lambda conv, orig, here, dp, checked: True)
-    # the originals here count as the app's downloads (only those are offered)
-    monkeypatch.setattr(leftovers, "recorded_paths", lambda: [os.path.normpath(rommlib.ROMS_ROOT)])
     R = rommlib.ROMS_ROOT
 
     def w(rel, size=10):

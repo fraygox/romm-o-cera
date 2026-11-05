@@ -72,20 +72,21 @@ def cue_bin(d, stem, frames=300, bin_name=None):
 @pytest.fixture(autouse=True)
 def _all_the_apps(monkeypatch, request):
     """These tests are about which copies are proven safe to delete: every file here counts as
-    one the app downloaded (only those are ever offered; see the test that says so)."""
+    one the app downloaded (only those .part files are ever offered; see the test that says so)."""
     if "theirs" not in request.keywords:
-        monkeypatch.setattr(leftovers, "recorded_paths", lambda: [os.path.normpath(rommlib.ROMS_ROOT)])
         monkeypatch.setattr(leftovers, "app_download_paths", lambda: {os.path.normpath(rommlib.ROMS_ROOT)})
 
 
 @pytest.mark.theirs
-def test_nothing_the_app_didnt_download_is_ever_offered(isolated):
-    """A zip or a .part the app didn't download: never offered, whatever checks they'd pass."""
+def test_copies_of_the_users_own_games_are_offered_but_not_their_part_files(isolated):
+    """A cue/bin the user copied in beside a proven CHD is offered; another program's .part never is."""
     d = os.path.join(rommlib.ROMS_ROOT, "psx")
     cue_bin(d, "Elit (USA)")
     fake_chd(os.path.join(d, "Elit (USA).chd"))
     open(os.path.join(d, "Mine.iso.part"), "wb").write(b"x")
-    assert [i for i in rommlib.find_leftovers(chd_busy=False) if i["kind"] != "Empty folder"] == []
+    assert offered() == {"psx/Elit (USA).cue": "Already here as Elit (USA).chd",
+                         "psx/Elit (USA).bin": "Already here as Elit (USA).chd"}
+    assert [i for i in rommlib.find_leftovers(chd_busy=False) if i["path"].endswith(".part")] == []
 
 
 def offered(root=None):
