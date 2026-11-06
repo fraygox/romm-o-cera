@@ -17,8 +17,9 @@
   your RomM can't list, doesn't show. Up/down moves between the rail and the
   shelves, left/right along one (L/R a page). The panel on the right shows
   what has the focus: a game's cover, your status ("Playing · played here
-  today") and its verb (a tap on it plays or downloads); on a rail pill,
-  what's behind it. **A** on a game opens [its page](#the-game-page), where
+  today") and where it stands (On this box, Not on this box, downloading; a
+  tap on it opens the game's page, where Play now or Download is); on a rail
+  pill, what's behind it. **A** on a game opens [its page](#the-game-page), where
   left/right step along the shelf; **A** on a collection opens it. **X** on
   a game: more like this, or the whole shelf as a list (New in RomM is the
   full **Recently added** list, Backlog opens [Backlog](#backlog)). On a
@@ -37,8 +38,8 @@
   on-screen keyboard and the top matches shown as you type (or just type on
   a keyboard). Move right past the keyboard to open a match straight away
   with the pad or arrow keys, or press Start for the full list of results
-  ([Controls](controls.md#on-each-screen)). **Y** in a platform's game list
-  searches just that platform.
+  ([Controls](controls.md#on-each-screen)). **Y** in a game list searches
+  just that list's platform or collection.
 - In any list, **L2/R2** jump letter by letter and **L/R** or left/right
   page ([Controls](controls.md#lists)).
 
@@ -218,7 +219,9 @@ its count:
 
 - **Matches RomM**: the same file RomM has, or *Matches RomM (compressed)*:
   RomM's game, compressed here by the app (a .chd from RomM's .zip). Nothing
-  to do. A file you renamed by hand still matches when it's the same size as
+  to do. A compressed copy the app didn't make matches by its name only:
+  Compare can't tell what's in it (Check games' Full check catches a damaged
+  one). A file you renamed by hand still matches when it's the same size as
   one of RomM's games and RomM's checksum agrees; the panel says it's under
   another name, and the file keeps yours.
 - **Newer in RomM**: the app downloaded this game and RomM's file has changed
@@ -230,7 +233,9 @@ its count:
   of its own to replace.
 - **Differs from RomM's**: a file in RomM's format at another size than
   RomM's: one the app downloaded that was cut short or changed since, or one
-  with RomM's name that the app didn't install (copied over by hand, say).
+  with RomM's name that the app didn't install (copied over by hand, say); or
+  a CHD under RomM's game's name that isn't a whole one (cut short, or not a
+  CHD at all).
   Compare goes by the file as it is now, so a damaged download never shows
   as a match. **A** (*Get RomM's copy*) downloads RomM's one; for a copy the app
   didn't download, the confirm says so and lists the files RomM's copy
@@ -275,11 +280,14 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
   mupen64plus, can't, so N64 games are unzipped); disc archives are
   extracted, and disc games can be compressed in the background (see
   [Disc compression](disc-compression.md)).
-- An archive never unpacks into another game's folder. If its folder name is
-  already taken by a different game, the download stops with "… is already on
-  the box under that name" instead of mixing the two. A folder of that name
-  with no game in it (only your manual or notes) takes the game's files beside
-  yours, never over one of them. Archives that would
+- An archive never unpacks over anything already there. If its name is
+  already taken by a file, a link or a folder game (a `.ps3` folder, say)
+  that isn't this download's, the download stops with "… is already on the
+  box under that name" instead of mixing the two. A plain folder of that name
+  the app didn't make (your manual or notes, a translation, another release)
+  takes the game's files beside what's there, never over one of them, and
+  only the files the download wrote are compressed or deleted later as the
+  game's. Archives that would
   unpack over EmulationStation's files, and 7z/rar archives that contain
   links, are refused. A download refused like this deletes the archive it
   fetched, so none is left in the system's folder.

@@ -17,10 +17,12 @@ as in a game list. **A** opens the same menu as a game on the box in a game list
 can't be fetched, only Delete). To delete several at once, pick them (X ›
 Pick several, see [Controls](controls.md#picking-several)). Any game it
 downloaded can also be deleted from its game list. A game put on the box
-another way (copied over by hand, say) is marked ✓ and plays too. Its menu
-offers **Delete from this box** ("Not downloaded by RomM-o-Cera: frees 1.2 GB
-(3 files)") and **Download again** ("Replaces these files with RomM's copy"),
-and nothing happens until you confirm. The confirm says the game wasn't
+another way (copied over by hand, say) is marked ✓ and plays too, and so is
+one the app downloaded whose file something else replaced, cut short or
+rewrote since (its size and time changed). Its menu offers **Delete from this box** ("Not downloaded by
+RomM-o-Cera, or changed since: frees 1.2 GB (3 files)") and **Download
+again** ("Replaces these files with RomM's copy"), and nothing happens until
+you confirm. The confirm says the game wasn't
 downloaded by RomM-o-Cera and lists the exact files that go or get replaced:
 the game file and the tracks its `.cue`/`.gdi` names; in a plain folder named
 like the game, the files named like the folder and their tracks; a playlist
@@ -50,8 +52,8 @@ for downloads.
   ones until 10, 20, 50 or 100 GB would be freed; check the ticks, then X
   deletes them in one go, after asking: for a game the app downloaded, only the
   files its download wrote; for one put here another way, the same files
-  Delete would list for it (a playlist's discs too, but never one that
-  belongs to another game or download). Saves and states are kept.
+  Delete would list for it (a playlist alone, never the discs it lists), and
+  the confirm names them. Saves and states are kept.
 - **Clean up leftovers**: partial files and empty folders (empty, or holding
   only files the system makes by itself, like `Thumbs.db` or `.DS_Store`; a
   folder with a manual, cover, save or any other file of yours is never one) that interrupted
@@ -249,7 +251,8 @@ confirmation. They're done one after another; one that can't be (a damaged
 archive, say) is left as it is and named at the end, and the rest go on.
 
 Skipped: media folders, `gamelist.xml`, hidden and unfinished files, notes,
-pictures and saves, backups and parked files (`.bak…`, `.disabled`,
+pictures, saves and memory cards, patches and cheats (`.ips`, `.bps`, `.ppf`,
+`.cht`…), backups and parked files (`.bak…`, `.disabled`,
 `.torrent`, numbered copies), the tracks a `.cue`/`.gdi` (or the discs an `.m3u`)
 names, and the other files of a game folder ES lists a game in. Nothing is
 deleted unless you choose Delete and confirm. ES shows unpacked or moved games after its next reload (when

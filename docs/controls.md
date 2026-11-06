@@ -108,8 +108,8 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Home | A game: its page; a pill or collection: Open | A game's Actions: more like this, the whole shelf | Game night | |
 | Platforms | Open | Game night from this platform | Search this platform | |
 | Collections | Open the collection (or a Browse by door) | A collection's Actions: open, Compare with RomM, Game night, download the rest | The kind as a wall, and back | |
-| Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, pick several | Search (a collection: the On this box / Not here pills) | A–Z |
-| A game's page | Download / Play now | Actions: more like this, Game night, delete (on the box) | | |
+| Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, show (a collection's All / On this box / Not here pills), pick several | Search this platform or collection | A–Z |
+| A game's page | Download / Play now | Actions: more like this, Game night, delete or download again (on the box) | | |
 | Game night | The pick's page | Actions: players, only what's on this box | Roll again | |
 | Backlog | The game's page | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
@@ -125,7 +125,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Compress | That system's games (a can't-convert row: why) | Compress the whole system | | |
 | Compress › a system | Compress this one | Actions: compress all, pick several | | A–Z |
 | BIOS files | Get from RomM | Get all from RomM | | A–Z |
-| Check games | Download again / open Games ES can't see | Actions: quick check, full check, download all damaged again, pick several | Quick check | System |
+| Check games | Download again / open Games ES can't see (before the first check: Check now) | Actions: quick check, full check, download all damaged again, pick several | Quick check | System |
 | Games ES can't see | Its options: unpack, move, delete | Actions: pick several, pick all | | System |
 | Settings | Change / open | | | |
 | Theme picker | Keep this theme (Custom: open it) | Edit a copy | OLED on/off | |
