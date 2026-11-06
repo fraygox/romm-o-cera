@@ -3,6 +3,46 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.12.0 (2026-11-06)
+
+Your games and files are safe: the app changes only what it downloaded or what a confirm lists, and Check games and On this box show what needs a look at a glance
+
+### Features
+- **feat:** Check games lists the last check's findings beside a panel that says what's wrong and what downloading again does. Y checks again, X Actions has a quick and a full check, and Games ES can't see sits under the findings.
+- **feat:** On this box opens with one line about the whole box over its space bar. Each section shows its state at a glance: a value on the right, and a coloured line and edge when it needs a look.
+- **feat:** Y searches in every list of games (a collection's filter moved to the pills and X Actions). Home's and Game night's panels say where a game stands; A opens its page, where Play now or Download is. Section labels are in sentence case.
+
+### Your files are safe
+- **fix:** Each download records the files it wrote, so deleting one of RomM-o-Cera's games takes only those. A patch, cheat, translation, save or note you add to its folder stays. A file of the app's that something else changed or replaced since is treated like one you put there.
+- **fix:** Games you put on the box yourself can still be deleted, freed up, downloaded again, repaired by Check games and compressed. The confirm says the game wasn't downloaded by RomM-o-Cera and lists exactly the files that go or get replaced: the game file and the tracks its sheet names (in a folder named like the game, the files named like it), or a playlist of yours alone. Your notes, saves, patches, cheats, other games beside it, and tracks or discs another sheet or playlist uses are never touched. Download all damaged again says how many weren't downloaded by RomM-o-Cera.
+- **fix:** A confirm acts only on the files it showed: a file swapped while it's open, or before a queued download runs, is left alone.
+- **fix:** Nothing automatic writes over a file the app didn't write. A download unpacks beside your files in a game's folder, never over them, and compresses only what it brought.
+- **fix:** Art, videos and manuals are never deleted or written over. Deleting a game leaves them. Downloads and Fill in game info add art only where nothing is there yet under EmulationStation's name for it, and never write through a link.
+- **fix:** A folder you made that's named like a RomM game is that game only when a game file in it is named like it too, so Delete, Check games and Compare never take your cheats, patches, saves or other games in it for RomM's. Patches and cheats (`.ips`, `.bps`, `.ppf`, `.cht`…) are never taken for a game.
+- **fix:** Compressing never replaces or deletes a file it didn't make (unless that file is certainly cut short and a fresh copy of the game came down beside it). A game whose compressed name is already taken is listed under "can't convert" with what to do. A game in its own folder keeps the folder when it holds anything of yours, and a playlist of yours moves beside the compressed discs. A disc still being unpacked or copied isn't offered yet.
+- **fix:** Clean up leftovers offers a converted game's originals only when the converted file checks out and nothing still uses them. It never offers a zip holding anything besides the disc, a `.7z` kept beside a CHD, another program's partial download, or a partial or temporary file changed in the last hour.
+- **fix:** Games ES can't see › Unpack keeps the Keep free on disk reserve, and refuses an archive named like a game ES already lists beside it. Memory cards and other saves are no longer listed there.
+
+### Fixes
+- **fix:** Cancelled, interrupted and repaired downloads, disc compression, updates and background hand-overs no longer leave a broken or half-deleted game or app behind. Closing the app or updating stops an unpack in progress; it starts again later, with nothing half-unpacked left behind.
+- **fix:** A disc image missing a quarter or more of its disc counts as cut short: Check games marks it damaged and it's never compressed (and its original deleted) as if it were whole.
+- **fix:** Compare says "Differs from RomM's" for a copy that isn't the same as RomM's (a CHD cut short included), and "Newer in RomM" only when RomM's file changed since the app downloaded it. A compressed copy the app didn't make matches by name only (Check games' Full check catches a damaged one), and a folder holding only your own files is no longer a match.
+- **fix:** A game whose file was changed since it was downloaded says so, a game whose later download failed still shows as on the box with Play now and Delete, and a retried download is compressed as soon as it's in.
+- **fix:** Fill in game info no longer lists a game again and again for art it won't write over, and its confirm says plainly what it adds.
+- **fix:** Game night starts over when you change who's playing or Only what's on this box, so a roll that finds nothing no longer leaves a game that doesn't fit on screen.
+- **fix:** Changing a setting when the disk is full says it couldn't be saved instead of closing the app.
+
+### Upgrading
+- A game downloaded before this version has no list of its files, so deleting it still takes the game files in its folder (never your notes, saves, patches or cheats). Games downloaded from now on are deleted file by file.
+- If you downloaded a game again with v0.11.2 or earlier and got "already on the box under that name", delete the leftover `.zip` beside its CHD.
+
+### Known limits
+- Your art under the names EmulationStation gives a game's art (`images/<game>-image.png`…) that no gamelist entry links stays on disk but isn't linked, so that game shows no picture of that kind; link it in EmulationStation's metadata editor. Older downloads whose image is only the box art again keep it.
+- Downloading again over a game you copied in yourself gives it RomM's name and art, not the name and art links you had set (your files stay). Downloading into a folder that also holds a near-same-named sheet of yours (a translation) can still give RomM's name to your sheet.
+- A converted disc is checked against its own checksums and RomM's size, not RomM's contents: a different disc of exactly the same size put in place of a game's CHD passes Full check, and Compare goes by names.
+- Compare can show a folder named like a game, holding only a sheet of yours whose tracks are missing, as a match (Check games flags it).
+- A PS3 disc left partly decrypted by another tool is caught in most layouts but not all (see the PS3 page).
+
 ## v0.11.2 (2026-10-17)
 
 Faster game info away from home, and clearer words, counts and buttons on every screen
