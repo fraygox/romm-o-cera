@@ -363,8 +363,8 @@ class InfoDialog(Confirm):
             self.ok_label, self.on_ok = "OK", lambda: None
             return
         self.title = "Fill in info for %d game%s?" % (len(self.plan), "" if len(self.plan) == 1 else "s")
-        self.body = ("%d games here, %d found in RomM, %d already complete. Only what's missing is added, and an image "
-                     "that just repeats the box art becomes the screenshot; nothing else is replaced. "
+        self.body = ("%d games here, %d found in RomM, %d already complete. Only what's missing is added: "
+                     "info, and art where there's no file yet; art already on the box is never replaced. "
                      "Saved when you leave RomM-o-Cera."
                      % (st["on_box"], st["matched"], st["complete"])) + self._waiting(st)
         self.ok_label = "Fill in %d" % len(self.plan)

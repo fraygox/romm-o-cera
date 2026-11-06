@@ -273,10 +273,12 @@ Game info and media from RomM for games already on the box, matched by file
 name: descriptions and details, region, language, screenshot, box art, logo,
 title screen, video, manual… ([what goes where](browsing-and-downloading.md#game-info-in-emulationstation)).
 Only what's empty is filled — your own scrapes and edits are never replaced,
-and a game's existing image stays, with one exception: an image that is the
-very same file as the game's box art (what v0.10 and earlier left: the cover
-as the image, then again as the box art) gives way to RomM's screenshot when
-Game image in ES is Screenshot. What the game has is read from EmulationStation
+and art is added only where there's no file yet under the name EmulationStation
+gives it (`images/<game>-image.png`…): a file, a link or a folder already there,
+whoever put it there, is never written over, so an image that is only the box
+art again (what v0.10 and earlier left) stays. Art of yours under those names
+that no gamelist entry links isn't linked for you either: link it in
+EmulationStation's metadata editor. What the game has is read from EmulationStation
 itself as well as `gamelist.xml`, which it writes only now and then, so a game
 just filled isn't listed again; a media path to a file that is gone (a game
 deleted and downloaded again gets its old entry back) counts as missing. A game counts as complete when it has

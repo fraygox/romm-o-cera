@@ -63,7 +63,10 @@ def test_fill_in_counts_what_es_holds_before_it_writes_gamelist_xml(isolated, fa
     assert len(entries) == 1
 
 
-def test_fill_in_lists_a_game_whose_image_is_its_box_art_again(isolated, fake_es):
+def test_fill_in_never_lists_a_game_for_art_it_wouldnt_write(isolated, fake_es):
+    """Round 14: an image that's the box art again, or the owner's art under ES's names that
+    nothing links, or a broken link there: it's never written over, so Fill in game info
+    doesn't list the game for it again and again."""
     rom = lorem()
     path, _ = game_here()
     sysdir = os.path.dirname(path)
@@ -72,13 +75,39 @@ def test_fill_in_lists_a_game_whose_image_is_its_box_art_again(isolated, fake_es
     give_es(es, path, tags, image=art(sysdir, "Lorem Mages-image.png", PNG),
             thumbnail=art(sysdir, "Lorem Mages-thumb.png", PNG))
     entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
-    assert len(entries) == 1 and st["complete"] == 0
-    entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg(es_image="boxart"))
-    assert entries == [] and st["complete"] == 1                           # the box art is what's asked for
-    # the screenshot came, as a JPEG: ES left the old PNG behind, but its answer counts
-    give_es(es, path, (), image=art(sysdir, "Lorem Mages-image.jpg", JPG))
+    assert entries == [] and st["complete"] == 1
+    # unlinked: the tags ES lacks all have a file (or a broken link) under its names
+    with es.lock:
+        for t in ("image", "thumbnail", "video"):
+            es.mem["nes"][path].pop(t, None)
+    os.makedirs(os.path.join(sysdir, "videos"), exist_ok=True)
+    os.symlink("/nowhere/v.mp4", os.path.join(sysdir, "videos", "Lorem Mages-video.mp4"))
     entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
     assert entries == [] and st["complete"] == 1
+
+
+def test_finalize_never_writes_through_a_broken_link_or_into_a_folder(served, fake_es):
+    """Round 14: images/<stem>-marquee.png a link to a file that isn't there: the download's
+    marquee was written where it pointed, outside roms/. A folder under the name: linked."""
+    files, _ = served
+    rom = lorem()
+    files.update(all_files(rom))
+    path, _ = game_here()
+    sysdir = os.path.dirname(path)
+    es = fake_es({"nes": {".zip"}})
+    give_es(es, path, ("name",))
+    os.makedirs(os.path.join(sysdir, "images"), exist_ok=True)
+    away = os.path.join(rommlib.DATA_DIR, "elsewhere-thumb.png")
+    os.symlink(away, os.path.join(sysdir, "images", "Lorem Mages-thumb.png"))
+    e = rommlib.gamelist_entry(rom, "nes", [path], cfg=cfg())
+    e["fill"] = True
+    rb_finalize.apply([e], None, {"nes": {".zip"}}, rb_finalize.EsApi(es.url), {}, cfg())
+    md = es.mem["nes"][path]
+    assert not os.path.lexists(away) and not md.get("thumbnail")
+    assert md.get("marquee")                                # what has no file yet still comes
+    os.makedirs(os.path.join(sysdir, "images", "Lorem Mages-image.png"))    # a folder: never linked
+    assert os.path.join(sysdir, "images", "Lorem Mages-image.png") in rommlib.es_named_media(
+        sysdir, [path], ("image",), any_entry=True)["image"]
 
 
 def test_finalize_gives_an_old_download_its_screenshot_in_one_go(served, fake_es):

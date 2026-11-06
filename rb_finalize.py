@@ -635,12 +635,13 @@ def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     named = getattr(rommlib, "es_named_media", None)      # next release: rommlib.es_named_media only
 
     def on_disk(tag):
-        """A file is there already under the name ES would give this tag's file: whoever put it
-        there, it's never written over (an unlinked scrape, the owner's own, the app's earlier one)."""
+        """Something is there already under the name ES would give this tag's file (a file, a
+        link, a broken one too, a folder): whoever put it there, it's never written over or
+        through (an unlinked scrape, the owner's own, the app's earlier one)."""
         if named is None or not g.get("path"):
             return False
         try:
-            return bool(named(sysdir, [g["path"]], (tag,)).get(tag))
+            return bool(named(sysdir, [g["path"]], (tag,), any_entry=True).get(tag))
         except Exception:
             return True                                    # can't tell: leave it
     if e.get("image_local") and os.path.isfile(e["image_local"]) and not g.get("image") \

@@ -1576,10 +1576,11 @@ def es_media_file_here(sysdir, game_path, tag):
 MADE_MEDIA_TAGS = ("image", "thumbnail", "video", "manual") + EXTRA_ART     # what a download fills
 
 
-def es_named_media(sysdir, paths, tags=MADE_MEDIA_TAGS):
+def es_named_media(sysdir, paths, tags=MADE_MEDIA_TAGS, any_entry=False):
     """{tag: [files]} of the media files there are under the names ES gives what it is sent
     for a game made of `paths` (images/<stem>-image.png, videos/<stem>-video.mp4...: the
-    stem of each path), whoever put them there."""
+    stem of each path), whoever put them there. any_entry: anything under such a name counts
+    (a link, a broken one too, a folder): what's there is never written over or through."""
     stems = {os.path.splitext(os.path.basename(os.path.normpath(p)))[0] for p in paths if isinstance(p, str)}
     stems.discard("")
     out = {}
@@ -1588,7 +1589,7 @@ def es_named_media(sysdir, paths, tags=MADE_MEDIA_TAGS):
         for stem in sorted(stems):
             for x in ES_MEDIA_FILE_EXTS.get(tag, IMAGE_EXTS):
                 f = os.path.join(d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x))
-                if os.path.isfile(f) and f not in out.get(tag, ()):
+                if (os.path.lexists(f) if any_entry else os.path.isfile(f)) and f not in out.get(tag, ()):
                     out.setdefault(tag, []).append(f)
     return out
 

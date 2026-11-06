@@ -1281,6 +1281,9 @@ def plan_info(api, system, platform_ids, es, cfg=None, cancel=None):
         if "image" in got and _library.wants_own_image(e["media"]) and _library.image_is_thumb_again(sysdir, prim) \
                 and (rel not in es_ids or es_image_is_thumb(system, es_ids[rel]) is not False):
             got = got - {"image"}            # the box art twice (an older version's image): the screenshot is due
+        # art already under ES's names for it (anyone's, linked or not) is never written over
+        got = got | set(_library.es_named_media(sysdir, [prim], tuple(t for t in offered(e) if t in OFFER_MEDIA or t == "manual"),
+                                             any_entry=True))
         if offered(e) <= got | _library.skipped_tags(e, cfg, skips):
             stats["complete"] += 1
             continue

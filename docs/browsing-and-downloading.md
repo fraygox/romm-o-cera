@@ -378,8 +378,9 @@ running when the window closes pauses and picks up the next night.
 A downloaded game's info and media from RomM are handed to EmulationStation
 through its own API once it's idle — never by editing `gamelist.xml` behind
 its back, which EmulationStation could overwrite. What ES already has for a
-game (your own scrapes, an image) is never replaced (but for an image that is
-only the box art again: [Fill in game info](on-this-box.md#fill-in-game-info)).
+game (your own scrapes, an image) is never replaced, and art is written only
+where there's no file (or link, or folder) yet under the name EmulationStation
+gives it ([Fill in game info](on-this-box.md#fill-in-game-info)).
 
 | EmulationStation | From RomM |
 |---|---|
