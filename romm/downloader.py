@@ -1429,17 +1429,6 @@ class Downloader:
                                       "Move or remove it, then try again" % name)
             raise _core.RommError("RomM gave no usable file name for this game")
         self._never_over_theirs(j, target)
-        ext = os.path.splitext(target)[1].lower()
-        if not is_folder and ext in _core.ARCHIVE_EXTS and system not in _core.ZIP_NATIVE \
-                and not self._accepts(system, ext):
-            # where a disc archive's files would unpack (a folder named after it): taken by a game
-            # the app didn't download, the unpack would be refused, so don't download it first
-            lands = os.path.splitext(target)[0]
-            if os.path.isdir(lands) and not os.path.islink(lands) and not self._ours(j, lands) \
-                    and _library.holds_game(lands, system) and not self._may_unpack_into(j, lands):
-                raise _core.RommError("%s is already on the box under that name and isn't this "
-                                      "download's; not unpacking over it. Move or rename it, then "
-                                      "try again" % os.path.basename(lands))
         # A RomM rom that is a *folder* (multi-file GDI/cue+bin set, or a folder
         # holding a single file) is pulled file by file, keeping its layout; the
         # whole-rom /content endpoint would hand back a zip or an extensionless
@@ -1488,7 +1477,11 @@ class Downloader:
         recorded = False
         # what the user confirmed replacing (Check games, Download again, Compare: their confirm
         # listed it) stays; with nothing named, only the app's own recorded copy is replaced
-        j.replace = [p for p in j.replace or [] if os.path.lexists(p) and self._ours(j, p)] or None
+        named = [p for p in j.replace or [] if os.path.lexists(p)]
+        j.replace = [p for p in named if self._ours(j, p)] or None
+        changed = [p for p in named if p not in (j.replace or [])]
+        if changed:
+            _core.log("replace %s: %s changed since you confirmed; kept" % (j.name, changed))
         if j.replace is None:
             j.replace = [p for p in self._recorded_copy(j) if self._ours(j, p)] or None
         try:
@@ -1514,6 +1507,9 @@ class Downloader:
             # through, so a failure is a warning on a finished job, not a failed one
             # (which would offer to download it all again)
             warn = j.after_warn
+            if changed:
+                warn = warn or ("%s changed since you confirmed, so it was kept beside RomM's copy"
+                                % os.path.basename(changed[0]))
             if j.replace:
                 warn = self._replace_old(j, results) or warn
             entry = None
@@ -1896,18 +1892,16 @@ class Downloader:
                                 if os.path.normpath(before[m]) == os.path.normpath(lands))
         new_owner = False
         if os.path.lexists(lands) and not resumed and not self._may_unpack_into(j, lands):
-            if not (os.path.isdir(lands) and not os.path.islink(lands) and not _library.holds_game(lands, system)):
+            if not os.path.isdir(lands) or os.path.islink(lands) \
+                    or os.path.splitext(lands)[1].lower() in _library.FOLDER_GAME_EXTS:
                 raise _core.RommError("%s is already on the box under that name and isn't this "
                                       "download's; not unpacking over it. Move or rename it, then "
                                       "try again" % os.path.basename(lands))
+            # a folder of that name the app didn't make (the owner's notes, a translation, another
+            # release beside it): the game's files go in beside what's there, never over any of it;
+            # only the files this download writes are its own (recorded, compressed, deleted later)
             owner = new_owner = True
-            _core.log("UNPACK %s: %s holds no game, only other files: unpacking beside them" % (j.name, lands))
-        if not resumed and not new_owner and os.path.isdir(lands) and not os.path.islink(lands):
-            other = self._other_game_in(j, lands, target, members)
-            if other:
-                raise _core.RommError("%s holds another game (%s), not this download's; not unpacking "
-                                      "in among it. Move or rename the folder, then try again"
-                                      % (os.path.basename(lands), other))
+            _core.log("UNPACK %s: %s holds other files: unpacking beside them" % (j.name, lands))
         j.move_markers = list(before)
         os.makedirs(target, exist_ok=True)
         self._extract(path, target, j, lands=lands, keep_existing=new_owner, keep_lands=bool(owner),
@@ -1926,7 +1920,10 @@ class Downloader:
         except OSError as e:
             _core.log("xbox %s: %r" % (j.name, e))
             j.after_warn = j.after_warn or "it couldn't be renamed for xemu"
-        playable = self._playable_paths(system, out)
+        # only what this download wrote is compressed: a sheet of someone else's in the same
+        # folder (a translation, another release) is never joined to it
+        wrote = {os.path.normpath(p) for p in getattr(j, "wrote", None) or []}
+        playable = [p for p in self._playable_paths(system, out) if not wrote or os.path.normpath(p) in wrote]
         try:
             self._convert(j, system, playable, out)
         except Exception as e:                   # not deferred (Unpack from Games ES can't see)

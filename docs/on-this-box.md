@@ -205,9 +205,10 @@ CHD beside it ([Disc compression](disc-compression.md)). Downloading the game
 again unpacks into that folder beside your files, and never writes over one of
 them: if the download has a file of the same name, it stops and says so. A
 folder of that name with no game file named like it in it (another game, a
-cheat, a patch, a save) is never taken for this game: it isn't counted as on the box, checked or deleted
-as it, and a download never unpacks into it; it asks you to move or rename the
-folder first.
+cheat, a patch, a save, a translation or another release) is never taken for
+this game: it isn't counted as on the box, checked or deleted as it. A download
+of the game unpacks beside what's in it, never over any of it, and compresses
+only the files it brought.
 
 Red findings are certain (a part the game needs to boot is missing); amber
 ones are worth a look (some complete discs list dummy files past their end;

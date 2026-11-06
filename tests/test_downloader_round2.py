@@ -474,7 +474,7 @@ def test_a_move_killed_between_two_files_is_finished_by_the_next_attempt(isolate
     assert [n for n in os.listdir(sysdir) if n.startswith(".rb-moving-")]
     d = _downloader()
     # another game (or a copy put there another way) is still never unpacked over
-    with pytest.raises(rommlib.RommError, match="already on the box"):
+    with pytest.raises(rommlib.RommError, match="already on the box|not unpacking over it"):
         d._postprocess_file(rommlib.Job({"id": 6, "name": "Game", "fs_name": "Game.zip"}, "psx"), arc)
     j = rommlib.Job({"id": 5, "name": "Game", "fs_name": "Game.zip"}, "psx")
     d.jobs.append(j)

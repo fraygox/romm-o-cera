@@ -111,3 +111,24 @@ def test_a_file_swapped_after_the_confirm_is_never_replaced(isolated):
     os.remove(p)
     _w(p, b"a different file put there later")
     assert not d._ours(j, p)
+
+
+def test_a_track_another_games_sheet_names_is_never_one_of_this_games(isolated):
+    """Round 11: a hand-copied cue naming discs/Other.bin, which is discs/Other.cue's track:
+    deleting it took Other's .bin and broke that game."""
+    other_bin = _w(os.path.join(_sys(), "discs", "Other.bin"))
+    _w(os.path.join(_sys(), "discs", "Other.cue"), b'FILE "Other.bin" BINARY\n')
+    own = _w(os.path.join(_sys(), GAME + ".bin"))
+    cue = _w(os.path.join(_sys(), GAME + ".cue"), ('FILE "%s.bin" BINARY\nFILE "discs/Other.bin" BINARY\n'
+                                                   % GAME).encode())
+    assert sorted(rommlib.their_files([cue], "psx")) == sorted([cue, own])
+    assert os.path.exists(other_bin)
+
+
+def test_a_folder_left_with_only_a_translation_isnt_the_game(isolated):
+    """Round 11: after deleting the game, its folder holding only [T-En] stayed "on this box"
+    and Play now started the translation."""
+    d = os.path.join(_sys(), GAME)
+    _w(os.path.join(d, GAME + " [T-En].cue"), b'FILE "x.bin" BINARY\n')
+    lib = rommlib.Library()
+    assert not lib.is_installed(ROM, "psx") and lib.paths_for(ROM, "psx") == []

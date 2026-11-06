@@ -772,6 +772,8 @@ def snapshot_renames(entries, esapi=None, lists=None):
     for e in entries:
         if "remove" in e:
             gone = [r for r in e["remove"] if not os.path.exists(r)]   # reinstalled since: keep its art
+            if e.get("keep_media"):      # a game put here another way: only ES's entry goes, never the owner's media
+                gone = []
             sysdir = os.path.join(rommlib.ROMS_ROOT, e["system"])
             carry[("media-of-removed", id(e))] = removed_media(sysdir, gone, lists.nodes(sysdir)) if gone else []
             continue

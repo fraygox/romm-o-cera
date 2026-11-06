@@ -139,7 +139,7 @@ def test_a_refused_unpack_leaves_no_archive_behind(isolated):
     other = _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), b"someone else's copy")
     d = _downloader()
     j, arc = _download_again(d)
-    with pytest.raises(rommlib.RommError, match="already on the box") as e:
+    with pytest.raises(rommlib.RommError, match="not unpacking over it") as e:
         d._post(j, {"kind": "file", "path": arc, "heavy": True})
     d._failed(j, e.value)
     assert j.state == rommlib.Job.FAILED
@@ -212,26 +212,20 @@ def test_check_games_download_again_replaces_the_broken_file_shown(isolated, rb,
     assert scr.queued.tag(path) == "downloaded" and path in scr.queued
 
 
-def test_download_again_never_unpacks_in_among_another_game_named_like_this_one(isolated):
-    """Lamp Run (USA)/ holding the owner's MyOther.cue/.bin: Check games calls Lamp Run's cue
-    missing there. Downloading it again unpacked into that folder, mixing the two games (or,
-    before, failed every time with no hint). Now it's refused, saying what to do."""
+def test_a_download_unpacks_beside_another_game_in_a_folder_of_its_name(isolated):
+    """Lamp Run (USA)/ holding the owner's MyOther.cue/.bin: the download goes in beside them,
+    never over them; its record holds only the files it wrote, so deleting it takes only those."""
     other = _w(os.path.join(_sysdir(), GAME, "MyOther.cue"), b"FILE \"MyOther.bin\" BINARY\n")
-    _w(os.path.join(_sysdir(), GAME, "MyOther.bin"), b"o" * 2352)
+    ob = _w(os.path.join(_sysdir(), GAME, "MyOther.bin"), b"o" * 2352)
     d = _downloader()
     j, arc = _download_again(d)
-    j.replace = [os.path.join(_sysdir(), GAME, GAME + ".cue")]      # the file Check games found missing
-    with pytest.raises(rommlib.RommError, match="Move or rename it, then try again"):
-        d._post(j, {"kind": "file", "path": arc, "heavy": True})
-    # the game page's Download again names the whole folder (taken for the game by its name):
-    # still never unpacked in among the other game
-    j, arc = _download_again(d)
-    j.replace = [os.path.join(_sysdir(), GAME)]
-    with pytest.raises(rommlib.RommError, match=r"not unpacking.*Move or rename"):
-        d._post(j, {"kind": "file", "path": arc, "heavy": True})
-    assert sorted(os.listdir(os.path.join(_sysdir(), GAME))) == ["MyOther.bin", "MyOther.cue"]
-    assert open(other, "rb").read().startswith(b"FILE")
-
+    d._post(j, {"kind": "file", "path": arc, "heavy": True})
+    assert j.state == rommlib.Job.DONE, j.message
+    folder = os.path.join(_sysdir(), GAME)
+    assert sorted(os.listdir(folder)) == sorted([GAME + ".bin", GAME + ".cue", "MyOther.bin", "MyOther.cue"])
+    rommlib.Library().uninstall(ROM, "psx")
+    assert sorted(os.listdir(folder)) == ["MyOther.bin", "MyOther.cue"]
+    assert open(other, "rb").read().startswith(b"FILE") and open(ob, "rb").read() == b"o" * 2352
 
 def test_download_again_replaces_the_owners_damaged_file_it_was_asked_to(isolated):
     """The owner's cut-short Lamp Run (USA).bin beside their notes (not downloaded by the app):
@@ -387,22 +381,6 @@ def test_a_copy_put_where_a_stale_record_points_is_never_deleted(isolated):
     with pytest.raises(rommlib.NotDownloadedHere):
         lib.uninstall(ROM, "psx")
     assert open(p, "rb").read() == b"the owner's own copy"
-
-
-def test_a_download_whose_unpack_folder_holds_another_game_is_refused_before_downloading(isolated, monkeypatch):
-    """Round 6: Download again fetched all 50 MB, then refused to unpack into the owner's folder."""
-    from romm import downloader
-    monkeypatch.setattr(downloader, "needs_listing", lambda rom, system: False)
-    _w(os.path.join(_sysdir(), GAME, GAME + ".cue"), b"someone else's copy")
-    d = _downloader()
-    d.es = {"psx": {".cue", ".chd", ".m3u"}}
-    d.api = types.SimpleNamespace(rom=lambda rid: dict(ROM, files=[{"file_name": GAME + ".zip", "category": None,
-                                                                    "file_size_bytes": 100}]))
-    d._free_bytes = lambda p: 1 << 40
-    j = rommlib.Job(dict(ROM), "psx")
-    with pytest.raises(rommlib.RommError, match="Move or rename it"):
-        d._process(j)
-    assert not os.path.exists(os.path.join(_sysdir(), GAME + ".zip.part"))
 
 
 def test_download_again_never_writes_over_a_file_put_where_the_apps_was(isolated):

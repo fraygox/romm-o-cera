@@ -954,6 +954,27 @@ def test_sweep_reinstalled_game_keeps_its_cover(isolated, fake_es):
     assert os.path.exists(os.path.join(sysdir, "images", "A-image.png"))
 
 
+def test_remove_keep_media_leaves_the_owners_media(isolated, fake_es):
+    """A removal queued for a game put here another way (keep_media) drops only ES's entry;
+    without the key (the app's own game) its scraped media goes."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
+    os.makedirs(os.path.join(sysdir, "images"))
+    os.makedirs(os.path.join(sysdir, "videos"))
+    media = {"A": ("images/A-image.png", "images/A-marquee.png", "videos/A-video.mp4"),
+             "B": ("images/B-image.png", "images/B-marquee.png", "videos/B-video.mp4")}
+    games = ""
+    for n, (i, m, v) in media.items():
+        for f in (i, m, v):
+            open(os.path.join(sysdir, f), "w").close()
+        games += "<game><path>./%s.zip</path><image>./%s</image><marquee>./%s</marquee><video>./%s</video></game>" % (n, i, m, v)
+    _gl(sysdir, "<gameList>%s</gameList>" % games)
+    fake_es({"gba": {".zip"}})
+    rb_finalize.process([{"system": "gba", "remove": [os.path.join(sysdir, "A.zip")], "keep_media": True},
+                         {"system": "gba", "remove": [os.path.join(sysdir, "B.zip")]}], None, {"gba": {".zip"}})
+    assert all(os.path.exists(os.path.join(sysdir, f)) for f in media["A"])
+    assert not any(os.path.exists(os.path.join(sysdir, f)) for f in media["B"])
+
+
 def test_sweep_numbers_compare_by_value():
     assert rb_finalize.EsApi.same("0.80", "0.800000") and rb_finalize.EsApi.same("7", "7.0")
     assert not rb_finalize.EsApi.same("0.8", "0.7") and rb_finalize.EsApi.same(" a ", "a")

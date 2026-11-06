@@ -141,7 +141,7 @@ def named_game(path, system=None):
         for dp, dns, fns in os.walk(path):
             dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS and not in_progress_name(d)]
             for f in fns:
-                if f.lower().startswith(stem) and is_game_name(f, system) \
+                if _same_game_name(f, stem) and is_game_name(f, system) \
                         and not _points_out(os.path.join(dp, f), path):
                     return True
     except OSError:
@@ -224,11 +224,32 @@ def their_files(paths, system, owned=()):
         if q not in out and q not in owned and os.path.lexists(q) and _core._inside(q, sysdir):
             out.append(q)
 
+    shared = None
+
+    def others_use(t, sheet):
+        """t is named by a sheet or playlist in roms/<system> other than sheet: another game's."""
+        nonlocal shared
+        if shared is None:
+            shared = {}
+            for dp, dns, fns in os.walk(sysdir):
+                dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS]
+                for n in fns:
+                    q = os.path.join(dp, n)
+                    low = n.lower()
+                    try:
+                        refs = _es.m3u_paths(q) if low.endswith(".m3u") else \
+                            _discs.sheet_sources(q) if low.endswith((".cue", ".gdi")) else ()
+                    except OSError:
+                        refs = ()
+                    for r in refs:
+                        shared.setdefault(os.path.normpath(r), set()).add(os.path.normpath(q))
+        return bool(shared.get(os.path.normpath(t), set()) - {os.path.normpath(sheet)})
+
     def with_tracks(f, root):
         add(f)
         if f.lower().endswith((".cue", ".gdi")) and os.path.isfile(f):
             for t in _discs.sheet_sources(f):
-                if os.path.normpath(t).startswith(os.path.normpath(root) + os.sep):
+                if os.path.normpath(t).startswith(os.path.normpath(root) + os.sep) and not others_use(t, f):
                     add(t)
     for p in paths:
         p = os.path.normpath(p)
@@ -762,7 +783,7 @@ class Library:
                                                                  " FAILED %r" % failed if failed else ""))
         drop = [p for p in entries if not os.path.lexists(p)]
         if drop:
-            _core.append_gamelist({"system": system, "remove": drop})
+            _core.append_gamelist({"system": system, "remove": drop, "keep_media": True})   # (its media is the owner's)
         self.rescan(system)
         if failed:
             raise UninstallIncomplete(_incomplete_msg(rom.get("name") or rom.get("fs_name"), failed),

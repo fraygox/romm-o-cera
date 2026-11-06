@@ -676,3 +676,14 @@ def test_deleting_one_disc_of_a_set_leaves_no_records_of_the_files_it_took(isola
     lib.uninstall(_rom(2, "Orb Quest (Disc 2).chd"), "psx")
     assert not any(os.path.exists(p) for p in d + [m3u])
     assert lib.snapshot() == {}
+
+
+def test_deleting_a_hand_copied_game_queues_its_removal_keeping_media(isolated):
+    lib = rommlib.Library()
+    mine, theirs = _file("psx", "Mine.chd", b"x"), _file("psx", "Theirs.chd", b"x")
+    lib.mark(_rom(1, "Mine.chd"), "psx", [mine])
+    rommlib.delete_game("psx", theirs, lib)
+    rommlib.delete_game("psx", mine, lib)
+    queued = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
+    assert {"system": "psx", "remove": [theirs], "keep_media": True} in queued
+    assert {"system": "psx", "remove": [mine]} in queued
