@@ -114,13 +114,13 @@ def test_qualified_names_exist():
                     assert node.attr in vars(rommlib), (p, node.lineno, node.attr)
 
 
-# rommlib names the lazily loaded workers use, pinned to v0.11.0, the release
+# rommlib names the lazily loaded workers use, pinned to v0.12.0, the release
 # before the one being cut. An old process reaches the NEW worker files after an
 # in-app update swapped the folder under it: a still-open UI imports rb_chd_plan
 # on the Compress screen (which imports rb_chd) and rb_dl to take over
 # downloads, and rb_dl imports rb_finalize. All of it runs against the OLD
-# rommlib already in memory. Add a name here only after checking v0.11.0
-# defines it (`git show v0.11.0:romm/<module>.py`); a name new since waits for
+# rommlib already in memory. Add a name here only after checking v0.12.0
+# defines it (`git show v0.12.0:romm/<module>.py`); a name new since waits for
 # the next release. Bump the tag after each stable release.
 PREVIOUS_RELEASE_NAMES = frozenset((
     "Api", "CHD_QUEUE_DIR", "CHECK_ERRORS", "CONVERTER", "CONVERTERS", "CSO_TEMP_SUFFIX", "CsoError",
@@ -139,6 +139,9 @@ PREVIOUS_RELEASE_NAMES = frozenset((
     "start_conversions",   # rb_dl
     "wiiu_key_file", "wuatool_path",   # rb_chd (Wii U; only a "wua" task reaches them)
     "settle",       # rb_chd, rb_chd_plan: only a converter with a fallback (Wii U, newer than v0.10.0) reaches it
+    # in v0.12.0 (the workers still reach them through getattr until a later commit)
+    "EsError", "FOLDER_GAME_EXTS", "clear_media_skip", "es_art_files", "es_media_file", "es_named_media",
+    "es_video_max", "is_game_name", "old_tool_dirs", "record_media_skip", "same_file", "wants_own_image",
 ))
 
 
