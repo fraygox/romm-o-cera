@@ -93,9 +93,10 @@ def test_finalize_gives_an_old_download_its_screenshot_in_one_go(served, fake_es
     e["fill"] = True
     assert rb_finalize.apply([e], None, {"nes": {".zip"}}, rb_finalize.EsApi(es.url), {}, cfg()) == []
     md = es.mem["nes"][path]
-    assert md["thumbnail"] == "./images/Lorem Mages-thumb.png" and md["image"] == "./images/Lorem Mages-image.jpg"
-    assert open(os.path.join(sysdir, "images", "Lorem Mages-image.jpg"), "rb").read() == JPG
-    assert not os.path.exists(os.path.join(sysdir, "images", "Lorem Mages-image.png"))   # the cover's copy went
+    # the old image (the cover again) is a file already there: never written over; the
+    # missing thumbnail is added
+    assert md["thumbnail"] == "./images/Lorem Mages-thumb.png" and md["image"] == "./images/Lorem Mages-image.png"
+    assert open(os.path.join(sysdir, "images", "Lorem Mages-image.png"), "rb").read() == PNG
     assert os.path.exists(os.path.join(sysdir, "images", "Lorem Mages-thumb.png"))
 
 
@@ -203,3 +204,22 @@ def test_fill_in_twice_before_leaving_leaves_the_queued_games_be(isolated, fake_
         f.write("{torn\n" + __import__("json").dumps({"system": "nes", "rename": {"/old": path}}) + "\n")
     entries, st = rommlib.plan_info(ListApi([rom]), "nes", [2], {"nes": {".zip"}}, cfg())
     assert entries == [] and st["waiting"] == 1                            # deferred for ES counts too
+
+
+def test_fill_in_never_writes_over_art_no_gamelist_entry_links(served, fake_es):
+    """Round 13: the owner's own -thumb.png and -marquee.png beside a hand-copied game, linked by
+    no gamelist entry: Fill in game info replaced them with RomM's. A file under the name ES
+    would give a tag's art is never written over, linked or not."""
+    files, _ = served
+    rom = lorem()
+    files.update(all_files(rom))
+    path, _ = game_here()
+    sysdir = os.path.dirname(path)
+    es = fake_es({"nes": {".zip"}})
+    give_es(es, path, ("name",))                                   # no art linked
+    art(sysdir, "Lorem Mages-thumb.png", b"the owner's own thumbnail")
+    mine = os.path.join(sysdir, "images", "Lorem Mages-thumb.png")
+    e = rommlib.gamelist_entry(rom, "nes", [path], cfg=cfg())
+    e["fill"] = True
+    rb_finalize.apply([e], None, {"nes": {".zip"}}, rb_finalize.EsApi(es.url), {}, cfg())
+    assert open(mine, "rb").read() == b"the owner's own thumbnail"

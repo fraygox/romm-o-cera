@@ -42,8 +42,8 @@ def test_deleting_a_downloaded_game_takes_the_media_made_for_it_and_nothing_else
     lib.mark(_rom(1, "Lorem Engine (USA).chd"), "pcengine", [game])
     assert sorted(lib.made_media(_rom(1, "Lorem Engine (USA).chd"), "pcengine")) == sorted(made)
     gone, freed = lib.uninstall(_rom(1, "Lorem Engine (USA).chd"), "pcengine")
-    assert not any(os.path.exists(p) for p in made + [game])
-    assert freed == 100 + 8 * 10 + 1000 + 50
+    assert all(os.path.exists(p) for p in made) and not os.path.exists(game)   # art stays: never deleted
+    assert freed == 100
     assert os.path.exists(mine) and os.path.exists(shared)
 
 
@@ -57,7 +57,7 @@ def test_a_folder_kept_for_the_owners_notes_doesnt_keep_the_games_media(isolated
             _file("megacd", "videos/Lorem Engine (USA)-video.mp4", b"v")]
     lib.mark(_rom(1, "Lorem Engine (USA).zip"), "megacd", [game])
     lib.uninstall(_rom(1, "Lorem Engine (USA).zip"), "megacd")
-    assert not any(os.path.exists(p) for p in made + [game]) and os.path.exists(notes)
+    assert all(os.path.exists(p) for p in made) and not os.path.exists(game) and os.path.exists(notes)
     # a folder that still holds a game of that name keeps them
     game = _file("megacd", "Lorem Engine (USA).chd", b"g" * 100)
     _file("megacd", "Lorem Engine (USA)/Lorem Engine (USA).cue", b"FILE x BINARY")

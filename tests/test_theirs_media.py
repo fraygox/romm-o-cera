@@ -53,7 +53,7 @@ def test_media_there_before_the_download_is_the_owners_and_stays_when_it_is_dele
     made = _file("nes", "images/Lorem Mages-thumb.png", b"romm")      # what ES was sent for it
     assert lib.made_media(rom, "nes") == [made]
     lib.uninstall(rom, "nes")
-    assert not os.path.exists(made) and not os.path.exists(game)
+    assert os.path.exists(made) and not os.path.exists(game)          # art is never deleted with a game
     assert all(os.path.exists(p) for p in theirs)
 
 

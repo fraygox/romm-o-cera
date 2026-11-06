@@ -1120,13 +1120,8 @@ class Library:
             gone.append(p)
             freed += max(0, size - _core.path_size(p)) if os.path.lexists(p) else size
         rid = str(rom["id"])
-        for f in self.made_media(rom, system, gone) if gone and not failed else ():
-            size = _core.path_size(f)
-            try:
-                os.remove(f)                      # its art, video and manual: nothing else uses them
-                freed += size
-            except OSError:
-                pass
+        # (its art, video and manual stay: a file there may be the owner's, or one they put in the
+        # app's one's place; ES drops the entry, the files are left as they are)
         gone_set = set(gone)
 
         def drop(inst):

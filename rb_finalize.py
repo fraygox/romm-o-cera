@@ -631,8 +631,20 @@ def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     disk, ES refusing to store a file that came): the entry is kept and tried again.
     A tag the owner had a file of already (theirs) is left as it is."""
     later = refused = False
+    sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+    named = getattr(rommlib, "es_named_media", None)      # next release: rommlib.es_named_media only
+
+    def on_disk(tag):
+        """A file is there already under the name ES would give this tag's file: whoever put it
+        there, it's never written over (an unlinked scrape, the owner's own, the app's earlier one)."""
+        if named is None or not g.get("path"):
+            return False
+        try:
+            return bool(named(sysdir, [g["path"]], (tag,)).get(tag))
+        except Exception:
+            return True                                    # can't tell: leave it
     if e.get("image_local") and os.path.isfile(e["image_local"]) and not g.get("image") \
-            and not theirs(e, g, "image"):
+            and not theirs(e, g, "image") and not on_disk("image"):
         with open(e["image_local"], "rb") as f:
             if not esapi.set_media(system, g["id"], "image", f.read(), "image/png"):
                 later = refused = True
@@ -641,7 +653,7 @@ def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     # the thumbnail first, so an image that is only the box art again shows as such
     for tag, paths in wanted:
         again = False
-        if theirs(e, g, tag):
+        if theirs(e, g, tag) or on_disk(tag):
             continue
         if g.get(tag) and getattr(esapi, "media_present", lambda *a: None)(system, g["id"], tag) is not False:
             again = tag == "image" and image_is_box_art_again(esapi, system, g, media)

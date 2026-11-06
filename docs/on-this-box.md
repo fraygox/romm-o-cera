@@ -27,11 +27,10 @@ like the game, the files named like the folder and their tracks; a playlist
 (`.m3u`) of yours alone, never the discs it lists; a folder game
 (`Game.ps3`) whole. Never anything else in or beside the folder (notes, saves,
 states, patches, cheats, other games), and never a file one of the app's own
-downloads holds. Saves and states are always kept. Deleting a game RomM-o-Cera
-downloaded also deletes the art, video and manual it had EmulationStation keep
-for it (`images/`, `videos/`, `manuals/`, named after the game), unless another
-game still uses them; the confirm counts them in what it frees. Media you added
-under other names stays. A game folder that also holds your own files (notes, a
+downloads holds. Saves and states are always kept, and so are art, videos and
+manuals (`images/`, `videos/`, `manuals/`): deleting a game never deletes them,
+whoever put them there, and the app never writes RomM's art over a file that's
+already there. A game folder that also holds your own files (notes, a
 manual, pictures, saves, patches, cheats, anything you added) keeps them, and
 the folder stays: only the files the download wrote go. A playlist (`.m3u`) of
 your own that lists the game is never deleted: the confirm names it, and ES goes

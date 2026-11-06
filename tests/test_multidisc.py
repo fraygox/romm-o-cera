@@ -555,10 +555,11 @@ def test_manual_lands_in_gamelist_and_leaves_with_the_game(isolated, mock_url, f
     assert g["manual"] == "./manuals/Flaky Cart (USA)-manual.pdf" and g.get("image")
     assert open(man, "rb").read().startswith(b"%PDF")
     es.save()
-    # deleting the game takes its manual + cover with it
+    # deleting the game leaves its manual and cover (art is never deleted with a game: it may
+    # be the owner's, or one they put in the app's one's place)
     paths, _ = d.library.uninstall(cart, "gba")
     rb_finalize.process([json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)][-1:], api, PSX_ES)
-    assert not os.path.exists(man) and not os.listdir(os.path.join(sysdir, "images"))
+    assert os.path.exists(man) and os.listdir(os.path.join(sysdir, "images"))
     assert es.game("gba", "Flaky Cart (USA).zip") is None
 
 

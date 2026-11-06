@@ -194,7 +194,7 @@ class ManageMenu(ActionMenu):
                 for p in lib.paths_for({"id": rid, "fs_name": None, "fs_name_no_ext": None}, system):
                     if p not in allp:
                         allp.append(p)
-            gmedia = lib.made_media(rom, system, allp) if allp else []
+            gmedia = []                           # art and video stay: never deleted with a game
             gsize = sum(rommlib.path_size(p) for p in allp + gmedia)
             title = group.get("title") or name
 
@@ -233,7 +233,7 @@ class ManageMenu(ActionMenu):
                     app, "modal", DownloadConfirm(app, rom, replace=list(theirs)))) if theirs else None),
             ])
             return
-        media = lib.made_media(rom, system, paths) if paths else []
+        media = []                                # art and video stay: never deleted with a game
         size += sum(rommlib.path_size(p) for p in media)
 
         def delete():
