@@ -205,12 +205,14 @@ class FreeUpScreen(ListScreen):
     def delete_marked(self):
         app, todo = self.app, self.picked()
         size = sum(g["size"] for g in todo)
+        # what the confirm names, as it opens: a file swapped while it's up isn't the one named
+        pins = {g["path"]: rommlib.pin_files(rommlib.game_files(g["path"])) for g in todo}
 
         def run():
             freed, gone, why = 0, 0, []
             for g in todo:                       # one that can't go (a busy file, installed.json) doesn't stop the rest
                 try:
-                    freed += rommlib.delete_game(g["system"], g["path"], app.library)[1]
+                    freed += rommlib.delete_game(g["system"], g["path"], app.library, pins=pins[g["path"]])[1]
                     gone += 1
                 except (rommlib.RommError, OSError) as e:     # its files went and only installed.json lags: deleted
                     freed += getattr(e, "freed", 0) or 0

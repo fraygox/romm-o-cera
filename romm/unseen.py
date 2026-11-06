@@ -1,5 +1,6 @@
 """Games EmulationStation can't see."""
 import os
+import re
 import subprocess
 import zipfile
 
@@ -116,7 +117,8 @@ def find_unseen(es, cancel=None):
                 low = n.lower()
                 ext = os.path.splitext(low)[1]
                 if not ext or ext in exts or low in ("gamelist.xml", "_info.txt") or ".bak" in low \
-                        or low.endswith(UNSEEN_IGNORE + UNSEEN_HOUSEKEEPING) or ext[1:].isdigit():
+                        or low.endswith(UNSEEN_IGNORE + UNSEEN_HOUSEKEEPING) or ext[1:].isdigit() \
+                        or re.search(r"\.state(\d+|\.auto)?$", low):          # save states: .state1, .state.auto
                     continue
                 p = os.path.join(dp, n)
                 if os.path.normpath(p) in refs or os.path.islink(p):

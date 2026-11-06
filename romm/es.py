@@ -331,7 +331,7 @@ def _remove_keeping_folders(p, system=None):
         os.rmdir(p)
 
 
-def delete_game(system, path, library=None):
+def delete_game(system, path, library=None, pins=None):
     """Delete a game ES lists (any game, not only ours): its files, then any
     game folder left empty. Saves and states live elsewhere and are kept. A file
     that won't go doesn't stop the rest (DeleteIncomplete after, saying what
@@ -353,6 +353,9 @@ def delete_game(system, path, library=None):
             # put here another way, and picked to delete: exactly its own files (a playlist alone,
             # never the discs it lists; a sheet with its tracks), as the confirm said
             files = library.their_files_at([path], system)
+    if pins is not None and library is not None:
+        # (picked in a confirm: only files still as they were when it opened)
+        files = [p for p in files if library.still_pinned(p, pins)]
     name = os.path.splitext(os.path.basename(path))[0]
     keep_media = library is not None and not library.owns(path, ours)    # not the app's: its media stays
     gone, failed, freed = [], [], 0

@@ -273,15 +273,16 @@ class AuditScreen(ListScreen):
         files = [os.path.relpath(p, os.path.join(rommlib.ROMS_ROOT, f["system"]))
                  for f in theirs for p in self.replaced(f)]
         shown = ", ".join(files[:8]) + (" and %d more" % (len(files) - 8) if len(files) > 8 else "")
-        return " Not downloaded by RomM-o-Cera (%s), so these files are replaced: %s. Notes, saves and other " \
+        return " Not as RomM-o-Cera downloaded them (%s: put here another way, or changed since), so these files are replaced: %s. Notes, saves and other " \
                "files beside them stay." % (plural(len(theirs), "game"), shown)
 
-    def redownload(self, f):
+    def redownload(self, f, pins=None):
         app = self.app
         # always the broken file shown, which the user asked to replace: RomM's copy can land under
         # another name, or unpack beside it (a zipped cue/bin for a junk .chd of that name); the
         # downloader never deletes a path the new copy holds
-        job = app.downloader.enqueue(dict(f["rom"]), f["system"], replace=self.replaced(f) or [f["path"]])
+        job = app.downloader.enqueue(dict(f["rom"]), f["system"], replace=self.replaced(f) or [f["path"]],
+                                     pins=pins)
         self.queued.add(f["path"], job)
 
     def action(self, a):
@@ -322,12 +323,13 @@ class AuditScreen(ListScreen):
             if f.get("via") == "name":
                 how += " RomM has it only under another name, matched by title: it's another release."
             if not self.ours(f):
-                how += " It wasn't downloaded by RomM-o-Cera, so these files are replaced: %s." % self.replaced_text(f)
+                how += " It isn't as RomM-o-Cera downloaded it (put here another way, or changed since), so these files are replaced: %s." % self.replaced_text(f)
             if f.get("io_error"):
                 how = "The box couldn't read this file: check the drive or card first. " + how
+            pins = rommlib.pin_files(self.replaced(f) or [f["path"]])     # what the confirm names, now
             app.modal = Confirm(app, "Download %s again?" % name, "%s. %s" % (f["problem"].split(" · ")[0], how),
                                 "Download again",
-                                lambda: (self.redownload(f), app.toast("Queued: %s" % name, theme.GREEN)))
+                                lambda: (self.redownload(f, pins), app.toast("Queued: %s" % name, theme.GREEN)))
 
     def redownload_all(self):
         todo = self.redownloadable()
@@ -343,9 +345,11 @@ class AuditScreen(ListScreen):
         for f in todo:
             uniq.setdefault(f["rom"]["id"], f)
 
+        pins = {rid: rommlib.pin_files(self.replaced(f) or [f["path"]]) for rid, f in uniq.items()}
+
         def go():
-            for f in uniq.values():
-                self.redownload(f)
+            for rid, f in uniq.items():
+                self.redownload(f, pins[rid])
             self.picks.clear()
             self.picking = False
             app.toast("Queued %s" % plural(len(uniq), "game"), theme.GREEN)
@@ -637,7 +641,7 @@ class CheckScreen(AuditScreen):
         p.prose(WHY_IO if it.get("io_error") else
                 "RomM has no game under this file name, so it can't be downloaded again from here."
                 if not it.get("rom") else WHY.get(it["severity"], "") + ("" if self.ours(it) else
-                " It wasn't downloaded by RomM-o-Cera: downloading it again replaces its files (listed in the "
+                " It isn't as RomM-o-Cera downloaded it (put here another way, or changed since): downloading it again replaces its files (listed in the "
                 "confirm); notes, saves and other files beside it stay."), lines=5)
 
     @staticmethod

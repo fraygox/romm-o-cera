@@ -671,7 +671,7 @@ class Downloader:
         self.t.join(30)
 
     # -- queue ------------------------------------------------------------
-    def enqueue(self, rom, system, group=None, replace=None, save=True):
+    def enqueue(self, rom, system, group=None, replace=None, save=True, pins=None):
         """replace: paths of a broken copy under another name (Check games): once
         RomM's copy is in, saves move over, playlists follow, and they're deleted.
         save=False: the caller saves the queue once when it's done adding."""
@@ -680,7 +680,7 @@ class Downloader:
                 if j.rom["id"] == rom["id"] and j.active:
                     if replace:
                         j.replace = sorted(set(j.replace or []) | set(replace))
-                        self._pin(j, replace)
+                        self._pin(j, replace, pins)
                     return j
             for j in self.jobs:                      # re-use a paused/failed entry in place
                 if j.rom["id"] == rom["id"] and j.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED):
@@ -694,21 +694,27 @@ class Downloader:
                 self.cv.notify_all()
             if replace:
                 j.replace = sorted(set(j.replace or []) | set(replace))
-                self._pin(j, replace)
+                self._pin(j, replace, pins)
         if save:
             self.save_queue()
         return j
 
     @staticmethod
-    def _pin(j, paths):
-        """What each file the user confirmed replacing was when they confirmed (file_sig): one
-        changed or swapped since (a queued download runs later) is no longer the one they named."""
+    def _pin(j, paths, given=None):
+        """What each file the user confirmed replacing was when the confirm opened (given: its
+        pin_files), else now (file_sig): one changed or swapped since (while the confirm was up,
+        or before a queued download runs) is no longer the one they named."""
         pins = dict(getattr(j, "replace_pins", None) or {})
+        given = {os.path.normpath(k): v for k, v in (given or {}).items()}
         for p in paths:
+            q = os.path.normpath(p)
+            if q in given:
+                pins[q] = given[q]
+                continue
             try:
-                pins[os.path.normpath(p)] = _library.file_sig(p)
+                pins[q] = _library.file_sig(p)
             except OSError:
-                pins[os.path.normpath(p)] = None
+                pins[q] = None
         j.replace_pins = pins
 
     def move(self, job, where):
@@ -1477,7 +1483,10 @@ class Downloader:
         recorded = False
         # what the user confirmed replacing (Check games, Download again, Compare: their confirm
         # listed it) stays; with nothing named, only the app's own recorded copy is replaced
-        named = [p for p in j.replace or [] if os.path.lexists(p)]
+        # (a file RomM's own download landed on, same name: replaced by it, after _never_over_theirs
+        # checked it was still the one confirmed; not "changed since")
+        mine = {os.path.normpath(x) for x in j.made if isinstance(x, str)} | {os.path.normpath(post.get("path") or "")}
+        named = [p for p in j.replace or [] if os.path.lexists(p) and os.path.normpath(p) not in mine]
         j.replace = [p for p in named if self._ours(j, p)] or None
         changed = [p for p in named if p not in (j.replace or [])]
         if changed:
@@ -1513,16 +1522,16 @@ class Downloader:
             if j.replace:
                 warn = self._replace_old(j, results) or warn
             entry = None
+            # what this download wrote: its unpacked or fetched files, and a file kept as it is
+            wrote = [r for r in results if os.path.isfile(r)] + list(getattr(j, "wrote", None) or [])
+            wrote = [p for p in dict.fromkeys(wrote) if os.path.lexists(p)]
             try:
-                entry = self._queue_gamelist(rom, system, results)
+                entry = self._queue_gamelist(rom, system, results, files=wrote)
             except OSError as e:
                 _core.log("gamelist %s: %r" % (j.name, e))
                 warn = warn or "its game info couldn't be handed to the game list"
             try:
-                # what this download wrote: its unpacked or fetched files, and a file kept as it is
-                wrote = [r for r in results if os.path.isfile(r)] + list(getattr(j, "wrote", None) or [])
-                self.library.mark(rom, system, results, group=j.group, meta=entry,
-                                  files=[p for p in dict.fromkeys(wrote) if os.path.lexists(p)])
+                self.library.mark(rom, system, results, group=j.group, meta=entry, files=wrote)
                 recorded = True
             except (_core.RommError, OSError) as e:
                 _core.log("mark %s: %s" % (j.name, e))
@@ -1757,7 +1766,7 @@ class Downloader:
                         if paths and all(x in done or not os.path.exists(x) for x in paths):
                             inst.pop(rid, None)
                 try:
-                    _core.append_gamelist({"system": system, "remove": gone})     # queued first, as delete_game does
+                    _core.append_gamelist({"system": system, "remove": gone, "keep_media": True})  # queued first, as delete_game does
                 finally:
                     try:
                         self.library.update(drop)
@@ -2244,10 +2253,41 @@ class Downloader:
         j.chd_task = name
         j.chd_mode = mode                    # in memory only: names the format on the Downloads screen
 
-    def _queue_gamelist(self, rom, system, paths):
+    def _queue_gamelist(self, rom, system, paths, files=None):
         """Hand gamelist metadata to the launcher's post-exit merge step
-        (ES must not be written to while it runs — see rb_finalize.py)."""
+        (ES must not be written to while it runs — see rb_finalize.py).
+        files: what the download wrote. In a folder holding other files too (a translation,
+        another game of the owner's), the entry names its own game file ("game"): ES's
+        first sheet in the folder may be the owner's. "theirs_media": the media already
+        there under the names ES gives this game's (the owner's: a copy of theirs scraped),
+        which ES is never sent RomM's over and the app never deletes."""
         entry = _library.gamelist_entry(rom, system, paths, cfg=self.cfg)
+        sysdir = os.path.join(_core.ROMS_ROOT, system)
+        dirs = [os.path.normpath(p) for p in paths if os.path.isdir(p) and not os.path.islink(p)
+                and os.path.splitext(p)[1].lower() not in _library.FOLDER_GAME_EXTS]
+        if files and dirs:
+            mine = [p for p in paths if os.path.isfile(p)] + [
+                f for f in files if any(os.path.normpath(f).startswith(d + os.sep) for d in dirs)]
+            own = _library.primary_path(system, mine, self.es)
+            if own and own != _library.primary_path(system, paths, self.es):
+                entry["game"] = own
+        named = list(paths) + [q for q in (entry.get("game"), _library.primary_path(system, paths, self.es)) if q]
+        tags = list(dict.fromkeys(list(_library.MADE_MEDIA_TAGS) + list((entry.get("media") or {}).keys())))
+        rec = (self.library.snapshot() if self.library is not None else {}).get(str(rom.get("id"))) or {}
+        meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+        before = _library.their_media(rec)
+        # this game's earlier download by the app: what it had of these names then (but the
+        # owner's) is the app's; a record from before this was kept says nothing either way
+        stems = {os.path.splitext(os.path.basename(os.path.normpath(q)))[0]
+                 for q in list(rec.get("paths") or []) + [meta.get("game")] if isinstance(q, str)}
+        theirs = {}
+        for tag, fs in _library.es_named_media(sysdir, named, tags).items():
+            keep = [f for f in fs if os.path.normpath(f) in before
+                    or os.path.basename(f).rsplit("-", 1)[0] not in stems]
+            if keep:
+                theirs[tag] = keep
+        if theirs:
+            entry["theirs_media"] = theirs
         os.makedirs(_core.DATA_DIR, exist_ok=True)
         _core.append_gamelist(entry)
         return entry

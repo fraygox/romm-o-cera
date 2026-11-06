@@ -503,7 +503,7 @@ def test_a_replacement_download_of_one_disc_keeps_what_it_replaces(app, rb, monk
     rom = _rom(name="Lorem Quest (Disc 2)", fs_name_no_ext="Lorem Quest (USA) (Disc 2)")
     app.details[rom["id"]] = {}
     got = []
-    monkeypatch.setattr(app, "start_download", lambda r, replace=None: got.append((r["id"], replace)))
+    monkeypatch.setattr(app, "start_download", lambda r, replace=None, **k: got.append((r["id"], replace)))
     monkeypatch.setattr(app, "bg", lambda *a, **k: None)
     app.modal = dc = rb.DownloadConfirm(app, rom, replace=["/roms/psx/old (Disc 2).chd"])
     assert not dc.pending
@@ -516,7 +516,7 @@ def test_a_download_again_of_one_disc_and_an_empty_replace_list(app, rb, monkeyp
     app.details[rom["id"]] = {}
     group = {"id": "g9", "base": "Sit Amet (USA)", "title": "Sit Amet", "rom_ids": [rom["id"], 99]}
     got = []
-    monkeypatch.setattr(app, "start_download", lambda r, replace=None, group=None: got.append((replace, group)))
+    monkeypatch.setattr(app, "start_download", lambda r, replace=None, group=None, **k: got.append((replace, group)))
     monkeypatch.setattr(app, "bg", lambda *a, **k: None)
     app.modal = dc = rb.DownloadConfirm(app, rom, replace=[], group=group)
     assert not dc.pending                       # [] is still a replacement: no set menu

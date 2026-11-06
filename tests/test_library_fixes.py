@@ -238,7 +238,7 @@ def test_a_file_that_wont_go_doesnt_stop_the_rest(isolated, monkeypatch):
     assert not os.path.exists(cue) and not os.path.exists(b2) and os.path.exists(b1)
     assert lib.snapshot()["1"]["paths"] == [b1]                  # what's left stays findable
     queued = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
-    assert queued[-1] == {"system": "psx", "remove": [cue, b2]}
+    assert queued[-1] == {"system": "psx", "remove": [cue, b2], "keep_media": True}
     assert lib.uninstall(rom, "psx")[0] == [b1]                  # deleting again finishes it
     assert "1" not in lib.snapshot()
 
@@ -473,7 +473,7 @@ def test_a_delete_that_cant_be_recorded_says_the_files_went(isolated, monkeypatc
         lib.uninstall(_rom(1, "Game.chd"), "psx")
     assert not os.path.exists(p)
     assert str(e.value).startswith("Deleted Game") and e.value.freed == 10 and e.value.paths == [p]
-    assert json.loads(open(rommlib.GAMELIST_QUEUE).readline()) == {"system": "psx", "remove": [p]}
+    assert json.loads(open(rommlib.GAMELIST_QUEUE).readline()) == {"system": "psx", "remove": [p], "keep_media": True}
 
 
 def test_a_set_delete_that_cant_be_recorded_still_deletes_every_disc(isolated, monkeypatch):

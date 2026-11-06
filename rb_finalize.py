@@ -577,7 +577,7 @@ def prefetch(pre, api, e, g, cfg=None):
     when it's needed."""
     wanted, video_max = media_wanted(e, cfg)
     for tag, paths in wanted:
-        if not g.get(tag):
+        if not g.get(tag) and not theirs(e, g, tag):
             def job(tag=tag, paths=paths):
                 tried, info = fetch_first(api, tag, paths, video_max)
                 return (tried, info), sum(len(got[0]) for _, got in tried if got)
@@ -609,6 +609,15 @@ def drop_stale_images(system, g, keep):
             pass
 
 
+def theirs(e, g, tag):
+    """The game has a file of this tag that was there before the app handed it to ES (the
+    entry's "theirs_media": the owner's, a copy of theirs scraped): RomM's never replaces it."""
+    stem = os.path.splitext(os.path.basename(g.get("path") or ""))[0] + "-"
+    fs = (e.get("theirs_media") or {}).get(tag) if isinstance(e.get("theirs_media"), dict) else None
+    return any(isinstance(f, str) and os.path.basename(f).startswith(stem) and os.path.isfile(f)
+               for f in (fs if isinstance(fs, list) else ()))
+
+
 def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     """Every media file the entry offers that the game has none of in ES yet (a
     path to a file that is gone counts as none; what's there is never replaced,
@@ -619,9 +628,11 @@ def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     one over the cap, one that isn't media); videos follow today's cap (cfg).
     pre: an AdaptiveFetcher that may have fetched them already (prefetch()).
     False when some media may come another time (RomM offline, an error, a full
-    disk, ES refusing to store a file that came): the entry is kept and tried again."""
+    disk, ES refusing to store a file that came): the entry is kept and tried again.
+    A tag the owner had a file of already (theirs) is left as it is."""
     later = refused = False
-    if e.get("image_local") and os.path.isfile(e["image_local"]) and not g.get("image"):
+    if e.get("image_local") and os.path.isfile(e["image_local"]) and not g.get("image") \
+            and not theirs(e, g, "image"):
         with open(e["image_local"], "rb") as f:
             if not esapi.set_media(system, g["id"], "image", f.read(), "image/png"):
                 later = refused = True
@@ -630,6 +641,8 @@ def upload_media(api, esapi, system, g, e, cfg=None, pre=None):
     # the thumbnail first, so an image that is only the box art again shows as such
     for tag, paths in wanted:
         again = False
+        if theirs(e, g, tag):
+            continue
         if g.get(tag) and getattr(esapi, "media_present", lambda *a: None)(system, g["id"], tag) is not False:
             again = tag == "image" and image_is_box_art_again(esapi, system, g, media)
             if not again:
@@ -882,7 +895,18 @@ def primary_of(system, paths, es):
     return rommlib.primary_path(system, paths, es)
 
 
+def _own_game(e):
+    """The game file a download into a folder holding other files names ("game": its own
+    sheet, not the folder's first one, which may be the owner's), or None (older entries,
+    and downloads whose folder holds only the game, name the folder)."""
+    g = e.get("game")
+    return os.path.normpath(g) if isinstance(g, str) and g else None
+
+
 def _primary(e, es):
+    own = _own_game(e)
+    if own is not None:
+        return primary_of(e["system"], [own], es) if os.path.exists(own) else None
     return primary_of(e["system"], e.get("paths") or [], es)
 
 
@@ -1020,6 +1044,11 @@ def _apply(entries, api, es, esapi, carry, cfg, find, pre, feed, left):
                     e["_left"] = "unlisted"
                     left.append(e)
                 continue
+            if _own_game(e) is not None and not os.path.exists(_own_game(e)):
+                moved = moved_to(dict(e, paths=[_own_game(e)]))     # converted since it was queued
+                if moved:
+                    e["game"] = primary_of(system, moved, es) or moved[0]
+                    e["fill"] = True
             prim = _primary(e, es)
             if not prim and e.get("paths") and not any(os.path.exists(p) for p in e["paths"]):
                 moved = moved_to(e)                 # converted since it was queued: its new files
@@ -1116,7 +1145,8 @@ def wanted(entries, es):
     for e in entries:
         if foreign(e["system"], es):
             continue
-        ps = list((e.get("rename") or {}).values()) or e.get("paths") or []
+        own = _own_game(e) if "rename" not in e else None
+        ps = list((e.get("rename") or {}).values()) or ([own] if own else e.get("paths") or [])
         for p in ps:
             if os.path.exists(p):
                 prim = primary_of(e["system"], [p], es)
@@ -1129,7 +1159,7 @@ def _plan(entries, es):
     """What add_games asks ES for: (wanted(), {path: name}, {system: discs to list hidden})."""
     want, names, hides = wanted(entries, es), {}, {}
     for e in entries:
-        for p in e.get("paths") or []:
+        for p in (e.get("paths") or []) + ([_own_game(e)] if _own_game(e) else []):
             if e.get("name"):
                 names.setdefault(p, e["name"])
         if foreign(e["system"], es):
@@ -1349,6 +1379,8 @@ def route_renames(entries):
     for i, e in enumerate(entries):
         if isinstance(e.get("paths"), list):
             e["paths"] = list(dict.fromkeys(route(p, after[i]) for p in e["paths"]))
+        if _own_game(e) is not None:
+            e["game"] = route(e["game"], after[i])
         if isinstance(e.get("hide"), list) and "rename" not in e:
             e["hide"] = list(dict.fromkeys(route(p, after[i]) for p in e["hide"]))
     return entries
@@ -1530,7 +1562,8 @@ def related_deferred(lines):
         return out
     batch = [e for _, e in parse(lines) if e]
     olds = [o for e in batch if isinstance(e.get("rename"), dict) for o in e["rename"]]
-    paths = [p for e in batch if "rename" not in e and isinstance(e.get("paths"), list) for p in e["paths"]]
+    paths = [p for e in batch if "rename" not in e and isinstance(e.get("paths"), list)
+             for p in e["paths"] + ([e["game"]] if _own_game(e) else [])]
     try:
         with open(deferred_path(), errors="replace") as f:
             deferred = parse(f.read())
@@ -1540,7 +1573,7 @@ def related_deferred(lines):
     for line, e in deferred:
         hit = e is not None and (
             "rename" not in e and isinstance(e.get("paths"), list)
-            and any(_covers(o, p) for o in olds for p in e["paths"])
+            and any(_covers(o, p) for o in olds for p in e["paths"] + ([e["game"]] if _own_game(e) else []))
             or isinstance(e.get("rename"), dict) and any(_covers(o, p) for o in e["rename"] for p in paths))
         (take if hit else rest).append(line)
     return ("".join(take), "".join(rest)) if take else ("", None)

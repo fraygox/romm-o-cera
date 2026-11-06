@@ -363,7 +363,7 @@ def test_free_up_space_carries_on_past_a_game_it_cant_delete(app, rb, monkeypatc
     monkeypatch.setattr(sp, "picked", lambda: games)
     monkeypatch.setattr(app, "space_freed", lambda: None)
 
-    def delete_game(system, path, lib):
+    def delete_game(system, path, lib, **k):
         if "Alpha" in path:
             raise rommlib.GameBusy("It's being compressed")
         if "Beta" in path:
@@ -385,7 +385,7 @@ def test_free_up_space_is_never_stuck_on_deleting(app, rb, monkeypatch):
     monkeypatch.setattr(sp, "picked", lambda: [{"system": "snes", "path": "/x/A.sfc", "name": "A", "size": 1}])
     monkeypatch.setattr(app, "space_freed", lambda: None)
 
-    def delete_game(system, path, lib):
+    def delete_game(system, path, lib, **k):
         raise ValueError("bug")
     monkeypatch.setattr(rommlib, "delete_game", delete_game)
     app.toast = lambda msg, color=None, tap=None: None

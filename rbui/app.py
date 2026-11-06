@@ -502,7 +502,7 @@ class App:
                 then()
         self.bg(lambda: self.library.uninstall(rom, system), done, self._uninstall_failed(then))
 
-    def delete_theirs(self, rom, system, files, then=None):
+    def delete_theirs(self, rom, system, files, then=None, pins=None):
         """A game put on the box another way: exactly the files its confirm listed."""
         def done(res):
             paths, freed = res
@@ -510,7 +510,7 @@ class App:
             self.space_freed()
             if then:
                 then()
-        self.bg(lambda: self.library.delete_theirs(rom, system, files), done, self._uninstall_failed(then))
+        self.bg(lambda: self.library.delete_theirs(rom, system, files, pins), done, self._uninstall_failed(then))
 
     def uninstall_group(self, group, system, title, then=None):
         """Every disc of a set and its playlist; like uninstall(), conversions
@@ -522,13 +522,14 @@ class App:
                 then()
         self.bg(lambda: self.library.uninstall_group(group, system), done, self._uninstall_failed(then))
 
-    def start_download(self, rom, replace=None, group=None):
-        """group: the disc set this game belongs to, kept when one disc is fetched again."""
+    def start_download(self, rom, replace=None, group=None, pins=None):
+        """group: the disc set this game belongs to, kept when one disc is fetched again.
+        pins: what the files of replace were when its confirm opened (rommlib.pin_files)."""
         system = self.system_for(rom)
         if not system:
             self.toast("No Batocera system for this platform", theme.RED)
             return
-        self.downloader.enqueue(rom, system, replace=replace, **({'group': group} if group else {}))
+        self.downloader.enqueue(rom, system, replace=replace, pins=pins, **({'group': group} if group else {}))
         self.toast("Queued: %s" % rom_title(rom) + self.hours_note(), theme.GREEN)
         self.space_check()
 

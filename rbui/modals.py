@@ -218,12 +218,13 @@ class ManageMenu(ActionMenu):
             tsize = sum(rommlib.path_size(p) for p in theirs)
 
             def delete_theirs():
+                pins = rommlib.pin_files(theirs)       # what the confirm names, as it opens
                 app.modal = Confirm(app, "Delete %s?" % name,
                                     "Not downloaded by RomM-o-Cera, or changed since it was. These go from roms/%s (%s): %s. Anything else "
                                     "beside or in its folder stays (notes, saves, patches, other games); saves "
                                     "and states are kept.%s" % (system, human_size(tsize), files_list(theirs, system),
                                                                 playlists_note(system, theirs)),
-                                    "Delete", lambda: app.delete_theirs(rom, system, theirs, then), danger=True)
+                                    "Delete", lambda: app.delete_theirs(rom, system, theirs, then, pins), danger=True)
             super().__init__(app, name, [
                 app.play_entry(rom, system, name),
                 ("Delete from this box", "Not downloaded by RomM-o-Cera, or changed since: frees %s (%s)" % (
@@ -408,6 +409,7 @@ class DownloadConfirm(Confirm):
             return
         self.app = app
         self._rom, self._replace, self._group = rom, replace, group
+        self._pins = rommlib.pin_files(replace) if replace else None      # the files it names, now
         body = self._body(rom, system, st)
         super().__init__(app, name, body, "Download", self._start)
         if rommlib.needs_listing(rom, system):       # an estimate until RomM tells what the zip holds
@@ -425,7 +427,7 @@ class DownloadConfirm(Confirm):
                    lambda e: self._lookup_failed(body, e))
 
     def _start(self):
-        kw = {} if self._replace is None else {"replace": self._replace}
+        kw = {} if self._replace is None else {"replace": self._replace, "pins": self._pins}
         if self._group:
             kw["group"] = self._group
         self.app.start_download(self._rom, **kw)

@@ -201,7 +201,7 @@ def test_check_games_download_again_replaces_the_broken_file_shown(isolated, rb,
     import types
     got = []
     app = types.SimpleNamespace(library=rommlib.Library(), downloader=types.SimpleNamespace(
-        enqueue=lambda rom, system, replace=None: got.append(replace) or types.SimpleNamespace(state=rommlib.Job.DONE)))
+        enqueue=lambda rom, system, replace=None, **k: got.append(replace) or types.SimpleNamespace(state=rommlib.Job.DONE)))
     monkeypatch.setattr(rb.AuditScreen, "ours", lambda self, f: True)
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     from rbui.screens.check import QueuedAgain
@@ -329,7 +329,7 @@ def test_check_games_downloads_again_over_a_copy_the_app_didnt_download_and_says
     """A game copied over by hand can be repaired: its game files (not the notes beside it) are
     replaced, and the confirm says it wasn't downloaded by RomM-o-Cera and lists them."""
     jobs = []
-    dl = types.SimpleNamespace(enqueue=lambda rom, system, replace=None: jobs.append((rom, system, replace)) or "job")
+    dl = types.SimpleNamespace(enqueue=lambda rom, system, replace=None, **k: jobs.append((rom, system, replace)) or "job")
     app = types.SimpleNamespace(library=rommlib.Library(), downloader=dl, modal=None, toast=lambda *a, **k: None)
     scr = rb.AuditScreen.__new__(rb.AuditScreen)
     scr.app, scr.queued = app, rb.QueuedAgain()
@@ -342,13 +342,13 @@ def test_check_games_downloads_again_over_a_copy_the_app_didnt_download_and_says
     assert scr.pickable(f) and scr.redownloadable() == [f]
     scr.open_finding(f)
     body = app.modal.body if hasattr(app.modal, "body") else repr(vars(app.modal))
-    assert "wasn't downloaded by RomM-o-Cera" in body and GAME + ".bin" in body and "notes.txt" not in body
+    assert "isn't as RomM-o-Cera downloaded it" in body and GAME + ".bin" in body and "notes.txt" not in body
     scr.redownload(f)
     assert jobs[0][2] == sorted([os.path.normpath(cue), os.path.normpath(track)])
     assert os.path.exists(notes)
     scr.queued = rb.QueuedAgain()
     note = scr.theirs_note([f])
-    assert "Not downloaded by RomM-o-Cera (1 game)" in note and GAME + ".bin" in note and "notes.txt" not in note
+    assert "Not as RomM-o-Cera downloaded them (1 game" in note and GAME + ".bin" in note and "notes.txt" not in note
     rommlib.Library().mark(ROM, "psx", [track])
     jobs.clear()
     scr.redownload(f)

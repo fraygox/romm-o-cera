@@ -243,13 +243,16 @@ def their_files(paths, system, owned=()):
                         refs = ()
                     for r in refs:
                         shared.setdefault(os.path.normpath(r), set()).add(os.path.normpath(q))
-        return bool(shared.get(os.path.normpath(t), set()) - {os.path.normpath(sheet)})
+        return bool(shared.get(os.path.normpath(t), set()) - {os.path.normpath(sheet or "")})
+
+    def _users_of(t):
+        return shared.get(os.path.normpath(t), set()) if shared is not None else set()
 
     def with_tracks(f, root):
         add(f)
         if f.lower().endswith((".cue", ".gdi")) and os.path.isfile(f):
             for t in _discs.sheet_sources(f):
-                if os.path.normpath(t).startswith(os.path.normpath(root) + os.sep) and not others_use(t, f):
+                if os.path.normpath(t).startswith(os.path.normpath(root) + os.sep):
                     add(t)
     for p in paths:
         p = os.path.normpath(p)
@@ -268,7 +271,34 @@ def their_files(paths, system, owned=()):
             add(p)
         else:
             with_tracks(p, os.path.dirname(p))
+    # a file a sheet or playlist outside this game names (another game's track, the owner's own
+    # mix of discs) is that one's too: never taken with this game, however it was found
+    mine = set(out)
+    out[:] = [q for q in out if q.lower().endswith((".cue", ".gdi", ".m3u")) or not (
+        others_use(q, None) and _users_of(q) - mine)]
     return out
+
+
+def pin_files(files):
+    """{path: file_sig} of files as they are now (a confirm opening): what it names."""
+    out = {}
+    for f in files:
+        try:
+            out[os.path.normpath(f)] = file_sig(f)
+        except OSError:
+            out[os.path.normpath(f)] = None
+    return out
+
+
+def still_pinned(f, pins):
+    """f is still the file pins recorded (pin_files), or pins doesn't name it."""
+    want = pins.get(os.path.normpath(f), "unpinned")
+    if want == "unpinned":
+        return True
+    try:
+        return want is not None and file_sig(f) == list(want)
+    except OSError:
+        return False
 
 
 def remove_their_files(files, system):
@@ -761,6 +791,11 @@ class Library:
                                                                   for o in of)
                                  for p in rec.get("paths") or [])
 
+    @staticmethod
+    def still_pinned(f, pins):
+        """still_pinned(), for es.delete_game (es can't import this module)."""
+        return still_pinned(f, pins)
+
     def their_files_at(self, paths, system):
         """their_files() of the given paths (a game ES lists, picked in Free up space)."""
         return their_files(paths, system, self.owned())
@@ -769,14 +804,20 @@ class Library:
         """their_files() of a game found on the box by its name (not the app's download)."""
         return their_files(self.paths_for(rom, system), system, self.owned())
 
-    def delete_theirs(self, rom, system, files):
+    def delete_theirs(self, rom, system, files, pins=None):
         """Delete a game put on the box another way: exactly files (what its confirm listed,
-        their_files), never more. Queues ES's removal of its entries and drops any record of it.
-        Returns (deleted paths, bytes freed)."""
+        their_files), never more, and only those still as they were when it opened (pins:
+        pin_files() then; a file swapped meanwhile is someone else's). Queues ES's removal of
+        its entries and drops any record of it. Returns (deleted paths, bytes freed)."""
         entries = [p for p in self.paths_for(rom, system)]
         self._refuse_busy(files)
         mine = self.owned()
         files = [f for f in files if os.path.normpath(f) not in mine]      # never one of the app's games
+        if pins is not None:
+            kept = [f for f in files if not still_pinned(f, pins)]
+            if kept:
+                _core.log("DELETE %s: kept %s: changed since the confirm" % (rom.get("name"), kept))
+            files = [f for f in files if f not in kept]
         gone, freed, failed = remove_their_files(files, system)
         _core.log("DELETE (not downloaded here) %s: %s (%s)%s" % (rom.get("name") or rom.get("fs_name"), gone,
                                                                  _core.human_size(freed),
@@ -1021,10 +1062,15 @@ class Library:
         sends. Nothing for a game found only by name (its media may be the user's)."""
         with self.lock:
             self._reload()
-            if str(rom["id"]) not in self.installed:
+            rec = self.installed.get(str(rom["id"]))
+            if rec is None:
                 return []
         sysdir = os.path.join(_core.ROMS_ROOT, system)
-        return game_media_files(sysdir, self.paths_for(rom, system) if paths is None else paths)
+        # media that was there under those names before the app handed the game to ES is the
+        # owner's (a copy of theirs scraped, art they put there): never the app's to delete
+        theirs = their_media(rec)
+        return [f for f in game_media_files(sysdir, self.paths_for(rom, system) if paths is None else paths)
+                if os.path.normpath(f) not in theirs]
 
     def uninstall(self, rom, system):
         """Delete the rom's files (never saves/states, never outside
@@ -1103,7 +1149,8 @@ class Library:
                 inst.pop(rid, None)
         try:
             if gone:
-                _core.append_gamelist({"system": system, "remove": gone})
+                # (its own media went with made_media above; the rest listed for it is the owner's)
+                _core.append_gamelist({"system": system, "remove": gone, "keep_media": True})
         finally:
             try:
                 self.update(drop)
@@ -1534,6 +1581,31 @@ def es_media_file_here(sysdir, game_path, tag):
 MADE_MEDIA_TAGS = ("image", "thumbnail", "video", "manual") + EXTRA_ART     # what a download fills
 
 
+def es_named_media(sysdir, paths, tags=MADE_MEDIA_TAGS):
+    """{tag: [files]} of the media files there are under the names ES gives what it is sent
+    for a game made of `paths` (images/<stem>-image.png, videos/<stem>-video.mp4...: the
+    stem of each path), whoever put them there."""
+    stems = {os.path.splitext(os.path.basename(os.path.normpath(p)))[0] for p in paths if isinstance(p, str)}
+    stems.discard("")
+    out = {}
+    for tag in tags:
+        d = os.path.join(sysdir, {"video": "videos", "manual": "manuals"}.get(tag, "images"))
+        for stem in sorted(stems):
+            for x in ES_MEDIA_FILE_EXTS.get(tag, IMAGE_EXTS):
+                f = os.path.join(d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x))
+                if os.path.isfile(f) and f not in out.get(tag, ()):
+                    out.setdefault(tag, []).append(f)
+    return out
+
+
+def their_media(rec):
+    """The media files an install record says were the owner's when the app handed the game
+    to ES (its gamelist entry's "theirs_media"), as normalised paths; none for an older record."""
+    tm = ((rec or {}).get("meta") or {}).get("theirs_media") if isinstance((rec or {}).get("meta"), dict) else None
+    return {os.path.normpath(f) for fs in (tm.values() if isinstance(tm, dict) else ())
+            if isinstance(fs, list) for f in fs if isinstance(f, str)}
+
+
 def game_media_files(sysdir, paths):
     """The media files ES keeps under the names it gives what the app sends it for a game
     made of `paths` (images/<stem>-image.png, videos/<stem>-video.mp4, manuals/...; the stem
@@ -1541,16 +1613,9 @@ def game_media_files(sysdir, paths):
     system folder has that stem (ES would name its media the same), and no other
     gamelist.xml entry names the file. A gamelist.xml that can't be read keeps them all.
     Media under any other name (a user's own) is never in it."""
-    stems = {os.path.splitext(os.path.basename(os.path.normpath(p)))[0] for p in paths}
-    stems.discard("")
     found = []
-    for tag in MADE_MEDIA_TAGS:
-        d = os.path.join(sysdir, {"video": "videos", "manual": "manuals"}.get(tag, "images"))
-        for stem in sorted(stems):
-            for x in ES_MEDIA_FILE_EXTS.get(tag, IMAGE_EXTS):
-                f = os.path.join(d, "%s-%s%s" % (stem, ES_FILE_NAMES.get(tag, tag), x))
-                if os.path.isfile(f) and f not in (g for _, g in found):
-                    found.append((stem, f))
+    for files in es_named_media(sysdir, paths).values():
+        found += [(os.path.basename(f).rsplit("-", 1)[0], f) for f in files if f not in (g for _, g in found)]
     if not found:
         return []
     gone = {os.path.normpath(p) for p in paths}

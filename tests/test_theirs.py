@@ -132,3 +132,27 @@ def test_a_folder_left_with_only_a_translation_isnt_the_game(isolated):
     _w(os.path.join(d, GAME + " [T-En].cue"), b'FILE "x.bin" BINARY\n')
     lib = rommlib.Library()
     assert not lib.is_installed(ROM, "psx") and lib.paths_for(ROM, "psx") == []
+
+
+def test_a_bin_your_own_mix_sheet_uses_stays_when_its_game_goes(isolated):
+    """Round 12: Game Wizard's loose cue/bin with the owner's My Mixtape.cue naming the same bin:
+    Delete took the bin (found by its name, not through a sheet) and broke the mixtape."""
+    b = _w(os.path.join(_sys(), GAME + ".bin"))
+    cue = _w(os.path.join(_sys(), GAME + ".cue"), ('FILE "%s.bin" BINARY\n' % GAME).encode())
+    _w(os.path.join(_sys(), "My Mixtape.cue"), ('FILE "%s.bin" BINARY\n' % GAME).encode())
+    assert rommlib.their_files([cue, b], "psx") == [cue]
+
+
+def test_a_file_swapped_while_the_delete_confirm_is_open_stays(isolated):
+    """Round 12: the confirm named Alter Ego's .nes; the owner replaced it while it was up; Delete
+    took the new file. What the confirm names is pinned when it opens."""
+    p = _w(os.path.join(_sys(), GAME + ".chd"), b"x" * 50)
+    lib = rommlib.Library()
+    files = lib.their_files(ROM, "psx")
+    pins = rommlib.pin_files(files)
+    os.remove(p)
+    _w(p, b"y" * 50)                                     # same size, a new file
+    lib.delete_theirs(ROM, "psx", files, pins)
+    assert open(p, "rb").read() == b"y" * 50
+    rommlib.delete_game("psx", p, lib, pins=pins)        # Free up space: the same
+    assert os.path.exists(p)

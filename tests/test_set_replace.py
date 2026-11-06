@@ -358,7 +358,7 @@ def test_a_playlist_replaced_alone_tells_what_went_when_a_file_wont_go(isolated,
     with pytest.raises(PermissionError):
         d._delete_own("psx", [a, b])
     assert not os.path.exists(a) and os.path.exists(b)
-    assert {"system": "psx", "remove": [a]} in _queue()
+    assert {"system": "psx", "remove": [a], "keep_media": True} in _queue()
     assert set(lib.snapshot()) == {"6"}
 
 
