@@ -1,0 +1,11 @@
+# Cross-builds extract-xiso + zarchive for Batocera aarch64 on an x86_64 host, for
+# plain armv8-a (one binary for every 64-bit ARM box). Debian 12 (glibc 2.36);
+# zstd is built from source and linked in statically, as are libstdc++/libgcc.
+# qemu-user-static runs the built tools for the round-trip check.
+FROM debian:bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential crossbuild-essential-arm64 cmake git ca-certificates file binutils \
+        binutils-aarch64-linux-gnu qemu-user-static \
+    && rm -rf /var/lib/apt/lists/*
+COPY build.sh /build.sh
+ENTRYPOINT ["/build.sh"]

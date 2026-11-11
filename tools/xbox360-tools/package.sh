@@ -1,16 +1,17 @@
 #!/bin/bash
-# Package out/x86_64 (built by ./make.sh) for the GitHub release RomM-o-Cera downloads:
-#   out/xbox360-tools-<ver>-x86_64.tar.gz   one top-level dir: extract-xiso, zarchive,
+# Package out/<arch> (built by ./make.sh <arch>; x86_64 or aarch64) for the GitHub release
+# RomM-o-Cera downloads:
+#   out/xbox360-tools-<ver>-<arch>.tar.gz   one top-level dir: extract-xiso, zarchive,
 #                                           LICENSES/ (exact upstream texts), SOURCE.txt, README.txt
 #   out/xbox360-tools-<ver>-src.tar.xz      the exact sources built (extract-xiso, ZArchive,
 #                                           zstd) + this build recipe
-#   out/SHA256SUMS
-# Both archives are reproducible from the same src/ checkout and out/x86_64 files
+#   out/SHA256SUMS                          every archive of this version packaged so far
+# Both archives are reproducible from the same src/ checkout and out/<arch> files
 # (fixed mtimes, sorted, numeric root owner, gzip -n).
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE/out"
-B=x86_64
+B=${1:-x86_64}
 VER=$(sed -n 's/^xbox360-tools \([^ ]*\) .*/\1/p' "$B/BUILDINFO")
 commit() { sed -n "s#^$1: https://github.com/[^ ]*/tree/\([0-9a-f]*\).*#\1#p" "$B/BUILDINFO"; }
 EX=$(commit extract-xiso); ZA=$(commit zarchive); ZS=$(commit zstd)
@@ -29,7 +30,7 @@ rm -rf srcpkg && mkdir -p "srcpkg/$NAME-src/recipe"
 git -C "$HERE/src/extract-xiso" archive "$EX" | tar -x -C "srcpkg/$NAME-src" --one-top-level=extract-xiso
 git -C "$HERE/src/ZArchive"     archive "$ZA" | tar -x -C "srcpkg/$NAME-src" --one-top-level=ZArchive
 git -C "$HERE/src/zstd"         archive "$ZS" | tar -x -C "srcpkg/$NAME-src" --one-top-level=zstd
-cp "$HERE"/{Dockerfile,make.sh,build.sh,package.sh} "srcpkg/$NAME-src/recipe/"
+cp "$HERE"/{Dockerfile,Dockerfile.aarch64,make.sh,build.sh,package.sh} "srcpkg/$NAME-src/recipe/"
 cat > "srcpkg/$NAME-src/README.txt" <<TXT
 Corresponding source for xbox360-tools $VER (RomM-o-Cera's optional Xbox 360
 download), exactly as built:
@@ -37,7 +38,7 @@ download), exactly as built:
   extract-xiso/  https://github.com/XboxDev/extract-xiso  commit $EX
   ZArchive/      https://github.com/Exzap/ZArchive        commit $ZA
   zstd/          https://github.com/facebook/zstd         commit $ZS ($ZSTAG)
-  recipe/        Dockerfile, make.sh, build.sh, package.sh (tools/xbox360-tools/
+  recipe/        Dockerfile, Dockerfile.aarch64, make.sh, build.sh, package.sh (tools/xbox360-tools/
                  in https://github.com/fraygox/romm-o-cera)
 
 Each directory is "git archive" of that commit, unmodified. To rebuild: put the
@@ -53,11 +54,11 @@ chmod 755 "pkg/$NAME/extract-xiso" "pkg/$NAME/zarchive"
 cp "$B/LICENSE-extract-xiso.txt" "$B/LICENSE-ZArchive.txt" "$B/LICENSE-zstd.txt" "$B/COPYING-zstd.txt" \
    "pkg/$NAME/LICENSES/"
 cat > "pkg/$NAME/README.txt" <<TXT
-xbox360-tools $VER for Batocera x86_64
+xbox360-tools $VER for Batocera $B
 
 Two command-line tools RomM-o-Cera (https://github.com/fraygox/romm-o-cera)
 downloads when you turn on converting Xbox 360 disc images to .zar, the
-compressed archive format xenia-canary opens directly:
+compressed archive format Xenia (xenia-canary, xenia-edge) opens directly:
 
   extract-xiso  extracts the game (XDVDFS) partition of an Xbox / Xbox 360
                 disc image into a folder
@@ -70,7 +71,7 @@ and LICENSES/ for their licenses. Needs glibc 2.36 or newer (Batocera 43.1 has 2
 This product includes software developed by in <in@fishtank.com>.
 TXT
 cat > "pkg/$NAME/SOURCE.txt" <<TXT
-xbox360-tools $VER for Batocera x86_64, shipped as an optional download by
+xbox360-tools $VER for Batocera $B, shipped as an optional download by
 RomM-o-Cera (https://github.com/fraygox/romm-o-cera).
 
 extract-xiso
@@ -112,5 +113,5 @@ zstd as a static library with ZSTD_LEGACY_SUPPORT=OFF; glibc stays dynamic.
 $(cat "$B/BUILDINFO")
 TXT
 "${TAR[@]}" -C pkg -cf - "$NAME" | gzip -n -9 > "$NAME-$B.tar.gz"
-sha256sum "$NAME-$B.tar.gz" "$SRCNAME" | tee SHA256SUMS
+sha256sum $(ls "$NAME"-x86_64.tar.gz "$NAME"-aarch64.tar.gz 2>/dev/null) "$SRCNAME" | tee SHA256SUMS
 ls -la "$NAME-$B.tar.gz" "$SRCNAME"
