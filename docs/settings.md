@@ -22,6 +22,18 @@ The rows that aren't a setting do something when you press A:
 - **Test connection** asks RomM for its platform list right now and says how
   many platforms it found, or why it couldn't.
 
+**Downloads**
+
+- **Arcade games go to** switches where RomM's arcade platform lands:
+  `roms/fbneo` (forgiving about romset versions) or `roms/mame` (needs exact
+  sets).
+
+The other rows are settings, each explained in the panel when it's selected
+and listed with its key under [`config.json`](#configjson): among them
+**Confirm button** and **Button labels** (Controller), **Download speed while
+playing** and **Popup when downloads finish** (Downloads), **Sounds** and
+**Cover cache limit** (This app).
+
 **Metadata**
 
 What the app tells EmulationStation about a game, when it downloads one and
@@ -138,7 +150,7 @@ seven, six or four. It takes effect at once.
 | `wua` | `false` | Decrypt Wii U discs: `.wud`/`.wux` discs whose disc key is here become `.wua` for Cemu (turning it on in Settings downloads wuatool and copies the disc keys in RomM's Wii U firmware into `bios/wiiukeys`); a disc without its key becomes `.wux` |
 | `theme` | `default` | colours: `custom` (your own, from the four `theme_custom_` keys), `default`, `playstation`, `xbox`, `nintendo` (Kyoto), `virtualboy` (Red Visor), or any of them with `_oled` (pure black background), e.g. `xbox_oled`; `high_contrast`, `high_contrast_light`; `dmg` (Brick), `famicom` (Red & White), `snes` (Lavender), `megadrive`, `dreamcast`, `gamecube` (Indigo Cube), `n64` (Sixty-Four), `turbografx`, `neogeo`, `atari`, `c64`, `phosphor`, `amber`, `synthwave`, `sakura`, `nord`, `solarized`, `dracula`, `paper` |
 | `theme_auto` | `false` | `true`: a PlayStation, Xbox or Nintendo controller picks the theme made for it (Match theme to controller) |
-| `theme_custom_accent` | `195` | the Custom theme's accent: a hue in degrees, `0`–`359` (0 red, 120 green, 240 blue); Settings steps it by 15 |
+| `theme_custom_accent` | `195` | the Custom theme's accent: a hue in degrees, `0`–`359` (0 red, 120 green, 240 blue); the Custom theme screen steps it by 15 |
 | `theme_custom_tint` | `225` | the hue the Custom theme's backgrounds and greys lean toward, `0`–`359` |
 | `theme_custom_strength` | `30` | how far they lean: `0` (neutral grey) to `100` |
 | `theme_custom_mode` | `dark` | the Custom theme's mode: `dark`, `oled` (pure black) or `light` |

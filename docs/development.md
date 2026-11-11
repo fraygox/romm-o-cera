@@ -34,8 +34,8 @@ bypasses the glyph helper:
 .venv/bin/python tools/shots.py /tmp/shots --readme     # also refresh the README's screenshots/
 ```
 
-Each scene is drawn once the app's background loads have landed (at most 50
-frames); `--fixed-wait` always waits the full 50. `--readme` copies the
+Each scene is drawn once the app's background loads have landed (at most 200
+frames); `--fixed-wait` always waits a full 50 instead. `--readme` copies the
 Xbox-style scenes named in `README_SET` (at the end of `tools/shots.py`) to
 `screenshots/`; `tools/release.py screenshots` runs exactly that. A new
 README picture is a new `README_SET` entry. `--theme xbox_oled` (any `theme`

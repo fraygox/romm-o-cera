@@ -260,7 +260,7 @@ you leave RomM-o-Cera); game info RomM-o-Cera added follows a moved game.
 
 ## Conversions
 
-Also in Downloads (L2/R2). The conversion running now, with its progress and
+Also in Activity (L2/R2). The conversion running now, with its progress and
 time left, then the queue and recent results. **A** on a queued one offers
 **Convert next** or **Remove from the queue** (the original stays as it is);
 on a failed one, **Try again**. **X** starts the queue now (when nothing is

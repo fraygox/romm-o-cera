@@ -39,9 +39,11 @@ are Select/Start).
 
 Arrows move · **Enter** or **Space** confirm · **Esc** or **Backspace** back ·
 **X** and **Y** as on a pad · **PgUp/PgDn** as L/R · `[` `]` as L2/R2 ·
-**Tab** Downloads · **Home** home · **Alt+F4** exits. In Search and text
-fields you just type: Enter runs the search or saves, Backspace deletes, Esc
-goes back. A keyboard and a pad work side by side.
+**Tab** Activity · **Home** home · **Alt+F4** exits. In Search and text
+fields you just type: Enter (or Home) runs the search or saves, Backspace
+deletes (hold it to keep deleting), PgUp/PgDn switch the on-screen keys as
+L/R do, Esc goes back. The letters type there, so **F2** stands in for Y
+(Welcome's Advanced), and the hints say F2. A keyboard and a pad work side by side.
 
 ## Touch and mouse
 
@@ -49,11 +51,16 @@ goes back. A keyboard and a pad work side by side.
   open it. While picking, one tap picks or unpicks it. A cover on a shelf
   (Home, Collections) works the same way: the first tap shows the game or
   collection in the panel, the second opens it.
+- Tapping the last cover in view on a shelf brings the next one into view
+  (and the first one, the one before it), so a finger reaches a whole shelf.
+- A second tap that lands on something the first tap only just opened (a
+  dialog's button, a setting in the section you opened) is ignored for a
+  moment, so a double tap never deletes or changes anything by itself.
 - Everything else takes one tap: Home's pills (Search, Platforms, Settings…),
   platform cards, On this box's rows, Space's tiles, Settings' sections and
   rows, menu entries, keyboard keys and dialog buttons.
 - Tap a button in the hint bar to press it, including **Home** and
-  **Downloads** at its right end.
+  **Activity** at its right end.
 - Tap the logo for Home, and the breadcrumbs beside it to go back a screen.
 - On a setting or menu row with a choice, a tap left of the value's middle
   (where ‹ is) steps back and anywhere else steps on. The hint bar's
@@ -81,8 +88,8 @@ Every list moves the same way:
   move one card. On a game's page they go to the previous or next game.
 - **L2/R2** (`[` `]`) jump to the previous or next letter in a list sorted
   by name, or to the previous or next system in a list grouped by system.
-  Where you land goes to the top of the list. Lists you can sort (Free up
-  space, Games from RomM) jump only while sorted by name.
+  Where you land goes to the top of the list. Lists you can sort (a platform's
+  games, Free up space, Games from RomM) jump only while sorted by name.
 - The hint bar shows L/R only when the list is longer than a page, and L2/R2
   only when there's somewhere to jump.
 - **X** opens the list's Actions menu: what you can do with the whole list, its
@@ -93,13 +100,13 @@ Every list moves the same way:
 
 Every list where you might act on more than one row picks them the same
 way: game lists, Games from RomM, Free up space, Leftovers, a system's games
-in Compress, Downloads, Check games' findings and Games ES can't see.
+in Compress, Activity, Check games' findings and Games ES can't see.
 
 1. **X** › **Pick several …** (or **Pick all**) starts picking.
 2. While picking, **A** picks or unpicks the row and moves to the next one.
 3. **X** (the hint says **Act on 3**) opens the menu with what you can do with the picks at the top
-   ("Download 3 picked", "Delete 3 picked", "Cancel 2"…), then Pick all,
-   Clear picks and Stop picking.
+   ("Download 3 picked", "Delete 3 picked", "Cancel 2"…), then Stop picking,
+   Pick all and Clear picks.
 4. **B** stops picking. The picks stay ticked (and in the menu) until you
    use or clear them.
 
@@ -125,6 +132,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, show (a collection's All / On this box / Not here pills), pick several | Search this platform or collection | A–Z |
 | A game's page | Download / Play now | Actions: more like this, Game night, delete or download again (on the box) | | |
 | Game night | The pick's page | Actions: players, only what's on this box | Roll again | |
+| Compare with RomM | Get RomM's copy / the newer one | Actions | Filter | |
 | Backlog | The game's page | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
@@ -142,7 +150,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Check games | Download again / open Games ES can't see (before the first check: Check now) | Actions: quick check, full check, download all damaged again, pick several | Quick check | System |
 | Games ES can't see | Its options: unpack, move, delete | Actions: pick several, pick all | | System |
 | Settings | Change / open | | | |
-| Theme picker | Keep this theme (Custom: open it) | Edit a copy | OLED on/off | |
+| Theme picker | Use this theme (Custom: open it) | Edit a copy | OLED on/off | |
 | Custom theme | Keep and use it | | | |
 
 While picking, A picks on every list that can, and X's menu starts with what
@@ -161,8 +169,8 @@ A few screens use more buttons:
   start) to reach the top matches beside it; there up/down pick one, A
   opens it (a game already on the box opens its menu: play now, delete or
   download again), and B or left/right go back to the keyboard.
-- **Text fields** (server address, API token, pairing code): Y is Shift,
-  **Start** saves and B cancels.
+- **Text fields** (server address, API token): Y is Shift, **Start** saves
+  and B cancels. The pairing code has no Shift, and **Start** pairs.
 - **Settings**: A opens a section from the hub, B goes back to it;
   left/right step through a setting's choices, L/R go to the previous or
   next section.

@@ -25,7 +25,7 @@ Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested against
 |---|---|
 | ![Platforms](screenshots/platforms.png) | ![A platform's games](screenshots/game-list.png) |
 | ![List menu: filters, pick, download all](screenshots/menu.png) | ![Search](screenshots/search.png) |
-| ![Collections: download a whole collection](screenshots/collections.png) | ![Downloads: queue, unpacking, waiting for space](screenshots/downloads.png) |
+| ![Collections: download a whole collection](screenshots/collections.png) | ![Activity: queue, unpacking, waiting for space](screenshots/downloads.png) |
 | ![Conversions: CHD and RVZ in the background](screenshots/conversions.png) | ![Settings in sections, with help](screenshots/settings.png) |
 | ![On this box](screenshots/on-this-box.png) | ![Manage a game on the box](screenshots/manage.png) |
 | ![Space: the whole drive, then each system](screenshots/storage.png) | ![Free up space](screenshots/free-up.png) |
@@ -110,10 +110,11 @@ On the box:
 
 1. **Main Menu → Game Settings → Update Gamelists**, so RomM-o-Cera shows up
    under **Pygame**.
-2. Open **Pygame → RomM-o-Cera**, then **Settings → Server address**, and
-   enter your RomM's address.
-3. **Settings → Pair with RomM**: in RomM press **Pair** on the token, and
-   type the code it shows (or type the token itself under **API token**).
+2. Open **Pygame → RomM-o-Cera**. A new box opens on **Welcome**: type your
+   RomM's address and press Start.
+3. In RomM press **Pair** on the token, and type the code it shows (or, under
+   **Advanced**, type the token itself). All of it is in **Settings** too:
+   see [Connecting to RomM](docs/connecting.md).
 
 Back on the home screen, your platforms load. **Hotkey + Start** exits.
 

@@ -124,7 +124,7 @@ SETTINGS = (
     Setting("wux", True,                # Wii U .wud -> .wux, lossless, no keys (downloads wuatool when turned on)
             row="wux", label="Wii U to .wux", sub="Lossless; Cemu opens .wux directly",
             help="Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs "
-                 "no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 2 MB), "
+                 "no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 3 MB), "
                  "downloaded by itself when needed."),
     Setting("wua", False,               # decrypt Wii U .wud/.wux -> .wua with the user's own disc keys (Cemu)
             row="wua", label="Decrypt Wii U discs", sub="Uses disc keys for games you own",
@@ -151,7 +151,7 @@ SETTINGS = (
             kind="choice", choices=DOWNLOAD_HOURS, effects=("downloader", "wake"),
             valid=lambda v: v == "any" or parse_hours(v) is not None,
             help="Downloads only start inside this window, e.g. overnight; one still running pauses when it "
-                 "closes. Download now in Downloads skips the wait."),
+                 "closes. Download now in Activity skips the wait."),
     Setting("background_downloads", True,  # keep downloading after the app exits
             row="bgdl", label="Keep downloading after exit", sub="Finishes the queue while you play",
             kind="onoff",

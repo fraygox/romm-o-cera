@@ -13936,7 +13936,7 @@
   "esimage": "The big picture EmulationStation shows for a game: RomM's screenshot, or its box art. The small one stays the box art. RomM has a screenshot only when its config.yml scan: media: stores them.",
   "estags": "Tells EmulationStation the game's region (its flag), languages and series, from RomM's file-name tags and metadata.",
   "esvideo": "Brings each game's video clip from RomM, up to this size; a bigger one is left out. RomM stores videos only when its config.yml scan: media: lists video.",
-  "hours": "Downloads only start inside this window, e.g. overnight; one still running pauses when it closes. Download now in Downloads skips the wait.",
+  "hours": "Downloads only start inside this window, e.g. overnight; one still running pauses when it closes. Download now in Activity skips the wait.",
   "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits for room; smaller ones keep going.",
   "manuals": "Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation.",
   "notify": "A popup in EmulationStation when background downloads finish.",
@@ -13961,7 +13961,7 @@
   "url": "Your RomM's address, e.g. https://romm.example.com. {A} edits it. Plain http:// sends the token unencrypted.",
   "whatsnew": "This version's release notes from GitHub: what changed, in a minute's read.",
   "wua": "Turns Wii U discs into .wua for Cemu with the disc keys of games you own: in Cemu's keys.txt, bios/wiiukeys or RomM's Wii U firmware (none come with the app). Checked first; a .wua can't become the disc image again. A disc without its key becomes a .wux.",
-  "wux": "Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 2 MB), downloaded by itself when needed.",
+  "wux": "Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs no keys: checked byte for byte before the .wud is deleted. Needs wuatool (about 3 MB), downloaded by itself when needed.",
   "xboxboot": "xemu boots only a disc's game partition (a full image says \"Please insert an Xbox disc\"). This keeps just that part and renames .xiso to .iso so EmulationStation lists them.",
   "z3ds": "Compresses decrypted 3DS games to Azahar's .zcci, often 40-60% smaller. Lossless, verified before the original is deleted; encrypted dumps are left alone.",
   "zar": "Turns Xbox 360 images into .zar for xenia-canary, often 40-60% smaller. It keeps the game's files, not the whole disc, each checked before the image is deleted. Downloads two small tools once."

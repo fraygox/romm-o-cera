@@ -33,7 +33,7 @@ over with a short code instead:
    box (scopes in the [README](../README.md#1-make-a-romm-token)) or pick an
    existing one, and press **Pair**. RomM shows an 8-character code.
 3. In the app: **Settings → Pair with RomM**, type the code (upper or lower
-   case, dashes and spaces are ignored) and press **Save** (or Start). The
+   case, dashes and spaces are ignored) and press **Pair** (or Start). The
    code works once and only for about a minute, so have the box ready first.
 
 The app swaps the code for the token (`POST /api/client-tokens/exchange`,

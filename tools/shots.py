@@ -34,7 +34,7 @@ ap.add_argument("--readme", action="store_true",
                 help="also copy the README set (Xbox style) into screenshots/ next to the app")
 ap.add_argument("--fixed-wait", action="store_true",
                 help="old pacing: always wait the full 50 frames per scene instead of drawing as soon as "
-                     "the app's background work has settled (50 frames stays the upper bound either way)")
+                     "the app's background work has settled (which gives up after 200)")
 args = ap.parse_args()
 
 work = tempfile.mkdtemp(prefix="rb-shots-")

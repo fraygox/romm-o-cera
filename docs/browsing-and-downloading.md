@@ -11,7 +11,7 @@
   with a green line for how much of it is already on the box. See
   [Collections](#collections).
 - **Home** is a rail of destinations (Search, Platforms, Collections,
-  Downloads, On this box, Settings) over shelves of covers: **Playing** and
+  Activity, On this box, Settings) over shelves of covers: **Playing** and
   **Backlog** (your RomM statuses, RomM 5 and newer), **Recommended for you**,
   **New in RomM** and **Collections**. A shelf with nothing in it, or one
   your RomM can't list, doesn't show. Up/down moves between the rail and the
@@ -73,7 +73,7 @@ with an older RomM the app picks from the list's pages.
 
 ### Backlog
 
-**Collections › Your RomM lists › Backlog** lists the games you marked
+**Collections › Browse by › Backlog** lists the games you marked
 Backlog in RomM, in RomM's order: a cover, on-the-box tick or size, and
 **Waits for space** in amber for those that won't fit yet. The panel sums up
 **Download my backlog** (**Y**): the total, how many aren't here yet, what
@@ -255,7 +255,7 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
   space left afterwards.
 - **Multi-disc games** download as a set: one entry in EmulationStation (an
   `.m3u` playlist, the single discs hidden), and discs you already have are
-  reused. "Only this disc" is there too.
+  reused. "Only disc N" is there too.
 - Downloads are **resumable**, **checked against RomM's checksums** (zips
   member by member) and retried on network errors. When RomM (or the proxy
   in front of it) says it's busy, the app sends it fewer requests at once
@@ -297,7 +297,7 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
 ### Play now
 
 A game you've just downloaded can start straight away: **Play now** is in
-the game's page (A on a game on the box), in its row's menu on the Downloads
+the game's page (A on a game on the box), in its row's menu on the Activity
 screen, and the "Ready" toast says so (tapping the toast plays it).
 RomM-o-Cera closes and EmulationStation starts the game a few seconds later (up to about half a
 minute if a game is being put in place at that moment).
@@ -319,7 +319,7 @@ before starting a game (a system with missing BIOS files), it asks then too.
 
 ### Activity: downloads and compressing
 
-**Select** opens it from anywhere (Home's Downloads too). The line on top says
+**Select** opens it from anywhere (Home's Activity pill too). The line on top says
 when everything is done (downloads at their smoothed speed, plus the running
 conversion and the ones queued behind it), with one bar for all of it.
 When that can't be told yet it says what's going on instead (Downloading,

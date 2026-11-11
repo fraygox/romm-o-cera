@@ -270,6 +270,8 @@ def cmd_stable(a):
     old = version()
     new = a.version or bump(old, a.bump)
     tag = "v" + new
+    if tuple(map(int, new.split("."))) <= tuple(map(int, old.split("+")[0].split("."))):
+        sys.exit("%s isn't newer than %s" % (new, old))
     if git("tag", "--list", tag):
         sys.exit("%s exists already" % tag)
     today = datetime.date.today().isoformat()

@@ -85,5 +85,5 @@ if cfg.get("update_channel") != "nightly":
 PY
 fi
 echo "Installed $(python3 -c "import sys;sys.path.insert(0,'$DEST');import rommlib;print('romm-o-cera v'+rommlib.VERSION_LABEL)") to $DEST"
-echo "Next: Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera → Settings"
-echo "      to enter your RomM URL and client API token."
+echo "Next: Main Menu → Game Settings → Update Gamelists, then Pygame → RomM-o-Cera."
+echo "      It opens on Welcome: type your RomM's address, then the code from RomM's Pair button."

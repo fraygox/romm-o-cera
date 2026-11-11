@@ -6,7 +6,7 @@ app's log.
 
 ## The version
 
-It's in the bottom right corner of every screen (`v0.12.2`; a nightly build
+It's in the bottom right corner of every screen (`v0.12.3`; a nightly build
 adds its date and commit). **Settings** shows it with its date at the bottom
 of the right panel, under the app's name. If you can't get that far, say
 which release you installed.

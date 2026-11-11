@@ -19,7 +19,7 @@ theme you use now.
 
 | Button | What it does |
 |---|---|
-| **A** | Keep this theme (on the Custom card: open it) |
+| **A** | Use this theme (on the Custom card: open it) |
 | **B** | Back, with the theme you had |
 | **Y** | Switch the card to its OLED version, or back (only on cards with an OLED pill) |
 | **X** | Edit a copy: start your Custom theme from this one |
