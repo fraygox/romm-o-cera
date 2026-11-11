@@ -47,7 +47,7 @@ def main():
         os.makedirs(rommlib.DATA_DIR, exist_ok=True)
     except OSError:                  # a full disk: start anyway (Free up space is in here)
         pass
-    rommlib.log("start")
+    rommlib.log("start v%s" % rommlib.VERSION_LABEL)
     register_self()
     app = App(screen)
     try:

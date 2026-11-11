@@ -6,9 +6,10 @@ app's log.
 
 ## The version
 
-**Settings** shows it in the About line at the bottom of its right panel
-(a nightly build shows its date and commit too). If you can't reach Settings,
-the log's `start` lines are enough.
+It's in the bottom right corner of every screen (`v0.12.2`; a nightly build
+adds its date and commit). **Settings** shows it with its date at the bottom
+of the right panel, under the app's name. If you can't get that far, say
+which release you installed.
 
 ## The log
 
@@ -26,12 +27,12 @@ every 10 MB). To get it off the box, pick one:
   `romm-browser.log`.
 - **SSH** (user `root`, password `linux` unless you changed it):
   ```sh
-  scp root@batocera:/userdata/system/romm-browser/romm-browser.log .
+  scp root@batocera:/userdata/system/romm-browser/romm-browser.log .   # or the box's IP address
   ```
 
 Make the problem happen first, then copy the file, so the log holds it. Read
-it over before you post it: it names your games, and its error lines can
-name your RomM server's address. Remove what you don't want public.
+it over before you post it: it names your games and the files they were
+saved as. Remove what you don't want public.
 
 **Never post `config.json`** from that folder: it holds your RomM token.
 
@@ -44,8 +45,12 @@ lines like these:
 
 ```
 pads: Batocera has mappings for 257
-pad: Steam Deck [03000000de2800000512000011010000] 24 buttons, 10 axes, 0 hats: mapped
+pad: Steam Deck [03000000de2800000512000011010000] 24 buttons, 6 axes, 2 hats: mapped
 ```
+
+The first line counts the controllers Batocera ships or holds a mapping for
+(a few hundred), not the ones connected. Each `pad:` line is one connected
+controller: its name, its ID, what it has, and how the app reads it.
 
 - **`mapped`**: the app reads the pad through Batocera's mapping for it. A
   wrong button is wrong in that mapping: map the pad again in EmulationStation
@@ -59,7 +64,8 @@ pad: Steam Deck [03000000de2800000512000011010000] 24 buttons, 10 axes, 0 hats: 
   EmulationStation's `es_input.cfg` at all.
 
 Say also what the pad is (make and model, USB or Bluetooth, or the handheld
-it's built into) and your Batocera version (**Main menu → System settings → Information**).
+it's built into) and your Batocera version (the last line of
+EmulationStation's **Main menu**).
 A keyboard and the touch screen keep working while a controller doesn't
 ([Controls](controls.md)).
 
