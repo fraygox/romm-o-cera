@@ -1824,6 +1824,69 @@
    ],
    "wake": 0
   },
+  "bare/defaults/speedall/left": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 2
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/speedall/ok": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/speedall/right": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
   "bare/defaults/squashfs/left": {
    "bg": 0,
    "cfg": {},
@@ -4168,6 +4231,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/speedall/left": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 2
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/speedall/ok": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/speedall/right": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/squashfs/left": {
    "bg": 0,
    "cfg": {
@@ -6427,6 +6538,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/defaults/speedall/left": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 2
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/speedall/ok": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/speedall/right": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/defaults/squashfs/left": {
    "bg": 0,
    "cfg": {
@@ -8595,6 +8754,51 @@
    "bg": 0,
    "cfg": {
     "speed_while_playing": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/speedall/left": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 2
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/speedall/ok": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/speedall/right": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
    },
    "gone": [],
    "modal": null,
@@ -10805,6 +11009,54 @@
    "bg": 0,
    "cfg": {
     "speed_while_playing": 5
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/speedall/left": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 2
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/speedall/ok": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/speedall/right": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
    },
    "gone": [],
    "modal": null,
@@ -13100,6 +13352,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/speedall/left": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 2
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/speedall/ok": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/speedall/right": {
+   "bg": 0,
+   "cfg": {
+    "download_speed": 50
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/squashfs/left": {
    "bg": 0,
    "cfg": {
@@ -13949,6 +14249,7 @@
   "rvz": "Turns GameCube, Wii and Triforce images into RVZ, usually 30-60% smaller and lossless; the original is deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once.",
   "sounds": "Clicks and chimes while you browse.",
   "speed": "Caps background downloads while a game runs, so online play and streaming stay smooth.",
+  "speedall": "Caps downloads at this speed, in the app and in the background, so they don't take the whole connection.",
   "squashfs": "Packs Xbox games into squashfs, usually 15-45% smaller, which Batocera opens at launch. Lossless, verified before the original is deleted. Full disc images need Make Xbox images bootable.",
   "style": "Which symbols the hints show. Auto picks them from the controller's name.",
   "swap": "Which face button confirms. Batocera's default is the bottom one.",
@@ -14479,6 +14780,24 @@
     "Back"
    ]
   ],
+  "speedall": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L R",
+    "Section"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
   "squashfs": [
    [
     "A",
@@ -14845,6 +15164,12 @@
     "Finishes the queue while you play"
    ],
    [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
+   ],
+   [
     "speed",
     "Download speed while playing",
     "10 MB/s",
@@ -15169,6 +15494,12 @@
     "Keep downloading after exit",
     "On",
     "Finishes the queue while you play"
+   ],
+   [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
    ],
    [
     "speed",
@@ -15497,6 +15828,12 @@
     "Finishes the queue while you play"
    ],
    [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
+   ],
+   [
     "speed",
     "Download speed while playing",
     "No limit",
@@ -15823,6 +16160,12 @@
     "Finishes the queue while you play"
    ],
    [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
+   ],
+   [
     "speed",
     "Download speed while playing",
     "10 MB/s",
@@ -16141,6 +16484,12 @@
     "Keep downloading after exit",
     "On",
     "Finishes the queue while you play"
+   ],
+   [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
    ],
    [
     "speed",
@@ -16463,6 +16812,12 @@
     "Finishes the queue while you play"
    ],
    [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
+   ],
+   [
     "speed",
     "Download speed while playing",
     "No limit",
@@ -16783,6 +17138,12 @@
     "Finishes the queue while you play"
    ],
    [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
+   ],
+   [
     "speed",
     "Download speed while playing",
     "10 MB/s",
@@ -17101,6 +17462,12 @@
     "Keep downloading after exit",
     "On",
     "Finishes the queue while you play"
+   ],
+   [
+    "speedall",
+    "Download speed limit",
+    "No limit",
+    "Leaves room for the rest of the house"
    ],
    [
     "speed",

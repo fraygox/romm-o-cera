@@ -353,6 +353,7 @@ class Job:
         self.done_bytes = 0
         self.total_bytes = rom.get("fs_size_bytes") or 0
         self.speed = 0.0
+        self.last_data = 0.0          # when the transfer last got anything (stalled: none for STALLED_AFTER s)
         self.message = ""
         self.chd_queued = False
         self.chd_task = None
@@ -388,6 +389,13 @@ class Job:
     @property
     def active(self):
         return self.state in (Job.QUEUED, Job.DOWNLOADING, Job.VERIFYING, Job.EXTRACTING)
+
+    def stalled(self, now=None):
+        """Seconds the running transfer has gone without a byte, once that's STALLED_AFTER or more; else 0."""
+        if self.state != Job.DOWNLOADING or not self.last_data:
+            return 0
+        gone = (time.time() if now is None else now) - self.last_data
+        return gone if gone >= STALLED_AFTER else 0
 
     def requeue(self):
         self.state, self.message, self.pause, self.resume = Job.QUEUED, "", False, False
@@ -429,6 +437,8 @@ def _kill_group(p):
 
 
 RETRY_DELAYS = (15, 60, 180)        # seconds before attempts 2, 3, 4
+STALLED_AFTER = 10                  # seconds with nothing arriving before a transfer is called stalled
+AUTH_HOLD = "RomM rejected the token: pair again in Settings, then resume"
 SPACE_RECHECK = 30                  # seconds between free-space checks for a waiting download
 WORKER_POLL = 1.0                   # seconds a download/unpack worker sleeps before re-checking its queue
 
@@ -650,6 +660,7 @@ class Downloader:
         self.cv = threading.Condition()
         self.hold = False             # "Pause all": the worker starts nothing new
         self.rate_limit = 0           # bytes/s, 0 = unlimited (rb_dl.py sets it while a game runs)
+        self.hold_why = ""            # why the queue was put on hold by itself (RomM turned the token away)
         self.unpacking_bytes = 0      # space games handed to the post thread will still take
         self.es = _es.load_es_systems()
         self.unopenable = _es.load_es_unopenable()  # listed by ES, but its emulator can't open them
@@ -689,6 +700,9 @@ class Downloader:
                     self.cv.notify_all()
                     break
             else:
+                # downloaded before and finished: this download is its row now (two "Ready to play"
+                # rows for one game otherwise, once it's deleted and downloaded again)
+                self.jobs = [x for x in self.jobs if not (x.rom["id"] == rom["id"] and x.state == Job.DONE)]
                 j = Job(rom, system, group)
                 self.jobs.append(j)
                 self.cv.notify_all()
@@ -733,6 +747,16 @@ class Downloader:
                 self.jobs.insert(min(len(self.jobs), i + 1), job)
         self.save_queue()
 
+    def speed_limit(self):
+        """Bytes a second downloads may take now, 0 for no limit: the lower of the limit set for
+        every download (download_speed) and the one while a game runs (rate_limit)."""
+        try:
+            always = float((self.cfg or {}).get("download_speed", 0) or 0) * 1e6
+        except (TypeError, ValueError):
+            always = 0
+        both = [x for x in (always, self.rate_limit) if x and x > 0]
+        return min(both) if both else 0
+
     def hold_all(self):
         """Pause the whole queue (the running transfer stops; its .part stays)."""
         with self.cv:
@@ -763,7 +787,7 @@ class Downloader:
 
     def release_all(self):
         with self.cv:
-            self.hold = False
+            self.hold, self.hold_why = False, ""
             for j in self.jobs:
                 if j.user_paused:                                  # one you paused yourself stays paused
                     continue
@@ -1105,6 +1129,13 @@ class Downloader:
                 _core.log("SPACE %s: %s (keeping %s free)" % (j.name, e, _core.human_size(_config.keep_free_bytes(self.cfg))))
             j.state, j.message, j.speed = Job.QUEUED, str(e), 0.0
             j.short_space, j.retry_at = e.short, time.time() + SPACE_RECHECK
+        elif isinstance(e, _core.AuthRejected):
+            # every download would fail the same way: they all wait, said once, until the box is
+            # paired again and the queue resumed
+            j.state, j.message, j.speed = Job.QUEUED, "", 0.0
+            if not self.hold:
+                _core.log("AUTH %s: %s; the queue is on hold" % (j.name, e))
+            self.hold, self.hold_why = True, AUTH_HOLD
         elif isinstance(e, OutsideHours):
             j.state, j.message, j.speed = Job.QUEUED, "Waiting for download hours", 0.0
             _core.log("HOURS %s: paused until %s" % (j.name, _config.hours_label(_config.config_value(self.cfg, "download_hours"))))
@@ -1235,6 +1266,9 @@ class Downloader:
         elif r.status_code in (429, 500, 502, 503, 504):
             _net.discard(r)
             raise NetError("RomM busy (HTTP %d)." % r.status_code)
+        elif r.status_code in (401, 403):
+            _net.discard(r)                # the token, not this game: the whole queue waits (see _failed)
+            raise _core.AuthRejected("RomM rejected the token (HTTP %d)" % r.status_code)
         elif r.status_code not in (200, 206):
             _net.discard(r)
             raise _core.RommError("Download failed: HTTP %d" % r.status_code)
@@ -1271,6 +1305,7 @@ class Downloader:
             j.done_bytes += have
             t0, b0 = time.time(), j.done_bytes
             lim_t0, lim_b = time.time(), 0
+            j.last_data = time.time()
             try:
                 with open(part, "ab" if have else "wb") as f:
                     for chunk in itertools.chain([head] if head else [], chunks):
@@ -1293,9 +1328,11 @@ class Downloader:
                         if dt >= 1.0:
                             j.speed = (j.done_bytes - b0) / dt
                             t0, b0 = time.time(), j.done_bytes
-                        if self.rate_limit:
+                        j.last_data = time.time()
+                        limit = self.speed_limit()
+                        if limit:
                             lim_b += len(chunk)
-                            ahead = lim_b / self.rate_limit - (time.time() - lim_t0)
+                            ahead = lim_b / limit - (time.time() - lim_t0)
                             if ahead > 0:
                                 time.sleep(min(ahead, 2.0))
                         else:

@@ -156,6 +156,12 @@ SETTINGS = (
             row="bgdl", label="Keep downloading after exit", sub="Finishes the queue while you play",
             kind="onoff",
             help="When you leave RomM-o-Cera, the queue keeps going in the background, also while you play."),
+    Setting("download_speed", 0,        # MB/s cap for every download (0 = no cap); the lower of this and the one below counts
+            row="speedall", label="Download speed limit", sub="Leaves room for the rest of the house",
+            kind="choice", choices=SPEEDS,
+            valid=_parses(lambda v: float(v or 0)),
+            help="Caps downloads at this speed, in the app and in the background, so they don't take the "
+                 "whole connection."),
     Setting("speed_while_playing", 0,   # MB/s cap for background downloads while a game runs (0 = no cap)
             row="speed", label="Download speed while playing", sub="Keeps online play and streaming smooth",
             kind="choice", choices=SPEEDS,

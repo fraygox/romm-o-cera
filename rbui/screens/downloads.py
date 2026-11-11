@@ -356,12 +356,15 @@ class DownloadsScreen(ListScreen):
         J, d = rommlib.Job, self.app.downloader
         if j.state == J.DOWNLOADING:
             frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
+            gone = getattr(j, "stalled", lambda: 0)()
+            if gone:                              # the old speed and time left would be a guess
+                return "Stalled: nothing from RomM for %d s" % gone, theme.AMBER
             if not j.speed:
                 return "%d%%" % (frac * 100), theme.BLUE
             st = "%s/s" % human_size(j.speed)
             if j.total_bytes:
                 st += " · %s left" % time_left(max(0, j.total_bytes - j.done_bytes) / j.speed)
-            return st + (" (slowed)" if d.rate_limit else ""), theme.BLUE
+            return st + (" (slowed)" if d.speed_limit() else ""), theme.BLUE
         if j.state == J.VERIFYING:
             return "Checking the file…", theme.BLUE
         if j.state == J.EXTRACTING:
@@ -458,7 +461,7 @@ class DownloadsScreen(ListScreen):
         live = [j for j in self.app.downloader.jobs if j.active or j.state == J.PAUSED]
         total = sum(max(j.total_bytes or j.rom.get("fs_size_bytes") or 0, j.done_bytes) for j in live)
         done = sum(j.done_bytes for j in live)
-        speed = self.smoothed(sum(j.speed for j in live if j.state == J.DOWNLOADING), now)
+        speed = self.smoothed(sum(j.speed for j in live if j.state == J.DOWNLOADING and not j.stalled(now)), now)
         dl = 0.0 if total <= done else (total - done) / speed if speed else None
         if any(j.state == J.PAUSED or (j.state == J.QUEUED and getattr(j, "short_space", 0)) for j in live):
             dl = None            # one is on hold (paused, no room for it): when it all ends can't be told
@@ -483,6 +486,8 @@ class DownloadsScreen(ListScreen):
         """(the line on top, its colour): never at odds with the rows under it."""
         d, J = self.app.downloader, rommlib.Job
         if d.hold and d.pending_count():
+            if getattr(d, "hold_why", ""):
+                return d.hold_why, theme.RED
             return "Downloads are paused: {X} Actions resumes them", theme.AMBER
         if not o["live"] and not o["convs"]:
             failed = sum(1 for j in d.jobs if j.state == J.FAILED)

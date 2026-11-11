@@ -247,7 +247,7 @@ DEFAULTS_LITERAL = [
     ("chd_low_memory", "auto"), ("keep_free_gb", 20), ("extract_parallel", True), ("rvz", False),
     ("xbox_bootable", True), ("squashfs", False), ("z3ds", True), ("zar", False), ("wux", True), ("wua", False), ("ps3_folders", True),
     ("ps3_decrypt", False), ("cache_limit_mb", 1024), ("download_hours", "any"), ("background_downloads", True),
-    ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("es_image", "screenshot"),
+    ("download_speed", 0), ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("es_image", "screenshot"),
     ("es_video_mb", 50), ("es_extra_art", True), ("es_tags", True), ("sounds", "normal"),
     ("collection_tiles", "medium"), ("theme", "default"), ("update_channel", "stable"),
     ("theme_auto", False),

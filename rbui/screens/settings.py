@@ -107,6 +107,7 @@ class SettingsScreen(Screen):
             table("keepfree"),
             table("overlap"),
             table("bgdl"),
+            table("speedall"),
             table("speed"),
             table("notify"),
             ("arcade", "Arcade games go to", "roms/" + arcade, "fbneo (forgiving) or mame (exact sets)"),
@@ -182,6 +183,7 @@ class SettingsScreen(Screen):
     SHOW = {
         "hours": lambda cfg: rommlib.hours_label(cfg["download_hours"]),
         "keepfree": lambda cfg: "%d GB" % float(cfg["keep_free_gb"]) if cfg["keep_free_gb"] else "Nothing (fill the disk)",
+        "speedall": lambda cfg: "%g MB/s" % float(cfg["download_speed"]) if cfg["download_speed"] else "No limit",
         "speed": lambda cfg: "%g MB/s" % float(cfg["speed_while_playing"]) if cfg["speed_while_playing"] else "No limit",
         "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(cfg["sounds"], "On"),
         "colltiles": lambda cfg: {"small": "Small", "medium": "Medium", "large": "Large"}.get(

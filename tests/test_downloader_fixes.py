@@ -223,3 +223,47 @@ def test_pause_all_sets_job_flags_under_the_lock(isolated):
     d.pause_all()
     assert seen == [True, True, True]
     assert all(j.pause and not j.resume for j in d.jobs)
+
+
+# ------------------------------------------------------------ downloads that explain themselves
+
+def test_a_rejected_token_puts_the_whole_queue_on_hold_once(isolated):
+    """RomM turns the token away mid-queue: the game goes back in the queue (not Failed), every
+    other download waits too, and one line says to pair again; Resume all clears it."""
+    api = _Api(answer=lambda url, h: _Resp(b"", 401))
+    d = _downloader(api)
+    j, k = rommlib.Job({"id": 1, "name": "G"}, "gba"), rommlib.Job({"id": 2, "name": "H"}, "gba")
+    d.jobs = [j, k]
+    dest = os.path.join(rommlib.ROMS_ROOT, "gba", "G.gba")
+    os.makedirs(os.path.dirname(dest))
+    with pytest.raises(rommlib.AuthRejected) as e:
+        d._fetch(j, "/g", dest, 20, {"file_name": "G.gba", "file_size_bytes": 20})
+    d._failed(j, e.value)
+    assert j.state == rommlib.Job.QUEUED and d.hold and "pair again" in d.hold_why
+    assert [x.state for x in d.jobs] == [rommlib.Job.QUEUED, rommlib.Job.QUEUED]      # nothing failed
+    d.save_queue = lambda: None
+    d.release_all()
+    assert not d.hold and d.hold_why == ""
+
+
+def test_a_transfer_with_nothing_arriving_is_stalled_not_fast():
+    j = rommlib.Job({"id": 1, "name": "G"}, "gba")
+    j.state, j.speed, j.last_data = rommlib.Job.DOWNLOADING, 5e6, 1000.0
+    assert j.stalled(now=1005.0) == 0                       # a pause in the stream: still its speed
+    assert j.stalled(now=1042.0) == 42.0
+    j.state = rommlib.Job.EXTRACTING
+    assert j.stalled(now=1042.0) == 0                       # only a transfer stalls
+
+
+def test_the_speed_limit_is_the_lower_of_the_two(isolated):
+    d = _downloader()
+    assert d.speed_limit() == 0
+    d.cfg["download_speed"] = 10
+    assert d.speed_limit() == 10e6
+    d.rate_limit = 2e6                                      # a game is running, capped lower
+    assert d.speed_limit() == 2e6
+    d.cfg["download_speed"], d.rate_limit = 1, 5e6
+    assert d.speed_limit() == 1e6
+    d.cfg["download_speed"] = "junk"
+    assert d.speed_limit() == 5e6
+    assert rommlib.DEFAULT_CONFIG["download_speed"] == 0

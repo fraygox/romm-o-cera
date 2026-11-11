@@ -30,8 +30,9 @@ The rows that aren't a setting do something when you press A:
 
 The other rows are settings, each explained in the panel when it's selected
 and listed with its key under [`config.json`](#configjson): among them
-**Confirm button** and **Button labels** (Controller), **Download speed while
-playing** and **Popup when downloads finish** (Downloads), **Sounds** and
+**Confirm button** and **Button labels** (Controller), **Download speed
+limit**, **Download speed while playing** and **Popup when downloads finish**
+(Downloads), **Sounds** and
 **Cover cache limit** (This app).
 
 **Metadata**
@@ -126,6 +127,7 @@ seven, six or four. It takes effect at once.
 | `check_updates` | `true` | daily check of GitHub for a newer version (sends no data beyond the request); `false`: only when you select Updates |
 | `update_channel` | `stable` | `stable`: releases; `nightly`: also builds of the newest changes ([Updating](../README.md#updating)) |
 | `background_downloads` | `true` | keep downloading after the app exits |
+| `download_speed` | `0` | MB/s cap for every download, in the app and in the background (`0` = none) |
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
 | `download_hours` | `any` | `any`, or a local-time window like `1-7` / `22-6` |
 | `keep_free_gb` | `20` | downloads and conversions leave at least this much free (GB); a download that doesn't fit waits for space (`0` = no reserve beyond a small margin) |

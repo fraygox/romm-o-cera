@@ -328,6 +328,12 @@ nothing is left, how many downloads failed, if any.
 Downloads are on the left, what this box is compressing on the right;
 **left/right** moves between them.
 
+A download that gets nothing from RomM for ten seconds says **Stalled**
+instead of a speed. If RomM turns the token away while the queue runs, the
+whole queue goes on hold with one line saying so, and nothing is marked
+failed: pair again in Settings, then resume from the **X** menu. A game
+downloaded again takes the place of its earlier finished row.
+
 On the left, the queue comes first, in the order it
 runs, then finished downloads, newest first. **A** on a download gives its
 options: move it to the top, up or down, Download now (outside the download
