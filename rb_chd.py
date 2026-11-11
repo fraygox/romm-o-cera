@@ -771,6 +771,70 @@ def _tree(root):
     return out
 
 
+# A few retail Xbox 360 discs hold no game of their own: default.xex is a small
+# stub that asks the console to start a package on the disc (an arcade title,
+# content/0000000000000000/<title id>/000D0000/<name>), with the game's add-ons
+# and update as more packages beside it. xenia-canary can't follow that from a
+# disc Batocera names on its command line: it writes down what to start, asks
+# to be restarted, and Batocera starts the stub again, every time, from the
+# .iso and a .zar alike. Such a disc becomes what Batocera does start: its
+# packages in a "Game.packages" folder and a one-line "Game.xbox360" launcher
+# naming the title's package in it.
+PACKAGE_DIR_EXT = ".packages"
+PACKAGE_LAUNCHER_EXT = ".xbox360"
+PACKAGE_STUB_MAX = 1 << 20      # a launcher stub is tens of KB; a game's own default.xex is megabytes
+PACKAGE_TITLE = 0x000D0000      # the content type of a package that is a game (an arcade title)
+_PACKAGE_RE = re.compile(r"^content/0000000000000000/[0-9a-f]{8}/([0-9a-f]{8})/[^/]+$", re.I)
+_PACKAGE_KEEP = ("content/", "$titleupdate/")      # what the folder keeps: the packages and the game's update
+_PACKAGE_OF = {}                # this run's {".part" folder or launcher: the title's package in it / its folder}
+
+
+def package_disc(listing):
+    """The one title package a disc's stub starts (its path on the disc), or
+    None for a disc that is a game itself. listing: {path: size}, the disc's
+    files. Only when the answer is plain: a small default.xex, no other
+    program on the disc, and exactly one title package."""
+    low = {p.lower(): p for p in listing}
+    stub = low.get("default.xex")
+    if stub is None or listing[stub] > PACKAGE_STUB_MAX \
+            or any(p.endswith(".xex") and p != "default.xex" for p in low):
+        return None
+    titles = [p for l, p in low.items() if _PACKAGE_RE.match(l)
+              and int(_PACKAGE_RE.match(l).group(1), 16) == PACKAGE_TITLE]
+    return titles[0] if len(titles) == 1 else None
+
+
+def _title_package(path):
+    """path is a signed Xbox 360 package (CON, LIVE or PIRS) holding a game."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(0x348)
+    except OSError:
+        return False
+    return head[:4] in (b"CON ", b"LIVE", b"PIRS") and len(head) == 0x348 \
+        and int.from_bytes(head[0x344:0x348], "big") == PACKAGE_TITLE
+
+
+def _package_folder(work, files, crcs, title, tmp):
+    """The packages of a disc that only starts one (package_disc), moved from
+    the extracted files to the folder tmp; each compared with its CRC32 where
+    it landed, and on disk before the caller deletes the image."""
+    _drop(tmp)                                      # half a folder from an interrupted run
+    keep = sorted(r for r in files if r.lower().startswith(_PACKAGE_KEEP))
+    for i, r in enumerate(keep):
+        status(step="Keeping the game's packages", pct=round(100 * i / len(keep)))
+        to = os.path.join(tmp, r)
+        os.makedirs(os.path.dirname(to), exist_ok=True)
+        shutil.move(files[r], to)
+        if _crc32_file(to) != crcs[r]:
+            return 5, "a package didn't copy whole (%s)" % r
+        rommlib.sync_file(to)
+    for dp, _, _ in os.walk(tmp):
+        _sync_dir(dp)
+    _PACKAGE_OF[tmp] = title
+    return 0, "%d packages, CRC32 of each checked" % len(keep)
+
+
 def convert_zar(src, tmp):
     """Xbox 360 disc image -> .zar that xenia-canary opens directly: the game
     partition's files (extract-xiso), packed with zarchive. Neither tool's exit
@@ -779,7 +843,9 @@ def convert_zar(src, tmp):
     SHA-256 must check out (zarchive never checks them), and the archive is
     unpacked again and every file's CRC32 compared before the caller deletes
     the image. The .zar holds the game's files, not the disc's other
-    partitions, so it can't be turned back into the original image."""
+    partitions, so it can't be turned back into the original image. A disc
+    that only starts a package (package_disc) leaves a folder of its packages
+    at tmp instead, for the caller to land with a launcher."""
     tools = rommlib.x360_tools()
     if not tools:
         raise ToolMissing("xbox360-tools")
@@ -805,6 +871,9 @@ def convert_zar(src, tmp):
             return 3, "the image is cut short or damaged (%d of %d files don't match its file list)" % (
                 short, len(want))
         crcs = {r: _crc32_file(p) for r, p in files.items()}
+        title = package_disc(want)
+        if title and _title_package(files[title]):
+            return _package_folder(work, files, crcs, title, tmp)
         status(step="Packing", pct=None)
         rc, out = run_tool([zarc, work, tmp], keep_stdout=True)     # zarchive reports errors on stdout
         if rc != 0 or not os.path.exists(tmp):
@@ -983,8 +1052,12 @@ def convert_ps3(src, tmp):
 
 
 def _drop(path):
-    """Remove a finished or partial output: a file, or a game folder (PS3)."""
+    """Remove a finished or partial output: a file, or a game folder (PS3); and
+    the packages folder this run made beside a launcher (package_disc)."""
     unmark(path)
+    beside = _PACKAGE_OF.pop(path, None)
+    if beside and os.path.isabs(beside):
+        _drop(beside)
     if os.path.isdir(path) and not os.path.islink(path):
         shutil.rmtree(path, ignore_errors=True)
     elif os.path.lexists(path):
@@ -1179,6 +1252,7 @@ def _move_playlist(src, to):
 
 def convert(task):
     system, mode = task["system"], task["mode"]
+    _PACKAGE_OF.clear()
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
     srcs = sorted(s for s in task["sources"] if os.path.exists(s))
     if not srcs:
@@ -1399,6 +1473,36 @@ def convert(task):
             for m in made + [tmp]:
                 _drop(m)
             return False
+        title = _PACKAGE_OF.pop(tmp, None)
+        if title:
+            # the disc only starts a package (package_disc): its packages folder lands
+            # first, then the launcher naming the title's package takes the .zar's place
+            folder = os.path.splitext(out)[0] + PACKAGE_DIR_EXT
+            launcher = os.path.splitext(out)[0] + PACKAGE_LAUNCHER_EXT
+            taken = None
+            for q in (folder, launcher):
+                if os.path.lexists(q) and made_from(q, src):
+                    _drop(q)                       # an interrupted run of this game made it: made again
+                if os.path.lexists(q):
+                    taken = taken or q
+            if taken:                              # anyone else's: never replaced
+                note("chd: SKIP %s: %s" % (os.path.basename(src), already_here(taken)))
+                for m in made + [tmp]:
+                    _drop(m)
+                return False
+            try:
+                mark_made(folder, srcs, tmp)
+            except OSError:
+                pass
+            os.replace(tmp, folder)
+            _sync_dir(out_dir)
+            plan[plan.index((src, out))] = (src, launcher)
+            out, tmp = launcher, launcher + ".part"
+            _PACKAGE_OF[tmp] = _PACKAGE_OF[out] = folder        # goes with the launcher if it's dropped
+            rommlib.atomic_write_text(tmp, "%s/%s\n" % (os.path.basename(folder), title.replace(os.sep, "/")),
+                                      errors="surrogateescape")
+            note("chd: %s only starts a package: keeping its packages and a launcher, not a .zar"
+                 % os.path.basename(src))
         # the output must be on disk before it takes its name, and before any original
         # is deleted: after a power cut a renamed-but-unflushed file comes back empty or
         # broken (seen on ext4). A folder output (PS3) was synced file by file as it was made
@@ -1468,7 +1572,9 @@ def convert(task):
                      if os.path.normpath(p) in shared else
                      "chd: keeping %s: not this game's file" % p)
     in_size = sum(os.path.getsize(p) for s in srcs for p in goes[s] if os.path.isfile(p))
-    out_size = sum(rommlib.path_size(m) for m in made)
+    # the packages folder beside a launcher (package_disc) is the game's too
+    beside = [f for f in dict.fromkeys(_PACKAGE_OF.get(m) for m in made) if f]
+    out_size = sum(rommlib.path_size(m) for m in made + beside)
     hide = []
     moved = set()                                # playlists of the folder now written beside the CHDs
     # a playlist in the game's folder naming just these discs (the download's, or the owner's
@@ -1559,7 +1665,8 @@ def convert(task):
     rommlib.append_gamelist({"system": system, "rename": rename, "hide": hide})
     # our record of the game points at the new file even when its folder stays for other files
     try:
-        rommlib.Library().rename_paths(dict(rename, **{folder_root: primary}) if folder_root else rename, hide)
+        rommlib.Library().rename_paths(dict(rename, **{folder_root: primary}) if folder_root else rename,
+                                       list(hide) + beside)
     except Exception as e:                        # installed.json can't be opened right now: the CHD is in and
         rommlib.log("chd: %s: couldn't update installed.json (%s); it still names the "
                     "game's old files" % (os.path.basename(primary), e))   # ES has its rename: finish
@@ -1588,8 +1695,9 @@ def convert(task):
             note("chd: kept folder %s: it holds other files (%s)" % (
                 folder_root, ", ".join(sorted(os.path.relpath(f, folder_root) for f in rest
                                               if f not in spare)[:5])))
-    for m in made:
+    for m in made + beside:
         unmark(m)                                # finished: a later file of this name is someone else's
+    _PACKAGE_OF.clear()
     _state["sizes"] = (in_size, out_size)
     note("chd: OK %s -> %s  (%s -> %s)" % (
         os.path.relpath(srcs[0], sysdir), os.path.relpath(primary, sysdir),

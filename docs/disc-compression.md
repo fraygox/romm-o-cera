@@ -159,6 +159,24 @@ by in <in@fishtank.com>. Before the image is deleted:
 - the archive's own SHA-256 must check out;
 - the archive is unpacked again and every file's CRC32 compared.
 
+**Discs that only start a package.** A few retail discs hold no game of their
+own: the disc starts a package stored on it (an arcade title), with the
+game's add-ons and update as more packages beside it. Batocera can't start
+such a disc, as an `.iso` or a `.zar`: xenia-canary asks to be closed and
+started again, every time. For these, instead of a `.zar`, you get what
+Batocera does start:
+
+- `Game.xbox360`, a one-line launcher EmulationStation lists as the game;
+- `Game.packages/`, the disc's packages and update, each checked by CRC32
+  where it landed before the image is deleted.
+
+The launcher starts the title's package. The add-on packages are kept in the
+folder but aren't installed for xenia yet, so content they hold (later
+episodes, for instance) isn't there until you install them from xenia's own
+menu. A disc is treated this way only when it's plain: a small `default.xex`,
+no other program on it, and exactly one title package. Check games checks
+that the package a launcher names is still there.
+
 The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 `.zar`'s footer (quick) or its whole SHA-256 (full).
 

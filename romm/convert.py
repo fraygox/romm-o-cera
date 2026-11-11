@@ -503,7 +503,36 @@ def z3ds_audit(path, orig, deep, cancel=None):
     return None
 
 
+PACKAGE_MAGICS = (b"CON ", b"LIVE", b"PIRS")       # a signed Xbox 360 package's first bytes
+
+
+def launcher_target(path):
+    """The file a Batocera ".xbox360" launcher starts: its first line, a path
+    from the launcher's own folder (a leading "/" is dropped, as Batocera
+    does); None when it can't be read or names nothing."""
+    try:
+        with open(path, errors="surrogateescape") as f:
+            line = f.readline().strip("\r\n").lstrip("/")
+    except OSError:
+        return None
+    return os.path.join(os.path.dirname(path), line) if line else None
+
+
+def launcher_audit(path):
+    """A launcher made here for a disc that only starts a package: the package
+    must be there and be one."""
+    target = launcher_target(path)
+    try:
+        with open(target or "", "rb") as f:
+            head = f.read(4)
+    except OSError:
+        return "The package its launcher starts is missing", "damaged"
+    return None if head in PACKAGE_MAGICS else ("The file its launcher starts isn't an Xbox 360 package", "damaged")
+
+
 def zar_audit(path, orig, deep, cancel=None):
+    if _ext(path) == ".xbox360":
+        return launcher_audit(path)
     # packed here from the disc's files: RomM's image hashes can't match by design
     bad = zar_check(path, full=deep, cancel=cancel)
     return ("Compressed file %s" % bad, "damaged") if bad else None
@@ -831,7 +860,7 @@ CONVERTERS = (
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
               on=lambda cfg, system: system in _tools.ZAR_SYSTEMS and bool(_config.config_value(cfg, "zar")),
-              audit=zar_audit, tool=_tools.TOOL_X360, priority=("xbox360",)),
+              audit=zar_audit, audit_exts=(".xbox360",), tool=_tools.TOOL_X360, priority=("xbox360",)),
     # Wii U: the disc's game partition, decrypted with the disc's key, becomes a .wua Cemu opens;
     # a .wud it can't take (Decrypt Wii U discs off, or no key for it) falls back to .wux
     Converter("wua", "WUA", "wua", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wua", ".wux": ".wua"},
