@@ -16,9 +16,9 @@ The log says how each controller is read, and the docs say how to report a probl
 ### Upgrading
 v0.12.1 made controllers use Batocera's own mapping (the Steam Deck and other handhelds). If your controller can't drive the app, you can't reach Settings → Updates with it. Any of these gets you this version; your settings, queue and downloaded games are kept.
 
-- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and go to **Settings → Updates** by tapping (tap a row to select it, tap it again to open it). On a keyboard: arrows, Enter, and Esc to go back.
+- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and tap **Settings** on Home, then **Updates**, then the **Updates** row that names the new version, then **Update and restart**. One tap each. On a keyboard: arrows, Enter, and Esc to go back.
 - **Over SSH** (user `root`, password `linux` unless you changed it): run the installer again.
-  ```sh
+  ```
   curl -fsSL https://github.com/fraygox/romm-o-cera/releases/latest/download/install.sh | sh
   ```
 - **No SSH:** download `romm-o-cera.zip` from this release and copy its `rommbrowser` folder over the one in `\\BATOCERA\share\roms\pygame\`, replacing the files.
@@ -35,9 +35,9 @@ Controllers use Batocera's own mapping, so the Steam Deck and other handhelds wo
 ### Upgrading
 If your controller can't drive the app, you can't reach Settings → Updates with it. Any of these gets you this version; your settings, queue and downloaded games are kept.
 
-- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and go to **Settings → Updates** by tapping (tap a row to select it, tap it again to open it). On a keyboard: arrows, Enter, and Esc to go back.
+- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and tap **Settings** on Home, then **Updates**, then the **Updates** row that names the new version, then **Update and restart**. One tap each. On a keyboard: arrows, Enter, and Esc to go back.
 - **Over SSH** (user `root`, password `linux` unless you changed it): run the installer again.
-  ```sh
+  ```
   curl -fsSL https://github.com/fraygox/romm-o-cera/releases/latest/download/install.sh | sh
   ```
 - **No SSH:** download `romm-o-cera.zip` from this release and copy its `rommbrowser` folder over the one in `\\BATOCERA\share\roms\pygame\`, replacing the files.

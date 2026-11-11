@@ -45,10 +45,11 @@ goes back. A keyboard and a pad work side by side.
 
 ## Touch and mouse
 
-- Tap a row to select it, and tap it again to open it. While picking, one
-  tap picks or unpicks it.
-- Tap menu entries, keyboard keys, dialog buttons and tiles to use them
-  straight away.
+- In a list of games or files, tap a row to select it, and tap it again to
+  open it. While picking, one tap picks or unpicks it.
+- Everything else takes one tap: Home's pills (Search, Platforms, Settings…),
+  Settings' sections and rows, menu entries, keyboard keys, dialog buttons
+  and tiles.
 - Tap a button in the hint bar to press it, including **Home** and
   **Downloads** at its right end.
 - Tap the logo for Home, and the breadcrumbs beside it to go back a screen.
