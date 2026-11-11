@@ -3,6 +3,45 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.13.0 (2026-11-11)
+
+A sweep: safer deletes and taps, clearer connection errors, and a quieter idle
+
+### Features
+- **feat:** A still screen redraws a few times a second instead of sixty, so the app uses far less battery while you're not touching it. Any input wakes it at once.
+- **feat:** Dates read the same on every screen: "3 Oct 2026", with the time where it matters.
+- **feat:** On a keyboard, F2 stands in for Y while a text field is open, so Welcome's Advanced can be reached without a controller.
+- **feat:** Tapping the last cover in view on a shelf brings the next one into view, so a finger reaches a whole shelf.
+- **feat:** Compress disc games to CHD says "Not available" on a box whose chdman is missing or won't run, and disc games there stay as they downloaded and play.
+
+### Fixes
+- **fix:** Free up space, Download again and Games ES can't see no longer delete a game's art, video and manual.
+- **fix:** Starting RomM-o-Cera a second time while it's running no longer wrecks the download in progress.
+- **fix:** A double tap never confirms a delete or changes a setting on the screen the first tap opened.
+- **fix:** A game converted under a new name no longer writes its art over a file already there under that name.
+- **fix:** The delete confirm in Games from RomM no longer says art and video will be removed.
+- **fix:** A server address that answers something other than RomM no longer crashes the app at every start.
+- **fix:** Updates says it couldn't ask GitHub when it couldn't, instead of "You have the latest version".
+- **fix:** A plain-http RomM typed as https is told to use `http://`, and the `http://` key replaces the `https://` already typed.
+- **fix:** A RomM that has moved to another address or wants https says so, instead of blaming the token.
+- **fix:** Welcome says why it came back when RomM turned the saved token away.
+- **fix:** The header stops saying Online once RomM can't be reached or rejects the token, and Test connection brings it back.
+- **fix:** A search that fails says so instead of showing "Searching…" forever, and a game list that fails shows the whole reason.
+- **fix:** A library that grows while it's being listed no longer shows a game twice.
+- **fix:** Delete and other coloured buttons have readable labels in every theme.
+- **fix:** Activity no longer gives a finish time while a download is paused or waiting for space.
+- **fix:** Conversions and On this box count the queue the same way.
+- **fix:** An empty leftover folder is no longer shown as "0 B of leftovers", and the Space panel's rule no longer runs through a row.
+- **fix:** Tapping the logo on a text field no longer saves what's typed.
+- **fix:** Home, PgUp and PgDn work while typing, and a held Backspace keeps deleting.
+- **fix:** What's new shows a command from the release notes as written.
+- **fix:** An interrupted tool download no longer leaves a partial file behind.
+- **fix:** A CA bundle that isn't there is named in the error.
+
+### Docs
+- **docs:** First-launch steps in the README and installer describe Welcome.
+- **docs:** [Controls](https://github.com/fraygox/romm-o-cera/blob/main/docs/controls.md), Browsing and [Settings](https://github.com/fraygox/romm-o-cera/blob/main/docs/settings.md) match the app: Activity's name, Backlog's place, the Pair button, the picking menu, and the settings rows that had no description.
+
 ## v0.12.3 (2026-11-10)
 
 Clearer touch and reporting steps, and a log that says its version
