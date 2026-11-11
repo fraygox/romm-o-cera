@@ -3,6 +3,29 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.12.3 (2026-11-10)
+
+Clearer touch and reporting steps, and a log that says its version
+
+### Fixes
+- **fix:** The log's start line says the app's version, so a log sent with a report says which build wrote it.
+- **fix:** What's new shows a command from the release notes without its code-fence line.
+
+### Docs
+- **docs:** [Reporting a problem](https://github.com/fraygox/romm-o-cera/blob/main/docs/reporting-a-problem.md) points at where the app's version and Batocera's are shown, and [Controls](https://github.com/fraygox/romm-o-cera/blob/main/docs/controls.md) says which things open on one tap and which on two.
+
+### Upgrading
+v0.12.1 made controllers use Batocera's own mapping (the Steam Deck and other handhelds). If your controller can't drive the app, you can't reach Settings → Updates with it. Any of these gets you this version; your settings, queue and downloaded games are kept.
+
+- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and tap **Settings** on Home, then **Updates**, then the **Updates** row that names the new version, then **Update and restart**. One tap each. If the app opens on Welcome because no RomM server is set yet, tap **Later** in the bar at the bottom first. On a keyboard: arrows, Enter, and Esc to go back.
+- **Over SSH** (user `root`, password `linux` unless you changed it): run the installer again.
+  ```
+  curl -fsSL https://github.com/fraygox/romm-o-cera/releases/latest/download/install.sh | sh
+  ```
+- **No SSH:** download `romm-o-cera.zip` from this release and copy its `rommbrowser` folder over the one in `\\BATOCERA\share\roms\pygame\`, replacing the files.
+
+Then start RomM-o-Cera again. If a button still does the wrong thing, copy `romm-browser.log` from `\\BATOCERA\share\system\romm-browser\` and attach it to an issue: its `pad:` lines say how the app reads your controller.
+
 ## v0.12.2 (2026-11-10)
 
 The log says how each controller is read, and the docs say how to report a problem
