@@ -1,5 +1,7 @@
 """Keyboard, game controllers and raw joysticks -> actions."""
+import os
 import time
+import xml.etree.ElementTree as ET
 
 import pygame
 from rbui import pads
@@ -8,6 +10,96 @@ try:
     from pygame._sdl2 import controller as sdlcontroller
 except Exception:  # pragma: no cover - older pygame
     sdlcontroller = None
+
+
+# ------------------------------------------------- Batocera's pad mappings
+# EmulationStation keeps a mapping for every pad it knows or the player set up in its
+# Controller settings (theirs first). Batocera hands these to its emulators; a pygame
+# app gets nothing, and Batocera's SDL knows few pads by itself (not the Steam Deck's).
+ES_INPUT_FILES = ("/userdata/system/configs/emulationstation/es_input.cfg",
+                  "/usr/share/emulationstation/es_input.cfg")
+# ES names buttons the Nintendo way (a is east), SDL the Xbox way (a is south)
+ES_TO_SDL = {"b": "a", "a": "b", "x": "y", "y": "x", "l2": "lefttrigger", "r2": "righttrigger",
+             "l3": "leftstick", "r3": "rightstick", "pageup": "leftshoulder", "pagedown": "rightshoulder",
+             "start": "start", "select": "back", "up": "dpup", "down": "dpdown", "left": "dpleft",
+             "right": "dpright", "joystick1up": "lefty", "joystick1left": "leftx",
+             "joystick2up": "righty", "joystick2left": "rightx", "hotkey": "guide"}
+
+
+def _es_bind(es_name, kind, num, value):
+    """One ES <input> as an SDL binding ("a:b3"), or None for one SDL can't use."""
+    sdl = ES_TO_SDL.get(es_name)
+    if sdl is None or not num.isdigit():
+        return None
+    if kind == "button":
+        return "%s:b%s" % (sdl, num)
+    if kind == "hat":
+        return "%s:h%s.%d" % (sdl, num, value)
+    if kind != "axis":
+        return None
+    if es_name.startswith("joystick"):
+        return "%s:a%s%s" % (sdl, num, "~" if value > 0 else "")
+    if sdl.startswith("dp"):
+        return "%s:%sa%s" % (sdl, "-" if value < 0 else "+", num)
+    return "%s:a%s%s" % (sdl, num, "~" if value < 0 else "")
+
+
+def es_pad_mappings(paths=ES_INPUT_FILES, names=()):
+    """SDL mapping lines for the pads in EmulationStation's es_input.cfg files. SDL tells
+    pads apart by GUID alone: where several entries share one, the entry named like a
+    connected pad (names) is used, else the first (the first file is the player's own)."""
+    chosen = {}                                      # guid -> (name, binds), in file order
+    for path in paths:
+        try:
+            entries = list(ET.parse(path).getroot().iter("inputConfig"))
+        except (OSError, ET.ParseError):
+            continue
+        for pad in entries:
+            guid, name = (pad.get("deviceGUID") or "").lower(), pad.get("deviceName") or "pad"
+            if pad.get("type") != "joystick" or len(guid) != 32:
+                continue
+            if guid in chosen and (chosen[guid][0] in names or name not in names):
+                continue
+            binds, hotkey, buttons = [], None, set()
+            for inp in pad.iter("input"):
+                try:
+                    value = int(inp.get("value") or 0)
+                except ValueError:
+                    continue
+                kind, num = inp.get("type"), inp.get("id") or ""
+                bind = _es_bind(inp.get("name"), kind, num, value)
+                if inp.get("name") == "hotkey":
+                    hotkey = (bind, kind, num)       # usually Select again: SDL wants a button once
+                elif bind:
+                    binds.append(bind)
+                    if kind == "button":
+                        buttons.add(num)
+            if hotkey and hotkey[0] and not (hotkey[1] == "button" and hotkey[2] in buttons):
+                binds.append(hotkey[0])
+            if binds:
+                chosen[guid] = (name, binds)
+    return [",".join([guid, name.replace(",", "."), "platform:Linux"] + sorted(binds)) + ","
+            for guid, (name, binds) in chosen.items()]
+
+
+def use_es_pad_mappings(paths=ES_INPUT_FILES, names=()):
+    """Tell SDL about Batocera's pad mappings (before the controllers open). A mapping
+    already in SDL_GAMECONTROLLERCONFIG stays on top."""
+    lines = es_pad_mappings(paths, names)
+    if lines:
+        mine = os.environ.get("SDL_GAMECONTROLLERCONFIG", "")
+        os.environ["SDL_GAMECONTROLLERCONFIG"] = "\n".join(lines + ([mine] if mine else []))
+    return len(lines)
+
+
+def _connected_names():
+    out = []
+    try:
+        for i in range(pygame.joystick.get_count()):
+            out.append(pygame.joystick.Joystick(i).get_name())
+    except Exception:                    # no joystick side yet, or a pad pulled just now
+        pass
+    return out
 
 
 # -------------------------------------------------------------------- input
@@ -35,6 +127,12 @@ class Input:
         self.axis_dir = {}
         self.raw_triggers = {}  # raw joystick instance id -> its [L2, R2] trigger axes
         if sdlcontroller is not None:
+            if use_es_pad_mappings(names=_connected_names()):
+                # SDL reads the mappings as its joystick side starts, which pygame.init() did
+                if sdlcontroller.get_init():
+                    sdlcontroller.quit()
+                pygame.joystick.quit()
+                pygame.joystick.init()
             sdlcontroller.init()
         for i in range(pygame.joystick.get_count()):
             self._open(i)

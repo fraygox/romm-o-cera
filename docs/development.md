@@ -323,7 +323,7 @@ on `sys.path`, imports it and runs `main()`. The modules, in import order
 | `rbui/pads.py` | controller styles: the glyph and label each hint token shows, `PAD_STYLE`, `INPUT_MODE` |
 | `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, text that scrolls in its box (`scroll_text`, `marquee`, and `scroll_box` for any content), bars (`progress_bar`, `meter`, `state_stripe`), covers' scaling |
 | `rbui/sfx.py` | the UI's sounds |
-| `rbui/input.py` | keyboard, game controllers and raw joysticks to actions |
+| `rbui/input.py` | keyboard, game controllers and raw joysticks to actions; Batocera's pad mappings (`es_input.cfg`) handed to SDL before the controllers open |
 | `rbui/modals.py` | menus and dialogs: `ActionMenu`, `ManageMenu`, `Confirm`, `InfoDialog`, `DownloadConfirm` |
 | `rbui/widgets/` | what screens compose instead of drawing it themselves: `tiles.py` (the scaled-cover cache `cover_variant`, `cover`, `art`, `cover_tile`, `Shelf`, `mosaic`, `collection_tile`, `collection_card`), `hero.py` (`verb_button`, `game_verb`, `verb_note`, `backdrop`), `chips.py` (`pill_row`, `fill_widths`, `status_chip`, `tag`, `stars`), `factsheet.py` (`facts`, `facts_layout`) |
 | `rbui/screens/` | the screens, a module per family (`base.py`: `Screen`, `ListScreen`; `box_data.py`: what the On this box screens share) |

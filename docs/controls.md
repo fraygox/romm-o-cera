@@ -17,12 +17,20 @@ face button (confirm), **B** the right one (back), **X** the left one and
 goes Home · **Hotkey + Start exits**. What X, Y, L/R and L2/R2 do depends on
 the screen ([below](#on-each-screen)).
 
+There's nothing to map in the app. It uses the mapping Batocera has for your
+controller: the one EmulationStation ships for it, or the one you made in
+**Main menu → Controller & Bluetooth settings → Controller mapping**. That
+covers handhelds like the Steam Deck too. If a button does the wrong thing
+here, it's wrong in that mapping: map the controller again there and start
+the app again.
+
 `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard mapping for
-this app, so the buttons reach it directly. A pad SDL has no mapping for
-still works. An Xbox-style pad (its triggers are axes that rest fully back, or
-it calls itself an X-Box pad) has Select/Start at buttons 6 and 7 and its
-trigger axes as L2/R2; any other pad with 10 or more buttons has L2/R2 at 6
-and 7 and Select/Start at 8 and 9 (with fewer, 6 and 7 are Select/Start).
+this app, so the buttons reach it directly. A pad neither Batocera nor SDL
+has a mapping for is guessed at. An Xbox-style pad (its triggers are axes
+that rest fully back, or it calls itself an X-Box pad) has Select/Start at
+buttons 6 and 7 and its trigger axes as L2/R2; any other pad with 10 or more
+buttons has L2/R2 at 6 and 7 and Select/Start at 8 and 9 (with fewer, 6 and 7
+are Select/Start).
 
 ## Keyboard
 
