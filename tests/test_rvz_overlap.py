@@ -426,7 +426,7 @@ def test_dolphin_tool_per_cpu(monkeypatch):
     """x86_64 and 64-bit ARM have their own pinned archive; anything else isn't offered."""
     assert set(rommlib.DOLPHIN_TOOLS) == {"x86_64", "aarch64"}
     for arch, t in rommlib.DOLPHIN_TOOLS.items():
-        assert t["url"].endswith("dolphin-tool-2603a-%s.tar.gz" % arch) and len(t["sha256"]) == 64 and t["size"] > 0
+        assert t["url"].endswith("dolphin-tool-2609b-%s.tar.gz" % arch) and len(t["sha256"]) == 64 and t["size"] > 0
     assert rommlib.DOLPHIN_TOOLS["x86_64"]["sha256"] != rommlib.DOLPHIN_TOOLS["aarch64"]["sha256"]
     import platform
     for m, ok in (("x86_64", True), ("AMD64", True), ("aarch64", True), ("arm64", True), ("armv7l", False),

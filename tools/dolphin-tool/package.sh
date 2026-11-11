@@ -26,9 +26,7 @@ makes. Corresponding source, exactly as built (with submodules):
   dolphin-$VER-${COMMIT:0:8}-source.tar.xz, attached to the same release
   upstream: https://github.com/dolphin-emu/dolphin/tree/$COMMIT
 
-This is the commit Batocera 43.1 builds Dolphin from (batocera.linux,
-tag batocera-43.1, package/batocera/emulators/dolphin-emu/dolphin-emu.mk),
-built with ENABLE_CLI_TOOL=ON. Build recipe: tools/dolphin-tool/ in the
+This is Dolphin's tagged release $VER, built with ENABLE_CLI_TOOL=ON. Build recipe: tools/dolphin-tool/ in the
 RomM-o-Cera repository (Dockerfile, build.sh, make.sh).
 
 $(cat "$ARCH/BUILDINFO")

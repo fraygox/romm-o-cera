@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage (from this folder):  ./make.sh   ->  out/dolphin-tool, out/BUILDINFO
 set -euo pipefail
-COMMIT=${DOLPHIN_COMMIT:?}          # same commit Batocera 43.1 builds (dolphin-emu.mk)
+COMMIT=${DOLPHIN_COMMIT:?}          # a tagged Dolphin release (make.sh)
 VERSION=${DOLPHIN_VERSION:?}
 ARCH=${ARCH:-x86_64}
 CROSS=()

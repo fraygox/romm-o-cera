@@ -62,8 +62,8 @@ ISO plus the CHD.
 ## GameCube and Wii to RVZ — off by default
 
 Turning it on downloads Dolphin's `dolphin-tool` once (about 8 MB, checked by
-SHA-256; x86_64 and 64-bit ARM such as the Pi 4/5), built from the same Dolphin
-commit Batocera 43.1 uses. Each image is verified by dolphin-tool first
+SHA-256; x86_64 and 64-bit ARM such as the Pi 4/5), built from Dolphin's
+tagged release 2609b. Each image is verified by dolphin-tool first
 (anything that isn't a GameCube/Wii disc is left alone) and the RVZ must hash
 to the original's CRC32 before the original is deleted. Usually much smaller.
 

@@ -124,12 +124,12 @@ Three converters download a tool the box doesn't have, the first time their
 switch is turned on in Settings. Each tool is built in a container from
 pinned sources by `make.sh`, packed with its licenses and exact source by
 `package.sh`, and published as its own GitHub release
-(`dolphin-tool-2603a`, `xbox360-tools-2610a`, `wiiu-tools-2610b`); the app pins
+(`dolphin-tool-2609b`, `xbox360-tools-2610a`, `wiiu-tools-2610b`); the app pins
 each archive's URL, size and SHA-256 in `romm/tools.py`
 (`ROMM_BROWSER_<TOOL>_URL` and `_SHA256` point it at a local build).
 
 - `tools/dolphin-tool/`: dolphin-tool for GameCube and Wii to RVZ, built
-  from the Dolphin commit Batocera ships:
+  from a tagged Dolphin release:
   `make.sh [x86_64|aarch64]` then `package.sh [x86_64|aarch64]`. The ARM
   build is a cross-build; test it on real ARM hardware: under qemu-user it
   hangs at startup (Dolphin's udev hot-plug listener waits on a real-time

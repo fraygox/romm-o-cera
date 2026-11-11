@@ -13,15 +13,16 @@ from . import core as _core, config as _config, net as _net
 
 # ---------------------------------------------------------- dolphin-tool (GameCube / Wii -> RVZ)
 
-# Built from the same Dolphin commit Batocera 43.1 ships (its dolphin-emu.mk
-# turns the CLI tool off), by tools/dolphin-tool/make.sh; published as its own
-# release on GitHub with Dolphin's license and the exact source it came from.
-_DT_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/dolphin-tool-2603a/"
+# Built from a tagged Dolphin release (Batocera's own Dolphin has the CLI tool turned
+# off) by tools/dolphin-tool/make.sh; published as its own release on GitHub with
+# Dolphin's license and the exact source it came from. It needn't be the commit
+# Batocera builds Dolphin from: RVZ is the same, and this binary also verifies.
+_DT_BASE = "https://github.com/fraygox/romm-o-cera/releases/download/dolphin-tool-2609b/"
 DOLPHIN_TOOLS = {           # per CPU: the archive RomM-o-Cera downloads, and its pinned SHA-256
-    "x86_64": {"url": _DT_BASE + "dolphin-tool-2603a-x86_64.tar.gz",
-               "sha256": "19eab07e5ac5658fed51d56af5ed475831519fc28961ac95d1b43c4fb7d04ea7", "size": 7990471},
-    "aarch64": {"url": _DT_BASE + "dolphin-tool-2603a-aarch64.tar.gz",
-                "sha256": "655cb5520ea3742505ae30ec6100165a8f05c67ceacf6c52e68ba27b75162b06", "size": 7298926},
+    "x86_64": {"url": _DT_BASE + "dolphin-tool-2609b-x86_64.tar.gz",
+               "sha256": "d9445b5b65fa9c4945c6be2ef751dfe12e2607f2d6f619a6f4996350e2cb7f18", "size": 8100005},
+    "aarch64": {"url": _DT_BASE + "dolphin-tool-2609b-aarch64.tar.gz",
+                "sha256": "3c966251ae97ae3d33495dcf49b3c9cfda2d2dd2a05dff5e932e4a55e33b5101", "size": 7403992},
 }
 
 
@@ -38,7 +39,7 @@ def _machine():
     return m
 
 
-DOLPHIN_TOOL = dict({"version": "2603a", "commit": "5e7cc91d8c9a43ca189b288937f65c9763af9c22"},
+DOLPHIN_TOOL = dict({"version": "2609b", "commit": "3a5b3743b18da3e8f04cbc44f20dc50fbd3a9ef3"},
                     **DOLPHIN_TOOLS.get(_machine(), {"url": "", "sha256": "", "size": 0}))
 TOOLS_DIR = os.path.join(_core.DATA_DIR, "tools")
 RVZ_ARGS = ["-f", "rvz", "-c", "zstd", "-l", "5", "-b", "131072"]   # Dolphin's recommended RVZ settings
