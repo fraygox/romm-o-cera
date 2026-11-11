@@ -3,6 +3,25 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.12.1 (2026-11-10)
+
+Controllers use Batocera's own mapping, so the Steam Deck and other handhelds work
+
+### Fixes
+- **fix:** Controllers use the mapping Batocera has for them: the one EmulationStation ships for the pad, or the one you made in Controller & Bluetooth settings → Controller mapping. Before this the app guessed a pad's buttons by number, which only suited Xbox-style and plain USB pads. On a Steam Deck the buttons did the wrong things and the D-pad did nothing, and other handhelds and pads with their own button order were off too. There's nothing to map in the app.
+
+### Upgrading
+If your controller can't drive the app, you can't reach Settings → Updates with it. Any of these gets you this version; your settings, queue and downloaded games are kept.
+
+- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and go to **Settings → Updates** by tapping (tap a row to select it, tap it again to open it). On a keyboard: arrows, Enter, and Esc to go back.
+- **Over SSH** (user `root`, password `linux` unless you changed it): run the installer again.
+  ```sh
+  curl -fsSL https://github.com/fraygox/romm-o-cera/releases/latest/download/install.sh | sh
+  ```
+- **No SSH:** download `romm-o-cera.zip` from this release and copy its `rommbrowser` folder over the one in `\\BATOCERA\share\roms\pygame\`, replacing the files.
+
+Then start RomM-o-Cera again. If a button still does the wrong thing, it's wrong in Batocera's mapping for the pad: map it again in EmulationStation (Main menu → Controller & Bluetooth settings → Controller mapping) and start the app again.
+
 ## v0.12.0 (2026-11-06)
 
 Your games and files are safe: the app changes only what it downloaded or what a confirm lists, and Check games and On this box show what needs a look at a glance
