@@ -131,7 +131,9 @@ hash to the original's CRC32 before the original is deleted.
 - Only decrypted dumps (the kind Azahar runs). An encrypted one is left as it is
   (Conversions shows it as skipped, and Compress games already here as can't
   convert, with the reason) and Check games flags it.
-- `.cia` installers stay as they are for now.
+- `.cia` files stay as they are. A `.cia` is an installer, not a game: started
+  with one, Azahar offers to install it, and it wouldn't do even that with a
+  compressed `.zcia`.
 - Check games compares a `.zcci` with RomM's original: a quick check catches a
   cut-short file or one packed from a different dump; a full check decodes the
   whole file and compares checksums.
