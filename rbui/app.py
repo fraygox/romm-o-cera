@@ -2,6 +2,7 @@
 import os
 import threading
 import time
+import zlib
 
 import pygame
 import rommlib
@@ -115,6 +116,42 @@ def kept_note(paths):
         rommlib.ROMS_ROOT))
 
 
+class Rest:
+    """When the main loop may slow down: nothing came in (input, a background result) and the
+    frames drawn have been the same for a second. The frame itself is the judge, so anything
+    that moves (a scrolling title, a progress bar, a toast, a cursor) keeps the full rate
+    without having to say so; a still screen costs FPS frames a second instead of 60."""
+    FPS = 8                 # frames a second while resting (input still wakes it at once)
+    SAMPLE, STILL = 0.25, 4   # a frame is looked at this often at the full rate; this many alike in a row rest
+
+    def __init__(self, on=True):
+        self.on, self.resting = on, False
+        self.seen, self.alike, self.next = None, 0, 0.0
+
+    def frame(self, canvas, busy):
+        """After a frame is drawn. busy: something came in for it."""
+        if not self.on:
+            return
+        now = time.monotonic()
+        if busy:
+            self.resting, self.alike, self.seen = False, 0, None
+            self.next = now + self.SAMPLE
+            return
+        if not self.resting and now < self.next:
+            return
+        self.next = now + self.SAMPLE
+        try:
+            mark = zlib.adler32(canvas.get_buffer())
+        except Exception:               # a surface that can't be read: never rest
+            self.on = self.resting = False
+            return
+        if mark == self.seen:
+            self.alike += 1
+            self.resting = self.alike >= self.STILL
+        else:
+            self.seen, self.alike, self.resting = mark, 0, False
+
+
 def plural_games(jobs):
     """"1 game" / "3 games": what the closing wait names (a count, never a name that could overflow)."""
     return "1 game" if len(jobs) == 1 else "%d games" % len(jobs)
@@ -140,6 +177,7 @@ class App:
         draw.FONTS["f"] = self.fonts
         self.cfg = rommlib.load_config()
         self.targets, self.modal_from, self.ptr = [], 0, None
+        self.last_tap = (0.0, None, (0, 0))     # the last tap that acted: when, on what, where
         self.tapped, self.ptr_later = False, []    # a tap acted since the last frame; events held back
         self.sfx = Sfx(self.cfg["sounds"] if screen is not None else "off")
         self.input = Input(self.cfg["swap_ab"])
@@ -257,12 +295,16 @@ class App:
             self.status = "Offline"
             self.error = str(e)
             if first and isinstance(e, rommlib.AuthRejected) and welcome_on_rejected(self):
-                self.push(WelcomeScreen(self, step=1 if self.cfg["url"] else 0))
+                self.push(WelcomeScreen(self, step=1 if self.cfg["url"] else 0, rejected=True))
         self.bg(self.api.platforms, done, err)
 
     def status_label(self):
         """The connection as the header and Settings say it: "Online · RomM 5.4.0"."""
-        return rommlib.online_label(self.romm_version) if self.status == "Online" else self.status
+        if self.status != "Online":
+            return self.status
+        # connected at the start, but its last answer since wasn't one: the header never says
+        # Online over a screen that says it can't reach RomM
+        return getattr(self.api, "down", None) or rommlib.online_label(self.romm_version)
 
     def system_name(self, system):
         """What a system folder is called on screen: RomM's name for its platform, as
@@ -281,7 +323,7 @@ class App:
         except OSError:
             return None
         return st.f_bavail * st.f_frsize - rommlib.queue_forecast(
-            self.downloader.jobs, 0, 0, self.cfg["chd"], self.cfg)["need"]
+            self.downloader.jobs, 0, 0, rommlib.chd_enabled(self.cfg), self.cfg)["need"]
 
     def plan_text(self, rom, system):
         """One game's download in a sentence: size, unpacked size, conversion,
@@ -591,7 +633,7 @@ class App:
     def space_check(self):
         """After queueing: warn when the whole queue won't fit (it waits for room)."""
         fc = rommlib.queue_forecast(self.downloader.jobs, rommlib.free_bytes(),
-                                    rommlib.keep_free_bytes(self.cfg), self.cfg["chd"], self.cfg)
+                                    rommlib.keep_free_bytes(self.cfg), rommlib.chd_enabled(self.cfg), self.cfg)
         if fc["jobs"] and not fc["fits"]:
             self.toast("The queue needs %s more space than this box has free (keeping %s free). "
                        "Downloads wait until there's room." % (human_size(fc["short"]), human_size(fc["keep"])),
@@ -944,18 +986,27 @@ class App:
         if not self.headless:                     # What's new, once after an update; offline: next time
             cfg = dict(self.cfg)
             self.bg(lambda: notes_at_start(cfg), self._notes_found, lambda e: None)
+        rest = Rest(on=scripted is None and not self.headless)
         while self.running:
-            dt = clock.tick(self.fps) / 1000.0
+            early = []
+            if rest.resting and not self.ptr_later:
+                # nothing on screen is changing: a few frames a second, and at once on any input
+                ev = pygame.event.wait(1000 // rest.FPS)
+                early = [] if ev.type == pygame.NOEVENT else [ev]
+                dt = clock.tick() / 1000.0
+            else:
+                dt = clock.tick(self.fps) / 1000.0
             self.t += dt
             actions = []
             want_text = not self.modal and getattr(self.stack[-1], "text_entry", False)
             if want_text != self.input.text_mode:
-                self.input.text_mode = want_text
+                self.input.text_mode = pads.INPUT_MODE["text"] = want_text
                 try:
                     (pygame.key.start_text_input if want_text else pygame.key.stop_text_input)()
                 except Exception:
                     pass
-            for ev in self.pointer_later() + pygame.event.get():
+            events = self.pointer_later() + early + pygame.event.get()
+            for ev in events:
                 if ev.type == pygame.QUIT:
                     actions.append("quit")
                 elif not self.pointer(ev, actions):
@@ -974,6 +1025,7 @@ class App:
                 self.dispatch(a)
             self.tick_downloads()
             self.draw()
+            rest.frame(self.canvas, bool(events or actions or fns))
         self.on_exit()
 
     # ---- touch / mouse: screens register tap targets while drawing
@@ -988,6 +1040,7 @@ class App:
         return ((pos[0] - (sw - cw) // 2) / theme.K, (pos[1] - (sh - ch) // 2) / theme.K)
 
     DRAG_STEP = 46
+    TAP_SETTLE, TAP_NEAR = 0.35, 28     # a double tap: this soon after a tap, this near it
 
     def pointer(self, ev, actions):
         """A tap or click acts on what was under it when pressed, if it's let go
@@ -1002,6 +1055,14 @@ class App:
             self.ptr_later.append(ev)
             return True
         if t == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            at, was, where = self.last_tap
+            p = self.to_logical(ev.pos)
+            if time.time() - at < self.TAP_SETTLE and abs(p[0] - where[0]) <= self.TAP_NEAR \
+                    and abs(p[1] - where[1]) <= self.TAP_NEAR and not self.same_target(self.target_at(p), was):
+                # the second tap of a double tap, and something else is under it now: it was aimed at
+                # what the first one hit (a row, not the Delete button or the setting that took its place)
+                self.ptr = None
+                return True
             touch = bool(getattr(ev, "touch", False))
             # show the cursor for a real mouse click only (evmapy maps the right
             # stick to a mouse, which must not make it pop up; touch needs none)
@@ -1029,6 +1090,7 @@ class App:
                 hit = self.target_at(self.to_logical(ev.pos))
                 if self.same_target(hit, ptr["hit"]):
                     self.tapped = True
+                    self.last_tap = (time.time(), hit, self.to_logical(ev.pos))
                     self.press(hit)
         elif t == pygame.MOUSEWHEEL:
             actions += ["up" if ev.y > 0 else "down"] * min(5, abs(ev.y))
@@ -1212,14 +1274,16 @@ class App:
         text(c, self.fonts.h3, "R", (41, 33), ink_on(theme.ACCENT), "center")
         text(c, self.fonts.h2, APP_NAME, (68, 33), theme.TEXT, "midleft")
         x = 68 + int(measure(self.fonts.h2, APP_NAME)) + 14
-        self.hit((16, 8, x - 16, 50), lambda: self.dispatch("start") if len(self.stack) > 1 else None)
+        self.hit((16, 8, x - 16, 50), lambda: self.dispatch("start") if len(self.stack) > 1 and not getattr(
+            self.stack[-1], "own_start", False) else None)      # (there Start saves what's typed: the logo never does)
         if len(self.stack) > 1:
             self.hit((x, 8, 520, 50), lambda: self.dispatch("back"))
         # right side status, first: the crumbs get the room it leaves
         n = self.downloader.active_count()
         rx = W - 24
-        dot = theme.GREEN if self.status == "Online" else (theme.AMBER if self.status.startswith("Conn") else theme.RED)
-        r = text(c, self.fonts.small, self.status_label(), (rx, 33), theme.DIM, "midright")
+        label = self.status_label()
+        dot = theme.GREEN if label.startswith("Online") else (theme.AMBER if label.startswith("Conn") else theme.RED)
+        r = text(c, self.fonts.small, label, (rx, 33), theme.DIM, "midright")
         circle(c, dot, (r.left - 12, 33), 5)
         rx = r.left - 30
         if n:

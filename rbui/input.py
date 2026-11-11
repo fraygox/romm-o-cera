@@ -266,7 +266,8 @@ class Input:
             return                    # the same press arriving twice (pad + its keyboard echo)
         self.last[action] = (now, src)
         pads.INPUT_MODE["kb"] = src == "key"
-        if hold and action in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
+        # (a held Delete goes on deleting where text is typed)
+        if hold and (action in ("up", "down", "left", "right", "l1", "r1", "l2", "r2") or (action == "x" and self.text_mode)):
             self.held[action] = now + self.REPEAT_DELAY
         out.append(action)
 
@@ -291,7 +292,10 @@ class Input:
             if self.text_mode:
                 km = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left",
                       pygame.K_RIGHT: "right", pygame.K_RETURN: "start", pygame.K_KP_ENTER: "start",
-                      pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "x", pygame.K_TAB: "select"}
+                      pygame.K_ESCAPE: "back", pygame.K_BACKSPACE: "x", pygame.K_TAB: "select",
+                      # the keys the keyboard screens name, none of which types anything
+                      pygame.K_HOME: "start", pygame.K_PAGEUP: "l1", pygame.K_PAGEDOWN: "r1",
+                      pygame.K_F2: "y"}            # Y where the y key types (the hints say F2 then)
             else:
                 km = {pygame.K_UP: "up", pygame.K_DOWN: "down", pygame.K_LEFT: "left",
                       pygame.K_RIGHT: "right", pygame.K_RETURN: "ok", pygame.K_KP_ENTER: "ok",
@@ -306,7 +310,7 @@ class Input:
             a = self.key_action.pop(ev.key, None)
             if a:
                 self.key_up[a] = time.time()
-            for a in ("up", "down", "left", "right", "l1", "r1", "l2", "r2"):
+            for a in ("up", "down", "left", "right", "l1", "r1", "l2", "r2", "x"):
                 if self.last.get(a, (0, ""))[1] == "key":
                     self._release(a)
         elif sdlcontroller is not None and t == pygame.CONTROLLERDEVICEADDED:
@@ -414,6 +418,9 @@ class Input:
         self.flush(out)
         now = time.time()
         for a, due in list(self.held.items()):
+            if a == "x" and not self.text_mode:
+                del self.held[a]              # the text field closed under a held Delete: X is Actions out there
+                continue
             if now >= due:
                 out.append(a)
                 self.held[a] = now + self.REPEAT_RATE

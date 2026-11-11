@@ -141,7 +141,7 @@ def test_y_and_the_hints_follow_the_caller(rb, monkeypatch):
     assert ("Y", "Shift") in rb.Keyboard("Save").hints()
     assert not any(t == "Y" for t, _ in rb.Keyboard("Pair", mode="code").hints())
     monkeypatch.setitem(rb.INPUT_MODE, "kb", True)
-    assert kb.hints() == [("TYPE", "Letters"), ("BKSP", "Delete"), ("A", "Search")]
+    assert kb.hints() == [("TYPE", "Letters"), ("BKSP", "Delete"), ("START", "Search")]
 
 
 def test_keys_fill_the_rect_and_taps_press_them(app, rb):
@@ -205,3 +205,25 @@ def test_settings_fields_use_the_keyboard_modes(app, rb):
     kb.type_text("abcd2345")
     assert kb.shown() == "ABCD-2345"
     app.draw()
+
+
+def test_a_scheme_key_replaces_the_scheme_thats_there(rb):
+    """Welcome's address starts as https://: the http:// key swaps it, never "https://http://"."""
+    kb = rb.Keyboard("Connect", context="url")
+    kb.value = "https://"
+
+    def press(label):
+        for r, row in enumerate(kb.keys()):
+            for c, k in enumerate(row):
+                if k.label == label:
+                    kb.r, kb.c = r, c
+                    return kb.press()
+        raise AssertionError(label)
+    press("http://")
+    assert kb.value == "http://"
+    kb.value = "https://romm.lan:8080"
+    press("http://")
+    assert kb.value == "http://romm.lan:8080"
+    kb.value = ""
+    press("https://")
+    assert kb.value == "https://"

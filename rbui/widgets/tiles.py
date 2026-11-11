@@ -276,6 +276,15 @@ class Shelf:
                       for i in range(self.first, min(n, self.first + per))]
         return self.rects
 
+    def tapped(self, i, n, on_tap):
+        """A tap on a tile; one at the edge with more beyond it brings the next into view, since
+        a finger has no other way along the shelf."""
+        on_tap(i)
+        if i == self.first + len(self.rects) - 1 and i < n - 1:
+            self.first += 1
+        elif i == self.first and i > 0:
+            self.first -= 1
+
     def more(self, n):
         """How many lie beyond the right edge."""
         return max(0, n - self.first - len(self.rects))
@@ -293,7 +302,7 @@ class Shelf:
         for k, (i, r) in enumerate(rects):
             tap = r if clip is None else r.clip(clip)
             if on_tap and tap.height > 0:
-                app.hit(tap, lambda i=i: on_tap(i))
+                app.hit(tap, lambda i=i: self.tapped(i, len(items), on_tap))
             on = i == sel
             if tile:
                 drawn = tile(c, items[i], r, on)

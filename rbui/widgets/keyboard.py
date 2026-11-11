@@ -2,6 +2,8 @@
 
 Keyboard owns the value, the layout, focus, touch, hardware typing, Shift and the #+=
 symbols layer; a screen gives it a rect to draw into, a primary verb and its context keys."""
+import re
+
 import pygame
 from rbui import pads, theme
 from rbui.draw import hline, measure, polyline, rrect, text
@@ -152,7 +154,11 @@ class Keyboard:
 
     def press(self):
         k = self.focus
-        if k.kind in ("char", "context"):
+        if k.kind == "context" and k.label.endswith("://") and re.match(r"^[a-z]+://", self.value):
+            # the scheme key on an address that has one (https:// is typed in already): it replaces it
+            self.value = (k.label + self.value.split("://", 1)[1])[:self.maxlen]
+            self.changed()
+        elif k.kind in ("char", "context"):
             self.insert(k.label)
         else:
             {"shift": self.toggle_shift, "sym": self.toggle_sym, "space": lambda: self.insert(" "),
@@ -196,7 +202,7 @@ class Keyboard:
     def hints(self):
         """The hint bar's keyboard part; the screen adds its own B."""
         if pads.INPUT_MODE["kb"]:
-            return [("TYPE", "Letters"), ("BKSP", "Delete"), ("A", self.primary)]
+            return [("TYPE", "Letters"), ("BKSP", "Delete"), ("START", self.primary)]
         y = {"space": [("Y", "Space")], "shift": [("Y", "Shift")]}.get(self.y_key if self.mode != "code" else None, [])
         return [("A", "Type"), ("X", "Delete")] + y + [("START", self.primary)]
 

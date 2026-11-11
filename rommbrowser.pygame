@@ -27,8 +27,23 @@ from rbui.theme import H, W  # noqa: E402
 
 
 # --------------------------------------------------------------------- main
+APP_LOCK = os.path.join(rommlib.DATA_DIR, "app.lock")       # held while the app runs: one at a time
 
 def main():
+    try:
+        os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+        with rommlib.try_lock(APP_LOCK) as fd:
+            if fd is None:
+                # a second copy would run the same download queue into the same files
+                rommlib.log("start: RomM-o-Cera is running already; this one leaves")
+                print("%s is running already." % APP_NAME)
+                return
+            run()
+    except OSError:                  # no lock to be had (a full disk): start anyway (Free up space is in here)
+        run()
+
+
+def run():
     tame_malloc()
     fit_memory_budgets()
     try:

@@ -26,7 +26,8 @@ OTHER = {
 }
 STYLE_NAMES = {"xbox": "Xbox", "playstation": "PlayStation", "nintendo": "Nintendo"}
 # While the keyboard is the last thing used, hints show key names instead.
-INPUT_MODE = {"kb": False}
+# "text": a text field has the keys, so the letters type: Y is F2 there.
+INPUT_MODE = {"kb": False, "text": False}
 KEY_LABELS = {"A": "Enter", "B": "Esc", "X": "X", "Y": "Y", "L": "PgUp", "R": "PgDn", "L R": "PgUp PgDn",
               "L2 R2": "[ ]", "START": "Home", "SELECT": "Tab"}
 TOKEN_ACTION = {"A": "ok", "B": "back", "X": "x", "Y": "y", "L": "l1", "R": "r1", "L R": "r1", "L2 R2": "r2",
@@ -92,6 +93,8 @@ def _pad_face(token):
     if INPUT_MODE["kb"]:
         col = {"A": FACE["xbox"]["south"][1], "B": FACE["xbox"]["east"][1], "X": FACE["xbox"]["west"][1],
                "Y": FACE["xbox"]["north"][1]}.get(token, BTN_COL.get(token, theme.DIM))
+        if token == "Y" and INPUT_MODE.get("text"):
+            return "pill", "F2", col
         return "pill", KEY_LABELS.get(token, token), col
     pos = {"A": PAD_STYLE["ok"], "B": PAD_STYLE["back"], "X": "west", "Y": "north"}.get(token)
     if pos:
