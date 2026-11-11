@@ -2,7 +2,7 @@
 starts a package on the disc. Batocera can't start such a disc (xenia-canary
 asks to be restarted, for ever), as an .iso or a .zar. Xbox 360 to .zar keeps
 its packages in a folder and writes the one-line .xbox360 launcher Batocera
-does start."""
+does start; and a .zar that would be no smaller than the image is never made."""
 import json
 import os
 import stat
@@ -187,3 +187,22 @@ def test_an_interrupted_runs_folder_is_made_again(chd):
     assert _convert(chd, src) is True
     assert sorted(os.listdir(sysdir)) == ["Lorem Ipsum (World).packages", "Lorem Ipsum (World).xbox360"]
     assert _tree(folder) == sorted([TITLE, ADDON, UPDATE])
+
+
+# ------------------------------------------------------------------ a .zar only when it's a gain
+
+def test_a_disc_with_its_own_game_still_becomes_a_zar(chd):
+    files = {"default.xex": "XEX2" + "g" * (2 << 20), "data/level.pak": "p" * 512}
+    sysdir, src = _image("Dolor (World).iso", files, pad=4096)
+    assert _convert(chd, src) is True
+    assert os.listdir(sysdir) == ["Dolor (World).zar"]
+
+
+def test_a_zar_no_smaller_than_the_image_is_not_kept(chd, monkeypatch):
+    files = {"default.xex": "XEX2" + "g" * (2 << 20), "data/level.pak": "p" * 512}
+    sysdir, src = _image("Dolor (World).iso", files)
+    monkeypatch.setenv("FAKE_ZAR_PAD", "64")
+    before = open(src).read()
+    assert _convert(chd, src) is False
+    assert os.listdir(sysdir) == ["Dolor (World).iso"] and open(src).read() == before
+    assert "no smaller than the image" in _log()

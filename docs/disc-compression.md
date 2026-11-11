@@ -159,6 +159,9 @@ by in <in@fishtank.com>. Before the image is deleted:
 - the archive's own SHA-256 must check out;
 - the archive is unpacked again and every file's CRC32 compared.
 
+A `.zar` is kept only when it's smaller than the image; otherwise the image
+stays as it is.
+
 **Discs that only start a package.** A few retail discs hold no game of their
 own: the disc starts a package stored on it (an arcade title), with the
 game's add-ons and update as more packages beside it. Batocera can't start

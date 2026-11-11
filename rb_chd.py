@@ -845,7 +845,8 @@ def convert_zar(src, tmp):
     the image. The .zar holds the game's files, not the disc's other
     partitions, so it can't be turned back into the original image. A disc
     that only starts a package (package_disc) leaves a folder of its packages
-    at tmp instead, for the caller to land with a launcher."""
+    at tmp instead, for the caller to land with a launcher; a .zar no smaller
+    than the image is no gain, and the image stays."""
     tools = rommlib.x360_tools()
     if not tools:
         raise ToolMissing("xbox360-tools")
@@ -887,6 +888,9 @@ def convert_zar(src, tmp):
         back = _tree(work) if rc == 0 else {}
         if set(back) != set(crcs) or any(_crc32_file(back[r]) != c for r, c in crcs.items()):
             return 5, ".zar doesn't unpack to the disc's files (rc %d)" % rc
+        if os.path.getsize(tmp) >= os.path.getsize(src):
+            return 6, "the .zar would be no smaller than the image (%s): the image stays as it is" % \
+                rommlib.human_size(os.path.getsize(tmp))
         return 0, "%d files, CRC32 of each checked" % len(crcs)
     finally:
         shutil.rmtree(work, ignore_errors=True)
