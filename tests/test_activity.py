@@ -170,6 +170,19 @@ def test_the_line_on_top_adds_downloads_and_conversions(rb, app):
     assert 600 / 20 < o["dl_secs"] < 60
 
 
+def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
+    """All of it is downloaded, so nothing is left over the speed: that isn't "done in 1 s"
+    while the file is still being unpacked or checked."""
+    j = _job(app, "Lorem (USA)", rommlib.Job.EXTRACTING, 700 * MB, 700 * MB)
+    scr = _screen(rb, app)
+    o = scr.outlook()
+    assert o["secs"] is None and scr.headline(o) == ("Unpacking", rb.TEXT)
+    j.state = rommlib.Job.VERIFYING
+    assert scr.headline(scr.outlook()) == ("Checking downloads", rb.TEXT)
+    _job(app, "Ipsum (USA)", rommlib.Job.DOWNLOADING, 100 * MB, 700 * MB, speed=10 * MB)
+    assert scr.headline(scr.outlook()) == ("Downloads done in about 1 min", rb.TEXT)
+
+
 def test_the_line_on_top_when_it_cant_tell(rb, app):
     _job(app, "Lorem (USA)", rommlib.Job.QUEUED)
     scr = _screen(rb, app)

@@ -465,6 +465,8 @@ class DownloadsScreen(ListScreen):
         dl = 0.0 if total <= done else (total - done) / speed if speed else None
         if any(j.state == J.PAUSED or (j.state == J.QUEUED and getattr(j, "short_space", 0)) for j in live):
             dl = None            # one is on hold (paused, no room for it): when it all ends can't be told
+        # unpacking and checking a file take time nothing here can tell
+        after = any(j.state in (J.EXTRACTING, J.VERIFYING) for j in live)
         run, queue = self.running(), self.queued()
         convs = ([run] if run else []) + queue
         ctotal = sum(r["size"] for r in convs)
@@ -476,7 +478,7 @@ class DownloadsScreen(ListScreen):
             if left is not None:                  # the ones behind it: about as long each (a cue's size says little)
                 el = now - ((run.get("cur") or {}).get("since") or now)
                 cv = left + len(queue) * (el + left)
-        secs = dl + cv if dl is not None and cv is not None else None
+        secs = dl + cv if dl is not None and cv is not None and not after else None
         allb = total + ctotal
         return {"live": len(live), "convs": len(convs), "secs": secs, "dl_secs": dl,
                 "frac": (done + cdone) / allb if allb else 0.0, "running": bool(run),
@@ -498,7 +500,7 @@ class DownloadsScreen(ListScreen):
             return "Compressing is paused", theme.AMBER
         if o["secs"] is not None:
             return "Everything's done in %s" % time_left(o["secs"]), theme.TEXT
-        if o["live"] and o["dl_secs"] is not None:
+        if o["live"] and o["dl_secs"]:                # 0: all of it is here, a step after it runs
             return "Downloads done in %s" % time_left(o["dl_secs"]), theme.TEXT
         if o["live"]:
             states = {j.state for j in d.jobs}
