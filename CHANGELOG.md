@@ -3,6 +3,23 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.13.2 (2026-11-11)
+
+Stalled and on-hold downloads say why, a download speed limit, and a BIOS fix for Batocera 44
+
+### Features
+- **feat:** A download that gets nothing from RomM for ten seconds says **Stalled** instead of a speed.
+- **feat:** When RomM turns the token away, the whole queue goes on hold with one line saying so, instead of each game failing. Pair again in Settings, then resume.
+- **feat:** Settings has a **Download speed limit** for every download, beside the one that applies while a game runs.
+- **feat:** Play now asks first when a system has none of the BIOS files Batocera lists for it, since the game would most likely close again at once.
+- **feat:** A game downloaded again takes the place of its earlier finished row in Activity.
+
+### Fixes
+- **fix:** Play now for PlayStation games and the BIOS files screen work on Batocera 44, which lists two good checksums for one PlayStation BIOS file. Either copy counts as right.
+
+### Docs
+- **docs:** Disc compression says why `.cia` files are left as they are.
+
 ## v0.13.1 (2026-11-11)
 
 More systems compress: 32X CD, SuperGrafx CD and Triforce, with Dolphin's current tool
