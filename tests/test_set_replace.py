@@ -377,7 +377,7 @@ def test_delete_game_says_what_went_when_installed_json_cant_be_written(isolated
     e = ei.value
     assert not os.path.exists(g) and e.paths == [g] and e.freed == 5000 and not e.failed
     assert "installed.json can't be updated now" in str(e)
-    assert {"system": "psx", "remove": [g]} in _queue()
+    assert {"system": "psx", "remove": [g], "keep_media": True} in _queue()
 
 
 def test_delete_game_says_what_went_when_the_game_list_cant_be_told(isolated, monkeypatch):

@@ -699,7 +699,7 @@ def test_hide_and_remove(isolated, fake_es):
                         {"psx": {".chd", ".m3u"}})
     assert es.game("psx", "D1.chd")["hidden"] == "true" and es.game("psx", "D2.chd")["hidden"] == "true"
     assert not es.game("psx", "Set.m3u").get("hidden")
-    assert not os.path.exists(os.path.join(sysdir, "images", "Gone-image.png"))     # the uninstalled game's art
+    assert os.path.exists(os.path.join(sysdir, "images", "Gone-image.png"))     # the removed game's art stays
     assert os.path.exists(os.path.join(sysdir, "images", "Shared-image.png"))
 
 
@@ -954,9 +954,9 @@ def test_sweep_reinstalled_game_keeps_its_cover(isolated, fake_es):
     assert os.path.exists(os.path.join(sysdir, "images", "A-image.png"))
 
 
-def test_remove_keep_media_leaves_the_owners_media(isolated, fake_es):
-    """A removal queued for a game put here another way (keep_media) drops only ES's entry;
-    without the key (the app's own game) its scraped media goes."""
+def test_a_removal_never_deletes_media(isolated, fake_es):
+    """A removal drops only ES's entry: the game's art, videos and manuals stay, whoever put
+    them there, with or without the keep_media key an older queue line may lack."""
     sysdir = os.path.join(rommlib.ROMS_ROOT, "gba")
     os.makedirs(os.path.join(sysdir, "images"))
     os.makedirs(os.path.join(sysdir, "videos"))
@@ -971,8 +971,33 @@ def test_remove_keep_media_leaves_the_owners_media(isolated, fake_es):
     fake_es({"gba": {".zip"}})
     rb_finalize.process([{"system": "gba", "remove": [os.path.join(sysdir, "A.zip")], "keep_media": True},
                          {"system": "gba", "remove": [os.path.join(sysdir, "B.zip")]}], None, {"gba": {".zip"}})
-    assert all(os.path.exists(os.path.join(sysdir, f)) for f in media["A"])
-    assert not any(os.path.exists(os.path.join(sysdir, f)) for f in media["B"])
+    assert all(os.path.exists(os.path.join(sysdir, f)) for f in media["A"] + media["B"])
+
+
+@pytest.mark.parametrize("how", ["free up space", "games es can't see"])
+def test_deleting_a_game_from_a_list_keeps_its_art(isolated, fake_es, how):
+    """Free up space and Games ES can't see delete as the game page does: the art and video
+    gamelist.xml names for the game stay."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(os.path.join(sysdir, "images"))
+    os.makedirs(os.path.join(sysdir, "videos"))
+    game = os.path.join(sysdir, "Mine.chd")
+    art, vid = os.path.join(sysdir, "images", "Mine-image.png"), os.path.join(sysdir, "videos", "Mine-video.mp4")
+    for p in (game, art, vid):
+        open(p, "w").close()
+    _gl(sysdir, "<gameList><game><path>./Mine.chd</path><image>./images/Mine-image.png</image>"
+                "<video>./videos/Mine-video.mp4</video></game></gameList>")
+    lib = rommlib.Library()
+    fake_es({"psx": {".chd"}})
+    if how == "free up space":
+        lib.mark({"id": 1, "name": "Mine", "fs_name": "Mine.chd", "fs_name_no_ext": "Mine"}, "psx", [game])
+        rommlib.delete_game("psx", game, lib)
+    else:
+        rommlib.delete_unseen({"path": game, "system": "psx"}, lib)
+    queued = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
+    assert queued == [{"system": "psx", "remove": [game], "keep_media": True}]
+    rb_finalize.process(queued, None, {"psx": {".chd"}})
+    assert not os.path.exists(game) and os.path.exists(art) and os.path.exists(vid)
 
 
 def test_sweep_numbers_compare_by_value():

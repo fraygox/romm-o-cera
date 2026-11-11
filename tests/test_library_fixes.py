@@ -504,7 +504,7 @@ def test_es_deletes_and_moves_queue_their_gamelist_change_even_if_unrecorded(iso
     with pytest.raises(rommlib.LibraryUnreadable):
         rommlib.move_unseen({"path": c, "system": "psx"}, "saturn", lib)
     queued = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
-    assert {"system": "psx", "remove": [a]} in queued and {"system": "psx", "remove": [b]} in queued
+    assert {"system": "psx", "remove": [a], "keep_media": True} in queued and {"system": "psx", "remove": [b], "keep_media": True} in queued
     assert any(q.get("rename") == {c: os.path.join(rommlib.ROMS_ROOT, "saturn", "Gamma.chd")} for q in queued)
 
 
@@ -686,4 +686,4 @@ def test_deleting_a_hand_copied_game_queues_its_removal_keeping_media(isolated):
     rommlib.delete_game("psx", mine, lib)
     queued = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
     assert {"system": "psx", "remove": [theirs], "keep_media": True} in queued
-    assert {"system": "psx", "remove": [mine]} in queued
+    assert {"system": "psx", "remove": [mine], "keep_media": True} in queued

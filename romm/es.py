@@ -357,7 +357,6 @@ def delete_game(system, path, library=None, pins=None):
         # (picked in a confirm: only files still as they were when it opened)
         files = [p for p in files if library.still_pinned(p, pins)]
     name = os.path.splitext(os.path.basename(path))[0]
-    keep_media = library is not None and not library.owns(path, ours)    # not the app's: its media stays
     gone, failed, freed = [], [], 0
     remove = library.remove_path if library is not None else _remove_keeping_folders
     for p in files:
@@ -383,7 +382,7 @@ def delete_game(system, path, library=None, pins=None):
     queue_err = None
     if gone:           # queued first: the files are gone even if installed.json can't be updated
         try:
-            _core.append_gamelist(dict({"system": system, "remove": gone}, **({"keep_media": True} if keep_media else {})))
+            _core.append_gamelist({"system": system, "remove": gone, "keep_media": True})
         except OSError as e:
             queue_err = e
             _core.log("DELETE %s: ES's removal not queued: %r" % (system, e))

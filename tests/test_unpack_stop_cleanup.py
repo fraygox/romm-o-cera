@@ -279,7 +279,7 @@ def test_free_up_space_counts_a_delete_installed_json_cant_record(isolated, monk
     assert e.paths == [g] and e.freed == 5000 and not e.failed
     assert delete_outcome("Game", e)[0], "counted as not deleted"
     q = [json.loads(line) for line in open(rommlib.GAMELIST_QUEUE)]
-    assert q[-1] == {"system": "psx", "remove": [g]}
+    assert q[-1] == {"system": "psx", "remove": [g], "keep_media": True}
 
 
 def test_free_up_space_deletes_the_rest_when_one_file_wont_go(isolated, monkeypatch):

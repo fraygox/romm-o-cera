@@ -12,8 +12,9 @@ from rbui.screens.game import GameScreen
 from rbui.screens.games import GAME_LIST, GAME_PANEL, GameListScreen
 from rbui.screens.box_data import (RESULT_LABELS, conversion_rows, conversion_status, installed_games, plural,
                                    reason, result_line, room_note)
-from rbui.modals import ActionMenu, Confirm, ManageMenu, media_note, playlists_note
+from rbui.modals import ActionMenu, Confirm, ManageMenu, playlists_note
 from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_head, list_row, split
+from rbui.widgets.hero import day
 
 
 class InstalledScreen(ListScreen):
@@ -154,11 +155,10 @@ class InstalledScreen(ListScreen):
                                 danger=True)
             return
         paths = app.library.paths_for(rom, it["system"])
-        media = app.library.made_media(rom, it["system"], paths) if paths else []
+        # (its art, video and manual stay, as with every delete: they're never named here)
         app.modal = Confirm(app, "Delete %s?" % it["name"],
-                            "Removes it from roms/%s%s (%s). Saves and states are kept.%s"
-                            % (it["system"], media_note(media),
-                               human_size(it["size"] + sum(rommlib.path_size(p) for p in media)),
+                            "Removes it from roms/%s (%s). Saves and states are kept.%s"
+                            % (it["system"], human_size(it["size"]),
                                playlists_note(it["system"], paths)), "Delete",
                             lambda: app.uninstall(rom, it["system"], self.load), danger=True)
 
@@ -219,7 +219,7 @@ class InstalledScreen(ListScreen):
         list_head(c, self.f, GAME_LIST, head, dict(self.SORTS)[self.sort])
         for i, r, on in self.row_rects(ROWS_TOP, x=lx, w=lw):
             it = self.items[i]
-            sub = (self.app.system_name(it["system"]) if it["system"] else "?") + (" · added %s" % it["when"][:10] if it.get("when") else "")
+            sub = (self.app.system_name(it["system"]) if it["system"] else "?") + (" · added %s" % day(it["when"]) if it.get("when") else "")
             list_row(c, self.f, r, on, it["name"], sub, human_size(it["size"]),
                      mark=lambda ctr, it=it: self.draw_pick(c, it, ctr), slot="installed")
         it = self.items[self.sel]
@@ -236,7 +236,7 @@ class InstalledScreen(ListScreen):
         p.title(it["name"])
         p.fact("System", self.app.system_name(it["system"]) if it["system"] else "?")
         p.fact("Size", human_size(it["size"]))
-        p.fact("Added", it.get("when", "")[:10])
+        p.fact("Added", day(it.get("when", "")))
         p.prose(note, color=theme.FAINT, lines=3)
 
 
@@ -256,7 +256,7 @@ def delete_outcome(name, e):
 
 
 def _lastplayed_label(lp):
-    return "never played" if not lp else "played %s-%s-%s" % (lp[:4], lp[4:6], lp[6:8])
+    return "played %s" % day(lp) if lp and day(lp) else "never played"
 
 
 class ConversionsScreen(ListScreen):
@@ -351,10 +351,12 @@ class ConversionsScreen(ListScreen):
             text(c, self.f.body, "Disc games are compressed here in the background after they download.",
                  (W // 2, 340), theme.FAINT, "center")
             return
-        nq = sum(1 for r in self.rows if r["kind"] in ("queued", "running"))
+        nq = sum(1 for r in self.rows if r["kind"] == "queued")
+        run = any(r["kind"] == "running" for r in self.rows)
         lst, pan = split(None)
-        list_head(c, self.f, lst, "%d waiting" % nq if nq else "Queue empty",
-                  "runs while nothing is playing" if nq else "")
+        list_head(c, self.f, lst, ("Converting, %d waiting" % nq if nq else "Converting") if run else
+                  "%d waiting" % nq if nq else "Queue empty",
+                  "runs while nothing is playing" if nq or run else "")
         for i, box, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width, gap=6):
             r = self.rows[i]
             st, col, sub, frac = self.state(r)
@@ -374,7 +376,7 @@ class ConversionsScreen(ListScreen):
         if r.get("size"):
             p.fact("Size now", human_size(r["size"]))
         if r.get("time"):
-            p.fact("Finished", time.strftime("%Y-%m-%d %H:%M", time.localtime(r["time"])))
+            p.fact("Finished", day(r["time"], clock=True))
         if r.get("wait") == "space":
             p.prose(room_note(r), lines=4)
         elif r["kind"] in ("queued", "running"):

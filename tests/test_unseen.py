@@ -291,7 +291,7 @@ def test_delete_takes_the_tracks_it_names_and_updates_our_record(isolated):
     inst = json.load(open(rommlib.STATE_PATH))
     assert "7" not in inst and inst["8"]["paths"] == [disc2]
     q = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
-    assert q[-1] == {"system": "n64", "remove": paths}
+    assert q[-1] == {"system": "n64", "remove": paths, "keep_media": True}
     assert rommlib.find_unseen(ES) == []
 
 

@@ -357,7 +357,7 @@ def delete_unseen(finding, library=None):
             os.rmdir(d)
             d = os.path.dirname(d)
     _core.log("UNSEEN deleted %s (%s)" % (paths, _core.human_size(freed)))
-    _core.append_gamelist({"system": system, "remove": paths})    # first: they're gone either way
+    _core.append_gamelist({"system": system, "remove": paths, "keep_media": True})    # first: they're gone either way
     if library is not None and _recorded(library, paths):
         gone = set(paths)
 

@@ -1074,7 +1074,7 @@ class Library:
 
     def uninstall(self, rom, system):
         """Delete the rom's files (never saves/states, never outside
-        roms/<system>) and the media ES keeps for it from the app (made_media),
+        roms/<system>, never the art, videos and manuals ES keeps for it),
         queue their gamelist entries for removal and drop its record. Refused (GameBusy) while its conversion is queued or running. A
         file that won't go doesn't stop the rest: the record keeps what's left
         and UninstallIncomplete says what that is."""
@@ -1144,7 +1144,7 @@ class Library:
                 inst.pop(rid, None)
         try:
             if gone:
-                # (its own media went with made_media above; the rest listed for it is the owner's)
+                # (its art, videos and manuals stay, whoever put them there)
                 _core.append_gamelist({"system": system, "remove": gone, "keep_media": True})
         finally:
             try:

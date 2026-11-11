@@ -407,3 +407,27 @@ def test_a_converted_games_media_is_carried_once_however_many_tracks(isolated):
     carry = {chd: {"text": {"desc": "words"}, "usage": {}, "hidden": False, "media": {"image": art}}}
     assert rb_finalize.apply([e], None, {"psx": {".chd"}}, esapi, carry) == []
     assert [m[0] for m in esapi.media] == ["image"] and len(esapi.meta) == 1
+
+
+def test_a_renamed_games_carried_art_never_writes_over_a_file_at_the_new_name(isolated, fake_es):
+    """A folder's one disc converted to a CHD named after the folder: the art its old entry had isn't
+    sent over a file already there under the new name (nothing links it: the owner's own, say)."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "pcenginecd")
+    folder = os.path.join(sysdir, "Lorem (USA)")
+    os.makedirs(folder)
+    cue = os.path.join(folder, "track.cue")
+    open(cue, "w").write('FILE "track.bin" BINARY\n')
+    es = fake_es({"pcenginecd": {".cue", ".chd"}})
+    os.makedirs(os.path.join(sysdir, "images"))
+    open(os.path.join(sysdir, "images", "track-image.png"), "wb").write(b"\x89PNG\r\n\x1a\n" + b"old entry's")
+    mine = os.path.join(sysdir, "images", "Lorem (USA)-image.png")
+    open(mine, "wb").write(b"\x89PNG\r\n\x1a\n" + b"the owner's own, unlinked")
+    with es.lock:
+        es.mem["pcenginecd"][cue].update(name="Lorem", image="./images/track-image.png")
+    chd = os.path.join(sysdir, "Lorem (USA).chd")
+    open(chd, "wb").write(b"MComprHD")
+    __import__("shutil").rmtree(folder)
+    left = rb_finalize.process([{"system": "pcenginecd", "rename": {folder: chd}}], None,
+                               {"pcenginecd": {".cue", ".chd"}}, rb_finalize.EsApi(es.url),
+                               dict(rommlib.DEFAULT_CONFIG))
+    assert open(mine, "rb").read() == b"\x89PNG\r\n\x1a\n" + b"the owner's own, unlinked"

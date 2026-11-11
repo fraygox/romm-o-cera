@@ -208,7 +208,7 @@ class GameLists:
     """ES's game list of each system for one batch, fetched once and kept until the batch
     changes what ES lists (/addgames, a reload: drop()), so a batch costs a fetch or two
     per system however many entries it has. xml: each system's gamelist.xml <game>s, read
-    once (snapshot_renames, removed_media)."""
+    once (snapshot_renames)."""
 
     def __init__(self, esapi):
         self.esapi, self.got, self.xml = esapi, {}, {}
@@ -796,13 +796,6 @@ def snapshot_renames(entries, esapi=None, lists=None):
     if lists is None:
         lists = GameLists(esapi)
     for e in entries:
-        if "remove" in e:
-            gone = [r for r in e["remove"] if not os.path.exists(r)]   # reinstalled since: keep its art
-            if e.get("keep_media"):      # a game put here another way: only ES's entry goes, never the owner's media
-                gone = []
-            sysdir = os.path.join(rommlib.ROMS_ROOT, e["system"])
-            carry[("media-of-removed", id(e))] = removed_media(sysdir, gone, lists.nodes(sysdir)) if gone else []
-            continue
         if "rename" not in e:
             continue
         for new, info in (e.get("_carry") or {}).items():
@@ -854,28 +847,6 @@ def merge_usage(game, usage):
     if usage.get("favorite") == "true" and str(game.get("favorite")) != "true":
         out["favorite"] = "true"
     return out
-
-
-def removed_media(sysdir, removed, nodes=False):
-    """Media files of uninstalled games, from gamelist.xml (read only, before
-    ES reloads): those inside the system's media folders that no other entry
-    uses. The entries themselves are left to ES (it ignores missing files).
-    nodes: its <game>s read already (None: it couldn't be read)."""
-    if nodes is False:
-        nodes = GameLists(None).nodes(sysdir)
-    if nodes is None:
-        return []
-    rels = [rel(sysdir, r) for r in removed]
-    gone, keep = set(), set()
-    for g in nodes:
-        p = g.findtext("path") or ""
-        dead = any(p == r or p.startswith(r.rstrip("/") + "/") for r in rels)
-        for k in MEDIA_TAGS:
-            v = (g.findtext(k) or "").strip()
-            if v:
-                (gone if dead else keep).add(os.path.normpath(os.path.join(sysdir, v)))
-    return sorted(f for f in gone - keep
-                  if any(f.startswith(os.path.join(sysdir, d) + os.sep) for d in rommlib.GAMELIST_MEDIA_DIRS))
 
 
 def upload_file(esapi, system, gid, tag, path):
@@ -1016,12 +987,7 @@ def _apply(entries, api, es, esapi, carry, cfg, find, pre, feed, left):
         system = e["system"]
         try:
             feed()
-            if "remove" in e:
-                for f in carry.get(("media-of-removed", id(e)), []):   # ES itself drops the games
-                    try:
-                        os.remove(f)
-                    except OSError:
-                        pass
+            if "remove" in e:           # ES itself drops the games; their art, videos and manuals always stay
                 continue
             if foreign(system, es):                 # never listed here: kept (tries spent), no fetch
                 if _files(e):
@@ -1043,8 +1009,13 @@ def _apply(entries, api, es, esapi, carry, cfg, find, pre, feed, left):
                         if info["hidden"] and not new.lower().endswith(".m3u"):
                             fields["hidden"] = "true"      # a disc under a playlist stays hidden; the playlist never
                         ok = esapi.set_meta(system, g["id"], fields) and ok
+                        there = rommlib.es_named_media(os.path.join(rommlib.ROMS_ROOT, system), [new],
+                                                       tuple(info["media"]), any_entry=True)
                         for tag, p in info["media"].items():
-                            if not g.get(tag):
+                            # (never over another file that's there already under the new name, whoever's
+                            # it is; the game's own file under the same name is the usual case, and goes on)
+                            others = {os.path.normpath(f) for f in there.get(tag, ())} - {os.path.normpath(p)}
+                            if not g.get(tag) and not others:
                                 upload_file(esapi, system, g["id"], tag, p)
                 for h in e.get("hide", []):
                     g = find(system, h)
