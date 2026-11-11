@@ -170,6 +170,51 @@ The contract tests are read-only and download only the smallest file they
 find. `disposable.py` is handy before upgrading RomM: run it with the new tag
 first.
 
+### Format tests on a test box
+
+`tools/formats/` compresses and plays every format the app changes, on a
+throwaway Batocera box, the way a user does it. There is one case per converter
+and system in `rommlib.CONVERTERS` (`createcd-psx`, `rvz-wii`, `zar-xbox360`, …),
+plus `xiso-xbox` (Make Xbox images bootable) and `ps3decrypt-ps3`.
+`tools/formats/cases.py` builds them from the table, and lists for each case
+the files whose change should make it run again. `tests/test_format_cases.py`
+keeps the cases in step with the table.
+
+For each case the runner copies an input from your own library onto the box as
+`fmt-<key>.<ext>` (cue and gdi sheets are rewritten to the new track names). It
+places the BIOS files Batocera's own list asks for by MD5, then launches the
+original through EmulationStation's API as a control. Next it compresses the game
+with the app's own planner and worker (`rb_chd_plan.py`, `rb_chd.py`; the tools
+the app downloads are installed with `install_tool`) and checks the result the way
+Check games does. Last, it launches the result. A game counts as playing when the
+emulator is still running after about 25 seconds, the launch log shows no load
+failure, and the middle of a screenshot changed, isn't blank, and isn't the
+emulator's own window or an error box.
+
+```sh
+tools/formats/run.py --pick --library ~/roms --bios ~/bios [--lab ~/homebrew]   # local/formats/inputs.json
+tools/formats/run.py --box 127.0.0.1:2222 --base 43.1 --changed-since v0.13.1  # or --cases K1,K2, or --all
+tools/formats/run.py --box 127.0.0.1:2223 --base 44 --changed-since v0.13.1
+```
+
+- `--pick` takes the smallest suitable file per case and records which one in
+  `local/formats/inputs.json` (git-ignored). Game names stay there, and nothing
+  else the harness writes names them. When a format exists only in another form
+  (GameCube/Wii `.iso` from `.rvz`, Wii U `.wud` from `.wux`), the input is made on
+  the box with the app's own tool.
+- Results: `build/formats/<base>/<key>.json`, `summary.md`, and the screenshots.
+  The run exits with 1 when a case that could be judged failed: the result
+  doesn't compress or doesn't pass the check, or the original plays and the result
+  doesn't. A case is **unjudged** when neither plays on that box, or both run but
+  the box's screenshots can't show the picture. A VM without a real GPU can't run
+  every emulator, and the result says why.
+- Use a test box only. The harness turns off EmulationStation's "missing BIOS"
+  question, changes the converter settings, and sets the space to keep free to 1 GB.
+- `local/formats/passed.json` records each case's last outcome per base with a
+  hash of its files. `tools/release.py stable` refuses to cut a release when a
+  case's files changed since the last tag and it hasn't passed on 43.1 and 44 for
+  that code. `--skip-format-tests` overrides this and prints what was skipped.
+
 ## Adding a setting
 
 Every `config.json` key is one `Setting` in `rommlib.SETTINGS` (`romm/config.py`), in the order

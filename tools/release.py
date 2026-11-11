@@ -11,6 +11,8 @@ the building (tests.yml, nightly.yml, release.yml, docs.yml).
                                          written from the commits since the last release
       --summary TEXT                     one line for the release title (default: from the notes)
       --no-screenshots                   keep the README screenshots as they are
+      --skip-format-tests                cut it even though the format harness hasn't passed
+                                         the cases whose code changed (see format_gate)
       --wait                             watch the release workflow until it's published
   tools/release.py screenshots           regenerate the README screenshots and commit them
   tools/release.py docs                  publish main's docs site now (else: each stable release)
@@ -26,6 +28,7 @@ the type decides where a change lands in the notes.
 """
 import argparse
 import datetime
+import json
 import os
 import re
 import shlex
@@ -265,8 +268,52 @@ def add_changelog(tag, today, summary, notes):
     open(CHANGELOG, "w", encoding="utf-8").write(text)
 
 
+FORMAT_PASSED = os.path.join(HERE, "local", "formats", "passed.json")   # tools/formats/run.py writes it
+FORMAT_BASES = ("43.1", "44")           # every Batocera the harness runs on
+FORMAT_OK = ("pass", "unjudged", "no-input")
+
+
+def format_gate(skip):
+    """The format cases (tools/formats/cases.py) whose code changed since the last
+    release must have a run on every FORMAT_BASES box that didn't fail, for the
+    code as it is now (a hash of the case's files). Otherwise refuse, unless skip."""
+    tag = last_tag()
+    if not tag:
+        return
+    sys.path.insert(0, os.path.join(HERE, "tools", "formats"))
+    import cases
+    touched = cases.cases_touched(git("diff", "--name-only", tag, "HEAD").split())
+    try:
+        with open(FORMAT_PASSED) as f:
+            passed = json.load(f)
+    except (OSError, ValueError):
+        passed = {}
+    todo, notes = [], []
+    for c in touched:
+        h = c.areas_hash()
+        for base in FORMAT_BASES:
+            r = (passed.get(base) or {}).get(c.key)
+            if not r or r.get("areas_hash") != h:
+                todo.append("%s on %s (%s)" % (c.key, base, "not run for this code" if r else "never run"))
+            elif r.get("status") not in FORMAT_OK:
+                todo.append("%s on %s (%s: %s)" % (c.key, base, r.get("status"), r.get("note", "")[:80]))
+            elif r["status"] != "pass":
+                notes.append("%s on %s: %s" % (c.key, base, r["status"]))
+    if touched and not todo:
+        say("format harness: %d changed case(s) passed%s" % (len(touched), "; " + ", ".join(notes) if notes else ""))
+    if not todo:
+        return
+    if skip:
+        say("--skip-format-tests: not run or failed for this code:\n  " + "\n  ".join(todo))
+        return
+    sys.exit("format harness: these cases' code changed since %s and they haven't passed for it:\n  %s\n"
+             "run tools/formats/run.py --changed-since %s on each box, or pass --skip-format-tests"
+             % (tag, "\n  ".join(todo), tag))
+
+
 def cmd_stable(a):
     require_clean_main()
+    format_gate(a.skip_format_tests)
     old = version()
     new = a.version or bump(old, a.bump)
     tag = "v" + new
@@ -316,6 +363,7 @@ def main():
     p.add_argument("--notes")
     p.add_argument("--summary")
     p.add_argument("--no-screenshots", action="store_true")
+    p.add_argument("--skip-format-tests", action="store_true")
     p.add_argument("--wait", action="store_true")
     p = sub.add_parser("notes")
     p.add_argument("tag", nargs="?")
