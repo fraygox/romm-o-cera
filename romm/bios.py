@@ -42,25 +42,39 @@ def file_md5(path):
     return _MD5[key]
 
 
+def _md5s(b):
+    """The checksums Batocera accepts for one BIOS entry, lower-case. Its list gives one as a
+    string, and from Batocera 44 a list of them where several dumps of a file are good."""
+    v = b.get("md5")
+    return [m.lower() for m in ([v] if isinstance(v, str) else v or []) if isinstance(m, str) and m]
+
+
+def _accepted(m):
+    """Every checksum that is right for one missing_bios() entry."""
+    return m.get("md5s") or [m["md5"]]
+
+
 def missing_bios(system):
     """BIOS files Batocera lists for this system that are absent or have the
-    wrong checksum. (Some systems list alternatives — any one works.)"""
+    wrong checksum. (Some systems list alternatives — any one works.) Each entry has
+    "md5s", every checksum accepted for the file, and "md5", the first of them."""
     out, seen = [], set()
     db = bios_requirements()
     for key in [system] + BIOS_ALIASES.get(system, []):
         for b in (db.get(key) or {}).get("biosFiles", []):
-            if b.get("zippedFile") or not b.get("file") or not b.get("md5"):
+            md5s = _md5s(b)
+            if b.get("zippedFile") or not b.get("file") or not md5s:
                 continue
             path = os.path.join(_core.USERDATA, b["file"])
             if path in seen:
                 continue
             seen.add(path)
             try:
-                if os.path.isfile(path) and file_md5(path) == b["md5"].lower():
+                if os.path.isfile(path) and file_md5(path) in md5s:
                     continue
             except OSError:
                 pass
-            out.append({"path": path, "md5": b["md5"].lower(), "file": b["file"]})
+            out.append({"path": path, "md5": md5s[0], "md5s": md5s, "file": b["file"]})
     return out
 
 
@@ -73,7 +87,7 @@ def bios_offer(api, system, platform_id):
     for fw in api.firmware(platform_id):
         if fw.get("md5_hash"):
             by_md5.setdefault(fw["md5_hash"].lower(), fw)
-    return [(m, by_md5[m["md5"]]) for m in missing if m["md5"] in by_md5]
+    return [(m, by_md5[h]) for m in missing for h in [next((h for h in _accepted(m) if h in by_md5), None)] if h]
 
 
 def bios_fetched():
@@ -107,7 +121,7 @@ def bios_required(system):
     db = bios_requirements()
     for key in [system] + BIOS_ALIASES.get(system, []):
         for b in (db.get(key) or {}).get("biosFiles", []):
-            if b.get("zippedFile") or not b.get("file") or not b.get("md5") or b["file"] in seen:
+            if b.get("zippedFile") or not b.get("file") or not _md5s(b) or b["file"] in seen:
                 continue
             seen.add(b["file"])
             out.append(b["file"])
@@ -132,7 +146,7 @@ def bios_status(api, platforms_by_system, systems_with_games=()):
         missing = missing_in[system]
         offers, seen = [], set()
         if missing and api is not None:
-            want = {m["md5"]: m for m in missing}
+            want = {h: m for m in missing for h in _accepted(m)}
             for pid in platforms_by_system.get(system, []):
                 try:
                     fws = _api.fetched(firmware[pid])
@@ -175,7 +189,7 @@ def _fetch_bios_into(api, offers, system, written, record):
         part = m["path"] + ".part"
         api.download_firmware(fw["id"], fw["file_name"], part, _api.BIOS_MAX, "BIOS",
                               "BIOS download larger than %s; refused." % _core.human_size(_api.BIOS_MAX))
-        if file_md5(part) != m["md5"]:
+        if file_md5(part) not in _accepted(m):
             os.remove(part)
             raise _core.RommError("BIOS checksum mismatch for %s" % m["file"])
         if os.path.exists(m["path"]):

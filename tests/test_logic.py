@@ -239,6 +239,26 @@ def test_missing_bios_and_aliases(isolated):
     assert [m["file"] for m in rommlib.missing_bios("megacd")] == ["bios/bios_CD_U.bin"]  # alias
 
 
+def test_a_bios_file_with_several_good_checksums(isolated):
+    """Batocera 44 lists two checksums for one file: either dump is right, and RomM may hold
+    either."""
+    import hashlib
+    second = b"the other good dump"
+    os.makedirs(os.path.join(rommlib.USERDATA, "bios"))
+    path = os.path.join(rommlib.USERDATA, "bios", "two.bin")
+    _bios_db(isolated, [{"md5": ["A" * 32, hashlib.md5(second).hexdigest()], "file": "bios/two.bin"}])
+    (m,) = rommlib.missing_bios("psx")
+    assert m["md5"] == "a" * 32 and len(m["md5s"]) == 2
+    assert rommlib.bios_required("psx") == ["bios/two.bin"] == rommlib.bios_all_missing("psx")
+
+    class Api:
+        def firmware(self, pid):
+            return [{"id": 5, "file_name": "two.bin", "md5_hash": m["md5s"][1].upper()}]
+    assert [(e["file"], fw["id"]) for e, fw in rommlib.bios_offer(Api(), "psx", 1)] == [("bios/two.bin", 5)]
+    open(path, "wb").write(second)
+    assert rommlib.missing_bios("psx") == []
+
+
 def test_controller_styles(rb):
     rb.PAD_STYLE.update(style="playstation", ok="south", back="east")
     assert rb.pad_face("A")[:2] == ("shape", "cross") and rb.pad_face("B")[1] == "circle"
