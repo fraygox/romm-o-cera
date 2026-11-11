@@ -16,6 +16,38 @@ import rommlib
 from . import core as _core, config as _config, discs as _discs, tools as _tools, ps3 as _ps3, wiiu as _wiiu
 
 
+_CHDMAN = {}       # (path, mtime, size) -> whether it ran: asked once per chdman, not per frame
+
+
+def chdman_supported():
+    """Batocera's chdman is here and starts (it comes with MAME; the app never fetches it). Only
+    a chdman that can't be found or can't be run says no: one that is slow to answer, or
+    answers oddly, is taken as working, so a real box never loses CHD to this check."""
+    exe = shutil.which("chdman")
+    if not exe:
+        return False
+    try:
+        st = os.stat(exe)
+        key = (exe, st.st_mtime, st.st_size)
+    except OSError:
+        return False
+    if key not in _CHDMAN:
+        _CHDMAN.clear()
+        try:
+            r = subprocess.run([exe, "help"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=10)
+            _CHDMAN[key] = r.returncode not in (126, 127)      # the shell's "can't run it" / "not found"
+        except subprocess.TimeoutExpired:
+            _CHDMAN[key] = True
+        except OSError:                                        # not a program for this CPU, a missing library's loader
+            _CHDMAN[key] = False
+    return _CHDMAN[key]
+
+
+def chd_enabled(cfg):
+    return bool(_config.config_value(cfg, "chd")) and chdman_supported()
+
+
 def squashfs_supported():
     return shutil.which("mksquashfs") is not None
 
@@ -765,19 +797,19 @@ CONVERTERS = (
     # CD images become createcd on every CHD system (PS2's CD-based games come as cue/bin too);
     # its priority ranks PS2 and PSP for createdvd and cso as well
     Converter("createcd", "CHD", "chd", frozenset(_core.CHD_CD_SYSTEMS | _core.CHD_DVD_SYSTEMS),
-              dict.fromkeys((".cue", ".gdi"), ".chd"), "chd", _config.SETTING["chd"].label, "turned off",
-              lambda cfg, system: bool(_config.config_value(cfg, "chd")), chd=True,
+              dict.fromkeys((".cue", ".gdi"), ".chd"), "chd", _config.SETTING["chd"].label, "turned off, or chdman is missing",
+              lambda cfg, system: chd_enabled(cfg), chd=True,
               priority=("psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
                         "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp")),
     # DVD images (.iso) on PS2/PSP only
     Converter("createdvd", "CHD", "chd", frozenset(_core.CHD_DVD_SYSTEMS), {".iso": ".chd"},
-              "chd", _config.SETTING["chd"].label, "turned off",
-              lambda cfg, system: bool(_config.config_value(cfg, "chd")), chd=True),
+              "chd", _config.SETTING["chd"].label, "turned off, or chdman is missing",
+              lambda cfg, system: chd_enabled(cfg), chd=True),
     # PSP .cso: decoded to a temporary ISO beside the CHD, then createdvd like an .iso
     # (mode "cso" is stored in queue tasks: never rename it)
     Converter("cso", "CHD", "chd", frozenset({"psp"}), {".cso": ".chd"},
-              "chd", _config.SETTING["chd"].label, "turned off",
-              lambda cfg, system: bool(_config.config_value(cfg, "chd")), chd=True, space_factor=2,
+              "chd", _config.SETTING["chd"].label, "turned off, or chdman is missing",
+              lambda cfg, system: chd_enabled(cfg), chd=True, space_factor=2,
               check=lambda src: _discs.cso_info(src), space=lambda src: _discs.cso_info(src)["total"] + os.path.getsize(src)),
     Converter("rvz", "RVZ", "rvz", frozenset(_core.RVZ_SYSTEMS), dict.fromkeys(_core.RVZ_SOURCES, ".rvz"),
               "rvz", _config.SETTING["rvz"].label, "turned off, or dolphin-tool isn't installed",

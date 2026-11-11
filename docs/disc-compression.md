@@ -21,6 +21,10 @@ with 2048-byte hunks, which PPSSPP reads fastest). PS2 and PSP games that
 come as CD images (cue/bin) become CHD too, not only DVD `.iso` files. chdman
 verifies each CHD before the original goes.
 
+chdman is Batocera's own (it comes with MAME); the app doesn't download it. On
+a box where it's missing or doesn't start, the row says **Not available**,
+nothing is queued for it, and disc games stay as they downloaded.
+
 - A folder holding two releases of a game (say the original and a "Dual Shock
   Ver.") becomes one playlist per release.
 - DVD images (PS2, PSP) skip chdman's FLAC codec, which leaks memory in some

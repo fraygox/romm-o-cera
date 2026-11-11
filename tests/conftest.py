@@ -60,6 +60,13 @@ def _fast_polls(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _a_box_with_chdman(monkeypatch):
+    """Batocera ships chdman; the test image doesn't. Tests stand on a box that has it unless
+    they say otherwise (test_chdman_missing.py)."""
+    monkeypatch.setattr(rommlib, "chdman_supported", lambda: True)
+
+
+@pytest.fixture(autouse=True)
 def _pad_state():
     """The controller style and keyboard mode are module state: a test that switches them
     (Settings, a key press) leaves the next test on the same worker drawing other glyphs."""
