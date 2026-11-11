@@ -57,7 +57,7 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   cut-short games and replace them. → [On this box](docs/on-this-box.md)
 - **Save space without losing anything.** Disc games are compressed in the
   background, lossless and verified: CHD for CD systems, PS2 and PSP; RVZ
-  for GameCube and Wii; squashfs for Xbox; .zcci for 3DS; .zar for Xbox
+  for GameCube, Wii and Triforce; squashfs for Xbox; .zcci for 3DS; .zar for Xbox
   360; .wux for Wii U, or .wua with your own disc keys. Games already on the
   box can be compressed too. → [Disc compression](docs/disc-compression.md),
   [Wii U games](docs/wiiu.md)

@@ -98,7 +98,7 @@ SETTINGS = (
             help="The next game downloads while one unpacks. Turn it off on slow storage (SD cards, USB sticks)."),
     Setting("rvz", False,               # convert GameCube/Wii images to RVZ (downloads dolphin-tool when turned on)
             row="rvz", label="GameCube and Wii to RVZ",
-            help="Turns GameCube and Wii images into RVZ, usually 30-60% smaller and lossless; the original is "
+            help="Turns GameCube, Wii and Triforce images into RVZ, usually 30-60% smaller and lossless; the original is "
                  "deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once."),
     Setting("xbox_bootable", True,      # Xbox: keep only the game partition xemu boots; "X.xiso" -> "X.iso" (ES lists .iso)
             row="xboxboot", label="Make Xbox images bootable", sub="Game partition only; .xiso renamed to .iso",

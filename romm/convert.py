@@ -800,7 +800,7 @@ CONVERTERS = (
               dict.fromkeys((".cue", ".gdi"), ".chd"), "chd", _config.SETTING["chd"].label, "turned off, or chdman is missing",
               lambda cfg, system: chd_enabled(cfg), chd=True,
               priority=("psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd",
-                        "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp")),
+                        "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "sega32x", "supergrafx")),
     # DVD images (.iso) on PS2/PSP only
     Converter("createdvd", "CHD", "chd", frozenset(_core.CHD_DVD_SYSTEMS), {".iso": ".chd"},
               "chd", _config.SETTING["chd"].label, "turned off, or chdman is missing",
@@ -815,7 +815,7 @@ CONVERTERS = (
               "rvz", _config.SETTING["rvz"].label, "turned off, or dolphin-tool isn't installed",
               lambda cfg, system: rvz_enabled(cfg), audit=rvz_audit, tool=_tools.TOOL_DOLPHIN,
               on=lambda cfg, system: bool(_config.config_value(cfg, "rvz")),
-              priority=("gamecube", "wii")),
+              priority=("gamecube", "wii", "triforce")),
     # Xbox: images are made bootable (make_xiso, .xiso -> .iso) first, when xbox_bootable is on
     Converter("squashfs", "squashfs", "squashfs", frozenset(_core.SQUASH_SYSTEMS), {".iso": ".squashfs"},
               "squashfs", _config.SETTING["squashfs"].label, "turned off, or mksquashfs is missing",

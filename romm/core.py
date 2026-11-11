@@ -67,6 +67,7 @@ PLATFORM_MAP = {
     "saturn": "saturn", "sega32": "sega32x", "segacd": "megacd", "sega-pico": "pico",
     "sg1000": "sg1000", "sharp-x68000": "x68000", "snes": "snes",
     "sufami-turbo": "sufami", "supergrafx": "supergrafx", "supervision": "supervision",
+    "triforce": "triforce",
     "turbografx16": "pcengine", "turbografx-cd": "pcenginecd", "vectrex": "vectrex",
     "virtualboy": "virtualboy", "vsmile": "vsmile", "wii": "wii", "wiiu": "wiiu",
     "wonderswan": "wswan", "wonderswan-color": "wswanc", "xbox": "xbox",
@@ -93,12 +94,16 @@ ZIP_NATIVE = {"fbneo", "mame", "neogeo", "gameandwatch"}
 # worker turns into CHD. PSP: PPSSPP (1.15+) reads CHD; made with 2048-byte
 # hunks as PPSSPP recommends. GC/Wii (rvz needs dolphin-tool, not on Batocera),
 # PS3, Xbox stay as-is.
+# sega32x (32X CD games: PicoDrive) and supergrafx (its CD games: Beetle SuperGrafx): Batocera
+# lists .chd for both and their one core reads it. Not fmtowns, vis or macintosh: MAME
+# and the standalone emulators there don't all open a bare .chd.
 CHD_CD_SYSTEMS = {"psx", "saturn", "dreamcast", "megacd", "pcenginecd", "neogeocd",
-                  "3do", "amigacd32", "amigacdtv", "cdi", "pcfx"}
+                  "3do", "amigacd32", "amigacdtv", "cdi", "pcfx", "sega32x", "supergrafx"}
 CHD_DVD_SYSTEMS = {"ps2", "psp"}
 # GameCube / Wii images the worker turns into RVZ with dolphin-tool (downloaded
 # on demand: Settings, "GameCube and Wii to RVZ").
-RVZ_SYSTEMS = {"gamecube", "wii"}
+# Triforce (the GameCube-based arcade board): Batocera runs it in Dolphin and lists .iso and .rvz.
+RVZ_SYSTEMS = {"gamecube", "wii", "triforce"}
 RVZ_SOURCES = (".iso", ".gcm", ".wbfs", ".ciso", ".gcz")
 # Xbox images packed into zstd squashfs (Settings, off by default). Batocera
 # mounts a .squashfs at launch and hands xemu the file inside; xz packs ~5%

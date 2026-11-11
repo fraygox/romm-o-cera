@@ -1342,7 +1342,8 @@ def test_one_converter_per_file_and_the_planner_knows_every_system():
     # the order the planner has always queued in, now read from the table: moving a
     # converter or a priority entry must not change it by accident
     assert rb_chd_plan.ORDER == ["psx", "dreamcast", "ps2", "neogeocd", "saturn", "megacd", "pcenginecd", "3do",
-                                 "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "gamecube", "wii", "xbox", "3ds",
+                                 "amigacd32", "amigacdtv", "cdi", "pcfx", "psp", "sega32x", "supergrafx",
+                                 "gamecube", "wii", "triforce", "xbox", "3ds",
                                  "xbox360", "wiiu", "ps3"]
     assert rommlib.conversion_for("ps2", "/r/G.cue", {"chd": True}).mode == "createcd"
     assert rommlib.conversion_for("ps2", ".iso", {"chd": True}).mode == "createdvd"
@@ -1421,3 +1422,18 @@ def test_compress_never_offers_a_disc_still_being_unpacked(isolated, monkeypatch
     old = time.time() - 120
     os.utime(iso, (old, old))
     assert [os.path.basename(c["files"][0]) for c in rb_chd_plan.candidates(["ps2"])] == ["Lorem (USA).iso"]
+
+
+def test_more_systems_compress_32x_cd_supergrafx_cd_and_triforce():
+    """32X CD and SuperGrafx CD sheets become CHD like the other CD systems, Triforce images RVZ
+    like GameCube's; their cartridges and anything else there are nobody's business."""
+    on = {"chd": True}
+    for system in ("sega32x", "supergrafx"):
+        assert rommlib.conversion_for(system, "/r/G.cue", on).mode == "createcd"
+        for ext in (".32x", ".bin", ".pce", ".sgx", ".iso", ".zip"):
+            assert rommlib.conversion_for(system, ext, on) is None
+    rvz = next(c for c in rommlib.CONVERTERS if c.mode == "rvz")
+    assert "triforce" in rvz.systems and ".iso" in rvz.targets
+    assert rommlib.PLATFORM_MAP["triforce"] == "triforce"
+    for system in ("fmtowns", "vis", "macintosh"):          # their emulators don't all open a bare .chd
+        assert rommlib.conversion_for(system, "/r/G.cue", on) is None

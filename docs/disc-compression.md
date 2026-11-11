@@ -16,7 +16,8 @@ Progress: **Activity** (Select: pause, resume or stop the running one), **On thi
 ## CHD (CD systems, PS2, PSP) — on by default
 
 **Compress disc games to CHD**: PlayStation, Saturn, Dreamcast, Mega CD, PC
-Engine CD, Neo Geo CD, 3DO and the other CD systems, plus PS2 and PSP (PSP
+Engine CD, Neo Geo CD, 3DO and the other CD systems (32X CD and SuperGrafx
+CD games too), plus PS2 and PSP (PSP
 with 2048-byte hunks, which PPSSPP reads fastest). PS2 and PSP games that
 come as CD images (cue/bin) become CHD too, not only DVD `.iso` files. chdman
 verifies each CHD before the original goes.
@@ -66,6 +67,8 @@ SHA-256; x86_64 and 64-bit ARM such as the Pi 4/5), built from Dolphin's
 tagged release 2609b. Each image is verified by dolphin-tool first
 (anything that isn't a GameCube/Wii disc is left alone) and the RVZ must hash
 to the original's CRC32 before the original is deleted. Usually much smaller.
+Triforce arcade images (`roms/triforce`, which Batocera runs in Dolphin) go
+the same way; one dolphin-tool doesn't take for a disc stays as it is.
 
 Check games reads an RVZ's headers (cut short, or made from a different image
 than RomM's); a full check has dolphin-tool read the whole disc and compares

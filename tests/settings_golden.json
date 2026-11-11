@@ -13946,7 +13946,7 @@
   "ps3folders": "Turns PS3 disc images (.iso, zipped or not) into .ps3 folders, the layout RPCS3 installs updates and DLC for. Checked before the image is deleted. Encrypted discs need Decrypt PS3 discs.",
   "resetcfg": "Puts every setting back to its default, server and token included. The old file is kept as config.json.bad-…, so nothing is lost.",
   "rollback": "Swaps the previous version back in and restarts the app. The current one is kept, so this can be undone too.",
-  "rvz": "Turns GameCube and Wii images into RVZ, usually 30-60% smaller and lossless; the original is deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once.",
+  "rvz": "Turns GameCube, Wii and Triforce images into RVZ, usually 30-60% smaller and lossless; the original is deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once.",
   "sounds": "Clicks and chimes while you browse.",
   "speed": "Caps background downloads while a game runs, so online play and streaming stay smooth.",
   "squashfs": "Packs Xbox games into squashfs, usually 15-45% smaller, which Batocera opens at launch. Lossless, verified before the original is deleted. Full disc images need Make Xbox images bootable.",
