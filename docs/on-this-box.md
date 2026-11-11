@@ -130,6 +130,10 @@ them (after asking). Each file is matched and checked against Batocera's
 checksum; a wrong file already there is kept beside it as `.bak-romm`.
 A platform's game list offers the same for its system (X › Get BIOS).
 
+**Play now** asks first when a system has none of the BIOS files Batocera
+lists for it: the game would most likely close again at once. One of several
+alternatives (a file per region) being there is enough for it not to ask.
+
 ## Check games
 
 The last check's findings, damaged ones first, beside a panel that says what's

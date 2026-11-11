@@ -605,8 +605,18 @@ class App:
             return ("Play now", why, None)
         return ("Play now", "%s closes and the game starts" % APP_NAME, lambda: self.play_now(path, system, title))
 
-    def play_now(self, path, system, title):
-        """Say what happens, ask first when downloads are still running, then quit."""
+    def play_now(self, path, system, title, bios_asked=False):
+        """Say what happens, ask first when the system has none of its BIOS files or downloads
+        are still running, then quit."""
+        lack = [] if bios_asked else rommlib.bios_all_missing(system)
+        if lack:
+            names = ", ".join(os.path.basename(f) for f in lack[:3]) + ("…" if len(lack) > 3 else "")
+            self.modal = Confirm(self, "%s may not start" % title,
+                                 "%s needs a BIOS file and none is on this box (%s), so the emulator will "
+                                 "probably close again. On this box › BIOS files lists them and gets the "
+                                 "ones RomM has." % (self.system_name(system), names),
+                                 "Play anyway", lambda: self.play_now(path, system, title, bios_asked=True))
+            return
         d = self.downloader
         n = 0 if d.hold else d.active_count()
         if not n:
@@ -1288,7 +1298,7 @@ class App:
         rx = r.left - 30
         if n:
             j = next((j for j in self.downloader.jobs if j.state == rommlib.Job.DOWNLOADING), None)
-            label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed else "")
+            label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed and not j.stalled() else "")
             r = text(c, self.fonts.small, label, (rx, 33), theme.BLUE, "midright")
             rx = r.left
         crumbs = list(top.crumbs())

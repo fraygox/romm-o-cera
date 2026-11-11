@@ -93,6 +93,14 @@ def _record_bios(entries):
     _core.atomic_write_json(os.path.join(_core.DATA_DIR, "bios-fetched.json"), data, indent=1)
 
 
+def bios_all_missing(system):
+    """The BIOS files Batocera lists for this system when not one of them is here (as names:
+    "bios/x.bin"), else []. Some systems list alternatives (a file per region: any one works),
+    so only "none at all" says a game there probably won't start."""
+    required = bios_required(system)
+    return required if required and len(missing_bios(system)) >= len(required) else []
+
+
 def bios_required(system):
     """Distinct BIOS files Batocera lists for this system (with checksums)."""
     out, seen = [], set()

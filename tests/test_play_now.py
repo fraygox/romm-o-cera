@@ -365,3 +365,41 @@ def test_after_play_now_es_gets_the_game_even_while_downloads_carry_on(app, monk
     app.play_after = p
     app.on_exit()
     assert spawned == ["rb_dl.py", "rb_finalize.py"]  # Play now: ES lists the game now
+
+
+def test_a_system_with_none_of_its_bios_asks_before_it_plays(app, rb, monkeypatch):
+    """Batocera lists BIOS files for the system and not one is here: Play now says the game may
+    not start, and Play anyway starts it. One of them here (a file per region) is enough."""
+    rom, p = _here(app)
+    bios = os.path.join(rommlib.USERDATA, "bios")
+    os.makedirs(bios, exist_ok=True)
+    md5 = __import__("hashlib").md5(b"us").hexdigest()
+    monkeypatch.setattr(rommlib, "bios_requirements", lambda: {"gba": {"biosFiles": [
+        {"file": "bios/lorem_us.bin", "md5": md5}, {"file": "bios/lorem_eu.bin", "md5": "0" * 32}]}})
+    assert rommlib.bios_all_missing("gba") == ["bios/lorem_us.bin", "bios/lorem_eu.bin"]
+    app.play_entry(rom)[2]()
+    assert app.launches == [] and isinstance(app.modal, rb.Confirm)
+    assert app.modal.title == "Lorem Quest (USA) may not start" and "lorem_us.bin" in app.modal.body
+    assert app.modal.ok_label == "Play anyway"
+    app.modal.action("ok")
+    assert app.launches == [(p, "gba", "Lorem Quest (USA)")]
+    del app.launches[:]
+    app.running = True
+    with open(os.path.join(bios, "lorem_us.bin"), "wb") as f:
+        f.write(b"us")
+    assert rommlib.bios_all_missing("gba") == []                 # the other region's file isn't needed
+    app.modal = None
+    app.play_entry(rom)[2]()
+    assert app.launches == [(p, "gba", "Lorem Quest (USA)")]
+    assert rommlib.bios_all_missing("nes") == []                 # a system that needs none
+
+
+def test_a_game_downloaded_again_has_one_row_in_activity(app, monkeypatch):
+    """Its finished row from last time goes when it's queued again; other games' rows stay."""
+    d = app.downloader
+    monkeypatch.setattr(d, "save_queue", lambda: None)
+    rom, other = _rom(1, "Lorem.gba"), _rom(2, "Ipsum.gba")
+    _job(app, rom, rommlib.Job.DONE)
+    _job(app, other, rommlib.Job.DONE)
+    j = d.enqueue(rom, "gba")
+    assert [(x.rom["id"], x.state) for x in d.jobs] == [(2, rommlib.Job.DONE), (1, j.state)] and j.state != rommlib.Job.DONE
