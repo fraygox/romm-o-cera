@@ -19,6 +19,7 @@ from rbui.screens.box_data import UPDATE_WAITS
 from rbui.screens.bios import BiosScreen
 from rbui.screens.themes import ThemePickerScreen
 from rbui.modals import Confirm, InfoDialog
+from rbui.widgets.hero import day
 
 
 class SettingsScreen(Screen):
@@ -173,6 +174,7 @@ class SettingsScreen(Screen):
 
     # generic rows that need something this box may lack: (is it here?, the toast when it isn't)
     NEEDS = {
+        "chd": (lambda: rommlib.chdman_supported(), "chdman isn't on this system, or doesn't run"),
         "squashfs": (lambda: rommlib.squashfs_supported(), "mksquashfs isn't on this system"),
         "z3ds": (lambda: rommlib.z3ds_supported(), "libzstd isn't on this system"),
     }
@@ -363,8 +365,10 @@ class SettingsScreen(Screen):
             elif key == "test" and a == "ok":
                 app.toast("Testing…")
                 server.check_server(app, cfg["url"],
-                                    lambda p, v: app.toast("Connected to %s: %d platforms on the server"
-                                                           % (rommlib.romm_label(v), len(p)), theme.GREEN),
+                                    lambda p, v: (app.toast("Connected to %s: %d platforms on the server"
+                                                            % (rommlib.romm_label(v), len(p)), theme.GREEN),
+                                                  # RomM is back: the header and Home stop saying Offline
+                                                  app.status != "Online" and app.load_platforms()),
                                     lambda e: app.toast(str(e), theme.RED))
             elif key in SETTING_ROW and SETTING_ROW[key].kind == "onoff":
                 st = SETTING_ROW[key]
@@ -450,7 +454,8 @@ class SettingsScreen(Screen):
                         app.toast(("%s is available" % tag) if tag else
                                   "You have the latest version (v%s)" % rommlib.VERSION_LABEL,
                                   theme.BLUE if tag else theme.GREEN)
-                    app.bg(lambda: rommlib.newer_release(dict(cfg, check_updates=True), force=True), checked)
+                    app.bg(lambda: rommlib.newer_release(dict(cfg, check_updates=True), force=True, strict=True),
+                           checked, lambda e: app.toast(str(e), theme.RED))
             elif key == "rollback" and a == "ok":
                 app.modal = Confirm(app, "Go back to v%s?" % self.prev,
                                     "Swaps v%s back in (v%s is kept so you can undo this), then restarts %s: "
@@ -747,10 +752,10 @@ class SettingsScreen(Screen):
             self.draw_help_panel(c, p, a)
         hline(c, theme.LINE, (p.left + 28, a), (p.right - 28, a))
         text(c, self.f.h3, APP_NAME, (p.left + 28, a + 14), theme.TEXT)
-        day = time.strftime("%Y-%m-%d", rommlib.version_date()[1])   # a nightly's: the day it was built
-        ver = "v%s · %s · by %s" % (rommlib.VERSION_LABEL, day, rommlib.AUTHOR)
+        made = day(rommlib.version_date()[1])   # a nightly's: the day it was built
+        ver = "v%s · %s · by %s" % (rommlib.VERSION_LABEL, made, rommlib.AUTHOR)
         if measure(self.f.small, ver) > p.width - 56:          # a nightly's long label: the author gives way
-            ver = "v%s · %s" % (rommlib.VERSION_LABEL, day)
+            ver = "v%s · %s" % (rommlib.VERSION_LABEL, made)
         text(c, self.f.small, ver, (p.left + 28, a + 44), theme.ACCENT_HI, maxw=p.width - 56)
         upd = ("%s is out: Updates installs it." % self.app.update_tag) if self.app.update_tag else \
             rommlib.PROJECT_URL.replace("https://", "")

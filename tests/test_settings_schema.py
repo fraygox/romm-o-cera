@@ -75,7 +75,7 @@ def _pin(monkeypatch, env):
     monkeypatch.setattr(rommlib, "backup_version", lambda *a, **k: e["backup"])
     monkeypatch.setattr(rommlib, "config_unreadable", lambda: e["unreadable"])
     monkeypatch.setattr(rommlib.Api, "platforms", lambda self, *a, **k: [])
-    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False: None)
+    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False, strict=False: None)
     monkeypatch.setattr(rommlib, "ps3_keys", lambda *a, **k: {})
     monkeypatch.setattr(rommlib, "fetch_ps3_keys", lambda api, pid: 0)
 

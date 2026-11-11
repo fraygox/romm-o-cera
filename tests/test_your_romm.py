@@ -199,6 +199,10 @@ def test_release_notes_show_a_command_without_its_code_fence():
     body = "- Over SSH: run the installer again.\n  ```sh\n  curl -fsSL https://x/install.sh | sh\n  ```\n~~~\nls\n~~~\n"
     assert rommlib.release_note_lines(body) == [
         ("li", "Over SSH: run the installer again."), ("p", "curl -fsSL https://x/install.sh | sh"), ("p", "ls")]
+    # inside a fence nothing is Markdown: a shell comment isn't a heading, a glob isn't emphasis
+    body = "```sh\n# stop the app first\nrm *_old* -r\n- x\n```\n# After\n"
+    assert rommlib.release_note_lines(body) == [
+        ("p", "# stop the app first"), ("p", "rm *_old* -r"), ("p", "- x"), ("h", "After")]
 
 
 # ------------------------------------------------------------ Compare with RomM

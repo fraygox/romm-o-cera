@@ -34,6 +34,8 @@ CERT_SAYS = {
     "expired": "It has expired. Renew it on the server (or check this box's date and time), then try again.",
     "hostname": "It was made for a different name than this address. Type the name the certificate is for, "
                 "or turn verification off under Advanced.",
+    "plain-http": "This address doesn't answer https at all: it looks like plain http. Go back and type the "
+                  "address starting with http:// instead.",
     "other": "It couldn't be checked. For a self-signed or home-lab certificate, turn verification off or add "
              "your CA bundle under Advanced.",
 }
@@ -58,8 +60,9 @@ class WelcomeScreen(Screen):
     library loading, then Platforms."""
     own_start = True
 
-    def __init__(self, app, step=0):
+    def __init__(self, app, step=0, rejected=False):
         super().__init__(app)
+        self.rejected = rejected    # here because RomM turned the saved token away: the code step says so
         self.step, self.view, self.back_to = step, "keys", "keys"
         self.field = "url"
         cur = app.cfg["url"] or "https://"
@@ -361,7 +364,8 @@ class WelcomeScreen(Screen):
     def draw_pair(self, c, p):
         f = self.f
         p.foot(self.busy or "{START} checks the code; eight characters check by themselves.")
-        p.title("Type the code RomM shows", "In RomM: Profile › Client API tokens › Pair. It's good for a minute.",
+        p.title("Type the code RomM shows", "RomM turned the saved token away. Pair again: Profile › Client API tokens › Pair."
+                if self.rejected else "In RomM: Profile › Client API tokens › Pair. It's good for a minute.",
                 lines=1)
         slots = code_slots(c, f, p.rect.centerx, p.y, self.code_kb.value)
         text(c, f.small, "Letters and digits; the dash goes in by itself.", (p.rect.centerx, slots.bottom + 10),

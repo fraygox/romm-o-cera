@@ -405,7 +405,8 @@ def tls_why(exc):
     """What an SSL error says about the certificate, as a TlsRejected.why word
     (only the kind is kept: the error text itself never reaches the screen)."""
     s = str(exc).lower()
-    for why, words in (("self-signed", ("self-signed", "self signed")),
+    for why, words in (("plain-http", ("wrong version number", "record layer failure", "http request")),
+                       ("self-signed", ("self-signed", "self signed")),
                        ("expired", ("expired",)),
                        ("hostname", ("hostname", "doesn't match", "not valid for")),
                        ("unknown", ("unable to get local issuer", "unknown ca", "unable to verify"))):

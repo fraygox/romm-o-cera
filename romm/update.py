@@ -75,12 +75,13 @@ def _latest_on(channel):
 CHECK_RETRY = 3600     # seconds before a daily check that couldn't reach GitHub asks again
 
 
-def newer_release(cfg, force=False):
+def newer_release(cfg, force=False, strict=False):
     """The newest version on the configured channel (update_channel) if it is
     newer than this one, else None: a release tag ("v0.8.2"), or a nightly's
     label ("v0.8.1+n20261012.1903.ab12cd3"). The nightly channel offers a
     release too when it's newer. Checked at most once a day, and again when
-    the channel changes (cached); never raises."""
+    the channel changes (cached); never raises, unless strict: then UpdateError
+    when GitHub couldn't be asked just now (so "you have the latest" is never a guess)."""
     if not _config.config_value(cfg, "check_updates"):
         return None
     channel = _config.config_value(cfg, "update_channel")
@@ -94,12 +95,15 @@ def newer_release(cfg, force=False):
     if not isinstance(cache, dict):
         cache = {}
     checked = cache.get("checked", 0)
+    asked = True
     if force or now - checked > 86400 or checked > now + 3600 or cache.get("channel", "stable") != channel:
         try:
             found = _latest_on(channel)
+            asked = bool(found)
             latest = max(found, key=version_key) if found else cache.get("latest", "")
             when = now if found else now - 86400 + CHECK_RETRY    # an error answer (rate limit, 5xx): soon too
         except Exception:
+            asked = False
             latest = cache.get("latest", "") if cache.get("channel", "stable") == channel else ""
             when = now - 86400 + CHECK_RETRY              # couldn't ask (offline, GitHub slow): again soon, not tomorrow
         cache = {"checked": when, "latest": latest, "channel": channel}
@@ -109,6 +113,8 @@ def newer_release(cfg, force=False):
         except OSError:
             pass
     latest = cache.get("latest") or ""
+    if strict and not asked:
+        raise UpdateError("Couldn't ask GitHub for the latest version — check the network and try again")
     return latest if version_key(latest) > version_key(rommlib.VERSION_LABEL) else None
 
 
@@ -150,7 +156,12 @@ def release_info(tag=None):
     if tag and (tag == NIGHTLY_TAG or _NIGHTLY.search(tag)):
         tag = NIGHTLY_TAG
     path = "releases/tags/%s" % tag if tag else "releases/latest"
-    data = _gh_get("%s/repos/%s/%s" % (GITHUB_API, UPDATE_REPO, path)).json()
+    try:
+        data = _gh_get("%s/repos/%s/%s" % (GITHUB_API, UPDATE_REPO, path)).json()
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):          # a captive portal's page, say
+        raise UpdateError("GitHub's answer wasn't readable — check the network and try again")
     assets = {a.get("name"): a.get("browser_download_url") for a in data.get("assets") or []}
     if not assets.get("romm-o-cera.zip") or not assets.get("SHA256SUMS"):
         raise UpdateError("Release %s has no romm-o-cera.zip / SHA256SUMS" % data.get("tag_name"))
@@ -589,10 +600,18 @@ def release_note_lines(body):
     code marks go, blank lines and HTML comments are dropped."""
     out = []
     body = re.sub(r"<!--.*?-->", "", body or "", flags=re.S)
+    fenced = False
     for ln in body.splitlines():
         s = ln.strip()
-        if not s or re.fullmatch(r"[-*_=]{3,}", s) or re.match(r"^(```|~~~)", s):
-            continue                      # a code fence line (```sh): what's between stays
+        if re.match(r"^(```|~~~)", s):
+            fenced = not fenced           # a code fence line (```sh): what's between stays, as it is
+            continue
+        if fenced:
+            if s:
+                out.append(("p", s))      # a command: its # isn't a heading, its * and _ aren't emphasis
+            continue
+        if not s or re.fullmatch(r"[-*_=]{3,}", s):
+            continue
         kind = "p"
         m = re.match(r"^#{1,6}\s+(.*)$", s)
         if m:

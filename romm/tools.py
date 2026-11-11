@@ -156,8 +156,14 @@ def _fetch_tool_archive(label, url, want, dest, progress=None):
                     got += len(chunk)
                     if progress:
                         progress(got, total)
-    except requests.RequestException as e:
-        raise _core.RommError("Couldn't download %s (%s)." % (label, e.__class__.__name__)) from None
+    except BaseException as e:               # cut short (the network, a full disk): no part of it stays
+        try:
+            os.remove(tgz)
+        except OSError:
+            pass
+        if isinstance(e, requests.RequestException):
+            raise _core.RommError("Couldn't download %s (%s)." % (label, e.__class__.__name__)) from None
+        raise
     if h.hexdigest() != want:
         os.remove(tgz)
         raise _core.RommError("The %s download didn't match its checksum; not installed." % label)

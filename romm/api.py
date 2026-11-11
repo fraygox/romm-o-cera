@@ -13,10 +13,25 @@ import requests
 
 from . import core as _core, config as _config, covers as _covers, net as _net, mine as _mine
 
+NOT_ROMM = "Not a RomM API response — check the URL (auth proxy in front?)"
+
+
+def _moved_to(base, r):
+    """scheme://host[:port] of where redirects took a request, when that isn't the
+    server it was sent to (requests drops the token on the way there); else None."""
+    if not r.history:
+        return None
+    was, now = urllib.parse.urlsplit(base), urllib.parse.urlsplit(r.url)
+    if (was.scheme, was.netloc) == (now.scheme, now.netloc) or not now.netloc:
+        return None
+    return "%s://%s" % (now.scheme, now.hostname if ":" not in (now.hostname or "") else "[%s]" % now.hostname) \
+        + (":%d" % now.port if now.port else "")
+
 
 class Api:
     def __init__(self, url, token, verify_tls=True):
         self.base = (url or "").strip().rstrip("/")
+        self.down = None        # how its last answer went wrong ("Offline", "Token rejected"), None after a good one
         # covers, parallel lookups and downloads share the session: keep enough
         # connections open that none is thrown away and set up again (requests
         # keeps 10), and back off together when RomM is busy (see net.py)
@@ -39,20 +54,34 @@ class Api:
         except requests.exceptions.SSLError as e:
             raise _core.TlsRejected("TLS certificate rejected — set verify_tls in Settings", _core.tls_why(e)) from None
         except requests.RequestException as e:
+            self.down = "Offline"
             raise _core.RommError("Can't reach RomM (%s)" % e.__class__.__name__) from None
         except Exception as e:      # e.g. ValueError from a bad header: its text can hold the token
+            ca = self.s.verify
+            if isinstance(e, OSError) and isinstance(ca, str) and not os.path.exists(ca):
+                raise _core.RommError("The CA bundle isn't there: %s" % ca) from None
             raise _core.RommError("Request failed (%s)" % e.__class__.__name__) from None
         if r.status_code in (401, 403):
+            moved = _moved_to(self.base, r)
+            if moved:               # requests drops the token when a redirect changes the host or port
+                raise _core.RommError("RomM has moved to %s: use that as the server address" % moved)
+            self.down = "Token rejected"
             raise _core.AuthRejected("RomM rejected the token (HTTP %d)" % r.status_code)
         if r.status_code != 200:
             raise _core.RommError("RomM error HTTP %d on %s" % (r.status_code, path))
+        self.down = None
         try:
             return r.json()
         except ValueError:
-            raise _core.RommError("Not a RomM API response — check the URL (auth proxy in front?)")
+            raise _core.RommError(NOT_ROMM)
 
     def platforms(self):
-        return self.get("/api/platforms")
+        plats = self.get("/api/platforms")
+        if not isinstance(plats, list) or not all(
+                isinstance(p, dict) and p.get("id") is not None and isinstance(p.get("fs_slug"), str)
+                and isinstance(p.get("display_name") or p.get("name"), str) for p in plats):
+            raise _core.RommError(NOT_ROMM)      # some other server's JSON at this address
+        return plats
 
     def server_version(self):
         """RomM's version from its heartbeat ("5.4.0"), None when it doesn't say."""
@@ -258,10 +287,14 @@ class Api:
             page = self.roms(offset=off, limit=limit, **kw)
             got = page.get("items") or []
             n = len(got)
-            got = [r for r in got if keep(r)] if keep else got
+            with once:           # a library that grows while it's listed shifts a game onto the next page too
+                fresh = [r for r in got if not (isinstance(r, dict) and r.get("id") in ids)]
+                ids.update(r["id"] for r in fresh if isinstance(r, dict) and r.get("id") is not None)
+            got = [r for r in fresh if keep(r)] if keep else fresh
             if fields:
                 got = [{k: r[k] for k in fields if k in r} for r in got]
             return n, page.get("total") or 0, got
+        ids, once = set(), threading.Lock()
         step, total, items = page_at(0)
         if not step:
             return items
@@ -641,14 +674,17 @@ def exchange_pair_code(url, code, verify_tls=True, timeout=20):
         raise _core.RommError("Too many tries — wait a minute, then make a new code in RomM")
     if st == 403:
         raise _core.RommError("RomM refused: the token's owner is disabled (HTTP 403)")
+    if 300 <= st < 400 and base.lower().startswith("http://") \
+            and (r.headers.get("Location") or "").lower().startswith("https://"):
+        raise _core.RommError("This server wants https: change the server address to https://")
     if st == 405 or 300 <= st < 400:
-        raise _core.RommError("Not a RomM API response — check the URL (auth proxy in front?)")
+        raise _core.RommError(NOT_ROMM)
     if st != 200:
         raise _core.RommError("RomM error HTTP %d while pairing" % st)
     try:
         body = r.json()
     except ValueError:
-        raise _core.RommError("Not a RomM API response — check the URL (auth proxy in front?)") from None
+        raise _core.RommError(NOT_ROMM) from None
     tok = body.get("raw_token") if isinstance(body, dict) else None
     if not valid_token(tok):
         raise _core.RommError("RomM's reply had no usable token (is this RomM 5 or newer?)")

@@ -273,7 +273,7 @@ def test_low_memory_mode_cycles_auto_on_off(ui, monkeypatch):
 def test_the_daily_update_check_has_a_row_and_updates_still_checks_on_demand(ui, monkeypatch):
     app, st, _ = ui
     asked = []
-    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False: asked.append(
+    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False, strict=False: asked.append(
         (cfg["check_updates"], force)) or None)
     app.bg = lambda fn, done=None, err=None: done and done(fn())
     keys = [it[0] for it in st.items()]
@@ -361,7 +361,7 @@ def test_turning_the_daily_check_back_on_checks_now(isolated, rb, monkeypatch):
     app = rb.App(None, headless=True)
     app.bg = lambda fn, done=None, err=None: done(fn()) if done else fn()
     asked = []
-    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False: asked.append(force) or "v9.9.9")
+    monkeypatch.setattr(rommlib, "newer_release", lambda cfg, force=False, strict=False: asked.append(force) or "v9.9.9")
     scr = rb.SettingsScreen(app)
     app.cfg["check_updates"] = True
     scr.EFFECTS["check_updates"](scr, app)
