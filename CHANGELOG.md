@@ -3,6 +3,14 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.13.1 (2026-11-11)
+
+More systems compress: 32X CD, SuperGrafx CD and Triforce, with Dolphin's current tool
+
+### Features
+- **feat:** 32X CD and SuperGrafx CD games are compressed to CHD, and Triforce images to RVZ, like the other disc systems.
+- **feat:** GameCube and Wii to RVZ uses dolphin-tool 2609b, Dolphin's current release. A box with it turned on fetches the new one by itself; the RVZ files it writes are the same.
+
 ## v0.13.0 (2026-11-11)
 
 A sweep: safer deletes and taps, clearer connection errors, and a quieter idle
