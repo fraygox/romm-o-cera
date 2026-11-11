@@ -3,6 +3,28 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.12.2 (2026-11-10)
+
+The log says how each controller is read, and the docs say how to report a problem
+
+### Fixes
+- **fix:** The log names each controller, its ID and whether Batocera had a mapping for it, so a report about buttons can be answered from one file.
+
+### Docs
+- **docs:** [Reporting a problem](https://github.com/fraygox/romm-o-cera/blob/main/docs/reporting-a-problem.md) says what to send with a report: the version, how to get the log off the box, and what the controller lines in it mean.
+
+### Upgrading
+v0.12.1 made controllers use Batocera's own mapping (the Steam Deck and other handhelds). If your controller can't drive the app, you can't reach Settings → Updates with it. Any of these gets you this version; your settings, queue and downloaded games are kept.
+
+- **Touch screen or keyboard** (a Steam Deck's screen works): open the app and go to **Settings → Updates** by tapping (tap a row to select it, tap it again to open it). On a keyboard: arrows, Enter, and Esc to go back.
+- **Over SSH** (user `root`, password `linux` unless you changed it): run the installer again.
+  ```sh
+  curl -fsSL https://github.com/fraygox/romm-o-cera/releases/latest/download/install.sh | sh
+  ```
+- **No SSH:** download `romm-o-cera.zip` from this release and copy its `rommbrowser` folder over the one in `\\BATOCERA\share\roms\pygame\`, replacing the files.
+
+Then start RomM-o-Cera again. If a button still does the wrong thing, copy `romm-browser.log` from `\\BATOCERA\share\system\romm-browser\` and attach it to an issue: its `pad:` lines say how the app reads your controller.
+
 ## v0.12.1 (2026-11-10)
 
 Controllers use Batocera's own mapping, so the Steam Deck and other handhelds work
