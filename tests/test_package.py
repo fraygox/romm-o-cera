@@ -114,13 +114,13 @@ def test_qualified_names_exist():
                     assert node.attr in vars(rommlib), (p, node.lineno, node.attr)
 
 
-# rommlib names the lazily loaded workers use, pinned to v0.12.1, the release
+# rommlib names the lazily loaded workers use, pinned to v0.12.2, the release
 # before the one being cut. An old process reaches the NEW worker files after an
 # in-app update swapped the folder under it: a still-open UI imports rb_chd_plan
 # on the Compress screen (which imports rb_chd) and rb_dl to take over
 # downloads, and rb_dl imports rb_finalize. All of it runs against the OLD
-# rommlib already in memory. Add a name here only after checking v0.12.1
-# defines it (`git show v0.12.1:romm/<module>.py`); a name new since waits for
+# rommlib already in memory. Add a name here only after checking v0.12.2
+# defines it (`git show v0.12.2:romm/<module>.py`); a name new since waits for
 # the next release. Bump the tag after each stable release.
 PREVIOUS_RELEASE_NAMES = frozenset((
     "Api", "CHD_QUEUE_DIR", "CHECK_ERRORS", "CONVERTER", "CONVERTERS", "CSO_TEMP_SUFFIX", "CsoError",
