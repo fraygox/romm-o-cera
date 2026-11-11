@@ -143,6 +143,7 @@ class App:
         self.tapped, self.ptr_later = False, []    # a tap acted since the last frame; events held back
         self.sfx = Sfx(self.cfg["sounds"] if screen is not None else "off")
         self.input = Input(self.cfg["swap_ab"])
+        self.log_pads()
         self.make_custom_theme()
         apply_theme(self.theme_key())
         self.headless = headless
@@ -441,6 +442,15 @@ class App:
         self.cover_req.clear()
         self.cover_retry.clear()
         self.scaled_covers.clear()
+
+    def log_pads(self):
+        """What controllers are connected and how they're read, for a report about buttons."""
+        lines = self.input.describe()
+        if lines != getattr(self, "pads_logged", None):      # both "added" events fire for one pad
+            self.pads_logged = lines
+            rommlib.log("pads: Batocera has mappings for %d" % self.input.es_mappings)
+            for line in lines:
+                rommlib.log(line)
 
     def make_custom_theme(self):
         """The Custom theme from config.json's four theme_custom_* settings."""
@@ -1069,6 +1079,7 @@ class App:
         if snd and not moving:
             self.sfx.play(snd)
         if a == "padchange":
+            self.log_pads()
             self.on_pad_change()
             return
         if a == "quit":

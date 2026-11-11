@@ -156,3 +156,10 @@ def test_pads_sharing_a_guid_take_the_entry_named_like_the_one_plugged_in(rb, tm
     assert [_binds(l)[1:] for l in rb.es_pad_mappings((str(f),), names=["Pad two"])] == \
         [("Pad two", {"platform": "Linux", "a": "b5"})]
     assert [_binds(l)[1] for l in rb.es_pad_mappings((str(f),), names=["Pad one", "Pad two"])] == ["Pad one"]
+
+
+def test_the_log_says_how_each_pad_is_read(rb):
+    import pygame
+    pygame.init()
+    inp = rb.Input(False)
+    assert inp.describe() == ["pad: none connected"]         # the test box has no pad

@@ -111,7 +111,7 @@ def test_a_failure_is_said_once_per_version(tools, rb, monkeypatch):
     app = _app(rb, monkeypatch)
     os.makedirs(os.path.join(rommlib.ROMS_ROOT, "wiiu"))
     open(os.path.join(rommlib.ROMS_ROOT, "wiiu", "Disc.wud"), "w").close()
-    os.makedirs(rommlib.DATA_DIR)
+    os.makedirs(rommlib.DATA_DIR, exist_ok=True)     # the app logged its pads
 
     def install(spec, progress=None):
         raise rommlib.RommError("Couldn't download wuatool (HTTP 404).")

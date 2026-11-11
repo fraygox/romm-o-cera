@@ -126,8 +126,10 @@ class Input:
         self.key_up = {}        # action -> when its key was last let go
         self.axis_dir = {}
         self.raw_triggers = {}  # raw joystick instance id -> its [L2, R2] trigger axes
+        self.es_mappings = 0    # pads Batocera's es_input.cfg gave SDL a mapping for
         if sdlcontroller is not None:
-            if use_es_pad_mappings(names=_connected_names()):
+            self.es_mappings = use_es_pad_mappings(names=_connected_names())
+            if self.es_mappings:
                 # SDL reads the mappings as its joystick side starts, which pygame.init() did
                 if sdlcontroller.get_init():
                     sdlcontroller.quit()
@@ -157,6 +159,27 @@ class Input:
                 except Exception:
                     pass
         return out
+
+    def describe(self):
+        """A line per connected pad for the log: what it is and how its buttons are read."""
+        out = []
+        try:
+            for i in range(pygame.joystick.get_count()):
+                j = pygame.joystick.Joystick(i)
+                jid = j.get_instance_id()
+                if jid in self.controllers:
+                    how = "mapped"
+                elif jid in self.joysticks:
+                    how = "no mapping, guessed as %s, triggers on axes %s" % (
+                        "a generic pad" if self.raw_buttons(jid) is self.RAW_DINPUT else "an Xbox pad",
+                        self.raw_triggers.get(jid) or "none")
+                else:
+                    how = "not opened"
+                out.append("pad: %s [%s] %d buttons, %d axes, %d hats: %s" % (
+                    j.get_name(), j.get_guid(), j.get_numbuttons(), j.get_numaxes(), j.get_numhats(), how))
+        except Exception as e:
+            out.append("pad: can't be read: %r" % e)
+        return out or ["pad: none connected"]
 
     def _open(self, index):
         try:

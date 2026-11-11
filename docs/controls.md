@@ -24,6 +24,11 @@ covers handhelds like the Steam Deck too. If a button does the wrong thing
 here, it's wrong in that mapping: map the controller again there and start
 the app again.
 
+When reporting a controller that misbehaves, send
+`/userdata/system/romm-browser/romm-browser.log` (`\\BATOCERA\share\system\romm-browser\`
+on the network share): its `pad:` lines name each controller, its ID and
+whether Batocera had a mapping for it.
+
 `rommbrowser.pygame.keys` turns off Batocera's pad-to-keyboard mapping for
 this app, so the buttons reach it directly. A pad neither Batocera nor SDL
 has a mapping for is guessed at. An Xbox-style pad (its triggers are axes
