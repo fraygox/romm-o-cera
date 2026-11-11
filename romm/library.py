@@ -42,6 +42,9 @@ NOT_GAME_EXTS = frozenset({
 _STATE_RE = re.compile(r"\.state(?:\d+|\.auto)?$", re.I)        # .state, .state1, .state.auto
 # folders named like a file ("Game.ps3"): the folder "extensions" ES lists as one game
 FOLDER_GAME_EXTS = frozenset({".ps3", ".xbox360", ".wiiu", ".pc", ".psvita", ".daphne", ".scummvm"})
+# folders the app makes beside a game's entry and fills itself (an Xbox 360 package disc's
+# packages, unpacked: pictures and data files of any name): deleted whole with the game
+OWN_FOLDER_EXTS = frozenset({".packages"})
 # systems whose games are folders of files named anyhow (a PS3 game folder, a port)
 FOLDER_GAME_SYSTEMS = {"ps3", "psvita", "xbox360", "wiiu", "switch", "windows", "windows_installers",
                        "steam", "flatpak", "ports", "pygame", "lutris", "epic", "heroic", "vita3k"}
@@ -151,7 +154,8 @@ def named_game(path, system=None):
 
 def remove_game_path(p, system=None):
     """Delete one path of a game. A file (or a link) goes; a folder ES lists as one
-    game ("Game.ps3", FOLDER_GAME_EXTS) goes whole. A plain folder ("Game/", a disc's
+    game ("Game.ps3", FOLDER_GAME_EXTS) goes whole, and so does one the app filled
+    itself ("Game.packages", OWN_FOLDER_EXTS). A plain folder ("Game/", a disc's
     cue and tracks) loses only its game files (is_game_name): the owner's notes,
     manuals, pictures and saves in it stay, and so does the folder then (an emptied
     one, and its emptied sub folders, go). Returns (bytes freed, files kept). A file
@@ -161,7 +165,7 @@ def remove_game_path(p, system=None):
         if os.path.lexists(p):
             os.remove(p)
         return size, []
-    if os.path.splitext(os.path.normpath(p))[1].lower() in FOLDER_GAME_EXTS:
+    if os.path.splitext(os.path.normpath(p))[1].lower() in FOLDER_GAME_EXTS | OWN_FOLDER_EXTS:
         size = _core.path_size(p)
         shutil.rmtree(p)
         return size, []

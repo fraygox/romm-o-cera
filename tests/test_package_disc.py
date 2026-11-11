@@ -2,7 +2,8 @@
 starts a package on the disc. Batocera can't start such a disc (xenia-canary
 asks to be restarted, for ever), as an .iso or a .zar. Xbox 360 to .zar keeps
 its packages in a folder and writes the one-line .xbox360 launcher Batocera
-does start; and a .zar that would be no smaller than the image is never made."""
+does start, with the game's add-ons and update unpacked and linked where
+xenia looks for them; and a .zar that would be no smaller than the image is never made."""
 import json
 import os
 import stat
@@ -11,6 +12,7 @@ import sys
 import pytest
 
 import rommlib
+from stfs_build import build_package
 
 # extract-xiso and zarchive stand-ins. A test "image" is a JSON {path: text}.
 FAKE_TOOL = r'''#!%s
@@ -51,9 +53,19 @@ def package(kind=0x000D0000, magic="PIRS", size=0x400):
     return bytes(head).decode("latin-1")
 
 
+ADDON_FILES = {"spa.bin": b"spa", "08.png": b"\x89PNG picture", "data/ep2.ttarch2": b"e" * 9000}
+UPDATE_FILES = {"default.xexp": b"patch" * 300}
+
+
+def _text(b):
+    return b.decode("latin-1")
+
+
 def stub_disc(**more):
     files = {"default.xex": "XEX2stub", "$SystemUpdate/su": "s" * 64, "nxeart": "art",
-             TITLE: package(), ADDON: package(0x00000002), UPDATE: "tu" * 40}
+             TITLE: package(),
+             ADDON: _text(build_package(ADDON_FILES, 0x00000002, 0x4D2A0001, folders=("data",))),
+             UPDATE: _text(build_package(UPDATE_FILES, 0x000B0000, 0x4D2A0001, magic=b"LIVE"))}
     files.update(more)
     return files
 
@@ -129,8 +141,16 @@ def test_a_package_disc_becomes_a_launcher_and_its_packages(chd):
     # the launcher names the title's package the way Batocera reads it: one line, from its own folder
     assert open(launcher).read() == "Lorem Ipsum (World).packages/%s\n" % TITLE
     assert rommlib.launcher_target(launcher) == os.path.join(folder, TITLE)
-    # the packages and the game's update stay; the stub, the console update and the art don't
-    assert _tree(folder) == sorted([TITLE, ADDON, UPDATE])
+    # the title's package stays as it is; the add-on and the update are unpacked in their
+    # places; the stub, the console update and the art don't stay
+    assert _tree(folder) == sorted([TITLE] + [ADDON + "/" + f for f in ADDON_FILES]
+                                   + [UPDATE + "/" + f for f in UPDATE_FILES])
+    assert open(os.path.join(folder, ADDON, "data/ep2.ttarch2"), "rb").read() == ADDON_FILES["data/ep2.ttarch2"]
+    # ... and linked where xenia looks for a title's add-ons and update
+    content = os.path.join(rommlib.SAVES_ROOT, "xbox360", "0000000000000000", "4D2A0001")
+    assert os.path.realpath(os.path.join(content, "00000002", "EF56AB78")) == os.path.join(folder, ADDON)
+    assert os.path.realpath(os.path.join(content, "000B0000", "tu00000001_00000000")) == os.path.join(folder, UPDATE)
+    assert "2 of 2 add-ons and updates" in _log()
     assert open(os.path.join(folder, TITLE), "rb").read() == package().encode("latin-1")
     # the app's record of the game: the launcher and the folder, so deleting it takes both
     assert sorted(rommlib.Library().paths_for(rom, "xbox360")) == [folder, launcher]
@@ -148,7 +168,9 @@ def test_deleting_the_game_takes_the_launcher_and_the_packages(chd):
     rommlib.Library().mark(rom, "xbox360", [src], files=[src])
     assert _convert(chd, src) is True
     gone, freed = rommlib.Library().uninstall(rom, "xbox360")
-    assert len(gone) == 2 and freed > 0 and os.listdir(sysdir) == []
+    assert len(gone) == 2 and freed > 0 and os.listdir(sysdir) == []     # its pictures and data too
+    # the links it leaves in xenia's content lead nowhere: xenia lists only folders
+    assert os.path.islink(_content("00000002", "EF56AB78")) and not os.path.exists(_content("00000002", "EF56AB78"))
     assert rommlib.Library().paths_for(rom, "xbox360") == []
 
 
@@ -186,7 +208,52 @@ def test_an_interrupted_runs_folder_is_made_again(chd):
     chd.mark_made(folder, [src], folder)
     assert _convert(chd, src) is True
     assert sorted(os.listdir(sysdir)) == ["Lorem Ipsum (World).packages", "Lorem Ipsum (World).xbox360"]
-    assert _tree(folder) == sorted([TITLE, ADDON, UPDATE])
+    assert os.path.isfile(os.path.join(folder, TITLE)) and os.path.isdir(os.path.join(folder, ADDON))
+
+
+# ------------------------------------------------------------------ add-ons for xenia
+
+def _content(*more):
+    return os.path.join(rommlib.SAVES_ROOT, "xbox360", "0000000000000000", "4D2A0001", *more)
+
+
+def test_an_add_on_xenia_already_has_is_left_alone(chd):
+    """Installed from xenia's own menu: a real folder in its content. Never replaced or linked over."""
+    sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc())
+    theirs = _content("00000002", "EF56AB78", "spa.bin")
+    os.makedirs(os.path.dirname(theirs))
+    open(theirs, "w").write("installed by hand")
+    assert _convert(chd, src) is True
+    assert not os.path.islink(_content("00000002", "EF56AB78")) and open(theirs).read() == "installed by hand"
+    assert os.path.islink(_content("000B0000", "tu00000001_00000000"))
+    assert "xenia already has that add-on" in _log() and "1 of 2 add-ons and updates" in _log()
+
+
+def test_a_link_a_deleted_game_left_is_replaced(chd):
+    sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc())
+    os.makedirs(_content("00000002"))
+    os.symlink("/nowhere/gone", _content("00000002", "EF56AB78"))
+    assert _convert(chd, src) is True
+    assert os.path.isfile(_content("00000002", "EF56AB78", "spa.bin"))
+
+
+def test_a_damaged_add_on_keeps_the_image(chd):
+    """A block that doesn't match the package's own SHA-1: the disc image is damaged."""
+    bad = bytearray(build_package(ADDON_FILES, 0x00000002, 0x4D2A0001, folders=("data",)))
+    bad[-100] ^= 0xFF
+    sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc(**{ADDON: _text(bytes(bad))}))
+    assert _convert(chd, src) is False
+    assert os.listdir(sysdir) == ["Lorem Ipsum (World).iso"] and "doesn't match its SHA-1" in _log()
+    assert not os.path.lexists(_content("00000002", "EF56AB78"))
+
+
+def test_a_package_in_an_add_ons_place_that_isnt_one_stays_packed(chd):
+    """Another title's package, or another kind, under the add-ons' folder: kept, not unpacked or linked."""
+    other = _text(build_package(ADDON_FILES, 0x00000002, 0x4D2A0099, folders=("data",)))
+    sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc(**{ADDON: other}))
+    assert _convert(chd, src) is True
+    folder = os.path.join(sysdir, "Lorem Ipsum (World).packages")
+    assert os.path.isfile(os.path.join(folder, ADDON)) and not os.path.lexists(_content("00000002", "EF56AB78"))
 
 
 # ------------------------------------------------------------------ a .zar only when it's a gain

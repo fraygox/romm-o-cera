@@ -170,13 +170,19 @@ started again, every time. For these, instead of a `.zar`, you get what
 Batocera does start:
 
 - `Game.xbox360`, a one-line launcher EmulationStation lists as the game;
-- `Game.packages/`, the disc's packages and update, each checked by CRC32
-  where it landed before the image is deleted.
+- `Game.packages/`, the title's package, and the game's add-ons and update
+  unpacked beside it. Each package is checked by CRC32 where it landed, and
+  each unpacked block against the SHA-1 its package keeps for it, before the
+  image is deleted.
 
-The launcher starts the title's package. The add-on packages are kept in the
-folder but aren't installed for xenia yet, so content they hold (later
-episodes, for instance) isn't there until you install them from xenia's own
-menu. A disc is treated this way only when it's plain: a small `default.xex`,
+The launcher starts the title's package. xenia-canary reads add-ons and
+updates only as folders of files under its own content folder
+(`saves/xbox360/0000000000000000/<title id>/`), so each unpacked add-on and
+update is linked from there: content they hold (later episodes, for instance)
+is found with nothing to install by hand. An add-on already installed there
+from xenia's own menu is left as it is. Deleting the game removes the
+launcher and the folder; the links it leaves lead nowhere, and xenia ignores
+them. A disc is treated this way only when it's plain: a small `default.xex`,
 no other program on it, and exactly one title package. Check games checks
 that the package a launcher names is still there.
 

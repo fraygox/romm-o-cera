@@ -779,7 +779,10 @@ def _tree(root):
 # to be restarted, and Batocera starts the stub again, every time, from the
 # .iso and a .zar alike. Such a disc becomes what Batocera does start: its
 # packages in a "Game.packages" folder and a one-line "Game.xbox360" launcher
-# naming the title's package in it.
+# naming the title's package in it. The game's add-ons and update are unpacked
+# there (xenia-canary reads those only as folders of files, under its content
+# folder in saves/xbox360) and linked from that content folder, so the game
+# finds them with nothing to install by hand.
 PACKAGE_DIR_EXT = ".packages"
 PACKAGE_LAUNCHER_EXT = ".xbox360"
 PACKAGE_STUB_MAX = 1 << 20      # a launcher stub is tens of KB; a game's own default.xex is megabytes
@@ -787,6 +790,55 @@ PACKAGE_TITLE = 0x000D0000      # the content type of a package that is a game (
 _PACKAGE_RE = re.compile(r"^content/0000000000000000/[0-9a-f]{8}/([0-9a-f]{8})/[^/]+$", re.I)
 _PACKAGE_KEEP = ("content/", "$titleupdate/")      # what the folder keeps: the packages and the game's update
 _PACKAGE_OF = {}                # this run's {".part" folder or launcher: the title's package in it / its folder}
+_PACKAGE_LINKS = {}             # this run's {".part" folder: [(unpacked folder in it, its place in xenia's content)]}
+PACKAGE_ADDON, PACKAGE_UPDATE = 0x00000002, 0x000B0000        # the content types xenia reads as unpacked folders
+_ADDON_RE = re.compile(r"^content/0000000000000000/([0-9a-f]{8})/00000002/([^/]+)$", re.I)
+_UPDATE_RE = re.compile(r"^\$titleupdate/([0-9a-f]{8})/([^/]+)$", re.I)
+XENIA_CONTENT = os.path.join("xbox360", "0000000000000000")   # in saves/: content every profile shares
+# next release: rommlib.stfs_kind, stfs_unpack, StfsError (romm/stfs.py); rommlib.SAVES_ROOT (romm/core.py).
+# A worker of its own always has them; an older rommlib still in memory during an update has none,
+# and then the add-ons stay packed (the game starts; they aren't found until it's converted again)
+_stfs_kind = getattr(rommlib, "stfs_kind", None)
+_stfs_unpack = getattr(rommlib, "stfs_unpack", None)
+_StfsError = getattr(rommlib, "StfsError", OSError)
+
+
+def _content_place(rel, path):
+    """Where xenia looks for the add-on or update package at rel on the disc
+    (a path under its shared content folder), or None for any other file:
+    only a package whose header says the same type and title as its place."""
+    for rx, kind in ((_ADDON_RE, PACKAGE_ADDON), (_UPDATE_RE, PACKAGE_UPDATE)):
+        m = rx.match(rel.replace(os.sep, "/"))
+        if m and _stfs_kind is not None and _stfs_kind(path) == (kind, int(m.group(1), 16)):
+            return os.path.join(m.group(1).upper(), "%08X" % kind, m.group(2))
+    return None
+
+
+def link_packages(folder, links):
+    """Link a landed packages folder's unpacked add-ons and update into
+    xenia's content folder, where it looks for them. Never over anything there
+    but a link that leads nowhere (a game deleted earlier): an add-on installed
+    from xenia's own menu stays as it is. Returns how many are in place."""
+    done = 0
+    saves = getattr(rommlib, "SAVES_ROOT", "/userdata/saves")
+    for rel, place in links:
+        target, link = os.path.join(folder, rel), os.path.join(saves, XENIA_CONTENT, place)
+        try:
+            if os.path.islink(link) and not os.path.exists(link):
+                os.remove(link)
+            if os.path.lexists(link):
+                same = os.path.realpath(link) == os.path.realpath(target)
+                if not same:
+                    note("chd: kept %s: xenia already has that add-on" % link)
+                done += same
+                continue
+            os.makedirs(os.path.dirname(link), exist_ok=True)
+            os.symlink(target, link)
+            done += 1
+        except OSError as e:
+            note("chd: couldn't link %s for xenia (%s): that add-on won't be found" % (
+                os.path.basename(rel), e.strerror or e))
+    return done
 
 
 def package_disc(listing):
@@ -829,10 +881,30 @@ def _package_folder(work, files, crcs, title, tmp):
         if _crc32_file(to) != crcs[r]:
             return 5, "a package didn't copy whole (%s)" % r
         rommlib.sync_file(to)
+    # add-ons and the update: unpacked where they are, each block checked against the package's own SHA-1
+    links = []
+    for i, r in enumerate(keep):
+        to = os.path.join(tmp, r)
+        place = None if r == title else _content_place(r, to)
+        if not place:
+            continue
+
+        def progress(frac, i=i):
+            status(step="Unpacking the game's add-ons", pct=round(100 * (i + frac) / len(keep)))
+        progress(0)
+        _drop(to + ".unpacking")
+        try:
+            _stfs_unpack(to, to + ".unpacking", progress=progress, pause=_idle)
+        except _StfsError as e:
+            return 5, "the package %s %s" % (r, e)
+        os.remove(to)
+        os.rename(to + ".unpacking", to)
+        links.append((r, place))
     for dp, _, _ in os.walk(tmp):
         _sync_dir(dp)
     _PACKAGE_OF[tmp] = title
-    return 0, "%d packages, CRC32 of each checked" % len(keep)
+    _PACKAGE_LINKS[tmp] = links
+    return 0, "%d packages, CRC32 of each checked, %d unpacked for xenia" % (len(keep), len(links))
 
 
 def convert_zar(src, tmp):
@@ -1257,6 +1329,7 @@ def _move_playlist(src, to):
 def convert(task):
     system, mode = task["system"], task["mode"]
     _PACKAGE_OF.clear()
+    _PACKAGE_LINKS.clear()
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
     srcs = sorted(s for s in task["sources"] if os.path.exists(s))
     if not srcs:
@@ -1498,8 +1571,12 @@ def convert(task):
                 mark_made(folder, srcs, tmp)
             except OSError:
                 pass
+            links = _PACKAGE_LINKS.pop(tmp, [])
             os.replace(tmp, folder)
             _sync_dir(out_dir)
+            if links:
+                note("chd: %d of %d add-ons and updates of %s linked for xenia" % (
+                    link_packages(folder, links), len(links), os.path.basename(src)))
             plan[plan.index((src, out))] = (src, launcher)
             out, tmp = launcher, launcher + ".part"
             _PACKAGE_OF[tmp] = _PACKAGE_OF[out] = folder        # goes with the launcher if it's dropped
