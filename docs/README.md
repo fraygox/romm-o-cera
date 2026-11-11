@@ -15,4 +15,5 @@ everything it does, one topic each. They're easiest to read on the
 | [Themes](themes.md) | The theme picker, every theme and its OLED version, your own Custom theme, Match theme to controller |
 | [Connecting to RomM](connecting.md) | HTTPS, self-signed certificates, plain HTTP, Batocera's network share, auth proxies |
 | [Controls](controls.md) | Controller, keyboard, touch and mouse, menus and dialogs, what each button does on every screen |
+| [Reporting a problem](reporting-a-problem.md) | What to send with a report: the version, getting the log off the box, the controller lines in it |
 | [Development](development.md) | Running without a box, the screenshot harness, the docs site, releasing, converter tool builds, tests, the romm and rbui packages, what each file does |

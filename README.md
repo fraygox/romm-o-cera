@@ -10,7 +10,8 @@ Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested against
 
 > **Use it with care.** RomM-o-Cera is a hobby project with one author and few
 > users so far. It downloads, unpacks, converts and deletes files on your box:
-> keep a backup of anything you can't replace, and please file issues.
+> keep a backup of anything you can't replace, and please file issues
+> ([what to send](docs/reporting-a-problem.md)).
 >
 > **Your own games only.** RomM-o-Cera does not include, link to or provide any
 > games, BIOS files, firmware or keys. It only talks to the RomM server you run,
@@ -154,6 +155,7 @@ Easiest to read on the **[documentation site](https://fraygox.github.io/romm-o-c
 | [Themes](docs/themes.md) | the theme picker, every theme, your own Custom theme, matching your controller |
 | [Connecting to RomM](docs/connecting.md) | HTTPS, certificates, network share, auth proxies |
 | [Controls](docs/controls.md) | controller, keyboard, touch and mouse, every screen's buttons |
+| [Reporting a problem](docs/reporting-a-problem.md) | what to send: the version, the log and how to get it, a controller's lines in it |
 | [Development](docs/development.md) | no-box development, screenshots, the docs site, releasing, tool builds, tests, files |
 
 ## Credits

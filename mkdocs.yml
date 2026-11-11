@@ -23,6 +23,7 @@ nav:
       - Themes: themes.md
       - Controls: controls.md
       - Connecting to RomM: connecting.md
+      - Reporting a problem: reporting-a-problem.md
   - Development: development.md
   - Credits and license: credits.md
 
