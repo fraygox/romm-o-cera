@@ -14,6 +14,7 @@ from rbui.screens.base import ListScreen, Screen
 from rbui.screens.box_data import plural
 from rbui.screens.unseen import UnseenScreen
 from rbui.modals import Confirm
+from rbui.widgets.hero import day
 
 
 WHY_UNVERIFIED = {rommlib.UNVERIFIED_ROMM: "RomM didn't send its record",
@@ -417,7 +418,7 @@ WHY_IO = ("The box got an error reading this file. The drive or card may be fail
 
 
 def when(t):
-    return time.strftime("%-d %b %H:%M", time.localtime(t or 0))
+    return day(t, clock=True)
 
 
 class CheckScreen(AuditScreen):
@@ -629,8 +630,9 @@ class CheckScreen(AuditScreen):
         except OSError:
             here = ""
         last = self.last or {}
-        found = ("Full check, %s" % when(it["full_time"])) if it.get("full_time") else \
-            "%s, %s" % ("Full check" if last.get("deep") else "Quick check", when(last.get("time")))
+        # (the day alone: the fact has one line, and the list's header gives the time)
+        found = ("Full check, %s" % day(it["full_time"])) if it.get("full_time") else \
+            "%s, %s" % ("Full check" if last.get("deep") else "Quick check", day(last.get("time")))
         p.facts([("System", self.app.system_name(it["system"])), ("On this box", here), ("Found by", found)],
                 lines=2)
         p.facts([("File", "roms/%s/%s" % (it["system"], os.path.relpath(

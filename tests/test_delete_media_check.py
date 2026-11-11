@@ -191,7 +191,7 @@ def test_settings_shows_a_nightlys_build_day_and_the_keyboards_exit(ui, rb, monk
     rb.pads.INPUT_MODE["kb"] = True
     ui.draw()
     lines = [s for s, _, _ in calls if s.startswith("v0.11.2+n20261103") and " · " in s]
-    assert lines and "2026-11-03" in lines[0] and "2026-10-17" not in lines[0]
+    assert lines and "3 Nov 2026" in lines[0] and "17 Oct 2026" not in lines[0]
     drawn = [s for s, _, _ in calls] + [c[1][0] for c in rich]          # rich_text(c, fonts, font, s)
     assert any("Alt+F4 exits" in s for s in drawn) and not any("Hotkey" in s for s in drawn)
 

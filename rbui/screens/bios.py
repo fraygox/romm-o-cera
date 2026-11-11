@@ -9,6 +9,7 @@ from rbui.screens.base import ListScreen
 from rbui.screens.box_data import bios_pill, bios_rows
 from rbui.modals import Confirm
 from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_row, need_width, split
+from rbui.widgets.hero import day
 
 
 class BiosScreen(ListScreen):
@@ -131,8 +132,8 @@ class BiosScreen(ListScreen):
         if gone_here:
             p.prose(", ".join(gone_here), label="Not in RomM either", color=theme.AMBER, lines=3)
         if it["fetched"]:
-            p.fact("Fetched by RomM-o-Cera", "%d, last %s" % (len(it["fetched"]), max(
-                rec.get("when", "") for rec in it["fetched"].values())[:10]))
+            p.fact("Fetched by RomM-o-Cera", "%d, last %s" % (len(it["fetched"]), day(max(
+                rec.get("when", "") for rec in it["fetched"].values()))))
         if not it.get("here", True):
             p.prose("No games for it on this box yet.", color=theme.FAINT, lines=2)
         if self.busy:

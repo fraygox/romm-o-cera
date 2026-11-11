@@ -8,6 +8,7 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.draw import hatch, measure, meter, rrect, text
+from rbui.widgets.hero import day
 
 
 # ---- On this box: shared data and the space bar
@@ -255,7 +256,7 @@ def bios_pill(it):
         sub = "%d file%s" % (len(it["required"]), "" if len(it["required"]) == 1 else "s")
         if it["fetched"]:
             f, rec = sorted(it["fetched"].items(), key=lambda kv: kv[1].get("when", ""))[-1]
-            sub += " · %d fetched by RomM-o-Cera, last %s" % (len(it["fetched"]), rec.get("when", "")[:10])
+            sub += " · %d fetched by RomM-o-Cera, last %s" % (len(it["fetched"]), day(rec.get("when", "")))
         return "Complete", theme.GREEN, sub
     if noff:
         return ("RomM has %d of %d missing" % (noff, nmiss), theme.ACCENT_HI,

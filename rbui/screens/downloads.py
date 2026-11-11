@@ -74,7 +74,7 @@ class DownloadsScreen(ListScreen):
         self.convs, self.held, self.conv_at = conversion_rows(), rommlib.conversions_held(), time.time()
         self._chd_st = {}
         self._fc = rommlib.queue_forecast(d.jobs, rommlib.free_bytes(), rommlib.keep_free_bytes(self.app.cfg),
-                                          self.app.cfg["chd"], self.app.cfg)
+                                          rommlib.chd_enabled(self.app.cfg), self.app.cfg)
 
     # -- the compressing panel
     def running(self):
@@ -460,6 +460,8 @@ class DownloadsScreen(ListScreen):
         done = sum(j.done_bytes for j in live)
         speed = self.smoothed(sum(j.speed for j in live if j.state == J.DOWNLOADING), now)
         dl = 0.0 if total <= done else (total - done) / speed if speed else None
+        if any(j.state == J.PAUSED or (j.state == J.QUEUED and getattr(j, "short_space", 0)) for j in live):
+            dl = None            # one is on hold (paused, no room for it): when it all ends can't be told
         run, queue = self.running(), self.queued()
         convs = ([run] if run else []) + queue
         ctotal = sum(r["size"] for r in convs)

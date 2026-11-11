@@ -81,7 +81,8 @@ class SpaceScreen(ListScreen):
         lo = self.leftovers
         subs = ["Every game on the box, least played first",
                 "Looking…" if lo is None else "Nothing to clean up" if not lo else
-                "%s from interrupted downloads" % human_size(sum(i["size"] for i in lo))]
+                "%s from interrupted downloads" % human_size(sum(i["size"] for i in lo))
+                if sum(i["size"] for i in lo) else "%s, nothing in them" % plural(len(lo), "leftover")]
         tw = (W - 96 - 16) // 2
         for i, (key, label) in enumerate(self.TILES):
             r = pygame.Rect(48 + i * (tw + 16), 240, tw, 64)

@@ -1,5 +1,4 @@
 """What's new: this version's release notes, once after an update (and from Settings, Updates)."""
-import time
 
 import rommlib
 from rbui import theme
@@ -7,6 +6,7 @@ from rbui.draw import scroll_nudge
 from rbui.screens.about import DocsScreen
 from rbui.screens.base import Screen
 from rbui.widgets.layout import Panel, split
+from rbui.widgets.hero import day
 
 NOTES_SLOT = "whatsnew-notes"
 NUDGE = 2.0                    # seconds of reading a scroll press moves the notes
@@ -105,7 +105,7 @@ class WhatsNewScreen(Screen):
         r.title("v" + base, sub=build or None)
         word, made = rommlib.version_date()               # a nightly: the day it was built
         r.facts([("Channel", "Nightly" if nightly else "Stable"),
-                 (word, "%d %s %d" % (made.tm_mday, time.strftime("%b", made), made.tm_year))]
+                 (word, day(made))]
                 + ([("Updated from", rommlib.short_version(self.prev))] if self.prev else []),
                 cols=2, lines=2 if self.prev else 1)
         r.rule()

@@ -640,7 +640,7 @@ class GameListScreen(ListScreen):
             cnt = "{:,}{} not on this box".format(self.total, "" if self.exhausted else "+")
         else:
             cnt = "{:,} game{}".format(self.total, "" if self.total == 1 else "s") if self.total else \
-                "Couldn't load: %s" % self.load_error if self.load_error else "No games found"
+                "Couldn't load" if self.load_error else "No games found"
         flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
                                    (self.players, "%d+ players" % self.players),
                                    (self.picks, "%d picked" % len(self.picks))) if on]
@@ -661,6 +661,9 @@ class GameListScreen(ListScreen):
         text(c, self.f.small, cnt, (lx + lw - 8, ly + 8), theme.RED if failed else theme.DIM, "topright",
              maxw=300 if failed else lw - 40 - int(tw))
         ly += 40
+        if failed:                      # the whole reason, where the rows would be
+            scroll_text(c, self.f.body, "%s. Go back and open it again to try once more." % self.load_error.rstrip("."),
+                        (lx + 8, ly + 8, lw - 16, 4 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="load-error")
         multi_plat = self.platform is None
         for i, r, on in self.row_rects(ly, x=lx, w=lw):
             rom = self.items[i]
@@ -814,6 +817,7 @@ class SearchScreen(KeyboardScreen):
                            on_change=self.typed, on_touch=self.unpick)
         self.preview = []
         self.preview_total = None
+        self.preview_error = None       # why the last look for matches failed
         self.preview_q = None
         self.pending_at = None
         self.pick = None                  # the focused Top match; None: the keyboard has focus
@@ -921,8 +925,13 @@ class SearchScreen(KeyboardScreen):
             pids = [self.platform["id"]] if self.platform else [p["id"] for p in app.platforms]
             col = (self.collection["param"], self.collection["id"]) if self.collection else None
 
+            def failed(e, q=q):
+                if q == self.query.strip():
+                    self.preview, self.preview_total, self.preview_error = [], None, str(e)
+
             def done(page, q=q):
                 if q == self.query.strip():
+                    self.preview_error = None
                     self.preview = page.get("items", [])
                     self.preview_total = page.get("total")
                     if self.pick is not None:
@@ -931,7 +940,7 @@ class SearchScreen(KeyboardScreen):
                 page = app.api.roms(platform_ids=pids, search=q, limit=250, collection=col)
                 page["items"] = rank_search(q, page.get("items", []))[:8]
                 return page
-            app.bg(call, done)
+            app.bg(call, done, failed)
 
     def draw(self, c):
         self.live_preview()
@@ -945,9 +954,11 @@ class SearchScreen(KeyboardScreen):
             text(c, f.small, "{:,} total".format(self.preview_total), (p.right - 24, p.top + 22), theme.FAINT,
                  "topright")
         if not self.preview:
+            failed = self.preview_error if len(self.query.strip()) >= 2 and not self.pending_at else None
             msg = "Start typing and matches show up here." if len(self.query.strip()) < 2 else \
+                "Couldn't search: %s" % failed if failed else \
                 ("Searching…" if self.preview_total is None or self.pending_at else "No matches")
-            scroll_text(c, f.body, msg, (x, self.MATCH_Y, w, 52), theme.DIM, line_h=26, bg=theme.PANEL,
+            scroll_text(c, f.body, msg, (x, self.MATCH_Y, w, 52), theme.RED if failed else theme.DIM, line_h=26, bg=theme.PANEL,
                         slot="search-empty")
         for i, rom in enumerate(self.preview[:8]):
             y = self.match_y(i)

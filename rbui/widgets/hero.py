@@ -1,6 +1,7 @@
 """A game's one action (the verb button and the line saying what it does) and the soft art
 backdrop behind a game's page."""
 import datetime
+import re
 import time
 
 import pygame
@@ -131,6 +132,27 @@ def game_note(app, rom, status=None):
     if lay and lay["convert"]:
         return "Saved to roms/%s, then %s." % (system, lay["convert"])
     return "Saved to roms/%s." % system
+
+
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def day(when, clock=False):
+    """A date as every screen shows it: "3 Oct 2026", with clock "3 Oct 2026 20:00". when: epoch
+    seconds (local time), a struct_time, or a stamp as the app and ES store them ("2026-10-03
+    20:00:05", "2026-10-03", "20261003T200005"). "" for none or one that can't be read."""
+    if isinstance(when, str):
+        m = re.match(r"^(\d{4})-?(\d{2})-?(\d{2})(?:[ T](\d{2}):?(\d{2}))?", when)
+        if not m or not 1 <= int(m.group(2)) <= 12:
+            return ""
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        hm = (m.group(4), m.group(5)) if m.group(4) else None
+    elif when:
+        t = when if isinstance(when, time.struct_time) else time.localtime(when)
+        y, mo, d, hm = t.tm_year, t.tm_mon, t.tm_mday, ("%02d" % t.tm_hour, "%02d" % t.tm_min)
+    else:
+        return ""
+    return "%d %s %d" % (d, MONTHS[mo - 1], y) + (" %s:%s" % hm if clock and hm else "")
 
 
 def time_ago(ts, now=None, minutes=False):

@@ -533,3 +533,45 @@ def test_a_compress_candidates_folder_keeps_its_dots(rb):
     assert cand_title({"name": None, "root": "/r/psx/Breaker 1.1 (USA)", "files": ["/r/psx/Breaker 1.1 (USA)/x.cue"]}) \
         == "Breaker 1.1 (USA)"
     assert cand_title({"name": None, "root": "/r/psx/Lorem.cue", "files": ["/r/psx/Lorem.cue"]}) == "Lorem"
+
+
+def test_a_still_screen_rests_and_anything_new_wakes_it(rb, monkeypatch):
+    """The main loop slows down only after a second of identical frames with nothing coming in;
+    a frame that differs (a scrolling title, a progress bar) or any input is back to full rate."""
+    import pygame
+    from rbui.app import Rest
+    clock = [100.0]
+    monkeypatch.setattr(rb.app.time, "monotonic", lambda: clock[0])
+    a, b = pygame.Surface((64, 36)), pygame.Surface((64, 36))
+    b.fill((9, 9, 9))
+    rest = Rest()
+
+    def frames(surface, n, busy=False):
+        for _ in range(n):
+            clock[0] += 0.26
+            rest.frame(surface, busy)
+        return rest.resting
+    assert not frames(a, 4)                 # the first look, then three alike: not yet a second's worth
+    assert frames(a, 1)                     # still for a second: rests
+    assert not frames(b, 1)                 # the picture changed by itself: awake
+    assert frames(b, 5)
+    assert not frames(b, 1, busy=True)      # input: awake at once
+    assert frames(b, 5)
+    off = Rest(on=False)                    # a scripted or headless run never rests
+    for _ in range(10):
+        clock[0] += 0.26
+        off.frame(a, False)
+    assert not off.resting
+
+
+def test_a_date_reads_the_same_on_every_screen(rb):
+    """One helper for every date shown: epoch seconds, a struct_time, and the stamps the app
+    and EmulationStation store all come out as "3 Oct 2026" (with the clock: "3 Oct 2026 20:00")."""
+    import time
+    t = time.mktime((2026, 10, 3, 20, 0, 5, 0, 0, -1))
+    assert rb.day(t) == rb.day(time.localtime(t)) == "3 Oct 2026"
+    assert rb.day(t, clock=True) == "3 Oct 2026 20:00"
+    assert rb.day("2026-10-03 20:00:05") == rb.day("2026-10-03") == rb.day("20261003T200005") == "3 Oct 2026"
+    assert rb.day("2026-10-03 20:00:05", clock=True) == rb.day("20261003T200005", clock=True) == "3 Oct 2026 20:00"
+    assert rb.day("2026-10-03", clock=True) == "3 Oct 2026"            # no time known: none made up
+    assert rb.day("") == rb.day(None) == rb.day(0) == rb.day("soon") == rb.day("2026-13-40") == ""

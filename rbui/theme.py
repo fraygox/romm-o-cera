@@ -255,7 +255,7 @@ def light_theme():
 
 def ink_on(fill):
     """TEXT or BG, whichever reads better on fill (a letter on an accent tile)."""
-    return TEXT if abs(luminance(TEXT) - luminance(fill)) >= abs(luminance(BG) - luminance(fill)) else BG
+    return TEXT if contrast(TEXT, fill) >= contrast(BG, fill) else BG
 
 
 def contrast(a, b):

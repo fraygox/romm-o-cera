@@ -21,6 +21,7 @@ from rbui.screens.space import SpaceScreen
 from rbui.screens.bios import BiosScreen
 from rbui.screens.check import CheckScreen, check_counts, not_fully_checked
 from rbui.modals import InfoDialog
+from rbui.widgets.hero import day
 
 
 class OnThisBoxScreen(Screen):
@@ -121,7 +122,7 @@ class OnThisBoxScreen(Screen):
             a = self.audit
             if not a:
                 return "Not checked yet", None
-            when = time.strftime("%Y-%m-%d", time.localtime(a.get("time") or 0))
+            when = day(a.get("time"))
             dmg, unread, dif = check_counts(a["findings"])
             if not a["findings"]:       # a quick check can't vouch for checksums: it says only what it saw
                 k = not_fully_checked(a.get("stats"))
@@ -285,7 +286,7 @@ class OnThisBoxScreen(Screen):
             yy += 34
             big = self.storage[0]["total"] or 1
             for r in self.storage[:3]:
-                if yy + 30 > p.bottom - (84 if self.leftovers else 20):   # stops above the foot's rule
+                if yy + 30 > p.bottom - (84 if self.leftovers is not None else 20):   # stops above the foot's rule
                     break
                 text(c, self.f.body, self.app.system_name(r["system"]), (x, yy), theme.DIM, maxw=170)
                 meter(c, (x + 180, yy + 8, w - 290, 8), [(r[k] / big, col) for k, col, _ in theme.SPACE_PARTS],
@@ -294,7 +295,8 @@ class OnThisBoxScreen(Screen):
                 yy += 30
         if self.leftovers:
             n = sum(i["size"] for i in self.leftovers)
-            self.foot(c, p, "%s of leftovers from interrupted downloads" % human_size(n), theme.AMBER)
+            self.foot(c, p, "%s of leftovers from interrupted downloads" % human_size(n) if n else
+                      "%s to clean up" % plural(len(self.leftovers), "empty leftover"), theme.AMBER)
         elif self.leftovers is not None:
             self.foot(c, p, "No leftovers to clean up.")
 
@@ -329,7 +331,7 @@ class OnThisBoxScreen(Screen):
             self.head(c, p, "Check games", "not checked yet")
             yy = p.top + 72
         else:
-            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(a.get("time", 0)))
+            when = day(a.get("time"), clock=True)
             self.head(c, p, "Check games", "%s, %s" % ("full check" if a.get("deep") else "quick check", when))
             yy = p.top + 66
             for f in a["findings"][:3]:

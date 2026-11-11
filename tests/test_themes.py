@@ -483,3 +483,15 @@ def test_match_theme_to_controller_keeps_a_custom_theme(rb):
     """Someone who just built a Custom theme saw the controller's theme instead."""
     assert rb.theme_for("custom", True, "auto", ["Xbox Wireless Controller"]) == "custom"
     assert rb.theme_for("default", True, "auto", ["Xbox Wireless Controller"]) == "xbox"
+
+
+def test_a_buttons_label_takes_the_ink_that_reads_best_on_it(rb):
+    """On the red of a Delete button or the accent of a verb button, the label is whichever of
+    the theme's text and background colours has the higher contrast with it."""
+    for name in rb.theme.THEMES:
+        rb.theme.apply_theme(name)
+        for fill in (rb.theme.RED, rb.theme.ACCENT, rb.theme.GREEN):
+            ink = rb.theme.ink_on(fill)
+            other = rb.theme.BG if ink == rb.theme.TEXT else rb.theme.TEXT
+            assert rb.theme.contrast(ink, fill) >= rb.theme.contrast(other, fill), (name, fill)
+    rb.theme.apply_theme("default")

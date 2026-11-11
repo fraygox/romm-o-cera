@@ -710,7 +710,7 @@ def test_a_saved_check_with_odd_times_doesnt_crash(isolated, rb, monkeypatch):
 def test_on_this_box_counts_games_and_says_what_a_quick_check_vouches_for(isolated, rb, monkeypatch):
     app = _app(rb, monkeypatch)
     hub = rb.OnThisBoxScreen(app)
-    day = time.strftime("%Y-%m-%d", time.localtime(1e9))
+    day = rb.day(1e9)
     hub.audit = {"time": 1e9, "deep": False, "findings": []}
     assert hub.verdict("check") == ("Nothing wrong found on %s (quick check)" % day, None)
     hub.audit = {"time": 1e9, "deep": True, "findings": []}
@@ -1003,7 +1003,7 @@ def test_a_check_with_nothing_wrong_doesnt_vouch_for_games_it_couldnt_compare(is
     seen = _drawn(rb, monkeypatch, ck)
     assert "Nothing wrong found" in seen and "looks right" not in seen
     hub = rb.OnThisBoxScreen(app)
-    day = time.strftime("%Y-%m-%d", time.localtime(1e9))
+    day = rb.day(1e9)
     hub.audit = {"time": 1e9, "deep": True, "findings": [], "stats": st}
     assert hub.verdict("check") == ("Nothing wrong found on %s · 14 not fully checked" % day, None)
     scr = rb.AuditScreen.__new__(rb.AuditScreen)       # the result as the check screen shows it
