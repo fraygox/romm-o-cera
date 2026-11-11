@@ -145,11 +145,11 @@ def test_a_package_disc_becomes_a_launcher_and_its_packages(chd):
 def test_deleting_the_game_takes_the_launcher_and_the_packages(chd):
     sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc())
     rom = {"id": 7, "fs_name": "Lorem Ipsum (World).iso", "fs_name_no_ext": "Lorem Ipsum (World)"}
-    rommlib.Library().mark(rom, "xbox360", [src])
+    rommlib.Library().mark(rom, "xbox360", [src], files=[src])
     assert _convert(chd, src) is True
-    for p in rommlib.Library().paths_for(rom, "xbox360"):
-        rommlib.remove_game_path(p, "xbox360")
-    assert os.listdir(sysdir) == []
+    gone, freed = rommlib.Library().uninstall(rom, "xbox360")
+    assert len(gone) == 2 and freed > 0 and os.listdir(sysdir) == []
+    assert rommlib.Library().paths_for(rom, "xbox360") == []
 
 
 def test_a_file_that_isnt_a_title_package_is_packed_as_before(chd):
