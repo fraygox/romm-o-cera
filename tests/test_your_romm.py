@@ -195,6 +195,12 @@ def test_release_note_lines():
         ("p", "Plain snake_case_name text.")]
 
 
+def test_release_notes_show_a_command_without_its_code_fence():
+    body = "- Over SSH: run the installer again.\n  ```sh\n  curl -fsSL https://x/install.sh | sh\n  ```\n~~~\nls\n~~~\n"
+    assert rommlib.release_note_lines(body) == [
+        ("li", "Over SSH: run the installer again."), ("p", "curl -fsSL https://x/install.sh | sh"), ("p", "ls")]
+
+
 # ------------------------------------------------------------ Compare with RomM
 
 def _rom(rid, fs_name, size=100, **kw):

@@ -591,8 +591,8 @@ def release_note_lines(body):
     body = re.sub(r"<!--.*?-->", "", body or "", flags=re.S)
     for ln in body.splitlines():
         s = ln.strip()
-        if not s or re.fullmatch(r"[-*_=]{3,}", s):
-            continue
+        if not s or re.fullmatch(r"[-*_=]{3,}", s) or re.match(r"^(```|~~~)", s):
+            continue                      # a code fence line (```sh): what's between stays
         kind = "p"
         m = re.match(r"^#{1,6}\s+(.*)$", s)
         if m:

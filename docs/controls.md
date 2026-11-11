@@ -46,10 +46,12 @@ goes back. A keyboard and a pad work side by side.
 ## Touch and mouse
 
 - In a list of games or files, tap a row to select it, and tap it again to
-  open it. While picking, one tap picks or unpicks it.
+  open it. While picking, one tap picks or unpicks it. A cover on a shelf
+  (Home, Collections) works the same way: the first tap shows the game or
+  collection in the panel, the second opens it.
 - Everything else takes one tap: Home's pills (Search, Platforms, Settings…),
-  Settings' sections and rows, menu entries, keyboard keys, dialog buttons
-  and tiles.
+  platform cards, On this box's rows, Space's tiles, Settings' sections and
+  rows, menu entries, keyboard keys and dialog buttons.
 - Tap a button in the hint bar to press it, including **Home** and
   **Downloads** at its right end.
 - Tap the logo for Home, and the breadcrumbs beside it to go back a screen.
