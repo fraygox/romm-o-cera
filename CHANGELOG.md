@@ -3,6 +3,33 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.13.3 (2026-11-11)
+
+Xbox 360 discs that only start a package now start on Batocera, and patch files still download on RomM 5.5
+
+### Features
+- **feat:** An Xbox 360 disc that only starts a package stored on it now starts on Batocera. A few retail discs are built this way, and xenia-canary asked to be closed and started again every time, from the `.iso` and from a `.zar` alike. Such a disc becomes a `Game.xbox360` launcher, which EmulationStation lists as the game, and a `Game.packages` folder beside it.
+- **feat:** The add-ons and the update on such a disc are unpacked and linked where xenia-canary looks for them, so it finds them with nothing to install by hand. Every block is checked against the checksum its package carries before the image is deleted.
+- **feat:** This happens whether **Xbox 360 to .zar** is on or off, since the game can't start otherwise. The two small Xbox 360 tools are downloaded the first time there is an Xbox 360 image on the box.
+- **feat:** On this box › Compress games already here offers such discs that are already on the box, as an image or as a `.zar` made earlier, as becoming a "xenia launcher".
+- **feat:** Activity shows **Getting it ready** for such a game until it has been set up, instead of Ready to play.
+
+### Fixes
+- **fix:** An Xbox 360 game is kept as a `.zar` only when that is smaller than its image; otherwise the image stays.
+- **fix:** A patch file kept beside a game in RomM (`.ips`, `.bps`, `.ppf` and the like) still downloads with the game on RomM 5.5, which lists it as a patch instead of a game file. Nothing changes on RomM 5.4.
+- **fix:** Activity's top line says Unpacking or Checking downloads while a finished download is unpacked or checked, not "Everything's done in 1 s".
+
+### Upgrading
+- A disc of this kind that an earlier version turned into a `.zar` still can't start. Open On this box › Compress games already here and convert it there, or delete it and download it again.
+- To leave such discs as they are, set `"x360_packages": false` in config.json. There is no Settings row for it.
+
+### Known limits
+- Only a disc that is plainly of this kind is set up: a small `default.xex`, no other program on the disc, and exactly one title package. Any other disc is handled as before.
+- EmulationStation can list the downloaded `.iso` for the short time before the launcher is made. It can't start; the launcher takes its place.
+- Deleting the game removes the launcher and its folder. The links it had in `saves/xbox360` then lead nowhere; they take no space and are replaced if the game is downloaded again.
+- An add-on already in xenia-canary's content folder, installed from its own menu or linked there by you, is left as it is.
+- Xbox 360 on Batocera is x86_64 only.
+
 ## v0.13.2 (2026-11-11)
 
 Stalled and on-hold downloads say why, a download speed limit, and a BIOS fix for Batocera 44
