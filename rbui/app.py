@@ -109,6 +109,15 @@ class CoverLoader:
             self.run_one()
 
 
+class _Either:
+    """Set when either of two threading.Events is: a sync stops when the app closes or when a newer one is asked for."""
+    def __init__(self, a, b):
+        self.a, self.b = a, b
+
+    def is_set(self):
+        return self.a.is_set() or self.b.is_set()
+
+
 def kept_note(paths):
     """After a delete: a game folder that stays because it holds the owner's own files."""
     kept = [p for p in paths or [] if os.path.isdir(p)]
@@ -197,7 +206,8 @@ class App:
         self.conn_gen = 0             # bumped on every reconnect: per-server data from before it is dropped
         self.music_total = None       # tracks in RomM's jukebox (Home shows Music when there are any); None: not asked yet
         # menu music: the sync in the background and what the last one did (the Music screen shows it)
-        self.music = {"busy": False, "done": 0, "total": 0, "again": False, "result": rommlib.music_status()["last"]}
+        self.music = {"busy": False, "done": 0, "total": 0, "again": False, "stop": threading.Event(),
+                      "result": rommlib.music_status()["last"]}
         self.music_stop = threading.Event()
         self.player = Player(self)    # what's playing in the app (Music, Play music)
         self.update_tag = None
@@ -549,6 +559,8 @@ class App:
             self.downloader.api = self.api
             self.forget_covers()
             self.details.clear()
+            self.player.stop()                       # its queue is the other server's
+            self.player.queue, self.player.order = [], []
             self.player_counts = self.recs = self.music_total = None
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
             self.status, self.error, self.romm_version = "Connecting…", None, None
@@ -982,8 +994,11 @@ class App:
             return
         if m["busy"]:
             m["again"] = True
+            m["stop"].set()                          # what was asked has changed: the one running ends after its track
             return
-        m.update(busy=True, done=0, total=0, again=False)
+        stop = threading.Event()
+        m.update(busy=True, done=0, total=0, again=False, stop=stop)
+        cancel = _Either(self.music_stop, stop)
         cfg, sel, api, library = dict(self.cfg), rommlib.load_music_sources(), self.api, self.library
 
         def finished(res):
@@ -991,7 +1006,7 @@ class App:
             if m["again"]:
                 self.sync_music()
         self.bg(lambda: rommlib.sync_music(api, sel, library, on=cfg["menu_music"], cap=rommlib.music_cap_bytes(cfg),
-                                           keep_free=rommlib.keep_free_bytes(cfg), cancel=self.music_stop,
+                                           keep_free=rommlib.keep_free_bytes(cfg), cancel=cancel,
                                            progress=lambda d, t: m.update(done=d, total=t)),
                 finished, lambda e: finished({"error": str(e)}))
 

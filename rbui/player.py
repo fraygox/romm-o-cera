@@ -17,6 +17,7 @@ def track_title(t):
 
 class Player:
     FAILS = 3                 # tracks failing in a row before the queue gives up
+    FETCHES = 2               # tracks on their way at once: skipping quickly through a list doesn't start one each
     RESTART = 3.0             # Previous this far into a track goes to its start; sooner, to the one before
     SETTLE = 0.4              # a stream just started isn't asked whether it has ended
 
@@ -109,6 +110,8 @@ class Player:
         fid = t["rom_file_id"]
         if fid in self.fetching:
             return                               # on its way: landed() starts it if it's still the one
+        if len(self.fetching) >= self.FETCHES:
+            return                               # enough on their way: tick() asks again for the one that's wanted
         self.fetching.add(fid)
         api, keep = self.app.api, (self.path,) if self.path else ()
         self.app.bg(lambda: rommlib.fetch_music(api, t, keep),
@@ -214,7 +217,13 @@ class Player:
         self.state = "stopped"
 
     def tick(self):
-        """Every frame: a track that has played out makes way for the next."""
+        """Every frame: a track that has played out makes way for the next, and the one that's
+        waited for is asked for once there's room."""
+        if self.state == "loading":
+            t = self.current()
+            if t is not None and t["rom_file_id"] not in self.fetching:
+                self.fetch(t)
+            return
         if self.state != "playing" or time.monotonic() - self.began < self.SETTLE:
             return
         out = self.stream()

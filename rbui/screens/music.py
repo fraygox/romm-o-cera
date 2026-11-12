@@ -48,7 +48,7 @@ def load_jukebox(scr):
         scr.playlists, scr.favourites = [], 0
         scr.lists_why = str(e) if isinstance(e, rommlib.ScopeMissing) else "RomM didn't answer (%s)" % e
     app.bg(api.music_playlists, lambda v: setattr(scr, "playlists", v), no_lists)
-    app.bg(lambda: len(api.music_all("favorites") or []), lambda n: setattr(scr, "favourites", n), lambda e: None)
+    app.bg(lambda: api.music_page("favorites", 1)[1], lambda n: setattr(scr, "favourites", n), lambda e: None)
 
 
 class MusicScreen(ListScreen):
@@ -81,7 +81,8 @@ class MusicScreen(ListScreen):
             self.here = {int(k) for k in app.library.snapshot()}
         except Exception:                                # noqa: BLE001 — a count, never an error
             self.here = set()
-        load_jukebox(self)
+        if self.games is None:                           # once: coming back from a list or the mix editor asks nothing again
+            load_jukebox(self)
 
     def listed(self):
         return self.rows()
@@ -111,8 +112,8 @@ class MusicScreen(ListScreen):
                             "Not available with this token" if not lists else "Switch it off to drop its tracks", True, True))
         for rid in s["games"]:
             g = (self.games or {}).get(rid)
-            out.append(("game:%d" % rid, g["name"] if g else "A game's soundtrack",
-                        "Soundtrack · %s · %s" % (plural_tracks(g["count"]), g["platform_name"]) if g else
+            out.append(("game:%d" % rid, (g.get("name") or "A game's soundtrack") if g else "A game's soundtrack",
+                        "Soundtrack · %s · %s" % (plural_tracks(g.get("count") or 0), g.get("platform_name") or "") if g else
                         ("Loading…" if self.games is None else "RomM has no soundtrack for it now"), True, True))
         for m in s["mixes"]:
             out.append(("mix:" + m["name"], m["name"], "Mix · " + (mix_summary(m["filters"]) or "every track"), m["on"], True))
@@ -140,7 +141,9 @@ class MusicScreen(ListScreen):
         rows = self.rows()
         if a == "ok":
             key, _, _, on, ok = rows[min(self.sel, len(rows) - 1)]
-            if not ok:
+            if not ok and on:
+                self.switch_source(key, False)             # it can't be read, but it can always be switched off
+            elif not ok:
                 app.toast(self.lists_why or "Not available", theme.AMBER)
             elif key == "on":
                 self.switch_all(not on)
@@ -175,8 +178,9 @@ class MusicScreen(ListScreen):
         app = self.app
 
         def load():
-            return [{"value": g["rom_id"], "label": g["name"], "count": g["count"], "note": g["platform_name"]}
-                    for g in sorted(app.api.music_all("games") or [], key=lambda g: g["name"].lower())
+            return [{"value": g["rom_id"], "label": g.get("name") or "A game", "count": g.get("count") or 0,
+                     "note": g.get("platform_name") or ""}
+                    for g in sorted(app.api.music_all("games") or [], key=lambda g: (g.get("name") or "").lower())
                     if g["rom_id"] not in self.sources["games"]]
 
         def picked(values):
@@ -250,6 +254,10 @@ class MusicScreen(ListScreen):
             note = (res["error"], theme.RED)
         elif res.get("no_room"):
             note = ("Stopped: the space to keep free on the drive would be touched", theme.AMBER)
+        elif res.get("unreadable"):
+            n = len(res["unreadable"])
+            note = ("%d source%s can't be read right now: what %s brought stays" % (n, "" if n == 1 else "s", "it" if n == 1 else "they"),
+                    theme.AMBER)
         elif res.get("left_out"):
             note = ("%s left out: over the space allowed" % plural_tracks(res["left_out"]), theme.AMBER)
         elif res.get("skipped"):
@@ -505,7 +513,7 @@ class MixScreen(Screen):
         self.filters = {k: list(v) if isinstance(v, list) else v for k, v in (mix["filters"] if mix else {}).items()}
         self.sel = 0
         self.count = None                        # (tracks, seconds) that fit; None while counting
-        self.gen = 0
+        self.gen, self.counting = 0, False
         self.names = {}                          # platform id -> name, for the rows' values
 
     def enter(self):
@@ -537,14 +545,33 @@ class MixScreen(Screen):
         return [("A", verb), ("B", "Back")]
 
     def recount(self):
+        """Count what fits, one question to RomM at a time: a change made while one is out is
+        counted when it's back. A mix with nothing picked is everything, which RomM's totals say."""
         self.gen += 1
-        gen, f, api = self.gen, dict(self.filters), self.app.api
         self.count = None
+        if self.counting:
+            return
+        gen, f, api = self.gen, dict(self.filters), self.app.api
+        self.counting = True
 
-        def got(tracks):
+        def ask():
+            if not f:
+                st = api.music_stats()
+                return st.get("total_tracks") or 0, st.get("total_duration_seconds") or 0
+            tracks = rommlib.music_mix_tracks(api, f) or []
+            return len(tracks), sum(t.get("duration_seconds") or 0 for t in tracks)
+
+        def got(count):
+            self.counting = False
             if gen == self.gen:
-                self.count = (len(tracks or []), sum(t.get("duration_seconds") or 0 for t in tracks or []))
-        self.app.bg(lambda: rommlib.music_mix_tracks(api, f), got, lambda e: got([]) or self.app.toast(str(e), theme.RED))
+                self.count = count
+            else:
+                self.recount()
+
+        def failed(e):
+            got((0, 0))
+            self.app.toast(str(e), theme.RED)
+        self.app.bg(ask, got, failed)
 
     def facet_rows(self, key, what):
         """A facet's values with their track counts, as MusicPickScreen lists them."""
@@ -646,7 +673,7 @@ class MixScreen(Screen):
             line = "Counting what fits…"
         else:
             n, secs = self.count
-            size = secs * rommlib.music_rate(rommlib.load_music_state()["tracks"])
+            size = secs * rommlib.music_status()["rate"]
             line = "%s fit%s · %s · about %s" % (plural_tracks(n), "s" if n == 1 else "", minutes(secs), human_size(size)) \
                 if n else "Nothing in RomM fits this yet"
         text(c, f.h2, line, (hr.left + 20, hr.top + 12), theme.TEXT, maxw=hr.width - 40)

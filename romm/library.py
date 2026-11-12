@@ -689,6 +689,13 @@ class Library:
             if recs is not None:           # what the next write carries on from
                 self.installed = recs
 
+    def unreadable(self):
+        """True while installed.json is there but can't be read (and no backup stood in): what's
+        installed is unknown, not "nothing"."""
+        with self.lock:
+            self._reload()
+            return self._bad is not None
+
     def snapshot(self):
         """installed.json's records as they are now ({rom id: record}), re-read
         first if another process changed it. A new dict, safe to iterate

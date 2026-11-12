@@ -631,3 +631,141 @@ def test_the_real_mixer_plays_a_fetched_track_through_and_moves_on(app, rb, monk
         pl.stop()
     finally:
         pygame.mixer.quit()
+
+
+# ---------------------------------------------------------------- what the review found
+
+def later(app, monkeypatch):
+    """Background work held back: a list of (fn, done, err) the test runs when it chooses."""
+    pending = []
+    monkeypatch.setattr(app, "bg", lambda fn, done=None, err=None: pending.append((fn, done, err)))
+    return pending
+
+
+def run(pending, n=None):
+    for _ in range(len(pending) if n is None else n):
+        fn, done, err = pending.pop(0)
+        try:
+            r = fn()
+        except Exception as e:                      # noqa: BLE001
+            if err:
+                err(e)
+            continue
+        if done:
+            done(r)
+
+
+def test_a_list_left_before_its_tracks_arrive_stays_quiet(app, rb, monkeypatch):
+    g = app.api.music_all("games")[0]
+    pending = later(app, monkeypatch)
+    scr = rb.TracksScreen(app, "An album", lambda: rb.album_order(app.api.music_all("tracks", rom_id=g["rom_id"])),
+                          ("game", g["rom_id"]), autoplay=True)
+    app.push(scr)
+    assert len(pending) == 1
+    app.stack.pop()                                                   # B before the list arrived
+    run(pending, 1)
+    assert scr.items and not app.player.active() and not app.player.queue
+    again = rb.TracksScreen(app, "An album", scr.load, scr.key, autoplay=True)
+    app.push(again)
+    run(pending)
+    assert app.player.state in ("loading", "playing") and app.player.key == scr.key      # still in front: it plays
+
+
+def test_skipping_fast_starts_two_downloads_at_most(app, rb, monkeypatch):
+    scr = album(app, rb)
+    scr.action("x")
+    pl, rows = app.player, scr.listed()
+    assert pl.state == "playing" and len(rows) >= 5 and not pl.fetching
+    pending = later(app, monkeypatch)
+    for _ in range(4):
+        scr.action("r2")
+    assert pl.at == 4 and pl.state == "loading" and len(pending) == 2 and len(pl.fetching) == 2
+    run(pending)                                                      # the two that were started land: neither is wanted now
+    assert pl.state == "loading" and not pl.fetching and not pending
+    pl.tick()                                                         # room again: the one that's waited for is asked for
+    assert len(pending) == 1
+    run(pending, 1)
+    assert pl.state == "playing" and pl.current() is rows[4]
+    scr.sel = 4
+    assert scr.hints()[0] == ("A", "Pause")
+    pl.state = "loading"
+    assert all(h[1] not in ("Pause", "Resume") for h in scr.hints())      # nothing to pause while it's fetched
+    pl.state = "playing"
+
+
+def test_everything_and_a_mix_arent_fetched_for_a_look(app, rb, monkeypatch):
+    rommlib.save_music_sources(MIX)
+    calls, real = [], app.api.music_all
+    monkeypatch.setattr(app.api, "music_all", lambda what, cancel=None, **f: calls.append((what, f)) or real(what, cancel=cancel, **f))
+    juke = wall(app, rb, monkeypatch)
+    assert [c for c in calls if c == ("tracks", {})] == [("tracks", {})]         # the index, once
+    assert not [c for c in calls if c[0] == "favorites"]                         # how many are starred is a count, not a listing
+    del calls[:]
+    for _ in range(3):
+        juke.draw(app.canvas)
+    assert {c[0] for c in calls} == {"favorites", "playlists/1/tracks", "playlists/2/tracks", "tracks"}     # small lists, for their covers
+    assert [c for c in calls if c[0] == "tracks"] == [("tracks", {"rom_id": juke.current()[1]["rom_id"]})]   # and the focused soundtrack
+    del calls[:]
+    juke.at = "pills"
+    juke.cols["pills"] = 0
+    assert juke.current()[1]["key"] == ("all",)
+    for _ in range(3):
+        juke.draw(app.canvas)
+    assert not calls                                                  # resting on Shuffle everything asks RomM nothing
+    juke.at = "lists"
+    juke.cols["lists"] = 0
+    for _ in range(3):
+        juke.draw(app.canvas)
+    assert not calls                                                  # (a small list is in already)
+    juke.cols["lists"] = 3
+    for _ in range(3):
+        juke.draw(app.canvas)
+    assert calls == [("tracks", {"max_duration": 120})]               # a mix only once it has the focus
+    # a soundtrack's mark follows the game the playing track is from, whatever list it plays from
+    juke.at = "pills"
+    juke.action("ok")
+    cur = app.player.current()
+    app.pop()
+    marked = [it for g in groups(juke) for it in g["items"] if it["rom_id"] == cur["rom_id"]]
+    assert marked and app.player.key == ("all",)
+    juke.draw(app.canvas)
+
+
+def test_counting_a_mix_asks_one_thing_at_a_time(app, rb, monkeypatch):
+    music = rb.MusicScreen(app)
+    app.push(music)
+    calls, real = [], app.api.music_all
+    monkeypatch.setattr(app.api, "music_all", lambda what, cancel=None, **f: calls.append((what, f)) or real(what, cancel=cancel, **f))
+    pending = later(app, monkeypatch)
+    mix = rb.MixScreen(app, music)
+    app.push(mix)
+    assert len(pending) == 1 and mix.count is None
+    mix.sel = [r[0] for r in mix.rows()].index("length")
+    for _ in range(3):
+        mix.action("ok")                                              # three changes while the first count is out
+    assert len(pending) == 1
+    run(pending, 1)
+    assert not calls and len(pending) == 1 and mix.count is None      # nothing picked was RomM's totals; it's stale: asked once more
+    run(pending, 1)
+    assert mix.count and mix.count[0] > 0 and not mix.counting and not pending
+    assert calls == [("tracks", {"max_duration": mix.filters["max_minutes"] * 60})]
+    mix.draw(app.canvas)
+
+
+def test_another_server_stops_the_player_and_a_new_sync_stops_the_one_running(app, rb):
+    scr = album(app, rb)
+    scr.action("x")
+    assert app.player.state == "playing"
+    first = app.music["stop"]
+    app.apply_config(reconnect=True)
+    assert app.player.state == "stopped" and app.player.queue == [] and not app.player.out.busy
+    scr.draw(app.canvas)
+    app.music_in_tests = True
+    app.cfg["menu_music"] = True
+    rommlib.save_music_sources(dict(rommlib.load_music_sources(), playlists=[1]))
+    app.sync_music()
+    assert app.music["stop"] is not first and not app.music["stop"].is_set() and app.music["result"]["downloaded"] == 12
+    either = rb.app._Either(app.music_stop, app.music["stop"])
+    assert not either.is_set()
+    app.music["stop"].set()
+    assert either.is_set()

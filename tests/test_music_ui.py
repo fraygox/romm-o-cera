@@ -142,6 +142,16 @@ def test_a_token_that_cant_read_lists_shows_them_unavailable_with_the_reason(app
     scr.action("ok")
     assert rommlib.load_music_sources()["favourites"] is False
     assert "playlists.read" in app.toasts[-1][0]
+    # switched on before the token changed: it can't be read, but it can still be switched off
+    rommlib.save_music_sources(dict(rommlib.load_music_sources(), favourites=True, playlists=[1]))
+    scr.enter()
+    assert row(scr, "favourites")[3] is True and row(scr, "favourites")[4] is False
+    scr.action("ok")
+    assert rommlib.load_music_sources()["favourites"] is False
+    gone = row(scr, "playlist:1")
+    assert gone[3] is True and gone[1] == "A playlist RomM no longer lists"
+    scr.action("ok")
+    assert rommlib.load_music_sources()["playlists"] == []
     assert "playlists.read" in scr.about("favourites", "favourites", False)
     row(scr, "on_box")
     scr.action("ok")
@@ -170,8 +180,9 @@ def test_sync_now_says_why_when_its_off_and_the_app_asks_once_more_after_a_chang
     assert "off" in app.toasts[-1][0]
     app.cfg["menu_music"] = True
     app.music["busy"] = True
+    assert not app.music["stop"].is_set()
     app.sync_music()
-    assert app.music["again"] is True                               # runs once more when the one under way ends
+    assert app.music["again"] is True and app.music["stop"].is_set()      # the one under way is told to stop; it runs once more after
     app.music["busy"] = False
     rommlib.save_music_sources(dict(rommlib.load_music_sources(), playlists=[2]))
     app.sync_music()

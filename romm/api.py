@@ -414,6 +414,18 @@ class Api:
             if not got or not isinstance(total, int) or off >= total:
                 return out
 
+    def music_page(self, what, limit, **filters):
+        """(the first `limit` items, how many there are in all) of a /api/music/<what> listing:
+        for a count (limit 1) or the top of a search, without reading every page."""
+        params = {k: v for k, v in filters.items() if v is not None and v != []}
+        page = self.get("/api/music/" + what, dict(params, limit=max(1, min(limit, MUSIC_PAGE)), offset=0), timeout=60,
+                        scope=MUSIC_LISTS_SCOPE if what.startswith(("favorites", "playlists")) else None)
+        got = page.get("items") if isinstance(page, dict) else None
+        if not isinstance(got, list):
+            raise _core.RommError(NOT_ROMM)
+        total = page.get("total")
+        return [x for x in got if isinstance(x, dict)], total if isinstance(total, int) else len(got)
+
     def music_stats(self):
         """{"total_tracks", "total_duration_seconds"} of the whole jukebox."""
         d = self.get("/api/music/stats")

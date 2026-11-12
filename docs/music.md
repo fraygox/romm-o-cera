@@ -26,7 +26,8 @@ Music opens on what there is to listen to, top to bottom:
   **On this box**, the soundtracks of the games you've downloaded.
 - One shelf for each group, covers side by side, with how many it holds. A game
   sits under each of its genres; a composer gets a shelf when two or more
-  soundtracks are mostly theirs.
+  soundtracks are mostly theirs (every composer does while only a few have
+  two).
 
 The panel on the right shows what's focused: its cover, who it's by, how long
 it is and its first tracks. **A** opens it and **X** plays it at once.
@@ -51,7 +52,7 @@ In a list of tracks:
 | Button | What it does |
 |---|---|
 | **A** | plays from the selected track, and the list plays on from there; on the track that's playing, pauses or resumes |
-| **X** | pauses or resumes whatever is playing; with nothing playing, plays the list from the top |
+| **X** | pauses or resumes what's playing from this list; when nothing from it is playing, plays the list from the top |
 | **Y** | shuffles, or goes back to the list's order |
 | **L2 / R2** | previous and next track |
 
@@ -61,8 +62,8 @@ otherwise it describes the list.
 
 The music goes on while you look around the app, and the top bar names the
 track and the soundtrack it's from (tap it to get back to its list). It stops
-when the app closes or a game starts. The cover that's playing carries a play
-mark on every shelf it's on.
+when the app closes or a game starts. The cover of the game the playing track
+is from carries a play mark on every shelf it's on.
 
 Tracks are fetched from RomM as they come up, the next one while the current
 plays. Up to 256 MB of them stay on the box so they start at once the next
@@ -86,7 +87,10 @@ random, as it does with any music in that folder.
 - While any track is there, Batocera's own songs don't play. Turn Menu music
   off and they return: the app asks first, then removes the tracks it placed.
 - Music of your own in the music folder keeps playing alongside, and is never
-  touched: the app removes only files it placed itself.
+  touched: the app removes only files it placed itself. A file of yours put
+  where one of its tracks was is yours from then on.
+- Point the app at another RomM and the first sync there replaces the old
+  server's tracks with what's chosen on the new one.
 - EmulationStation plays `.mp3`, `.ogg`, `.flac`, `.wav` and `.opus`. Tracks in
   other formats stay in RomM, and the card at the top says how many.
 - With EmulationStation's **Only play system-specific music** on, it skips this
@@ -118,7 +122,9 @@ when you press **Sync now** (X).
 Favourites and playlists belong to a RomM account, and a token only reads them
 when it was made with the `playlists.read` scope. With a token that wasn't,
 those two rows say **Not available with this token**; mixes, single games and
-the games on this box work as they are. Make a token with that scope for the
+the games on this box work as they are. Tracks such a source brought earlier
+stay in the menus until it can be read again, and a source that's switched on
+can still be switched off. Make a token with that scope for the
 account whose favourites you want, and enter it in Settings.
 
 ### Mixes

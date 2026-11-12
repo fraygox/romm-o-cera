@@ -41,7 +41,8 @@ def clock(secs):
 
 def album_order(tracks):
     """One game's tracks as its album runs: by disc, then track number, then file name."""
-    return sorted(tracks or [], key=lambda t: (t.get("disc") or 0, t.get("track") or 0, (t.get("file_name") or "").lower()))
+    return sorted(tracks or [], key=lambda t: (rommlib.music_num(t.get("disc")), rommlib.music_num(t.get("track")),
+                                               str(t.get("file_name") or "").lower()))
 
 
 def ost_art(app, rom_id, url):
@@ -71,9 +72,11 @@ def covers_of(app, tracks, n=4):
     """Up to n (key, image) cells for a mosaic: the covers of the first games a list's tracks are from."""
     seen, out = set(), []
     for t in tracks or []:
-        if t.get("rom_id") not in seen and len(out) < n:
+        if t.get("rom_id") not in seen:
             seen.add(t.get("rom_id"))
             out.append(ost_art(app, t.get("rom_id"), t.get("game_cover_url") or t.get("cover_url")))
+            if len(out) >= n:
+                break
     return out
 
 
@@ -92,6 +95,7 @@ class AlbumFocus:
 
     def init_focus(self):
         self.tracks = {}                           # key -> its tracks ("loading" while asked for)
+        self.sums = {}                             # key -> (seconds, artists, earliest year) of those tracks, worked out once
         self.focus_since = (None, 0.0)
 
     def loader(self, it):
@@ -106,14 +110,21 @@ class AlbumFocus:
         key, load = it["key"], self.loader(it)
         if load and self.tracks.get(key) is None:
             self.tracks[key] = "loading"
-            self.app.bg(load, lambda v, key=key: self.tracks.__setitem__(key, list(v or [])),
-                        lambda e, key=key: self.tracks.__setitem__(key, []))
+
+            def got(v, key=key):
+                v = list(v or [])
+                years = [t["year"] for t in v if isinstance(t.get("year"), int)]
+                self.sums[key] = (sum(t["duration_seconds"] for t in v if isinstance(t.get("duration_seconds"), (int, float))),
+                                  sorted({t["artist"] for t in v if isinstance(t.get("artist"), str) and t["artist"]}),
+                                  min(years) if years else None)
+                self.tracks[key] = v
+            self.app.bg(load, got, lambda e, key=key: self.tracks.__setitem__(key, []))
 
     def tracks_of(self, it):
         """The focused thing's tracks, asked for once it has kept the focus a moment; None until they're in."""
         key = it["key"]
         got = self.tracks.get(key)
-        if got is None and self.loader(it):
+        if got is None and self.loader(it) and not it.get("whole"):      # (everything at once is never fetched for a look)
             if self.focus_since[0] != key:
                 self.focus_since = (key, draw.NOW)
             elif draw.NOW - self.focus_since[1] >= FOCUS_WAIT:
@@ -132,7 +143,8 @@ class AlbumFocus:
         if on:
             focus_ring(c, r)
         album_art(c, app, it["rom_id"], it.get("cover"), r, it["name"], fit=False)
-        if app.player.active() and app.player.key == it["key"]:       # the one that's playing: a small mark on its cover
+        cur = app.player.current() if app.player.active() else None
+        if cur and cur.get("rom_id") == it["rom_id"]:                 # the game the playing track is from: a small mark
             m = pygame.Rect(r.left + 5, r.bottom - 27, 22, 22)
             rrect(c, theme.ACCENT, m, 11)
             play_mark(c, theme.ink_on(theme.ACCENT), m.center, paused=app.player.state == "paused", size=8)
@@ -144,8 +156,9 @@ class AlbumFocus:
         art = pygame.Rect(r.left, r.top, r.width, r.width)
         if on:
             focus_ring(c, art)
-        self.ask_tracks(li)                        # few and small: asked for as soon as they're drawn
-        got = self.tracks.get(li["key"])
+        if li.get("small"):
+            self.ask_tracks(li)                    # favourites and playlists: asked for as soon as they're drawn
+        got = self.tracks_of(li) if on else self.tracks.get(li["key"])       # a mix can be the whole jukebox: only once focused
         mosaic(c, self.app, covers_of(self.app, got if isinstance(got, list) else None), art)
         marquee(c, f.small, li["name"], (r.left, art.bottom + 4), theme.TEXT if on else theme.DIM, maxw=r.width, focused=on,
                 slot=("list-tile", str(li["key"])), bg=theme.BG)
@@ -159,7 +172,8 @@ class AlbumFocus:
         p = Panel(c, self.f, SIDE, app=app, key=str(it["key"]), slot="music-panel")
         p.actions(hint_actions(self, actions))
         tracks = self.tracks_of(it)
-        secs = sum(t.get("duration_seconds") or 0 for t in tracks) if tracks is not None else it.get("seconds")
+        summed = self.sums.get(it["key"]) if tracks is not None else None
+        secs = summed[0] if summed else it.get("seconds")
         count = len(tracks) if tracks is not None else it.get("count")
         p.verb("Play" if it.get("shuffle") else "Open", "go", plural_tracks(count) if count else "", fn=lambda: self.action("ok"))
         h = max(120, min(224, p.room() - 250))
@@ -168,9 +182,8 @@ class AlbumFocus:
         else:
             mosaic(c, app, covers_of(app, tracks), (p.x + (p.w - h) // 2, p.y, h, h))
         p.space(h + 14)
-        artists = sorted({t.get("artist") for t in tracks or [] if t.get("artist")})
-        years = sorted({t["year"] for t in tracks or [] if isinstance(t.get("year"), int)})
-        year = years[0] if years else it.get("year")
+        artists = summed[1] if summed else []
+        year = (summed[2] if summed else None) or it.get("year")
         if it.get("album"):
             sub = " · ".join(x for x in (it["kind"], str(year) if year else "") if x)
         else:
@@ -233,12 +246,12 @@ class JukeboxScreen(AlbumFocus, Screen):
             load_jukebox(self)
         if not self.index_asked:
             self.index_asked = True
-            self.index = rommlib.load_music_index()      # last time's, at once; replaced if RomM has changed
             api = app.api
+            self.index = rommlib.load_music_index(api.base)      # last time's, at once; replaced if RomM has changed
 
             def read():
                 stats = api.music_stats()
-                kept = rommlib.load_music_index()
+                kept = rommlib.load_music_index(api.base)
                 return kept if kept and kept.get("stats") == stats else rommlib.build_music_index(api, stats)
 
             def failed(e):
@@ -254,7 +267,7 @@ class JukeboxScreen(AlbumFocus, Screen):
         if pl.queue and pl.current():
             out.append({"key": "now", "label": "Now playing", "dot": theme.ACCENT_HI if pl.state == "playing" else theme.FAINT})
         out.append({"key": ("all",), "label": "Shuffle everything", "name": "Shuffle everything", "title": "Everything",
-                    "shuffle": True, "load": lambda: app.api.music_all("tracks"), "count": st.get("total_tracks") or 0,
+                    "shuffle": True, "whole": True, "load": lambda: app.api.music_all("tracks"), "count": st.get("total_tracks") or 0,
                     "seconds": st.get("total_duration_seconds") or 0})
         out.append({"key": "search", "label": "Search"})
         out.append({"key": "menu", "label": "Menu music: %s" % ("On" if app.cfg["menu_music"] else "Off"),
@@ -265,10 +278,10 @@ class JukeboxScreen(AlbumFocus, Screen):
         api, out = self.app.api, []
         if not self.lists_why:
             if self.favourites:
-                out.append({"key": ("favourites",), "name": "Favourites", "kind": "Starred in RomM",
+                out.append({"key": ("favourites",), "name": "Favourites", "kind": "Starred in RomM", "small": True,
                             "count": self.favourites, "load": lambda: api.music_all("favorites")})
             for p in self.playlists or []:
-                out.append({"key": ("playlist", p["id"]), "name": p["name"], "count": p.get("track_count") or 0,
+                out.append({"key": ("playlist", p["id"]), "name": p["name"], "count": p.get("track_count") or 0, "small": True,
                             "kind": "Playlist by %s" % p.get("owner_username", "someone") if p.get("is_public") else "Your playlist",
                             "load": lambda pid=p["id"]: api.music_all("playlists/%d/tracks" % pid)})
         for m in self.sources["mixes"]:
@@ -701,10 +714,10 @@ class MusicSearchScreen(ListScreen):
             return
         api, q = self.app.api, self.query
 
-        def got(tracks):
-            tracks = list(tracks or [])
-            self.tracks, self.more = tracks[:SEARCH_TRACKS], max(0, len(tracks) - SEARCH_TRACKS)
-        self.app.bg(lambda: api.music_all("tracks", search=q), got, self.load_failed("tracks"))
+        def got(page):
+            tracks, total = page
+            self.tracks, self.more = list(tracks), max(0, total - len(tracks))
+        self.app.bg(lambda: api.music_page("tracks", SEARCH_TRACKS, search=q), got, self.load_failed("tracks"))
 
     def listed(self):
         return self.found + [{"kind": "track", "track": t} for t in self.tracks or []]
@@ -831,6 +844,7 @@ class TracksScreen(ListScreen):
         self.items = None
         self.sel = self.scroll = 0
         self.many = False            # tracks of more than one album: a row says which
+        self.about = {"seconds": 0, "artists": [], "years": None, "genres": [], "games": 0}     # of the whole list, worked out once
         self.was = None              # the track that was playing when last drawn
 
     @property
@@ -848,9 +862,15 @@ class TracksScreen(ListScreen):
         def got(tracks):
             self.items = list(tracks or [])
             self.many = len({(t.get("album"), t.get("rom_id")) for t in self.items}) > 1
+            years = [t["year"] for t in self.items if isinstance(t.get("year"), int)]
+            self.about = {"seconds": sum(t["duration_seconds"] for t in self.items if isinstance(t.get("duration_seconds"), (int, float))),
+                          "artists": sorted({t["artist"] for t in self.items if isinstance(t.get("artist"), str) and t["artist"]}),
+                          "years": (min(years), max(years)) if years else None,
+                          "genres": sorted({t["genre"] for t in self.items if isinstance(t.get("genre"), str) and t["genre"]}),
+                          "games": len({t.get("rom_id") for t in self.items})}
             pl = self.app.player
-            if self.autoplay and self.items and not (self.mine() and pl.active()):
-                pl.play(self.items, None, self.title, self.key, shuffle=self.shuffle)
+            if self.autoplay and self.items and self in self.app.stack and not (self.mine() and pl.active()):
+                pl.play(self.items, None, self.title, self.key, shuffle=self.shuffle)      # (left before it arrived: stays quiet)
             self.to_current()
         self.app.bg(self.load, got, self.load_failed("items"))
 
@@ -877,7 +897,10 @@ class TracksScreen(ListScreen):
         if not self.live():
             return self.list_hints(("A", "Play"), ("X", "Play all"), ("Y", "Shuffle"))
         word = "Resume" if pl.state == "paused" else "Pause"
-        own = [("A", word)] if pl.playing(t) else [("A", "Play"), ("X", word)]     # on the playing track A and X do the same
+        if pl.state == "loading":                  # nothing to pause yet
+            own = [] if pl.playing(t) else [("A", "Play")]
+        else:
+            own = [("A", word)] if pl.playing(t) else [("A", "Play"), ("X", word)]     # on the playing track A and X do the same
         return self.list_hints(*own, ("Y", "In order" if pl.shuffle else "Shuffle"), ("L2 R2", "Previous, next"))
 
     def action(self, a):
@@ -924,8 +947,7 @@ class TracksScreen(ListScreen):
         app, f, pl = self.app, self.f, self.app.player
         lst, pan = split(700)
         rows = self.listed()
-        total = sum(t.get("duration_seconds") or 0 for t in rows)
-        list_head(c, f, lst, self.title, "%s · %s" % (plural_tracks(len(rows)), minutes(total)) if rows else "")
+        list_head(c, f, lst, self.title, "%s · %s" % (plural_tracks(len(rows)), minutes(self.about["seconds"])) if rows else "")
         if self.draw_load_error(c, ROWS_TOP + 8):
             return
         if self.items is None:
@@ -985,25 +1007,23 @@ class TracksScreen(ListScreen):
         h = max(120, min(232, p.room() - 210))
         self.cover(c, None if self.many else rows[0], (p.x, p.y, p.w, h), rows)
         p.space(h + 14)
-        artists = sorted({x.get("artist") for x in rows if x.get("artist")})
-        years = sorted({x["year"] for x in rows if isinstance(x.get("year"), int)})
+        artists, years = self.about["artists"], self.about["years"]
         if self.many:
-            sub = "%d soundtracks" % len({x.get("rom_id") for x in rows})
+            sub = "%d soundtracks" % self.about["games"]
         else:
             sub = artists[0] if len(artists) == 1 else "%d artists" % len(artists) if artists else ""
         p.title(self.title, sub=sub, sub_color=theme.DIM, center=True)
         p.y -= 6
-        total = sum(x.get("duration_seconds") or 0 for x in rows)
-        p.pair("Length", "%s · %s" % (plural_tracks(len(rows)), minutes(total)))
+        p.pair("Length", "%s · %s" % (plural_tracks(len(rows)), minutes(self.about["seconds"])))
         if not self.many:
             p.pair("Platform", rows[0].get("platform_name") or "")
             if years:
                 p.pair("Released", str(years[0]))
-            genres = sorted({x.get("genre") for x in rows if x.get("genre")})
+            genres = self.about["genres"]
             if genres:
                 p.pair("Genre", ", ".join(genres[:2]))
         elif years:
-            p.pair("Years", "%d to %d" % (years[0], years[-1]) if years[0] != years[-1] else str(years[0]))
+            p.pair("Years", "%d to %d" % years if years[0] != years[1] else str(years[0]))
 
     def panel_playing(self, c, pan, rows):
         """Something from here is playing: the track, how far in, the controls, what's next."""

@@ -157,16 +157,25 @@ def test_romm_not_answering_leaves_the_folder_as_it_is(api):
     assert res["error"] == "" and res["removed"] == len(before) and placed_files() == []
 
 
-def test_a_token_that_may_not_read_favourites_says_so_and_changes_nothing(api, fast_mock_url):
-    rommlib.sync_music(api, sources(games=[api.music_all("games")[0]["rom_id"]]))
-    before = placed_files()
+def test_a_source_this_token_may_not_read_is_left_as_it_is_and_the_others_still_sync(api, fast_mock_url):
+    game = api.music_all("games")[0]["rom_id"]
+    rommlib.sync_music(api, sources(favourites=True, playlists=[1]))
+    lists_only = placed_files()                      # what favourites and a playlist brought, with a token that may read them
+    assert lists_only
     limited = rommlib.Api(fast_mock_url, "demo-no-lists")
     with pytest.raises(rommlib.ScopeMissing, match="playlists.read"):
         limited.music_playlists()
-    res = rommlib.sync_music(limited, sources(favourites=True))
-    assert "favourites and playlists" in res["error"] and res["removed"] == 0 and placed_files() == before
+    with pytest.raises(rommlib.ScopeMissing):
+        rommlib.music_wanted(limited, sources(favourites=True))          # asked directly, it still says so
+    res = rommlib.sync_music(limited, sources(favourites=True, playlists=[1], games=[game]))
+    assert res["error"] == "" and res["unreadable"] == ["favourites", "playlist:1"] and res["removed"] == 0
+    assert set(lists_only) <= set(placed_files()) and res["downloaded"] > 0     # theirs stayed; the game's arrived
     assert limited.down is None                      # the token itself is fine: the header doesn't say otherwise
-    assert rommlib.sync_music(limited, sources(games=[api.music_all("games")[0]["rom_id"]]))["error"] == ""
+    # switched off, what only they asked for goes
+    res = rommlib.sync_music(limited, sources(games=[game]))
+    assert res["unreadable"] == [] and res["removed"] > 0
+    mine = {t["rom_file_id"] for t in api.music_all("tracks", rom_id=game) if rommlib.music_playable(t)}
+    assert {int(k) for k in rommlib.load_music_state()["tracks"]} == mine
 
 
 def test_a_placed_file_that_went_missing_is_fetched_again(api):
@@ -434,3 +443,119 @@ def test_groupings_leave_out_what_has_no_value_and_composers_need_two_when_there
     assert [x["rom_id"] for x in rommlib.music_sorted(albums, "year")][:2] == [1, 2] and rommlib.music_sorted(albums, "year")[-1]["year"] is None
     many = [al(i, artist="C%d" % (i % 70)) for i in range(140)]
     assert len(rommlib.music_groups(many, "composer")) == rommlib.MUSIC_COMPOSER_SHELVES
+
+
+# ---------------------------------------------------------------- what the review found
+
+def test_a_sync_that_died_mid_file_leaves_nothing_behind_for_long(api):
+    rommlib.sync_music(api, sources(playlists=[1]))
+    part = os.path.join(rommlib.music_dir(), "Some album - 03 Half.mp3.part")
+    own = os.path.join(rommlib.music_dir(), "my own.part.mp3")
+    for p in (part, own):
+        with open(p, "wb") as f:
+            f.write(b"x" * 100)
+    rommlib.sync_music(api, sources(playlists=[1]))
+    assert not os.path.exists(part) and os.path.exists(own)          # the half-written track is swept; the owner's file isn't
+    os.remove(own)
+    rommlib.sync_music(api, sources(), on=False)
+    assert not os.path.exists(rommlib.music_dir())
+
+
+def test_a_file_the_owner_put_where_a_track_was_is_never_removed(api):
+    rommlib.sync_music(api, sources(playlists=[1]))
+    state = rommlib.load_music_state()
+    fid, rec = next(iter(state["tracks"].items()))
+    path = os.path.join(rommlib.music_dir(), rec["file"])
+    with open(path, "wb") as f:
+        f.write(b"the owner's own recording, under the same name")
+    res = rommlib.sync_music(api, sources(), on=False)               # everything the app placed goes...
+    assert os.listdir(rommlib.music_dir()) == [rec["file"]] and open(path, "rb").read().startswith(b"the owner")     # ...this isn't its
+    assert res["removed"] == len(state["tracks"]) - 1 and rommlib.load_music_state()["tracks"] == {}
+    # wanted again, the track comes back beside it, under a name of its own
+    rommlib.sync_music(api, sources(playlists=[1]))
+    again = rommlib.load_music_state()["tracks"][fid]
+    assert again["file"] != rec["file"] and "(%s)" % fid in again["file"] and open(path, "rb").read().startswith(b"the owner")
+    assert rommlib.music_local({"rom_file_id": int(fid), "file_name": "x.wav"}).endswith(again["file"])
+
+
+def test_another_romm_means_another_jukebox(api, fast_mock_url):
+    rommlib.sync_music(api, sources(playlists=[1]))
+    first = placed_files()
+    t = next(t for t in api.music_all("tracks") if rommlib.music_playable(t) and str(t["rom_file_id"]) not in rommlib.load_music_state()["tracks"])
+    cached = rommlib.fetch_music(api, t)
+    assert os.path.dirname(cached) == rommlib.music_cache_dir() and rommlib.load_music_state()["server"] == api.base
+    idx = rommlib.build_music_index(api, api.music_stats())
+    assert rommlib.load_music_index(api.base) == idx and rommlib.load_music_index("http://elsewhere") is None
+    other = rommlib.Api(fast_mock_url.replace("127.0.0.1", "localhost"), "demo")      # the same mock under another address
+    assert other.base != api.base
+    placed = next(iter(rommlib.load_music_state()["tracks"].values()))
+    held = {"rom_file_id": int(next(iter(rommlib.load_music_state()["tracks"]))), "file_name": placed["file"]}
+    assert rommlib.music_local(held, api.base) and rommlib.music_local(held, other.base) is None    # placed from the first: not the second's
+    again = rommlib.fetch_music(other, t)
+    assert os.path.exists(again) and open(rommlib.music_cache_dir() + ".server").read() == other.base
+    assert os.listdir(rommlib.music_cache_dir()) == [os.path.basename(again)]        # the first server's cached track went
+    res = rommlib.sync_music(other, sources(playlists=[1]))
+    assert res["removed"] == len(first) and res["downloaded"] == len(first) and rommlib.load_music_state()["server"] == other.base
+    assert rommlib.prune_music_cache(0) > 0 and os.listdir(rommlib.music_cache_dir()) == []
+
+
+def test_track_numbers_and_names_of_any_type_never_stop_a_plan(api):
+    odd = {1: {"rom_file_id": 1, "album": "A", "rom_id": 5, "track": "01", "disc": None, "duration_seconds": 10},
+           2: {"rom_file_id": 2, "album": "A", "rom_id": 5, "track": 2, "disc": "1", "duration_seconds": 10},
+           3: {"rom_file_id": 3, "album": None, "rom_id": None, "track": True, "disc": 1.5, "duration_seconds": "long"},
+           4: {"rom_file_id": 4, "album": 7, "rom_id": "x", "track": None, "disc": 2}}
+    keep, left = rommlib.music_plan(odd, {}, 1 << 40)
+    assert sorted(keep) == [1, 2, 3, 4] and left == 0
+    assert [rommlib.music_num(v) for v in (3, "3", None, True, 2.0)] == [3, 0, 0, 0, 0]
+
+
+def test_no_record_of_any_game_here_keeps_what_games_on_this_box_brought(api):
+    game = api.music_all("games")[0]["rom_id"]
+    res = rommlib.sync_music(api, sources(on_box=True), library=Box(game))
+    assert res["downloaded"] > 0 and res["unreadable"] == []
+    before = placed_files()
+    damaged = Box()
+    damaged.unreadable = lambda: True                                            # the list of installed games can't be read
+    res = rommlib.sync_music(api, sources(on_box=True), library=damaged)
+    assert res["unreadable"] == ["on_box"] and res["removed"] == 0 and placed_files() == before
+    res = rommlib.sync_music(api, sources(on_box=False), library=damaged)        # switched off: they go
+    assert res["removed"] == len(before) and placed_files() == []
+
+
+def test_many_games_on_the_box_are_asked_for_in_one_listing(api, monkeypatch):
+    games = [g["rom_id"] for g in api.music_all("games")]
+    monkeypatch.setattr(rommlib, "MUSIC_ON_BOX_EACH", 3)
+    calls = []
+    real = api.music_all
+    monkeypatch.setattr(api, "music_all", lambda what, cancel=None, **f: calls.append((what, f)) or real(what, cancel=cancel, **f))
+    few = rommlib.music_wanted(api, sources(on_box=True), library=Box(*games[:3]))
+    assert [c for c in calls if c[0] == "tracks"] == [("tracks", {"rom_id": g}) for g in sorted(games[:3], key=[x["rom_id"] for x in real("games")].index)]
+    del calls[:]
+    many = rommlib.music_wanted(api, sources(on_box=True), library=Box(*games[:5]))
+    assert [c for c in calls if c[0] == "tracks"] == [("tracks", {})] and {t["rom_id"] for t in many.values()} == set(games[:5])
+    assert len(few) < len(many)
+
+
+def test_one_page_of_a_listing_gives_the_first_and_the_count(api, fast_mock_url):
+    items, total = api.music_page("tracks", 5)
+    assert len(items) == 5 and total == api.music_stats()["total_tracks"]
+    items, total = api.music_page("favorites", 1)
+    assert len(items) == 1 and total == len(api.music_all("favorites"))
+    found, total = api.music_page("tracks", 200, search="cave")
+    assert found and total == len(found) and all("cave" in (t["title"] or "").lower() for t in found)
+    with pytest.raises(rommlib.ScopeMissing):
+        rommlib.Api(fast_mock_url, "demo-no-lists").music_page("favorites", 1)
+
+
+def test_the_status_screens_draw_from_is_read_again_only_when_it_changed(api, monkeypatch):
+    rommlib.sync_music(api, sources(playlists=[1]))
+    st = rommlib.music_status()
+    assert st["tracks"] == 12 and st["bytes"] > 0 and st["rate"] > 0 and st["last"]["downloaded"] == 12
+    reads = []
+    real = rommlib.load_music_state
+    monkeypatch.setattr(rommlib, "load_music_state", lambda: reads.append(1) or real())
+    for _ in range(50):
+        assert rommlib.music_status() == st
+    assert reads == []                                               # nothing read while the file is as it was
+    rommlib.sync_music(api, sources())
+    assert rommlib.music_status()["tracks"] == 0

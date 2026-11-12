@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from . import core as _core, config as _config
+from . import core as _core, config as _config, api as _api
 
 MUSIC_FOLDER = "romm-o-cera"                               # inside ES's music folder: ES plays its subfolders too
 MUSIC_PLAYABLE = (".mp3", ".ogg", ".flac", ".wav", ".opus")   # what Batocera's ES plays (41+ for .opus)
@@ -23,10 +23,16 @@ MUSIC_FILE_MAX = 512 << 20      # no single track is larger
 MUSIC_FAILS = 3                 # downloads failing in a row before a sync gives up
 MUSIC_CAP_CHOICES = (1, 2, 5, 10, 20, 50, 0)       # GB the Music screen offers; 0: no limit
 MUSIC_MIX_FACETS = ("game_genre", "genre", "artist", "platform", "decade")     # a mix's lists; "max_minutes" beside them
+MUSIC_ON_BOX_EACH = 8           # games on the box with a soundtrack asked for one by one; more: one listing of everything
 MUSIC_CACHE_MAX = 256 << 20     # tracks fetched to be listened to in the app, kept for the next time
 MUSIC_PART_AGE = 3600           # a ".part" in that cache older than this was left by a fetch that died
 MUSIC_CACHE_ROOM = 64 << 20     # free space a fetch into that cache leaves on the drive, at the least
 _MUSIC_BUSY = threading.Lock()
+
+
+def music_num(v):
+    """A track or disc number as RomM gives it, for sorting: the number, 0 for anything else (None, "01", a bool)."""
+    return v if isinstance(v, int) and not isinstance(v, bool) else 0
 
 
 def music_dir():
@@ -137,10 +143,18 @@ def _music_on_box(api, key, ctx):
     if not here:
         return []
     games = api.music_all("games", cancel=ctx.get("cancel"))
+    if games is None:
+        return None
+    ids = [g["rom_id"] for g in games if g.get("rom_id") in here]
+    if len(ids) > MUSIC_ON_BOX_EACH:            # many: the whole listing once, not a request a game
+        got = api.music_all("tracks", cancel=ctx.get("cancel"))
+        return None if got is None else [t for t in got if t.get("rom_id") in set(ids)]
     out = []
-    for g in games or []:
-        if g.get("rom_id") in here:
-            out += api.music_all("tracks", cancel=ctx.get("cancel"), rom_id=g["rom_id"]) or []
+    for rid in ids:
+        got = api.music_all("tracks", cancel=ctx.get("cancel"), rom_id=rid)
+        if got is None:
+            return None
+        out += got
     return out
 
 
@@ -217,13 +231,21 @@ def music_mix_tracks(api, filters, cancel=None):
     return list(out.values())
 
 
-def music_wanted(api, sel, library=None, cancel=None):
+def music_wanted(api, sel, library=None, cancel=None, unreadable=None):
     """{rom_file_id: track} over every source switched on; each track carries "_sources",
-    the keys that asked for it. None if cancel was set. RommError when RomM can't be asked."""
+    the keys that asked for it. None if cancel was set. RommError when RomM can't be asked.
+    unreadable: a list that gets the key of each source this token may not read (favourites
+    and playlists without the scope); with none given, such a source raises ScopeMissing."""
     ctx = {"sel": sel, "library": library, "cancel": cancel}
     out = {}
     for key, src in music_source_keys(sel):
-        got = src.tracks(api, key, ctx)
+        try:
+            got = src.tracks(api, key, ctx)
+        except _api.ScopeMissing:
+            if unreadable is None:
+                raise
+            unreadable.append(key)
+            continue
         if got is None or (cancel is not None and cancel.is_set()):
             return None
         for t in got:
@@ -269,7 +291,8 @@ def load_music_state():
         d = {}
     tracks = d.get("tracks") if isinstance(d, dict) and isinstance(d.get("tracks"), dict) else {}
     tracks = {k: v for k, v in tracks.items() if isinstance(v, dict) and isinstance(v.get("file"), str) and v["file"]}
-    return {"tracks": tracks, "last": d.get("last") if isinstance(d, dict) and isinstance(d.get("last"), dict) else {}}
+    return {"tracks": tracks, "last": d.get("last") if isinstance(d, dict) and isinstance(d.get("last"), dict) else {},
+            "server": d.get("server") if isinstance(d, dict) and isinstance(d.get("server"), str) else ""}
 
 
 def _save_music_state(state):
@@ -282,11 +305,32 @@ def _music_placed_path(rec):
     return os.path.join(music_dir(), os.path.basename(rec["file"]))
 
 
+def _music_is_placed(rec, path):
+    """The file at a placed track's path is still the one the app put there: there, and the size it was.
+    One the owner copied over it since (their own file of that name) is theirs: never removed."""
+    try:
+        return os.path.isfile(path) and (not rec.get("bytes") or os.path.getsize(path) == rec["bytes"])
+    except OSError:
+        return False
+
+
+_MUSIC_STATUS = {"sig": None, "value": None}
+
+
 def music_status():
-    """{"tracks": how many are in place, "bytes", "last": the last sync's result}."""
-    st = load_music_state()
-    return {"tracks": len(st["tracks"]), "bytes": sum(int(r.get("bytes") or 0) for r in st["tracks"].values()),
-            "last": st["last"]}
+    """{"tracks": how many are in place, "bytes", "last": the last sync's result, "rate": bytes a
+    second of what's here}. Screens ask every frame: the file is read again only when it has changed."""
+    try:
+        st = os.stat(music_state_path())
+        sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        sig = None
+    if _MUSIC_STATUS["value"] is None or _MUSIC_STATUS["sig"] != sig:
+        state = load_music_state()
+        _MUSIC_STATUS.update(sig=sig, value={
+            "tracks": len(state["tracks"]), "bytes": sum(int(r.get("bytes") or 0) for r in state["tracks"].values()),
+            "last": state["last"], "rate": music_rate(state["tracks"])})
+    return dict(_MUSIC_STATUS["value"])
 
 
 def music_rate(placed):
@@ -313,8 +357,9 @@ def music_plan(wanted, placed, cap):
         return int((secs if isinstance(secs, (int, float)) and secs > 0 else MUSIC_UNKNOWN_SECONDS) * rate)
     albums = {}
     for fid, t in wanted.items():
-        albums.setdefault(((t.get("album") or t.get("game_name") or "").lower(), t.get("rom_id") or 0), []).append((fid, t))
-    rows = [sorted(v, key=lambda x: (x[1].get("disc") or 0, x[1].get("track") or 0, x[0])) for _, v in sorted(albums.items())]
+        albums.setdefault((str(t.get("album") or t.get("game_name") or "").lower(), music_num(t.get("rom_id"))), []).append((fid, t))
+    rows = [sorted(v, key=lambda x: (music_num(x[1].get("disc")), music_num(x[1].get("track")), x[0]))
+            for _, v in sorted(albums.items(), key=lambda kv: (kv[0][0], music_num(kv[0][1])))]
     order = [row[i] for i in range(max((len(r) for r in rows), default=0)) for row in rows if i < len(row)]
     keep, used = [], 0
     for fid, t in order:
@@ -349,7 +394,8 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
     state = load_music_state()
     placed = state["tracks"]
     res = {"on": bool(on), "wanted": 0, "placed": 0, "bytes": 0, "downloaded": 0, "removed": 0, "left_out": 0,
-           "skipped": 0, "failed": 0, "no_room": False, "stopped": False, "error": "", "when": int(time.time())}
+           "skipped": 0, "failed": 0, "no_room": False, "stopped": False, "error": "", "unreadable": [],
+           "when": int(time.time())}
 
     def done():
         res["placed"] = len(placed)
@@ -361,25 +407,38 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
     wanted = {}
     if on:
         try:
-            wanted = music_wanted(api, sel, library, cancel)
+            wanted = music_wanted(api, sel, library, cancel, res["unreadable"])
         except _core.RommError as e:
             res["error"] = str(e)               # what's here stays and keeps playing
             return done()
         if wanted is None:
             res["stopped"] = True
             return done()
+    if on and sel.get("on_box") and getattr(library, "unreadable", lambda: False)():
+        res["unreadable"].append("on_box")      # the list of installed games is damaged (it reads as none): can't tell what's here
     res["wanted"] = len(wanted)
     playable = {fid: t for fid, t in wanted.items() if music_playable(t)}
     res["skipped"] = len(wanted) - len(playable)
     keep, res["left_out"] = music_plan(playable, placed, cap)
     keeping = {str(fid) for fid in keep}
     folder = music_dir()
+    moved = bool(state.get("server")) and state["server"] != api.base      # placed from another RomM: its ids mean nothing here
+    try:
+        for n in os.listdir(folder):
+            if n.endswith(".part"):             # a sync that died mid-file left it: only the app writes .part here
+                os.remove(os.path.join(folder, n))
+    except OSError:
+        pass
     for fid in list(placed):
-        path = _music_placed_path(placed[fid])
-        if fid in keeping and os.path.isfile(path):
-            placed[fid]["sources"] = list(playable[int(fid)]["_sources"])
+        rec = placed[fid]
+        path = _music_placed_path(rec)
+        ours = _music_is_placed(rec, path)
+        if not moved and fid in keeping and ours:
+            rec["sources"] = list(playable[int(fid)]["_sources"])
             continue
-        if fid not in keeping:
+        if not moved and fid not in keeping and ours and rec.get("sources") and set(rec["sources"]) <= set(res["unreadable"]):
+            continue                            # all that asked for it can't be read right now: it stays
+        if ours and (moved or fid not in keeping):
             try:
                 os.remove(path)
             except FileNotFoundError:
@@ -388,7 +447,8 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
                 _core.log("music: couldn't remove %s (%s); it stays listed" % (path, e.strerror or e))
                 continue
             res["removed"] += 1
-        del placed[fid]                         # (a kept one whose file is gone is fetched again)
+        del placed[fid]                         # (a kept one whose file is gone, or was replaced, is fetched again)
+    state["server"] = api.base
     _save_music_state(state)
     todo = [fid for fid in keep if str(fid) not in placed]
     taken = {os.path.basename(r["file"]).lower() for r in placed.values()}
@@ -445,16 +505,41 @@ def _music_cached_path(t):
     return os.path.join(music_cache_dir(), "%d%s" % (t["rom_file_id"], os.path.splitext(t.get("file_name") or "")[1].lower()))
 
 
-def music_local(t):
-    """The file of a track that's on the box already: in the menu music, or fetched
-    earlier to be listened to. None when it has to be fetched."""
+def _music_cache_for(server):
+    """Make the listening cache this RomM's: tracks fetched from another server (their ids mean
+    something else here) are dropped. The server is kept in a marker file beside the cache."""
+    d = music_cache_dir()
+    mark = d + ".server"
+    try:
+        with open(mark, encoding="utf-8") as f:
+            if f.read().strip() == server:
+                return
+    except OSError:
+        pass
+    try:
+        os.makedirs(d, exist_ok=True)
+        for n in os.listdir(d):
+            os.remove(os.path.join(d, n))
+        with open(mark, "w", encoding="utf-8") as f:
+            f.write(server)
+    except OSError as e:
+        _core.log("music: the listening cache couldn't be reset (%s)" % (e.strerror or e))
+
+
+def music_local(t, server=None):
+    """The file of a track that's on the box already: in the menu music, or fetched earlier
+    to be listened to. None when it has to be fetched. server: RomM's address; a track placed
+    or cached from another server isn't this one."""
     if not isinstance(t.get("rom_file_id"), int):
         return None
-    rec = load_music_state()["tracks"].get(str(t["rom_file_id"]))
-    for path in ([_music_placed_path(rec)] if rec else []) + [_music_cached_path(t)]:
-        if os.path.isfile(path):
+    state = load_music_state()
+    rec = state["tracks"].get(str(t["rom_file_id"]))
+    if rec and (server is None or not state["server"] or state["server"] == server):
+        path = _music_placed_path(rec)
+        if _music_is_placed(rec, path):
             return path
-    return None
+    path = _music_cached_path(t)
+    return path if os.path.isfile(path) else None
 
 
 def prune_music_cache(limit=MUSIC_CACHE_MAX, keep=()):
@@ -499,7 +584,8 @@ def fetch_music(api, t, keep=()):
     all but full is. RommError when the track can't be had."""
     if not isinstance(t.get("rom_file_id"), int):
         raise _core.RommError("That isn't a track of RomM's jukebox")
-    path = music_local(t)
+    _music_cache_for(api.base)
+    path = music_local(t, api.base)
     if path:
         if os.path.dirname(path) == music_cache_dir():
             try:
@@ -509,6 +595,7 @@ def fetch_music(api, t, keep=()):
         return path
     d, path = music_cache_dir(), _music_cached_path(t)
     secs = t.get("duration_seconds")
+    _music_cache_for(api.base)
     guess = int((secs if isinstance(secs, (int, float)) and secs > 0 else MUSIC_UNKNOWN_SECONDS) * MUSIC_RATE)
     try:
         os.makedirs(d, exist_ok=True)
@@ -537,14 +624,17 @@ def music_index_path():
     return os.path.join(_core.DATA_DIR, "music-index.json")
 
 
-def load_music_index():
-    """The index build_music_index() last saved, or None (never built, another version, unreadable)."""
+def load_music_index(server=None):
+    """The index build_music_index() last saved, or None (never built, another version, unreadable,
+    or, with server given, read from another RomM)."""
     try:
         with open(music_index_path(), encoding="utf-8") as f:
             d = json.load(f)
     except (OSError, ValueError):
         return None
     if not isinstance(d, dict) or d.get("version") != MUSIC_INDEX_VERSION or not isinstance(d.get("albums"), list):
+        return None
+    if server is not None and d.get("server") != server:
         return None
     return d
 
@@ -584,7 +674,7 @@ def build_music_index(api, stats=None, cancel=None):
         names = sorted(a["artists"], key=lambda n: (-a["artists"][n], n.lower()))
         a["artist"], a["artists"] = (names[0] if names else ""), names[:4]
         a["seconds"] = round(a["seconds"], 1)
-    index = {"version": MUSIC_INDEX_VERSION, "stats": stats if isinstance(stats, dict) else {},
+    index = {"version": MUSIC_INDEX_VERSION, "server": api.base, "stats": stats if isinstance(stats, dict) else {},
              "albums": sorted(albums.values(), key=lambda a: (a["name"].lower(), a["rom_id"]))}
     try:
         os.makedirs(_core.DATA_DIR, exist_ok=True)
