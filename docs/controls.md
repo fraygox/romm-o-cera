@@ -149,6 +149,12 @@ A question shows its buttons: **A** for what it offers ("Download",
 | BIOS files | Get from RomM | Get all from RomM | | A–Z |
 | Check games | Download again / open Games ES can't see (before the first check: Check now) | Actions: quick check, full check, download all damaged again, pick several | Quick check | System |
 | Games ES can't see | Its options: unpack, move, delete | Actions: pick several, pick all | | System |
+| Music | Open what's focused (Shuffle everything: play it) | Play it at once | The focused shelf as a wall | |
+| Music › a shelf as a wall | Open | Play | Change the order | A–Z (in name order) |
+| Music › a list of tracks | Play from this track; on the one that's playing, pause or resume | Pause or resume; nothing from the list playing: play all | Shuffle, or back to the list's order | Previous and next track |
+| Music › search results | Open a soundtrack or a composer; play a track | | | |
+| Menu music | Switch a source, change the space, open | Sync now | Change or delete a mix | |
+| Mix editor | Pick values, change, save | | | |
 | Settings | Change / open | | | |
 | Theme picker | Use this theme (Custom: open it) | Edit a copy | OLED on/off | |
 | Custom theme | Keep and use it | | | |
@@ -171,6 +177,9 @@ A few screens use more buttons:
   download again), and B or left/right go back to the keyboard.
 - **Text fields** (server address, API token): Y is Shift, **Start** saves
   and B cancels. The pairing code has no Shift, and **Start** pairs.
+- **Music**: **L** and **R** change how the shelves are grouped (Browse by)
+  from anywhere on the screen; on the Browse by row, left and right do. On a
+  wall, **L** and **R** go a screenful.
 - **Settings**: A opens a section from the hub, B goes back to it;
   left/right step through a setting's choices, L/R go to the previous or
   next section.

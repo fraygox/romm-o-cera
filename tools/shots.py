@@ -691,6 +691,9 @@ def music_play(tracks=None, paused=False, focus=None, back=False, mix=False, vie
             juke.cols["pills"] = next(i for i, p in enumerate(juke.pills()) if p["key"] == ("all",))
         if search:
             app.push(rb.MusicSearchScreen(app, search, {"albums": juke.albums()}))
+        elif wall == "all":
+            app.push(rb.AlbumWallScreen(app, "Every soundtrack", juke.albums()))
+            app.stack[-1].i = 3
         elif wall:
             juke.action("y")
         elif tracks:
@@ -757,6 +760,7 @@ SCENES = [
     ("music-shelves-browse", lambda: music_play(mix=True, view=3, focus=("views", 3))),
     ("music-shelves-playing", lambda: music_play("game", back=True, mix=True)),
     ("music-wall", lambda: music_play(view=4, focus=("here", 0), wall=True)),
+    ("music-wall-all", lambda: music_play(wall="all")),
     ("music-search", lambda: music_play(search="o")),
     ("music-album", lambda: music_play("open")),
     ("music-play-tracks", lambda: music_play("game")),
@@ -1081,7 +1085,8 @@ README_SET = {"home": "home", "platforms": "platforms", "game-list": "game-list"
               "settings-compression": "settings", "collections": "collections",
               "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits",
               "compress-system": "compress", "theme-picker": "theme-picker", "theme-custom": "custom-theme",
-              "game-night": "game-night", "home-recommended": "recommended"}
+              "game-night": "game-night", "home-recommended": "recommended",
+              "music-shelves-genres": "music", "music-play-tracks": "music-playing"}
 if args.readme:
     import shutil
     dst = os.path.join(APP, "screenshots")

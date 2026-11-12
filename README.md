@@ -30,6 +30,7 @@ Built for **Batocera 43** (pygame 2.6, Python 3.12) and tested against
 | ![On this box](screenshots/on-this-box.png) | ![Manage a game on the box](screenshots/manage.png) |
 | ![Space: the whole drive, then each system](screenshots/storage.png) | ![Free up space](screenshots/free-up.png) |
 | ![Compress games already on the box, one system at a time](screenshots/compress.png) | ![Credits and licenses](screenshots/credits.png) |
+| ![Music: your RomM soundtracks on shelves you can regroup](screenshots/music.png) | ![A soundtrack playing in the app](screenshots/music-playing.png) |
 
 <sub>Screenshots come from `tools/mock_romm.py`: freely distributed homebrew /
 open-source games plus invented "lorem ipsum" titles, with generated covers.</sub>
@@ -55,10 +56,11 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   (saves are kept), see where the space went and free some up, clean up
   leftovers, fetch missing BIOS files from RomM, and check for damaged or
   cut-short games and replace them. → [On this box](docs/on-this-box.md)
-- **Your games' music.** Listen to RomM's soundtracks in the app, or have
-  them play in EmulationStation's menus: your RomM favourites, playlists, the
-  games on the box, or mixes by genre, artist, platform and decade.
-  → [Music](docs/music.md)
+- **Your games' music.** RomM's soundtracks on shelves you can group by
+  system, game genre, composer, decade or name, with search. Play them in the
+  app while you browse, or have EmulationStation play them as its menu music:
+  your RomM favourites, playlists, the games on the box, or mixes by genre,
+  artist, platform and decade. → [Music](docs/music.md)
 - **Save space without losing anything.** Disc games are compressed in the
   background, lossless and verified: CHD for CD systems, PS2 and PSP; RVZ
   for GameCube, Wii and Triforce; squashfs for Xbox; .zcci for 3DS; .zar for Xbox

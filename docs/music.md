@@ -22,8 +22,8 @@ Music opens on what there is to listen to, top to bottom:
 - **Your lists:** your RomM favourites and playlists (with a token that may
   read them, [below](#favourites-and-playlists-need-a-token-that-may-read-them))
   and the mixes you saved, each shown by the covers its tracks are from.
-- **Recently added** (once RomM has more soundtracks than fit on one shelf) and
-  **On this box**, the soundtracks of the games you've downloaded.
+- **Recently added** (once RomM has more than 14 soundtracks) and **On this
+  box**, the soundtracks of the games you've downloaded.
 - One shelf for each group, covers side by side, with how many it holds. A game
   sits under each of its genres; a composer gets a shelf when two or more
   soundtracks are mostly theirs (every composer does while only a few have
