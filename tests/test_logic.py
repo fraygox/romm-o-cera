@@ -1355,7 +1355,7 @@ def test_one_converter_per_file_and_the_planner_knows_every_system():
                 assert (system, ext) not in seen or rommlib.CONVERTER[seen[(system, ext)]].fallback == c.mode, \
                     (system, ext, seen.get((system, ext)), c.mode)
                 seen.setdefault((system, ext), c.mode)
-    assert [c.mode for c in rommlib.CONVERTERS if c.fallback] == ["wua"]
+    assert [c.mode for c in rommlib.CONVERTERS if c.fallback] == ["xpkg", "wua"]
     assert sorted(rb_chd_plan.ORDER) == sorted(set().union(*(c.systems for c in rommlib.CONVERTERS)))   # each once
     for c in rommlib.CONVERTERS:
         assert set(c.priority) <= c.systems, (c.mode, c.priority)      # ranks only its own systems

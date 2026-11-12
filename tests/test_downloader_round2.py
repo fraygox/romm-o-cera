@@ -420,6 +420,42 @@ def test_activity_says_what_didnt_go_through_for_a_finished_game(isolated, rb, m
     assert scr.status(j) == ("Deleted since", rb.theme.FAINT)
 
 
+def test_a_package_disc_isnt_ready_until_its_set_up(isolated, rb, monkeypatch):
+    """Downloaded, but it can't start until the worker has made its launcher: Activity
+    says so instead of "Ready to play", and the notice doesn't say Ready."""
+    import pygame
+    from types import SimpleNamespace
+    from rbui.screens.downloads import DownloadsScreen
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    scr = DownloadsScreen(app)
+    monkeypatch.setattr(app.library, "is_installed", lambda rom, system: True)
+    j = SimpleNamespace(state=rommlib.Job.DONE, message="Ready to play", system="xbox360", group=None,
+                        verified=False, rom={"id": 1}, force=False, chd_task="t.json", chd_mode="xpkg",
+                        label="Lorem Tales")
+    state = {"st": "queued"}
+    monkeypatch.setattr(rommlib, "chd_status", lambda *a, **k: state["st"])
+    assert scr.status(j) == ("Getting it ready", rb.theme.AMBER)
+    assert scr.detail(j) == ("roms/xbox360 · waiting to be set up for xenia", rb.theme.FAINT)
+    said = []
+    monkeypatch.setattr(app, "toast", lambda msg, *a, **k: said.append(msg))
+    app.toast_ready(j)
+    assert said == ["Downloaded: Lorem Tales · it plays once it's set up"]
+    scr._chd_st.clear()
+    state["st"] = "compressing"
+    assert scr.status(j) == ("Getting it ready", rb.theme.AMBER)
+    assert scr.detail(j)[0].endswith("being set up for xenia…")
+    scr._chd_st.clear()
+    state["st"] = "done"
+    assert scr.status(j) == ("Ready to play", rb.theme.GREEN) and scr.detail(j)[0].endswith("set up for xenia")
+    # a compression is different: the image plays while it waits
+    scr._chd_st.clear()
+    j.chd_mode, state["st"] = "zar", "queued"
+    assert scr.status(j) == ("Ready to play", rb.theme.GREEN) and scr.detail(j)[0].endswith("ZAR queued")
+
+
 # ------------------------------------------------------------ round 3: stopping an unpack, the move into place
 
 from romm import downloader as _dlmod          # noqa: E402  (module constants the tests patch)

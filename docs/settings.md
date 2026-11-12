@@ -147,6 +147,7 @@ seven, six or four. It takes effect at once.
 | `z3ds` | `true` | compress decrypted 3DS images to Azahar's `.zcci` |
 | `ps3_folders` | `true` | PS3 disc images (loose or zipped `.iso`) become `.ps3` game folders ([PS3 games](ps3.md)) |
 | `ps3_decrypt` | `false` | decrypt encrypted PS3 discs with disc keys for games you own, from `/userdata/bios/ps3keys` ([where disc keys go](ps3.md#where-disc-keys-go)) |
+| `x360_packages` | `true` | turn an Xbox 360 disc that only starts a package on it into a launcher and its packages, which Batocera can start (x86_64; downloads the two small Xbox 360 tools the first time there is an Xbox 360 image) |
 | `zar` | `false` | convert Xbox 360 images to `.zar` for xenia-canary (x86_64; turning it on in Settings downloads two small tools) |
 | `wux` | `true` | compress Wii U disc images (`.wud`) to `.wux`, lossless, no keys needed (x86_64 and 64-bit ARM; needs wuatool, fetched by itself once there are Wii U disc images here) |
 | `wua` | `false` | Decrypt Wii U discs: `.wud`/`.wux` discs whose disc key is here become `.wua` for Cemu (turning it on in Settings downloads wuatool and copies the disc keys in RomM's Wii U firmware into `bios/wiiukeys`); a disc without its key becomes `.wux` |

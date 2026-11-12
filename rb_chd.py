@@ -800,6 +800,7 @@ XENIA_CONTENT = os.path.join("xbox360", "0000000000000000")   # in saves/: conte
 # and then the add-ons stay packed (the game starts; they aren't found until it's converted again)
 _stfs_kind = getattr(rommlib, "stfs_kind", None)
 _stfs_unpack = getattr(rommlib, "stfs_unpack", None)
+_stfs_verify = getattr(rommlib, "stfs_verify", None)
 _StfsError = getattr(rommlib, "StfsError", OSError)
 
 
@@ -878,9 +879,15 @@ def _package_folder(work, files, crcs, title, tmp):
         to = os.path.join(tmp, r)
         os.makedirs(os.path.dirname(to), exist_ok=True)
         shutil.move(files[r], to)
-        if _crc32_file(to) != crcs[r]:
+        if r in crcs and _crc32_file(to) != crcs[r]:
             return 5, "a package didn't copy whole (%s)" % r
         rommlib.sync_file(to)
+    if _stfs_verify is not None:                    # the title's package stays packed: read through, block by block
+        status(step="Checking the game's package", pct=None)
+        try:
+            _stfs_verify(os.path.join(tmp, title), pause=_idle)
+        except _StfsError as e:
+            return 5, "the package %s %s" % (title, e)
     # add-ons and the update: unpacked where they are, each block checked against the package's own SHA-1
     links = []
     for i, r in enumerate(keep):
@@ -905,6 +912,53 @@ def _package_folder(work, files, crcs, title, tmp):
     _PACKAGE_OF[tmp] = title
     _PACKAGE_LINKS[tmp] = links
     return 0, "%d packages, CRC32 of each checked, %d unpacked for xenia" % (len(keep), len(links))
+
+
+def convert_package(src, tmp):
+    """An Xbox 360 disc that only starts a package (package_disc), as an image
+    or as the .zar made of one before -> a folder of its packages at tmp, for
+    the caller to land with a launcher. An image's extracted files must match
+    its own file list; a .zar's SHA-256 is checked before it's unpacked. The
+    title's package and every add-on are then checked block by block against
+    the SHA-1s they carry (_package_folder)."""
+    tools = rommlib.x360_tools()
+    if not tools:
+        raise ToolMissing("xbox360-tools")
+    xiso, zarc = tools
+    packed = src.lower().endswith(".zar")
+    status(step="Checking the original", pct=None)
+    if packed:
+        bad = rommlib.zar_check(src, full=True)
+        if bad:
+            return 3, ".zar %s" % bad
+        want = None
+    else:
+        want = rommlib.xiso_listing(xiso, src)
+        if not want:
+            return 2, "not an Xbox 360 disc image (extract-xiso can't read it)"
+        if not package_disc(want):
+            return 2, "not a disc that only starts a package"
+    work = os.path.join(rommlib.tmp_dir(), "zar-%d" % os.getpid())
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(os.path.dirname(work), exist_ok=True)
+    try:
+        status(step="Extracting", pct=None)
+        rc, out = run_tool([zarc, src, work], keep_stdout=True) if packed else run_tool([xiso, "-q", "-d", work, src])
+        if rc != 0:
+            return 3, "%s failed: %s" % ("zarchive" if packed else "extract-xiso", out.strip()[-200:])
+        files = _tree(work)
+        got = {r: os.path.getsize(p) for r, p in files.items()}
+        if want is not None and got != want:
+            short = sum(1 for r, n in want.items() if got.get(r) != n)
+            return 3, "the image is cut short or damaged (%d of %d files don't match its file list)" % (
+                short, len(want))
+        title = package_disc(got)
+        if not title or not _title_package(files[title]):
+            return 2, "not a disc that only starts a package"
+        crcs = {r: _crc32_file(p) for r, p in files.items() if r.lower().startswith(_PACKAGE_KEEP)}
+        return _package_folder(work, files, crcs, title, tmp)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def convert_zar(src, tmp):
@@ -1145,6 +1199,7 @@ RUNNERS = {
     "squashfs": lambda src, tmp, threads: convert_squashfs(src, tmp, threads),
     "z3ds": lambda src, tmp, threads: convert_z3ds(src, tmp, threads),
     "zar": lambda src, tmp, threads: convert_zar(src, tmp),
+    "xpkg": lambda src, tmp, threads: convert_package(src, tmp),
     "wua": lambda src, tmp, threads: convert_wua(src, tmp),
     "wux": lambda src, tmp, threads: convert_wux(src, tmp),
     "cso": lambda src, tmp, threads: convert_cso(src, tmp, threads),

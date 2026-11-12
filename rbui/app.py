@@ -1230,7 +1230,10 @@ class App:
         now is (tapping the toast plays it)."""
         title = (j.group.get("title") or j.label) if j.group else j.label
         play = self.play_entry(j.rom, j.system, title)[2]
-        if play:
+        if getattr(j, "chd_task", None) and rommlib.needed_to_play(getattr(j, "chd_mode", None)):
+            # a disc that can't start until it's set up: not "Ready" yet (Activity shows it getting ready)
+            self.toast("Downloaded: %s · it plays once it's set up" % j.label, theme.AMBER)
+        elif play:
             self.toast("Ready: %s · Play now from {SELECT} Activity" % j.label, theme.GREEN, tap=play)
         else:
             self.toast("Ready: %s" % j.label, theme.GREEN)

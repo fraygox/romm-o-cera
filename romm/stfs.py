@@ -185,6 +185,30 @@ def stfs_unpack(path, dest, progress=None, pause=None):
     return {"files": files, "bytes": total}
 
 
+def stfs_verify(path, pause=None):
+    """Read every file of a package through, each block checked against the
+    SHA-1 the package keeps for it (nothing is written). Returns the bytes
+    read. StfsError: damaged. pause() every 16 MB, as stfs_unpack."""
+    info = stfs_info(path)
+    done = 0
+    try:
+        with open(path, "rb") as f:
+            s = _Stfs(f, info)
+            for rel, is_dir, block, size in s.listing():
+                left = 0 if is_dir else size
+                while left:
+                    if block == STFS_END:
+                        raise StfsError("is damaged (%s ends %d bytes early)" % (rel, left))
+                    if pause and not done & 0xFFFFFF:
+                        pause()
+                    _, block = s.checked(block)
+                    left -= min(left, STFS_BLOCK)
+                    done += STFS_BLOCK
+    except OSError as e:
+        raise StfsError("can't be read (%s)" % (e.strerror or e))
+    return done
+
+
 def stfs_kind(path):
     """A package's content type and title id, or (None, None) if it isn't one."""
     try:

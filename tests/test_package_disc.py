@@ -53,6 +53,7 @@ def package(kind=0x000D0000, magic="PIRS", size=0x400):
     return bytes(head).decode("latin-1")
 
 
+TITLE_FILES = {"default.xex": b"XEX2" + b"game" * 2000, "data.ttarch2": b"d" * 5000}
 ADDON_FILES = {"spa.bin": b"spa", "08.png": b"\x89PNG picture", "data/ep2.ttarch2": b"e" * 9000}
 UPDATE_FILES = {"default.xexp": b"patch" * 300}
 
@@ -63,7 +64,7 @@ def _text(b):
 
 def stub_disc(**more):
     files = {"default.xex": "XEX2stub", "$SystemUpdate/su": "s" * 64, "nxeart": "art",
-             TITLE: package(),
+             TITLE: _text(build_package(TITLE_FILES, 0x000D0000, 0x4D2A0001)),
              ADDON: _text(build_package(ADDON_FILES, 0x00000002, 0x4D2A0001, folders=("data",))),
              UPDATE: _text(build_package(UPDATE_FILES, 0x000B0000, 0x4D2A0001, magic=b"LIVE"))}
     files.update(more)
@@ -151,15 +152,15 @@ def test_a_package_disc_becomes_a_launcher_and_its_packages(chd):
     assert os.path.realpath(os.path.join(content, "00000002", "EF56AB78")) == os.path.join(folder, ADDON)
     assert os.path.realpath(os.path.join(content, "000B0000", "tu00000001_00000000")) == os.path.join(folder, UPDATE)
     assert "2 of 2 add-ons and updates" in _log()
-    assert open(os.path.join(folder, TITLE), "rb").read() == package().encode("latin-1")
+    assert rommlib.stfs_listing(os.path.join(folder, TITLE)) == {k: len(v) for k, v in TITLE_FILES.items()}
     # the app's record of the game: the launcher and the folder, so deleting it takes both
     assert sorted(rommlib.Library().paths_for(rom, "xbox360")) == [folder, launcher]
     assert "only starts a package" in _log() and not os.listdir(os.path.join(rommlib.DATA_DIR, chd.MADE_DIR))
     # Check games: fine as it is; without its package it can't start
-    assert rommlib.output_converter(launcher).mode == "zar"
-    assert rommlib.zar_audit(launcher, None, False) is None
+    check = rommlib.output_converter(launcher)
+    assert check.mode == "xpkg" and check.audit(launcher, None, False) is None
     os.remove(os.path.join(folder, TITLE))
-    assert rommlib.zar_audit(launcher, None, False) == ("The package its launcher starts is missing", "damaged")
+    assert check.audit(launcher, None, False) == ("The package its launcher starts is missing", "damaged")
 
 
 def test_deleting_the_game_takes_the_launcher_and_the_packages(chd):
@@ -174,10 +175,10 @@ def test_deleting_the_game_takes_the_launcher_and_the_packages(chd):
     assert rommlib.Library().paths_for(rom, "xbox360") == []
 
 
-def test_a_file_that_isnt_a_title_package_is_packed_as_before(chd):
+def test_a_file_in_the_titles_place_that_isnt_a_package_keeps_the_image(chd):
     sysdir, src = _image("Dolor (World).iso", stub_disc(**{TITLE: "not a package" * 100}), pad=4096)
-    assert _convert(chd, src) is True
-    assert os.listdir(sysdir) == ["Dolor (World).zar"]
+    assert _convert(chd, src) is False
+    assert os.listdir(sysdir) == ["Dolor (World).iso"] and "not a disc that only starts a package" in _log()
 
 
 def test_someone_elses_folder_of_that_name_is_never_replaced(chd):

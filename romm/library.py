@@ -1204,13 +1204,12 @@ def conversion_of(paths):
     state = _convert.conversions_state(recent=1)
     for name, task in state["queue"]:
         if isinstance(task, dict) and any(isinstance(s, str) and _holds(paths, s) for s in task.get("sources") or []):
-            label = _convert.CONVERT_LABELS.get(task.get("mode"), "CHD")
+            words = _convert.convert_words(task.get("mode"))
             cur = state["current"] if isinstance(state["current"], dict) else {}
             if cur.get("task") == name:
                 pct = cur.get("pct")
-                return "Being compressed to %s%s" % (
-                    label, " (%d%%)" % pct if isinstance(pct, (int, float)) else ""), True
-            return "Waiting to be compressed to %s" % label, False
+                return "%s%s" % (words[3], " (%d%%)" % pct if isinstance(pct, (int, float)) else ""), True
+            return words[4], False
     return None
 
 

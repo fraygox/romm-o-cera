@@ -385,6 +385,8 @@ class DownloadsScreen(ListScreen):
                 return "Deleted since", theme.FAINT
             if ", but " in (j.message or ""):            # in and playable; a step after it didn't go through
                 return "Ready to play", theme.AMBER
+            if self.chd_state(j) in ("queued", "compressing") and rommlib.needed_to_play(getattr(j, "chd_mode", None)):
+                return "Getting it ready", theme.AMBER   # it can't start until it's set up (a package disc)
             return "Ready to play", theme.GREEN
         if j.state == J.FAILED:
             return "Failed", theme.RED
@@ -413,10 +415,10 @@ class DownloadsScreen(ListScreen):
             if j.verified:
                 parts.append("checksum OK")
             st = self.chd_state(j)
-            fmt = rommlib.CONVERT_LABELS.get(getattr(j, "chd_mode", None), "CHD")
-            word = {"queued": "%s queued", "compressing": "compressing to %s…", "done": "compressed to %s"}.get(st)
+            words = rommlib.convert_words(getattr(j, "chd_mode", None))
+            word = {"queued": words[0], "compressing": words[1], "done": words[2]}.get(st)
             if word:
-                parts.append(word % fmt)
+                parts.append(word)
         return " · ".join(parts), theme.FAINT
 
     def chd_state(self, j):

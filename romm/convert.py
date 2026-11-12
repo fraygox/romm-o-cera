@@ -373,6 +373,117 @@ def xiso_listing(exe, iso):
     return out or None
 
 
+def zar_listing(path):
+    """{relative path: size} of the files in a .zar (a ZArchive: its file tree
+    and names sit unpacked before the footer), or None if it can't be read as one."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            f.seek(max(0, size - 144))
+            foot = f.read(144)
+            if len(foot) != 144 or int.from_bytes(foot[-4:], "big") != _tools.ZAR_MAGIC:
+                return None
+            names_at, names_len, tree_at, tree_len = (int.from_bytes(foot[i:i + 8], "big") for i in (32, 40, 48, 56))
+            if names_at + names_len > size or tree_at + tree_len > size or tree_len % 16 \
+                    or tree_len > 16 << 20 or names_len > 64 << 20:
+                return None
+            f.seek(names_at)
+            names = f.read(names_len)
+            f.seek(tree_at)
+            tree = f.read(tree_len)
+    except OSError:
+        return None
+    count = len(tree) // 16
+
+    def name(off):
+        n = names[off]
+        if n & 0x80:
+            n, off = (n & 0x7F) | (names[off + 1] << 7), off + 1
+        return names[off + 1:off + 1 + n].decode("utf-8", "surrogateescape")
+    out = {}
+    try:
+        todo = [(0, "")]                       # the root is the first entry, a folder with no name
+        seen = 0
+        while todo:
+            i, base = todo.pop()
+            a, b, c = (int.from_bytes(tree[i * 16 + k:i * 16 + k + 4], "big") for k in (0, 4, 8))
+            seen += 1
+            if i >= count or seen > count:
+                return None
+            here = base if i == 0 else (base + "/" if base else "") + name(a & 0x7FFFFFFF)
+            if a & 0x80000000:                 # a file: its size's low 32 bits, then the high 16
+                out[here] = c | int.from_bytes(tree[i * 16 + 12:i * 16 + 14], "big") << 32
+            else:                              # a folder: its entries' first index and how many
+                todo += [(j, here) for j in range(b, b + c)]
+    except IndexError:
+        return None
+    return out
+
+
+# A few retail Xbox 360 discs hold no game of their own: default.xex is a small stub that
+# starts a package on the disc. Batocera can't start one (xenia-canary asks to be restarted,
+# every time), as an .iso or a .zar; the worker turns it into a launcher and its packages
+# (rb_chd.py, which keeps its own copy of package_disc: see its notes there).
+PACKAGE_STUB_MAX = 1 << 20      # a launcher stub is tens of KB; a game's own default.xex is megabytes
+_PACKAGE_TITLE_RE = re.compile(r"^content/0000000000000000/[0-9a-f]{8}/000d0000/[^/]+$")
+
+
+def package_disc(listing):
+    """The one title package a disc's stub starts (its path on the disc), or None for a
+    disc that is a game itself. listing: {path: size}, the disc's files. Only when the
+    answer is plain: a small default.xex, no other program on the disc, and exactly one
+    title package."""
+    low = {p.lower(): p for p in listing}
+    stub = low.get("default.xex")
+    if stub is None or listing[stub] > PACKAGE_STUB_MAX \
+            or any(p.endswith(".xex") and p != "default.xex" for p in low):
+        return None
+    titles = [p for l, p in low.items() if _PACKAGE_TITLE_RE.match(l)]
+    return titles[0] if len(titles) == 1 else None
+
+
+class NotThisKind(OSError):
+    """A converter's check() for a file that is fine, just not its kind (an ordinary game
+    disc isn't a package disc): nothing to tell the user, the next converter may take it."""
+    quiet = True
+
+
+_PACKAGE_DISCS = {}             # (path, size, mtime) -> is a package disc (a listing takes a second)
+
+
+def package_disc_check(src):
+    """Converter.check for package discs: raises NotThisKind for an Xbox 360 image (.iso,
+    or a .zar made of one before) that isn't a disc that only starts a package. An .iso
+    can't be read until the Xbox 360 tools are here: nothing is raised then, and the
+    worker settles it when they are."""
+    try:
+        st = os.stat(src)
+    except OSError:
+        return
+    key = (os.path.normpath(src), st.st_size, st.st_mtime_ns)
+    if key not in _PACKAGE_DISCS:
+        if src.lower().endswith(".zar"):
+            listing = zar_listing(src)
+        else:
+            tools = _tools.x360_tools()
+            if not tools:
+                return
+            listing = xiso_listing(tools[0], src)
+        if len(_PACKAGE_DISCS) > 4096:
+            _PACKAGE_DISCS.clear()
+        _PACKAGE_DISCS[key] = bool(listing and package_disc(listing))
+    if not _PACKAGE_DISCS[key]:
+        raise NotThisKind("not a disc that only starts a package")
+
+
+def packages_on(cfg, system):
+    return system in _tools.ZAR_SYSTEMS and bool(_config.config_value(cfg, "x360_packages"))
+
+
+def packages_enabled(cfg, system):
+    return packages_on(cfg, system) and _tools.x360_tools() is not None
+
+
 # ---------------------------------------------------------- Check games on a converter's output
 # Converter.audit(path, orig, deep) checks a file this box made: None if it
 # looks whole, else (problem, severity) as Check games reports it ("damaged":
@@ -531,8 +642,6 @@ def launcher_audit(path):
 
 
 def zar_audit(path, orig, deep, cancel=None):
-    if _ext(path) == ".xbox360":
-        return launcher_audit(path)
     # packed here from the disc's files: RomM's image hashes can't match by design
     bad = zar_check(path, full=deep, cancel=cancel)
     return ("Compressed file %s" % bad, "damaged") if bad else None
@@ -787,6 +896,12 @@ class Converter:
     fallback: str = ""         # the mode that takes a source this one is off for or refuses (its check), when
                                # it takes that extension: listed after it in the table (see settle)
     on: Optional[Callable] = None  # (cfg, system) -> its switch is on, its tool here or not (None: enabled)
+    only_checked: bool = False     # takes a file only once it's here and its check passed: never one still to
+                               # come (a download's prompt can't tell a package disc from its name)
+    words: tuple = ()          # not a compression (a game set up to start at all): what to say instead of
+                               # "<label> queued", "compressing to <label>…", "compressed to <label>",
+                               # "Being compressed to <label>", "Waiting to be compressed to <label>";
+                               # and the game doesn't play until it's done (see needed_to_play)
 
     def switched_on(self, cfg, system):
         """Its switch is on. A file it takes is queued even while its tool is still
@@ -855,12 +970,23 @@ CONVERTERS = (
               "z3ds", _config.SETTING["z3ds"].label, "turned off, or libzstd is missing",
               lambda cfg, system: z3ds_enabled(cfg, system), check=lambda src: z3ds_info(src),
               planner_skips_done=True, audit=z3ds_audit, audit_exts=(".zcia",), priority=("3ds",)),
+    # a disc that only starts a package (and a .zar made of one before): a launcher and its packages.
+    # Before "zar": an image it refuses (an ordinary game disc) falls back to it, when that's on
+    Converter("xpkg", "xenia launcher", "zar", frozenset(_tools.ZAR_SYSTEMS), {".iso": ".xbox360", ".zar": ".xbox360"},
+              "x360_packages", _config.SETTING["x360_packages"].label,
+              "turned off, or the Xbox 360 tools aren't installed",
+              lambda cfg, system: packages_enabled(cfg, system), space_factor=2, planner_skips_done=True,
+              check=package_disc_check, fallback="zar", on=lambda cfg, system: packages_on(cfg, system),
+              audit=lambda path, orig, deep, cancel=None: launcher_audit(path), tool=_tools.TOOL_X360,
+              priority=("xbox360",), only_checked=True,
+              words=("waiting to be set up for xenia", "being set up for xenia…", "set up for xenia",
+                     "Being set up for xenia", "Waiting to be set up for xenia")),
     # the extracted files and the .zar sit next to the image until it's verified
     Converter("zar", "ZAR", "zar", frozenset(_tools.ZAR_SYSTEMS), {".iso": ".zar"},
               "zar", _config.SETTING["zar"].label, "turned off, or the Xbox 360 tools aren't installed",
               lambda cfg, system: zar_enabled(cfg, system), space_factor=2, planner_skips_done=True,
               on=lambda cfg, system: system in _tools.ZAR_SYSTEMS and bool(_config.config_value(cfg, "zar")),
-              audit=zar_audit, audit_exts=(".xbox360",), tool=_tools.TOOL_X360, priority=("xbox360",)),
+              audit=zar_audit, tool=_tools.TOOL_X360),
     # Wii U: the disc's game partition, decrypted with the disc's key, becomes a .wua Cemu opens;
     # a .wud it can't take (Decrypt Wii U discs off, or no key for it) falls back to .wux
     Converter("wua", "WUA", "wua", frozenset(_tools.WUA_SYSTEMS), {".wud": ".wua", ".wux": ".wua"},
@@ -954,6 +1080,8 @@ def settle(conv, system, src, cfg, alt_enabled=True):
             conv.check(src)
         except CHECK_ERRORS as e:
             why = str(e)
+    elif conv.only_checked:
+        why = "it can't be told until the file is here"
     if not why:
         return conv, "", False
     alt = CONVERTER[conv.fallback]
@@ -1047,6 +1175,25 @@ def conversion_output(mode, stem, src):
 
 # conversion modes (the queue task's "mode"): their label on screen and what they make
 CONVERT_LABELS = {c.mode: c.label for c in CONVERTERS}
+
+
+def convert_words(mode):
+    """What to say of a conversion of this mode: (queued, running, done, being, waiting),
+    e.g. ("CHD queued", "compressing to CHD…", "compressed to CHD", "Being compressed to
+    CHD", "Waiting to be compressed to CHD"); a converter's own words when it has some."""
+    c = CONVERTER.get(mode)
+    if c is not None and c.words:
+        return c.words
+    label = c.label if c is not None else "CHD"
+    return ("%s queued" % label, "compressing to %s…" % label, "compressed to %s" % label,
+            "Being compressed to %s" % label, "Waiting to be compressed to %s" % label)
+
+
+def needed_to_play(mode):
+    """A conversion of this mode makes the game startable at all (a package disc's
+    launcher): until it's done the game isn't ready to play."""
+    c = CONVERTER.get(mode)
+    return c is not None and bool(c.words)
 CONVERT_OUTPUTS = {c.mode: c.outputs for c in CONVERTERS}
 
 

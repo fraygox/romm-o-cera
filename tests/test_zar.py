@@ -181,3 +181,134 @@ def test_queue_prompt_planner_and_leftovers(tools, monkeypatch):
     open(part, "wb").write(b"x")
     assert "Unfinished conversion" in [i["kind"] for i in rommlib.find_leftovers(chd_busy=False)]
     assert not any(i["path"] == part for i in rommlib.find_leftovers(chd_busy=True))
+
+
+# ---------------------------------------------------------------- package discs, with the real tools
+
+TITLE = "content/0000000000000000/4D2A0001/000D0000/AB12CD34"
+ADDON = "content/0000000000000000/4D2A0001/00000002/EF56AB78"
+UPDATE = "$TitleUpdate/4D2A0001/tu00000001_00000000"
+
+
+def _package_disc(xiso, path):
+    """A disc that only starts a package: a stub, the title's package, an add-on, an update."""
+    from stfs_build import build_package
+    src = path + ".src"
+    for rel, data in (("default.xex", b"XEX2stub"), ("nxeart", b"art"), ("$SystemUpdate/su", b"s" * 64),
+                      (TITLE, build_package({"default.xex": b"XEX2" + os.urandom(9000)}, 0x000D0000, 0x4D2A0001)),
+                      (ADDON, build_package({"spa.bin": b"spa", "08.png": os.urandom(6000)}, 0x00000002, 0x4D2A0001)),
+                      (UPDATE, build_package({"default.xexp": os.urandom(3000)}, 0x000B0000, 0x4D2A0001, magic=b"LIVE"))):
+        p = os.path.join(src, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "wb").write(data)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    subprocess.run([xiso, "-q", "-c", src, path], check=True, capture_output=True)
+    shutil.rmtree(src)
+    return path
+
+
+def _tree(root):
+    return sorted(os.path.relpath(os.path.join(dp, f), root) for dp, _, fs in os.walk(root) for f in fs)
+
+
+def test_a_zars_file_list_is_read_without_unpacking_it(tools, tmp_path):
+    iso = _disc(tools[0], str(tmp_path / "d.iso"))
+    work = str(tmp_path / "files")
+    subprocess.run([tools[0], "-q", "-d", work, iso], check=True, capture_output=True)
+    deep = os.path.join(work, "a" * 150, "b")                       # a name long enough for a two-byte length
+    os.makedirs(deep)
+    open(os.path.join(deep, "f.bin"), "wb").write(b"z" * 123)
+    z = str(tmp_path / "x.zar")
+    subprocess.run([tools[1], work, z], check=True, capture_output=True)
+    want = {r: os.path.getsize(os.path.join(work, r)) for r in _tree(work)}
+    assert rommlib.zar_listing(z) == want and len(want) == 5
+    assert rommlib.zar_listing(iso) is None and rommlib.zar_listing(str(tmp_path / "none")) is None
+    raw = open(z, "rb").read()
+    open(z, "wb").write(raw[:-200])                                 # cut short: no footer where one must be
+    assert rommlib.zar_listing(z) is None
+
+
+def test_a_package_disc_is_set_up_whatever_the_zar_switch_says(tools, monkeypatch):
+    """Xbox 360 to .zar off (the default): an ordinary disc stays as it is, a package disc
+    is queued for its launcher; on: the ordinary one becomes a .zar, the package disc still a launcher."""
+    import rb_chd
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "xbox360")
+    plain = _disc(tools[0], os.path.join(sysdir, "Ipsum (USA).iso"))
+    pkg = _package_disc(tools[0], os.path.join(sysdir, "Lorem Tales (World).iso"))
+    for zar, modes in ((False, (None, "xpkg")), (True, ("zar", "xpkg"))):
+        cfg = dict(rommlib.DEFAULT_CONFIG, zar=zar, keep_free_gb=0)
+        got = tuple(getattr(rommlib.conversion_for("xbox360", p, cfg), "mode", None) for p in (plain, pkg))
+        assert got == modes
+        # a game still to download: nothing says which kind it is, so only the switch counts
+        assert getattr(rommlib.conversion_for("xbox360", ".iso", cfg), "mode", None) == ("zar" if zar else None)
+    assert rommlib.conversion_for("xbox360", pkg, dict(rommlib.DEFAULT_CONFIG, x360_packages=False)) is None
+    # the download's hand-off queues it, and the worker makes the launcher
+    cfg = dict(rommlib.DEFAULT_CONFIG, keep_free_gb=0)
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(cfg))
+    d = rommlib.Downloader(None, rommlib.Library(), cfg, persist=False)
+    d.es = {"xbox360": {".iso", ".xex", ".xbox360", ".zar"}}
+    j, j2 = rommlib.Job({"id": 3}, "xbox360"), rommlib.Job({"id": 4}, "xbox360")
+    d._postprocess_file(j2, plain)
+    assert j2.chd_task is None
+    d._postprocess_file(j, pkg)
+    task = json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, j.chd_task)))
+    assert task["mode"] == j.chd_mode == "xpkg" and rommlib.needed_to_play(j.chd_mode)
+    assert rommlib.conversion_of([pkg]) == ("Waiting to be set up for xenia", False)
+    assert rb_chd.convert(task) is True
+    folder = os.path.join(sysdir, "Lorem Tales (World).packages")
+    assert sorted(os.listdir(sysdir)) == ["Ipsum (USA).iso", "Lorem Tales (World).packages",
+                                          "Lorem Tales (World).xbox360"]
+    assert open(os.path.join(sysdir, "Lorem Tales (World).xbox360")).read() == \
+        "Lorem Tales (World).packages/%s\n" % TITLE
+    assert _tree(folder) == sorted([TITLE, ADDON + "/08.png", ADDON + "/spa.bin", UPDATE + "/default.xexp"])
+    content = os.path.join(rommlib.SAVES_ROOT, "xbox360", "0000000000000000", "4D2A0001")
+    assert os.path.isfile(os.path.join(content, "00000002", "EF56AB78", "spa.bin"))
+    assert os.path.isfile(os.path.join(content, "000B0000", "tu00000001_00000000", "default.xexp"))
+    assert not os.listdir(os.path.join(rommlib.DATA_DIR, "tmp"))
+
+
+def test_compress_games_already_here_sets_up_package_discs_and_old_zars_of_them(tools, monkeypatch):
+    """A package disc already on the box, as an image or as the .zar an earlier version
+    made of it (neither starts): offered as a launcher, switch or no switch; an ordinary
+    .zar is left alone and nothing is said of it."""
+    import rb_chd
+    import rb_chd_plan
+    monkeypatch.setattr(rb_chd, "running_game", lambda: "")
+    monkeypatch.setattr(rommlib, "es_busy", lambda app_busy=False, get=None: "")
+    cfg = dict(rommlib.DEFAULT_CONFIG, keep_free_gb=0)
+    monkeypatch.setattr(rommlib, "load_config", lambda: dict(cfg))
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "xbox360")
+
+    def zar_of(iso):
+        work = iso + ".files"
+        subprocess.run([tools[0], "-q", "-d", work, iso], check=True, capture_output=True)
+        subprocess.run([tools[1], work, iso[:-4] + ".zar"], check=True, capture_output=True)
+        shutil.rmtree(work)
+        os.remove(iso)
+        return iso[:-4] + ".zar"
+    plain_zar = zar_of(_disc(tools[0], os.path.join(sysdir, "Ipsum (USA).iso")))
+    old = zar_of(_package_disc(tools[0], os.path.join(sysdir, "Lorem Tales (World).iso")))
+    img = _package_disc(tools[0], os.path.join(sysdir, "Dolor Tales (World).iso"))
+    plain = _disc(tools[0], os.path.join(sysdir, "Sit (USA).iso"), seed=9)
+    skipped = []
+    cands = rb_chd_plan.candidates(["xbox360"], cfg, skipped)
+    got = {os.path.basename(c["files"][0]): (c["mode"], c["label"], c["enabled"]) for c in cands}
+    assert got == {"Dolor Tales (World).iso": ("xpkg", "xenia launcher", True),
+                   "Lorem Tales (World).zar": ("xpkg", "xenia launcher", True),
+                   "Sit (USA).iso": ("zar", "ZAR", False)}                  # needs its switch, as before
+    assert skipped == []
+    assert rb_chd_plan.queue(cands) == 2
+    for name in sorted(os.listdir(rommlib.CHD_QUEUE_DIR)):
+        if name.endswith(".json"):
+            assert rb_chd.convert(json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, name)))) is True
+            os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, name))
+    assert sorted(os.listdir(sysdir)) == [
+        "Dolor Tales (World).packages", "Dolor Tales (World).xbox360", "Ipsum (USA).zar",
+        "Lorem Tales (World).packages", "Lorem Tales (World).xbox360", "Sit (USA).iso"]
+    assert _tree(os.path.join(sysdir, "Lorem Tales (World).packages")) == \
+        sorted([TITLE, ADDON + "/08.png", ADDON + "/spa.bin", UPDATE + "/default.xexp"])
+    assert os.path.exists(plain_zar) and os.path.exists(plain) and not os.path.exists(old) and not os.path.exists(img)
+    assert rb_chd_plan.candidates(["xbox360"], cfg) and all(
+        c["mode"] == "zar" for c in rb_chd_plan.candidates(["xbox360"], cfg))    # done ones aren't offered again

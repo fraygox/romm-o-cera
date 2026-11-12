@@ -358,7 +358,9 @@ def candidates(systems=None, cfg=None, skipped=None):
                 # Wii U: decrypted to .wua when that's on and the key is here, else offered as .wux
                 taker, why, off = rommlib.settle(conv, system, files[0], cfg, alt_enabled=False)
                 if taker is not conv:
-                    if not off and skipped is not None:      # on, but this disc can't be decrypted
+                    # on, but this disc can't be decrypted (nothing to say of a file that just isn't
+                    # the first converter's kind: an ordinary Xbox 360 disc isn't a package disc)
+                    if not off and skipped is not None and not getattr(conv, "words", ()):
                         skipped.append((system, files[0], "can't decrypt it: %s; offered as %s instead"
                                         % (why, taker.label)))
                     conv = taker
@@ -373,7 +375,7 @@ def candidates(systems=None, cfg=None, skipped=None):
                 try:
                     conv.check(files[0])
                 except rommlib.CHECK_ERRORS as e:
-                    if skipped is not None:
+                    if skipped is not None and not getattr(e, "quiet", False):    # (quiet: just not its kind)
                         skipped.append((system, files[0], str(e)))
                     continue
             if any(f in queued for f in files):

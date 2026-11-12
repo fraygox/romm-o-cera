@@ -121,6 +121,9 @@ SETTINGS = (
             help="Turns Xbox 360 images into .zar for xenia-canary, often 40-60% smaller. It keeps the game's "
                  "files, not the whole disc, each checked before the image is deleted. Downloads two small tools "
                  "once."),
+    Setting("x360_packages", True,      # Xbox 360 discs that only start a package -> a launcher and its packages
+            label="Xbox 360 package discs"),    # (they can't start otherwise; fetches the Xbox 360 tools when
+                                                # there's an Xbox 360 image; no Settings row: config.json only)
     Setting("wux", True,                # Wii U .wud -> .wux, lossless, no keys (downloads wuatool when turned on)
             row="wux", label="Wii U to .wux", sub="Lossless; Cemu opens .wux directly",
             help="Compresses Wii U disc images (.wud) into .wux for Cemu, often much smaller. Lossless and needs "

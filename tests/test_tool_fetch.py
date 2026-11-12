@@ -194,3 +194,16 @@ def test_a_download_waits_for_its_tool_then_converts(isolated, rb, tmp_path, mon
     assert started == ["rb_chd.py"]
     assert os.path.exists(disc[:-4] + ".wux") and not os.path.exists(disc)
     assert os.listdir(rommlib.CHD_QUEUE_DIR) == [] and rommlib.conversions_waiting_for_tools() == {}
+
+
+def test_the_xbox_360_tools_come_with_the_first_xbox_360_image(tools, monkeypatch):
+    """Xbox 360 to .zar is off by default, but a disc that only starts a package can't start
+    until it's set up: the tools are fetched once there's an Xbox 360 image, never before."""
+    assert _fetch() == []
+    os.makedirs(os.path.join(rommlib.ROMS_ROOT, "xbox360"))
+    open(os.path.join(rommlib.ROMS_ROOT, "xbox360", "Lorem (World).iso"), "w").close()
+    assert _fetch() == [("xbox360-tools", "games")]
+    assert _fetch(systems={"psx"}) == [] and _fetch(systems={"xbox360"}) == [("xbox360-tools", "games")]
+    assert _fetch({"x360_packages": False}) == [] and _fetch({"x360_packages": False, "zar": True}) != []
+    _fake_installed(monkeypatch, rommlib.TOOL_X360)
+    assert _fetch() == []

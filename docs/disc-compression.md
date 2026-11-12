@@ -166,8 +166,10 @@ stays as it is.
 own: the disc starts a package stored on it (an arcade title), with the
 game's add-ons and update as more packages beside it. Batocera can't start
 such a disc, as an `.iso` or a `.zar`: xenia-canary asks to be closed and
-started again, every time. For these, instead of a `.zar`, you get what
-Batocera does start:
+started again, every time. These are set up whether Xbox 360 to .zar is on
+or off (it isn't a compression: the game can't start otherwise), so the two
+small tools are downloaded the first time there's an Xbox 360 image on the
+box. You get what Batocera does start:
 
 - `Game.xbox360`, a one-line launcher EmulationStation lists as the game;
 - `Game.packages/`, the title's package, and the game's add-ons and update
@@ -185,6 +187,13 @@ launcher and the folder; the links it leaves lead nowhere, and xenia ignores
 them. A disc is treated this way only when it's plain: a small `default.xex`,
 no other program on it, and exactly one title package. Check games checks
 that the package a launcher names is still there.
+
+Until that's done the game can't start, so Activity shows it as "Getting it
+ready" rather than "Ready to play" (it takes well under a minute, and waits
+while a game is running, like every conversion). One already on the box, as
+an `.iso` or as the `.zar` an earlier version made of it, is offered under
+On this box › Compress games already here as "xenia launcher". To leave such
+discs alone, set `"x360_packages": false` in config.json.
 
 The old `xenia` emulator (not canary) can't open `.zar`. Check games checks a
 `.zar`'s footer (quick) or its whole SHA-256 (full).
