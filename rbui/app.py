@@ -308,7 +308,10 @@ class App:
                 api, was = self.api, self.api.down
                 try:
                     tracks = int(api.music_stats().get("total_tracks") or 0)
-                except (rommlib.RommError, TypeError, ValueError):
+                    if tracks and rommlib.music_sources_for(api):
+                        self.post(lambda: self.toast("Menu music's playlists and single games were another RomM's: "
+                                                     "they're switched off here", theme.AMBER))
+                except (rommlib.RommError, OSError, TypeError, ValueError):
                     tracks, api.down = 0, was
                 return api.server_version(), tracks
 
@@ -559,8 +562,7 @@ class App:
             self.downloader.api = self.api
             self.forget_covers()
             self.details.clear()
-            self.player.stop()                       # its queue is the other server's
-            self.player.queue, self.player.order = [], []
+            self.player.reset()                      # its queue, and what it was fetching, are the other server's
             self.player_counts = self.recs = self.music_total = None
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
             self.status, self.error, self.romm_version = "Connecting…", None, None

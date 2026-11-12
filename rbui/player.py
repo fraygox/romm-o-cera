@@ -32,6 +32,7 @@ class Player:
         self.what, self.key = "", None      # the list the queue came from: its name, and what tells it apart
         self.path = None          # the file being played
         self.fetching = set()     # track ids on their way
+        self.gen = 0              # which RomM those are from: a fetch that lands after a reconnect is another server's
         self.fails = 0
         self.error = ""           # why it stopped, when it wasn't asked to
         self.began = 0.0
@@ -113,20 +114,24 @@ class Player:
         if len(self.fetching) >= self.FETCHES:
             return                               # enough on their way: tick() asks again for the one that's wanted
         self.fetching.add(fid)
-        api, keep = self.app.api, (self.path,) if self.path else ()
+        api, keep, gen = self.app.api, (self.path,) if self.path else (), self.gen
         self.app.bg(lambda: rommlib.fetch_music(api, t, keep),
-                    lambda path: self.landed(fid, path), lambda e: self.failed(fid, e))
+                    lambda path: self.landed(fid, path, gen), lambda e: self.failed(fid, e, gen))
 
     def waiting_for(self, fid):
         t = self.current()
         return self.state == "loading" and t is not None and t["rom_file_id"] == fid
 
-    def landed(self, fid, path):
+    def landed(self, fid, path, gen=None):
+        if gen is not None and gen != self.gen:
+            return                               # asked of the server before this one
         self.fetching.discard(fid)
         if self.waiting_for(fid):
             self.begin(path)
 
-    def failed(self, fid, e):
+    def failed(self, fid, e, gen=None):
+        if gen is not None and gen != self.gen:
+            return
         self.fetching.discard(fid)
         if self.waiting_for(fid):
             self.skip(str(e))
@@ -215,6 +220,13 @@ class Player:
     def stop(self):
         self.quiet()
         self.state = "stopped"
+
+    def reset(self):
+        """Another RomM: nothing queued, and whatever is still on its way from the old one is ignored."""
+        self.stop()
+        self.queue, self.order, self.at, self.key, self.what, self.error = [], [], 0, None, "", ""
+        self.fetching = set()
+        self.gen += 1
 
     def tick(self):
         """Every frame: a track that has played out makes way for the next, and the one that's

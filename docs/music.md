@@ -89,8 +89,11 @@ random, as it does with any music in that folder.
 - Music of your own in the music folder keeps playing alongside, and is never
   touched: the app removes only files it placed itself. A file of yours put
   where one of its tracks was is yours from then on.
-- Point the app at another RomM and the first sync there replaces the old
-  server's tracks with what's chosen on the new one.
+- Point the app at another RomM and the first sync there removes the old
+  server's tracks. Playlists and single games you had switched on are switched
+  off there, since their ids belong to the old server; favourites, games on
+  this box and mixes carry over. The same RomM under a new address keeps
+  everything.
 - EmulationStation plays `.mp3`, `.ogg`, `.flac`, `.wav` and `.opus`. Tracks in
   other formats stay in RomM, and the card at the top says how many.
 - With EmulationStation's **Only play system-specific music** on, it skips this
@@ -124,7 +127,7 @@ when it was made with the `playlists.read` scope. With a token that wasn't,
 those two rows say **Not available with this token**; mixes, single games and
 the games on this box work as they are. Tracks such a source brought earlier
 stay in the menus until it can be read again, and a source that's switched on
-can still be switched off. Make a token with that scope for the
+can still be switched off. A playlist deleted in RomM is treated the same way. Make a token with that scope for the
 account whose favourites you want, and enter it in Settings.
 
 ### Mixes

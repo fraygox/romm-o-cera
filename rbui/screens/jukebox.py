@@ -107,7 +107,7 @@ class AlbumFocus:
         return None
 
     def ask_tracks(self, it):
-        key, load = it["key"], self.loader(it)
+        key, load = it["key"], it.get("sample") or self.loader(it)       # (a mix: some of what fits, for a look)
         if load and self.tracks.get(key) is None:
             self.tracks[key] = "loading"
 
@@ -162,7 +162,7 @@ class AlbumFocus:
         mosaic(c, self.app, covers_of(self.app, got if isinstance(got, list) else None), art)
         marquee(c, f.small, li["name"], (r.left, art.bottom + 4), theme.TEXT if on else theme.DIM, maxw=r.width, focused=on,
                 slot=("list-tile", str(li["key"])), bg=theme.BG)
-        n = li["count"] if li.get("count") is not None else len(got) if isinstance(got, list) else None
+        n = li["count"] if li.get("count") is not None else len(got) if isinstance(got, list) and not li.get("sample") else None
         text(c, f.tiny, plural_tracks(n) if n is not None else li["kind"], (r.left, art.bottom + 24), theme.FAINT, maxw=r.width)
         return art
 
@@ -172,9 +172,10 @@ class AlbumFocus:
         p = Panel(c, self.f, SIDE, app=app, key=str(it["key"]), slot="music-panel")
         p.actions(hint_actions(self, actions))
         tracks = self.tracks_of(it)
-        summed = self.sums.get(it["key"]) if tracks is not None else None
+        whole = tracks is not None and not it.get("sample")              # a mix's are a sample: no totals from them
+        summed = self.sums.get(it["key"]) if whole else None
         secs = summed[0] if summed else it.get("seconds")
-        count = len(tracks) if tracks is not None else it.get("count")
+        count = len(tracks) if whole else it.get("count")
         p.verb("Play" if it.get("shuffle") else "Open", "go", plural_tracks(count) if count else "", fn=lambda: self.action("ok"))
         h = max(120, min(224, p.room() - 250))
         if it.get("album"):
@@ -203,6 +204,8 @@ class AlbumFocus:
             return
         p.space(6)
         p.rule()
+        if it.get("sample"):
+            p.label("Some of what fits")
         for t in tracks[:max(0, int(p.room() // 24))]:       # the first tracks, as far as there's room
             p.pair(track_title(t), clock(t["duration_seconds"]) if t.get("duration_seconds") else "", theme.FAINT, theme.DIM)
 
@@ -287,6 +290,7 @@ class JukeboxScreen(AlbumFocus, Screen):
         for m in self.sources["mixes"]:
             out.append({"key": ("mix", m["name"]), "name": m["name"], "kind": "Mix", "count": None,
                         "about": mix_summary(m["filters"]) or "every track",
+                        "sample": lambda f=m["filters"]: rommlib.music_mix_sample(api, f),
                         "load": lambda f=m["filters"]: rommlib.music_mix_tracks(api, f)})
         return out
 
@@ -301,10 +305,15 @@ class JukeboxScreen(AlbumFocus, Screen):
         """The shelves under Browse by, as rows: {"key", "kind" ("shelf", or "note": a line that isn't
         focused), "label", "items", "tile"}. Worked out again only when what they're made of changes."""
         by = VIEWS[self.view][0]
+        mixes = repr(self.sources["mixes"])
         sig = (id(self.index), id(self.games), by, self.favourites, id(self.playlists), self.lists_why,
-               tuple(m["name"] for m in self.sources["mixes"]), len(self.here), self.index_error)
+               mixes, frozenset(self.here), self.index_error)
         if self.cached[0] == sig:
             return self.cached[1]
+        if self.cached[0] is not None and self.cached[0][6] != mixes:      # a mix was changed: what was read for the old one goes
+            for d in (self.tracks, self.sums):
+                for k in [k for k in d if isinstance(k, tuple) and k[0] == "mix"]:
+                    del d[k]
         out, albums = [], self.albums()
         lists = self.lists()
         if lists:
@@ -592,7 +601,7 @@ class AlbumWallScreen(AlbumFocus, Screen):
         self.init_focus()
         self.title, self.albums = title, list(albums)
         self.sort, self.i, self.top = 0, 0, 0
-        self.listed = None
+        self.listed = self.letters = None
 
     def items(self):
         if self.listed is None:
@@ -621,12 +630,15 @@ class AlbumWallScreen(AlbumFocus, Screen):
         return own + [("B", "Back")]
 
     def starts(self):
+        if self.letters is not None:
+            return self.letters
         out, last = [], None
         for i, it in enumerate(self.items()):
             letter = rommlib.music_letter(it["name"])
             if letter != last:
                 out.append((i, letter))
                 last = letter
+        self.letters = out
         return out
 
     def action(self, a):
@@ -637,7 +649,7 @@ class AlbumWallScreen(AlbumFocus, Screen):
             self.open_item(items[self.i], play=a == "x")
         elif a == "y":
             self.sort = (self.sort + 1) % len(SORTS)
-            self.listed, self.i, self.top = None, 0, 0
+            self.listed, self.letters, self.i, self.top = None, None, 0, 0
         elif a in ("left", "right"):
             d = 1 if a == "right" else -1
             if 0 <= self.i % WALL_PER + d < WALL_PER and 0 <= self.i + d < n:

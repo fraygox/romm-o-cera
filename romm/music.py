@@ -5,6 +5,7 @@ they add up to, under a space cap. It writes and removes only its own files.
 
 Adding a kind of source is one entry in MUSIC_SOURCES; another way of laying the
 files out is another music_file_name()."""
+import hashlib
 import json
 import os
 import re
@@ -114,9 +115,19 @@ def load_music_sources():
             "playlists": _music_ints(d.get("playlists")), "games": _music_ints(d.get("games")), "mixes": mixes}
 
 
-def save_music_sources(sel):
+def save_music_sources(sel, server=None):
+    """Save the choice. server: the RomM it was made on (music_sources_for); left as it was when not given."""
     os.makedirs(_core.DATA_DIR, exist_ok=True)
-    _core.atomic_write_json(music_sources_path(), sel, indent=1)
+    if server is None:
+        try:
+            with open(music_sources_path(), encoding="utf-8") as f:
+                server = json.load(f).get("server")
+        except (OSError, ValueError, AttributeError):
+            server = None
+    out = dict(sel)
+    if isinstance(server, str) and server:
+        out["server"] = server
+    _core.atomic_write_json(music_sources_path(), out, indent=1)
 
 
 # ---------------------------------------------------------------- sources
@@ -202,24 +213,37 @@ def music_mix_takes(filters, t):
     return True
 
 
-def music_mix_tracks(api, filters, cancel=None):
-    """A mix's tracks. RomM filters by one value of a facet at a time, so the first facet
-    with values picked is asked value by value (platforms and the length go along with
-    each call) and what comes back is checked against the whole mix here."""
-    f = filters or {}
+def _music_mix_calls(f):
+    """(what every question to RomM for a mix carries, the questions): platforms and the length go
+    along with each; the first facet with values picked is asked value by value."""
     base = {}
     if f.get("platform"):
         base["platform_ids"] = list(f["platform"])
     if f.get("max_minutes"):
         base["max_duration"] = f["max_minutes"] * 60
-    calls = [{}]
     for facet in ("artist", "genre", "game_genre"):
         if f.get(facet):
-            calls = [{facet: v} for v in f[facet]]
-            break
-    else:
-        if f.get("decade"):
-            calls = [{"min_year": d, "max_year": d + 9} for d in f["decade"]]
+            return base, [{facet: v} for v in f[facet]]
+    if f.get("decade"):
+        return base, [{"min_year": d, "max_year": d + 9} for d in f["decade"]]
+    return base, [{}]
+
+
+def music_mix_sample(api, filters, n=60):
+    """Some of the tracks that fit a mix, from one request: enough for its covers and a look at
+    what's in it, without reading everything that fits (a broad mix is most of the jukebox)."""
+    f = filters or {}
+    base, calls = _music_mix_calls(f)
+    got, _ = api.music_page("tracks", n, **dict(base, **calls[0]))
+    return [t for t in got if music_mix_takes(f, t)]
+
+
+def music_mix_tracks(api, filters, cancel=None):
+    """A mix's tracks. RomM filters by one value of a facet at a time, so the first facet
+    with values picked is asked value by value (platforms and the length go along with
+    each call) and what comes back is checked against the whole mix here."""
+    f = filters or {}
+    base, calls = _music_mix_calls(f)
     out = {}
     for c in calls:
         got = api.music_all("tracks", cancel=cancel, **dict(base, **c))
@@ -234,15 +258,20 @@ def music_mix_tracks(api, filters, cancel=None):
 def music_wanted(api, sel, library=None, cancel=None, unreadable=None):
     """{rom_file_id: track} over every source switched on; each track carries "_sources",
     the keys that asked for it. None if cancel was set. RommError when RomM can't be asked.
-    unreadable: a list that gets the key of each source this token may not read (favourites
-    and playlists without the scope); with none given, such a source raises ScopeMissing."""
+    unreadable: a list that gets the key of each source RomM won't give (favourites and
+    playlists this token may not read, a playlist deleted since); with none given, such a
+    source raises."""
     ctx = {"sel": sel, "library": library, "cancel": cancel}
     out = {}
     for key, src in music_source_keys(sel):
         try:
             got = src.tracks(api, key, ctx)
-        except _api.ScopeMissing:
-            if unreadable is None:
+        except (_core.AuthRejected, _core.TlsRejected):
+            raise
+        except _core.RommError as e:
+            # RomM answered, and said no to this one source (no scope for it, a playlist that's gone):
+            # the others carry on. RomM not answering at all stops the sync, which then changes nothing.
+            if unreadable is None or (api.down and not isinstance(e, _api.ScopeMissing)):
                 raise
             unreadable.append(key)
             continue
@@ -303,6 +332,51 @@ def _save_music_state(state):
 def _music_placed_path(rec):
     """Where a placed track is: always a plain file name inside the app's own folder."""
     return os.path.join(music_dir(), os.path.basename(rec["file"]))
+
+
+def _music_held(rec, unreadable):
+    """Every source that asked for a placed track is one RomM won't give right now: the track stays."""
+    return bool(rec.get("sources")) and set(rec["sources"]) <= set(unreadable)
+
+
+def music_same_jukebox(api, placed, sample=5):
+    """The tracks placed earlier are this RomM's too: its address changed, not the server. A few of
+    them are looked up by their game; most have to be there under the same id with the same title
+    and length. False with nothing placed to go by. RommError when RomM can't be asked."""
+    recs = [(fid, r) for fid, r in sorted(placed.items()) if isinstance(r.get("rom_id"), int)][:sample]
+    hits = 0
+    for fid, r in recs:
+        got = api.music_all("tracks", rom_id=r["rom_id"]) or []
+        t = next((t for t in got if str(t.get("rom_file_id")) == fid), None)
+        secs = t.get("duration_seconds") if t else None
+        if t and (t.get("title") or "") == (r.get("title") or "") and \
+                abs((secs if isinstance(secs, (int, float)) else 0) - (r.get("seconds") or 0)) < 1.5:
+            hits += 1
+    return bool(recs) and hits * 2 > len(recs)
+
+
+def music_sources_for(api):
+    """Tie the saved choice of sources to this RomM, once it's known which one that is. A playlist's
+    or a game's id, and a mix's platforms, mean something else on another server, so there they
+    are dropped (favourites, games on this box and the rest of each mix stay). The same RomM
+    under a new address keeps everything. Returns True when something was dropped. RommError
+    when RomM can't be asked."""
+    try:
+        with open(music_sources_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(d, dict) or d.get("server") == api.base:
+        return False
+    sel = load_music_sources()
+    dropped = False
+    if isinstance(d.get("server"), str) and d["server"] and not music_same_jukebox(api, load_music_state()["tracks"]):
+        dropped = bool(sel["playlists"] or sel["games"] or any(m["filters"].get("platform") for m in sel["mixes"]))
+        sel["playlists"], sel["games"] = [], []
+        for m in sel["mixes"]:
+            m["filters"].pop("platform", None)
+    save_music_sources(sel, api.base)
+    return dropped
 
 
 def _music_is_placed(rec, path):
@@ -419,10 +493,21 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
     res["wanted"] = len(wanted)
     playable = {fid: t for fid, t in wanted.items() if music_playable(t)}
     res["skipped"] = len(wanted) - len(playable)
-    keep, res["left_out"] = music_plan(playable, placed, cap)
-    keeping = {str(fid) for fid in keep}
     folder = music_dir()
-    moved = bool(state.get("server")) and state["server"] != api.base      # placed from another RomM: its ids mean nothing here
+    moved = False
+    if (wanted or res["unreadable"]) and state.get("server") and state["server"] != api.base:
+        # another address, and something to keep: is it another RomM, or this one moved? (nothing wanted: all of it goes anyway)
+        try:
+            moved = not music_same_jukebox(api, placed)
+        except _core.RommError as e:
+            res["error"] = str(e)
+            return done()
+    # what only unreadable sources asked for stays where it is, and takes its room out of the cap
+    held = set() if moved else {fid for fid, r in placed.items() if _music_held(r, res["unreadable"])}
+    room = max(0, cap - sum(int(placed[fid].get("bytes") or 0) for fid in held))
+    keep, res["left_out"] = music_plan({fid: t for fid, t in playable.items() if str(fid) not in held}, {} if moved else placed, room)
+    keep += [fid for fid in playable if str(fid) in held]
+    keeping = {str(fid) for fid in keep}
     try:
         for n in os.listdir(folder):
             if n.endswith(".part"):             # a sync that died mid-file left it: only the app writes .part here
@@ -433,11 +518,13 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
         rec = placed[fid]
         path = _music_placed_path(rec)
         ours = _music_is_placed(rec, path)
+        if not moved and fid in held and ours:
+            if int(fid) in playable:            # a readable source asks for it as well now
+                rec["sources"] = list(dict.fromkeys(rec["sources"] + playable[int(fid)]["_sources"]))
+            continue                            # all that asked for it can't be read right now: it stays
         if not moved and fid in keeping and ours:
             rec["sources"] = list(playable[int(fid)]["_sources"])
             continue
-        if not moved and fid not in keeping and ours and rec.get("sources") and set(rec["sources"]) <= set(res["unreadable"]):
-            continue                            # all that asked for it can't be read right now: it stays
         if ours and (moved or fid not in keeping):
             try:
                 os.remove(path)
@@ -473,8 +560,13 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
             if os.path.lexists(path):
                 raise _core.RommError("a file of that name is already there")
             size = api.download_music(t, path + ".part", MUSIC_FILE_MAX)     # ES takes no ".part" for a song
+            placed[str(fid)] = {"file": name, "bytes": size, "seconds": secs if isinstance(secs, (int, float)) else 0,
+                                "title": t.get("title") or "", "album": t.get("album") or t.get("game_name") or "",
+                                "artist": t.get("artist") or "", "rom_id": t.get("rom_id"), "sources": list(t["_sources"])}
+            _save_music_state(state)             # the record first: a file is never there without one
             os.replace(path + ".part", path)
         except (_core.RommError, OSError) as e:
+            placed.pop(str(fid), None)
             res["failed"] += 1
             res["error"] = str(e) if isinstance(e, _core.RommError) else "Couldn't write to the music folder (%s)" % (e.strerror or e)
             fails += 1
@@ -484,11 +576,7 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
             continue
         fails = 0
         taken.add(name.lower())
-        placed[str(fid)] = {"file": name, "bytes": size, "seconds": secs if isinstance(secs, (int, float)) else 0,
-                            "title": t.get("title") or "", "album": t.get("album") or t.get("game_name") or "",
-                            "artist": t.get("artist") or "", "rom_id": t.get("rom_id"), "sources": list(t["_sources"])}
         res["downloaded"] += 1
-        _save_music_state(state)
         if progress:
             progress(i + 1, len(todo))
     if not placed:
@@ -501,35 +589,16 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
 
 # ---------------------------------------------------------------- listening in the app
 
-def _music_cached_path(t):
-    return os.path.join(music_cache_dir(), "%d%s" % (t["rom_file_id"], os.path.splitext(t.get("file_name") or "")[1].lower()))
-
-
-def _music_cache_for(server):
-    """Make the listening cache this RomM's: tracks fetched from another server (their ids mean
-    something else here) are dropped. The server is kept in a marker file beside the cache."""
-    d = music_cache_dir()
-    mark = d + ".server"
-    try:
-        with open(mark, encoding="utf-8") as f:
-            if f.read().strip() == server:
-                return
-    except OSError:
-        pass
-    try:
-        os.makedirs(d, exist_ok=True)
-        for n in os.listdir(d):
-            os.remove(os.path.join(d, n))
-        with open(mark, "w", encoding="utf-8") as f:
-            f.write(server)
-    except OSError as e:
-        _core.log("music: the listening cache couldn't be reset (%s)" % (e.strerror or e))
+def _music_cached_path(t, server):
+    """Where a track fetched to be listened to is kept: a folder for each RomM (its ids are its own)."""
+    return os.path.join(music_cache_dir(), hashlib.sha1((server or "").encode("utf-8")).hexdigest()[:12],
+                        "%d%s" % (t["rom_file_id"], os.path.splitext(str(t.get("file_name") or ""))[1].lower()))
 
 
 def music_local(t, server=None):
     """The file of a track that's on the box already: in the menu music, or fetched earlier
     to be listened to. None when it has to be fetched. server: RomM's address; a track placed
-    or cached from another server isn't this one."""
+    or cached from another server isn't this one's (without it only the menu music is looked in)."""
     if not isinstance(t.get("rom_file_id"), int):
         return None
     state = load_music_state()
@@ -538,29 +607,27 @@ def music_local(t, server=None):
         path = _music_placed_path(rec)
         if _music_is_placed(rec, path):
             return path
-    path = _music_cached_path(t)
-    return path if os.path.isfile(path) else None
+    path = _music_cached_path(t, server)
+    return path if server is not None and os.path.isfile(path) else None
 
 
 def prune_music_cache(limit=MUSIC_CACHE_MAX, keep=()):
-    """Bring the listening cache under limit bytes, the tracks played longest ago first;
-    keep: paths that stay whatever their age (what's playing). Returns the bytes freed."""
-    d, now, files, freed = music_cache_dir(), time.time(), [], 0
-    try:
-        names = os.listdir(d)
-    except OSError:
-        return 0
-    for n in names:
-        path = os.path.join(d, n)
-        try:
-            st = os.stat(path)
-        except OSError:
-            continue
-        if n.endswith(".part"):
-            if now - st.st_mtime > MUSIC_PART_AGE:
-                files.append((0, st.st_size, path))        # a fetch that died: first to go, whatever the limit
-            continue
-        files.append((st.st_mtime, st.st_size, path))
+    """Bring the listening cache (every server's folder together) under limit bytes, the tracks
+    played longest ago first; keep: paths that stay whatever their age (what's playing). Returns
+    the bytes freed."""
+    root, now, files, freed = music_cache_dir(), time.time(), [], 0
+    for folder, _, names in os.walk(root):
+        for n in names:
+            path = os.path.join(folder, n)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            if n.endswith(".part"):
+                if now - st.st_mtime > MUSIC_PART_AGE:
+                    files.append((0, st.st_size, path))        # a fetch that died: first to go, whatever the limit
+                continue
+            files.append((st.st_mtime, st.st_size, path))
     total = sum(size for _, size, path in files if not path.endswith(".part"))
     for when, size, path in sorted(files):
         part = path.endswith(".part")
@@ -573,6 +640,11 @@ def prune_music_cache(limit=MUSIC_CACHE_MAX, keep=()):
         freed += size
         if not part:
             total -= size
+    for folder in os.listdir(root) if os.path.isdir(root) else ():
+        try:
+            os.rmdir(os.path.join(root, folder))               # a server's folder with nothing left in it
+        except OSError:
+            pass
     return freed
 
 
@@ -584,18 +656,17 @@ def fetch_music(api, t, keep=()):
     all but full is. RommError when the track can't be had."""
     if not isinstance(t.get("rom_file_id"), int):
         raise _core.RommError("That isn't a track of RomM's jukebox")
-    _music_cache_for(api.base)
     path = music_local(t, api.base)
     if path:
-        if os.path.dirname(path) == music_cache_dir():
+        if os.path.dirname(os.path.dirname(path)) == music_cache_dir():
             try:
                 os.utime(path)
             except OSError:
                 pass
         return path
-    d, path = music_cache_dir(), _music_cached_path(t)
+    path = _music_cached_path(t, api.base)
+    d = os.path.dirname(path)
     secs = t.get("duration_seconds")
-    _music_cache_for(api.base)
     guess = int((secs if isinstance(secs, (int, float)) and secs > 0 else MUSIC_UNKNOWN_SECONDS) * MUSIC_RATE)
     try:
         os.makedirs(d, exist_ok=True)
@@ -655,8 +726,8 @@ def build_music_index(api, stats=None, cancel=None):
             continue
         a = albums.get(rid)
         if a is None:
-            a = albums[rid] = {"rom_id": rid, "name": t.get("game_name") or t.get("album") or "", "platform_id": t.get("platform_id"),
-                               "platform": t.get("platform_name") or "", "cover": t.get("game_cover_url") or t.get("cover_url"),
+            a = albums[rid] = {"rom_id": rid, "name": str(t.get("game_name") or t.get("album") or ""), "platform_id": t.get("platform_id"),
+                               "platform": str(t.get("platform_name") or ""), "cover": t.get("game_cover_url") or t.get("cover_url"),
                                "count": 0, "seconds": 0.0, "year": None, "genres": [], "artist": "", "artists": {}, "added": ""}
         a["count"] += 1
         secs = t.get("duration_seconds")

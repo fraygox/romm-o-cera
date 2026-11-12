@@ -48,7 +48,8 @@ def load_jukebox(scr):
         scr.playlists, scr.favourites = [], 0
         scr.lists_why = str(e) if isinstance(e, rommlib.ScopeMissing) else "RomM didn't answer (%s)" % e
     app.bg(api.music_playlists, lambda v: setattr(scr, "playlists", v), no_lists)
-    app.bg(lambda: api.music_page("favorites", 1)[1], lambda n: setattr(scr, "favourites", n), lambda e: None)
+    app.bg(lambda: api.music_page("favorites", 1)[1], lambda n: setattr(scr, "favourites", n),
+           lambda e: setattr(scr, "favourites", 0))
 
 
 class MusicScreen(ListScreen):

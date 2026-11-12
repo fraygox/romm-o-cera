@@ -84,8 +84,7 @@ def ended(app):
 
 
 def cached():
-    d = rommlib.music_cache_dir()
-    return sorted(os.listdir(d)) if os.path.isdir(d) else []
+    return sorted(n for _, _, names in os.walk(rommlib.music_cache_dir()) for n in names)
 
 
 def test_a_plays_from_the_selected_track_and_the_list_plays_on_to_its_end(app, rb):
@@ -95,7 +94,7 @@ def test_a_plays_from_the_selected_track_and_the_list_plays_on_to_its_end(app, r
     scr.sel = len(rows) - 3
     scr.action("ok")
     assert pl.state == "playing" and pl.current() is rows[-3] and pl.what == scr.title
-    assert pl.out.loaded == rommlib.music_local(rows[-3]) and pl.out.busy
+    assert pl.out.loaded == rommlib.music_local(rows[-3], app.api.base) and pl.out.busy
     assert len(cached()) == 2                                       # the one playing, and the next already here
     assert scr.hints()[0] == ("A", "Pause") and ("L2 R2", "Previous, next") in scr.hints()
     scr.draw(app.canvas)
@@ -695,11 +694,12 @@ def test_skipping_fast_starts_two_downloads_at_most(app, rb, monkeypatch):
 
 def test_everything_and_a_mix_arent_fetched_for_a_look(app, rb, monkeypatch):
     rommlib.save_music_sources(MIX)
-    calls, real = [], app.api.music_all
+    calls, real, page = [], app.api.music_all, app.api.music_page
     monkeypatch.setattr(app.api, "music_all", lambda what, cancel=None, **f: calls.append((what, f)) or real(what, cancel=cancel, **f))
+    monkeypatch.setattr(app.api, "music_page", lambda what, limit, **f: calls.append((what, limit, f)) or page(what, limit, **f))
     juke = wall(app, rb, monkeypatch)
     assert [c for c in calls if c == ("tracks", {})] == [("tracks", {})]         # the index, once
-    assert not [c for c in calls if c[0] == "favorites"]                         # how many are starred is a count, not a listing
+    assert ("favorites", 1, {}) in calls                                         # how many are starred: a count
     del calls[:]
     for _ in range(3):
         juke.draw(app.canvas)
@@ -720,7 +720,19 @@ def test_everything_and_a_mix_arent_fetched_for_a_look(app, rb, monkeypatch):
     juke.cols["lists"] = 3
     for _ in range(3):
         juke.draw(app.canvas)
-    assert calls == [("tracks", {"max_duration": 120})]               # a mix only once it has the focus
+    assert calls == [("tracks", 60, {"max_duration": 120})]           # a mix only once it has the focus, and only some of it
+    juke.draw(app.canvas)
+    # edited on the Menu music screen: the tile is the new mix, not what was read for the old one
+    sel = rommlib.load_music_sources()
+    sel["mixes"][0]["filters"] = {"decade": [1990]}
+    rommlib.save_music_sources(sel)
+    juke.enter()
+    tile = juke.current()[1]
+    assert tile["about"] == "1990s" and ("mix", "Short ones") not in juke.tracks
+    del calls[:]
+    for _ in range(3):
+        juke.draw(app.canvas)
+    assert calls == [("tracks", 60, {"min_year": 1990, "max_year": 1999})]
     # a soundtrack's mark follows the game the playing track is from, whatever list it plays from
     juke.at = "pills"
     juke.action("ok")
@@ -752,7 +764,7 @@ def test_counting_a_mix_asks_one_thing_at_a_time(app, rb, monkeypatch):
     mix.draw(app.canvas)
 
 
-def test_another_server_stops_the_player_and_a_new_sync_stops_the_one_running(app, rb):
+def test_another_server_stops_the_player_and_a_new_sync_stops_the_one_running(app, rb, monkeypatch):
     scr = album(app, rb)
     scr.action("x")
     assert app.player.state == "playing"
@@ -760,6 +772,18 @@ def test_another_server_stops_the_player_and_a_new_sync_stops_the_one_running(ap
     app.apply_config(reconnect=True)
     assert app.player.state == "stopped" and app.player.queue == [] and not app.player.out.busy
     scr.draw(app.canvas)
+    # a track still on its way from the old server when the new one is set is never played
+    rows = scr.listed()
+    at_once = app.bg
+    held = later(app, monkeypatch)
+    scr.action("x")
+    assert app.player.state == "loading" and len(held) == 1
+    asked = held.pop(0)
+    app.apply_config(reconnect=True)
+    del held[:]
+    run([asked])
+    assert app.player.state == "stopped" and not app.player.fetching and not app.player.out.busy
+    monkeypatch.setattr(app, "bg", at_once)
     app.music_in_tests = True
     app.cfg["menu_music"] = True
     rommlib.save_music_sources(dict(rommlib.load_music_sources(), playlists=[1]))
