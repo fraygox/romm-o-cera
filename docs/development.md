@@ -195,7 +195,14 @@ emulator's own window or an error box.
 tools/formats/run.py --pick --library ~/roms --bios ~/bios [--lab ~/homebrew]   # local/formats/inputs.json
 tools/formats/run.py --box 127.0.0.1:2222 --base 43.1 --changed-since v0.13.1  # or --cases K1,K2, or --all
 tools/formats/run.py --box 127.0.0.1:2223 --base 44 --changed-since v0.13.1
+tools/formats/run.py --box 127.0.0.1:2222,127.0.0.1:2224,127.0.0.1:2226 --base 43.1 --all   # three boxes share the cases
 ```
+
+A box plays one game at a time, and most of a case is the two launches, so one
+box takes over an hour for every case. Give `--box` several boxes of the same
+Batocera and each takes the next case when it's free, the long ones first: the
+run takes about its share, and never less than its longest case. Nothing about
+a case changes, so the results are the ones a single box gives.
 
 - `--pick` takes the smallest suitable file per case and records which one in
   `local/formats/inputs.json` (git-ignored). Game names stay there, and nothing
@@ -211,7 +218,8 @@ tools/formats/run.py --box 127.0.0.1:2223 --base 44 --changed-since v0.13.1
 - Use a test box only. The harness turns off EmulationStation's "missing BIOS"
   question, changes the converter settings, and sets the space to keep free to 1 GB.
 - `local/formats/passed.json` records each case's last outcome per base with a
-  hash of its files. `tools/release.py stable` refuses to cut a release when a
+  hash of its files, as each case ends: a run that is stopped keeps what it
+  finished, and `--cases` runs the rest. `tools/release.py stable` refuses to cut a release when a
   case's files changed since the last tag and it hasn't passed on 43.1 and 44 for
   that code. `--skip-format-tests` overrides this and prints what was skipped.
 

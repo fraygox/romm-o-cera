@@ -103,6 +103,16 @@ def listed(system, path):
         return False
 
 
+def takes(system, path):
+    """False only when ES's own list of the system's extensions is there and
+    hasn't the file's: ES will never list it. True whenever that can't be told."""
+    try:
+        exts = rommlib.load_es_systems().get(system)
+    except Exception:
+        return True
+    return not exts or os.path.splitext(path)[1].lower() in exts
+
+
 def finalizing():
     """rb_finalize holds its lock (read from /proc/locks, never taken)."""
     lock = rommlib.finalize_lock_path()
@@ -694,6 +704,12 @@ def cmd_play(system, path, shotdir, wait=25):
         return out(res)
     if running():
         stop_game(())
+    if not takes(system, path):
+        # ES never lists it (a PS2 .cue, a PS3 .zip): said now, not after wait_listed's five minutes
+        res.update(plays=False, judged=True, listed=False,
+                   why="EmulationStation doesn't list the file (%s isn't an extension this system takes)"
+                       % (os.path.splitext(path)[1].lower() or "a name without one"))
+        return out(res)
     if not wait_listed(system, path):
         res.update(plays=False, judged=True, listed=False,
                    why="EmulationStation doesn't list the file (not an extension this system takes?)")

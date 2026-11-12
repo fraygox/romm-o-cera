@@ -6,8 +6,11 @@ on the box. The cases come from the converter table (tools/formats/cases.py).
   run.py --pick --library DIR [--library DIR]... --bios DIR [--lab DIR]
         choose each case's input (the smallest suitable file; a --lab folder of
         homebrew is preferred) and write local/formats/inputs.json
-  run.py --box HOST:PORT --base 43.1|44 [--cases K1,K2 | --changed-since REF | --all]
+  run.py --box HOST:PORT[,HOST:PORT...] --base 43.1|44 [--cases K1,K2 | --changed-since REF | --all]
         [--inputs local/formats/inputs.json] [--out build/formats] [--keep] [--ssh-key FILE]
+        several boxes of the same Batocera share the cases: each takes the next one
+        when it's free, so the run takes about as long as its share (a box plays
+        one game at a time; nothing about a case changes)
 
 Per case, on the box: the input goes into roms/<system>/ as fmt-<key>.<ext> (cue and
 gdi sheets rewritten to the neutral track names), the BIOS files Batocera lists for
@@ -16,13 +19,16 @@ control, then the app's own planner (rb_chd_plan.py) and worker (rb_chd.py) comp
 it, the app's own check (Check games, full) checks the result, and the result is
 launched the same way. Results: <out>/<base>/<key>.json, summary.json, summary.md,
 and screenshots; local/formats/passed.json records the outcome per case with a hash
-of its areas (tools/release.py stable reads it).
+of its areas (tools/release.py stable reads it), as each case ends: a run that is
+stopped keeps what it finished.
 
 Inputs come only from the given folders, read-only; nothing is downloaded but the
 converter tools the app itself downloads. Exit status 1 when a case that could be
 judged failed.
 """
 import argparse
+import collections
+import fcntl
 import hashlib
 import io
 import json
@@ -32,6 +38,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 
@@ -54,8 +61,11 @@ PLAY_WAIT = {"ps2": 40, "ps3": 45, "xbox": 40, "xbox360": 45, "wiiu": 45, "wii":
 MIN_DERIVE = 32 << 20       # a smaller .rvz/.wux is a near-empty disc (a channel or data disc), no game to play
 
 
+_who = threading.local()      # .box: the box this thread runs cases on, when there are several
+
+
 def say(msg):
-    print("[formats] " + msg, flush=True)
+    print("[formats] " + getattr(_who, "box", "") + msg, flush=True)
 
 
 # ------------------------------------------------------------------ the box
@@ -104,6 +114,12 @@ class Box:
 
     def put_bytes(self, data, remote, mtime=None):
         self.put_stream(io.BytesIO(data), remote, mtime)
+
+    def alive(self):
+        try:
+            return self.run("true", timeout=30).returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            return False
 
     def get(self, remote, local):
         os.makedirs(os.path.dirname(local), exist_ok=True)
@@ -190,7 +206,6 @@ def stage(box, case, entry, sysdir):
         name = PREFIX + key + ".zip"
         r, w = os.pipe()
         rd = os.fdopen(r, "rb")
-        import threading
 
         def writer():
             with os.fdopen(w, "wb") as out, zipfile.ZipFile(out, "w") as zo:
@@ -442,20 +457,25 @@ def write_summary(outdir, rows, info):
 
 
 def record_passed(base, results):
-    try:
-        data = json.load(open(PASSED))
-    except (OSError, ValueError):
-        data = {}
+    """Add results to passed.json. Under a lock, and whole or not at all: the
+    other base's run, and this run's other boxes, write it too."""
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
-    runs = data.setdefault(base, {})
-    for k in [k for k in runs if k not in _cases.BY_KEY]:
-        del runs[k]                                     # a case the table no longer has
-    for r in results:
-        runs[r["key"]] = {"status": r["status"], "areas_hash": r.get("areas_hash", ""), "commit": head,
-                          "when": time.strftime("%Y-%m-%d %H:%M"), "note": (r.get("note") or "")[:200]}
     os.makedirs(os.path.dirname(PASSED), exist_ok=True)
-    with open(PASSED, "w") as f:
-        json.dump(data, f, indent=1, sort_keys=True)
+    with open(PASSED + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            data = json.load(open(PASSED))
+        except (OSError, ValueError):
+            data = {}
+        runs = data.setdefault(base, {})
+        for k in [k for k in runs if k not in _cases.BY_KEY]:
+            del runs[k]                                     # a case the table no longer has
+        for r in results:
+            runs[r["key"]] = {"status": r["status"], "areas_hash": r.get("areas_hash", ""), "commit": head,
+                              "when": time.strftime("%Y-%m-%d %H:%M"), "note": (r.get("note") or "")[:200]}
+        with open(PASSED + ".part", "w") as f:
+            json.dump(data, f, indent=1, sort_keys=True)
+        os.replace(PASSED + ".part", PASSED)
 
 
 def changed_since(ref):
@@ -483,39 +503,98 @@ def cmd_run(a):
     if not todo:
         say("nothing to run")
         return 0
-    box = Box(a.box, a.ssh_key)
-    install_app(box)
-    info = box.side("info")
-    info["label"] = a.base
-    say("box: Batocera %s, Python %s, app %s" % (info["batocera"], info["python"], info["app"]))
-    prep = box.side("prepare", timeout=400)
-    info["es_bios_prompt"] = prep.get("es_bios_prompt")
+    specs = list(dict.fromkeys(x.strip() for b in a.box for x in b.split(",") if x.strip()))
     outdir = os.path.join(a.out, a.base)
     os.makedirs(outdir, exist_ok=True)
     bios_root = (inputs.get("_roots") or {}).get("bios")
     index = bios_index(bios_root) if bios_root and os.path.isdir(bios_root) else None
+    if len(specs) > 1:
+        todo.sort(key=lambda c: -_weight(c, inputs, outdir))     # the long ones first: the boxes end together
+    queue = collections.deque(todo)
+    cv = threading.Condition()
+    state = {"busy": 0, "info": None}
     results = []
-    for case in todo:
-        entry = (inputs.get("cases") or {}).get(case.key)
-        if not entry or not entry.get("path"):
-            r = {"key": case.key, "system": case.system, "mode": case.mode, "status": "no-input",
-                 "areas_hash": case.areas_hash(),
-                 "note": (entry or {}).get("why") or "no input picked (run --pick)"}
-        else:
-            say("%s: start" % case.key)
-            try:
-                r = run_case(box, case, entry, outdir, index, keep=a.keep)
-            except Exception as e:                       # one case's trouble never stops the rest
-                r = {"key": case.key, "system": case.system, "mode": case.mode, "status": "fail",
-                     "areas_hash": case.areas_hash(), "note": "harness error: %s: %s" % (e.__class__.__name__, e)}
+
+    def take():
+        """The next case, or None when none is left and no box could still hand one back."""
+        with cv:
+            while not queue and state["busy"]:
+                cv.wait(5)
+            if not queue:
+                return None
+            state["busy"] += 1
+            return queue.popleft()
+
+    def done(back=None):
+        with cv:
+            state["busy"] -= 1
+            if back is not None:
+                queue.appendleft(back)
+            cv.notify_all()
+
+    def worker(spec):
+        if len(specs) > 1:
+            _who.box = "[%s] " % spec
+        try:
+            box = Box(spec, a.ssh_key)
+            install_app(box)
+            info = box.side("info")
+            info["label"] = a.base
+            say("box: Batocera %s, Python %s, app %s" % (info["batocera"], info["python"], info["app"]))
+            info["es_bios_prompt"] = box.side("prepare", timeout=400).get("es_bios_prompt")
+        except Exception as e:
+            say("this box can't be used: %s: %s" % (e.__class__.__name__, e))
+            return
+        with cv:
+            state["info"] = state["info"] or info
+        while True:
+            case = take()
+            if case is None:
+                return
+            entry = (inputs.get("cases") or {}).get(case.key)
+            if not entry or not entry.get("path"):
+                r = {"key": case.key, "system": case.system, "mode": case.mode, "status": "no-input",
+                     "areas_hash": case.areas_hash(),
+                     "note": (entry or {}).get("why") or "no input picked (run --pick)"}
+            else:
+                say("%s: start" % case.key)
                 try:
-                    box.side("clean", case.key)
-                except Exception:
-                    pass
-        say("%s: %s %s" % (case.key, r["status"], r.get("note", "")))
+                    r = run_case(box, case, entry, outdir, index, keep=a.keep)
+                except Exception as e:                       # one case's trouble never stops the rest
+                    if not box.alive():
+                        # the box is gone, not the case: another box takes it (none left: failed below)
+                        say("%s: this box stopped answering (%s); it runs no more cases" % (case.key, e))
+                        done(back=case)
+                        return
+                    r = {"key": case.key, "system": case.system, "mode": case.mode, "status": "fail",
+                         "areas_hash": case.areas_hash(), "note": "harness error: %s: %s" % (e.__class__.__name__, e)}
+                    try:
+                        box.side("clean", case.key)
+                    except Exception:
+                        pass
+            say("%s: %s %s" % (case.key, r["status"], r.get("note", "")))
+            with cv:
+                with open(os.path.join(outdir, case.key + ".json"), "w") as f:
+                    json.dump(r, f, indent=1, sort_keys=True)
+                results.append(r)
+                record_passed(a.base, [r])              # now: a run that's stopped keeps what it finished
+            done()
+
+    threads = [threading.Thread(target=worker, args=(spec,)) for spec in specs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    if state["info"] is None:
+        sys.exit("no box could be used")
+    for case in queue:                                   # every box that could run it went away
+        r = {"key": case.key, "system": case.system, "mode": case.mode, "status": "fail",
+             "areas_hash": case.areas_hash(), "note": "harness error: no box left to run it"}
+        say("%s: %s %s" % (case.key, r["status"], r["note"]))
         with open(os.path.join(outdir, case.key + ".json"), "w") as f:
             json.dump(r, f, indent=1, sort_keys=True)
         results.append(r)
+        record_passed(a.base, [r])
     prev = {}
     try:
         prev = {row["key"]: row for row in json.load(open(os.path.join(outdir, "summary.json")))["rows"]}
@@ -524,9 +603,23 @@ def cmd_run(a):
     prev.update({r["key"]: summary_row(r) for r in results})
     prev = {k: v for k, v in prev.items() if k in _cases.BY_KEY}
     order = {c.key: i for i, c in enumerate(_cases.CASES)}
-    write_summary(outdir, sorted(prev.values(), key=lambda r: order.get(r["key"], 999)), info)
-    record_passed(a.base, results)
+    write_summary(outdir, sorted(prev.values(), key=lambda r: order.get(r["key"], 999)), state["info"])
     return 1 if any(r["status"] == "fail" for r in results) else 0
+
+
+def _weight(case, inputs, outdir):
+    """About how long a case takes: what its last run here took, else a guess from
+    its input's size (only the order of a run on several boxes hangs on it)."""
+    try:
+        with open(os.path.join(outdir, case.key + ".json")) as f:
+            return float(json.load(f)["seconds"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    entry = (inputs.get("cases") or {}).get(case.key) or {}
+    try:
+        return 90 + os.path.getsize(entry["path"]) / (40 << 20)
+    except (OSError, KeyError, TypeError):
+        return 0
 
 
 # ------------------------------------------------------------------ --pick
@@ -731,7 +824,9 @@ def cmd_pick(a):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--box", help="HOST:PORT of the test box (root over SSH)")
+    ap.add_argument("--box", action="append",
+                    help="HOST:PORT of the test box (root over SSH); several, comma-separated or repeated, "
+                         "share the cases")
     ap.add_argument("--base", default="43.1", help="label for the box's Batocera: 43.1 or 44")
     ap.add_argument("--inputs", default=INPUTS)
     g = ap.add_mutually_exclusive_group()
