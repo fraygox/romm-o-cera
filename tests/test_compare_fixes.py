@@ -78,6 +78,21 @@ def test_a_recorded_download_is_newer_when_romms_file_changed(isolated):
     assert got["status"] == "newer"
 
 
+def test_a_game_that_gained_a_soundtrack_in_romm_is_still_the_same_game(isolated):
+    """RomM counts what lies beside a game in its folder (a soundtrack, a manual) in the game's size.
+    The game's own hashes say whether it changed; the size only where RomM keeps no hash."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    p = _touch(os.path.join(sysdir, "Tune (USA).iso"), 400)
+    lib = rommlib.Library()
+    was = dict(_rom(6, "Tune (USA).iso", size=400), sha1_hash="aa11", md5_hash="bb22", crc_hash="cc33")
+    lib.mark(was, "psx", [p])
+    run = lambda r: rommlib.compare_games([r], lib.snapshot(), rommlib.local_games("psx"), "psx")["items"][0]["status"]
+    folder = dict(was, fs_name="Tune (USA)", fs_extension="", fs_size_bytes=400 + 90000)      # now a folder: the game and soundtrack/
+    assert run(was) == "matches" and run(folder) == "matches"
+    assert run(dict(folder, sha1_hash="ee55")) == "newer"            # the game's own file changed
+    assert run(dict(folder, sha1_hash=None, md5_hash=None, crc_hash=None)) == "newer"      # no hash to go by: the size decides
+
+
 def test_utc_seconds_honours_offsets():
     base = rommlib.utc_seconds("2026-10-01T12:00:00Z")
     assert rommlib.utc_seconds("2026-10-01T12:00:00+00:00") == base

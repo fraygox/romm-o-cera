@@ -161,15 +161,24 @@ def _rom_ext(rom):
 
 
 def _changed(rom, rec):
-    """RomM's file isn't the one this record installed: its size or a hash
-    changed (records from before the stamp: its file name changed)."""
+    """RomM's file isn't the one this record installed: a hash changed, or, where RomM keeps no
+    hash to go by, its size (records from before the stamp: its file name changed)."""
     stamp = rec.get("romm")
     if isinstance(stamp, dict) and stamp:
+        same = None
         for field, k in _library.STAMP_KEYS:
             old, new = stamp.get(k), rom.get(field)
-            if old and new and str(old).lower() != str(new).lower():
-                return True
-        return False
+            if old and new and k != "size":
+                if str(old).lower() != str(new).lower():
+                    return True
+                same = True
+        if same and not rom.get("fs_extension"):
+            # RomM keeps the game in a folder and its hashes still agree: it's the same file. A folder's
+            # size also counts what lies beside the game (a soundtrack, a manual added since), so by
+            # itself it says nothing there
+            return False
+        old, new = stamp.get("size"), rom.get("fs_size_bytes")
+        return bool(old and new and old != new)
     old, new = rec.get("fs_name"), rom.get("fs_name")
     return bool(old and new and old != new)
 
