@@ -3,6 +3,32 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.14.0 (2026-11-12)
+
+Music: your RomM soundtracks, played in the app or as EmulationStation's menu music
+
+### Features
+- **feat:** **Music** on Home, once your RomM has soundtracks (RomM's jukebox: the audio files in a game's `soundtrack/` folder; checked with RomM 5.4). Soundtracks sit on shelves of covers you can group by system, game genre, composer, decade or name, with your RomM favourites, playlists and saved mixes above them, and shelves for what's new and what's on this box.
+- **feat:** Play soundtracks in the app. A opens what's focused and X plays it at once; **Shuffle everything** plays the whole jukebox in a new order each time. In a list of tracks A plays from the selected track, X pauses, Y shuffles and L2/R2 skip. The music carries on while you browse, the top bar names the track and its soundtrack, and it stops when the app closes or a game starts.
+- **feat:** **Search** finds soundtracks by the game's name, composers, and tracks by title, artist or album. Y on a shelf of soundtracks shows all of it as a wall, sorted by name, newest in RomM, longest or oldest game.
+- **feat:** **Menu music**: EmulationStation plays the soundtracks you choose in its menus. Each source is a switch and they add up: your RomM favourites, a RomM playlist, the games on this box, single games, and mixes you build by game genre, music genre, artist, platform, decade and length. The app keeps the tracks in `music/romm-o-cera/` in step with RomM, under a space limit you set (10 GB by default), and removes only files it placed.
+- **feat:** A game's page shows its soundtrack (tracks and length), and its Actions play it or add it to the menu music.
+
+### Fixes
+- **fix:** A game installed before it gained a soundtrack in RomM is no longer listed as **Newer in RomM** in Compare. RomM counts the music in the game's size; the game's own checksums now decide.
+
+### Upgrading
+- Nothing to do. Music appears by itself when your RomM has soundtracks, and menu music is off until you switch it on.
+- Favourites and playlists belong to a RomM account, and a token reads them only if it was made with the `playlists.read` scope. Without it those rows say **Not available with this token**; everything else works. Pair again, or make a token with that scope, to use them.
+
+### Known limits
+- With EmulationStation's **Only play system-specific music** on, it skips the app's folder: leave that setting off for menu music.
+- Music of your own in the box's music folder plays alongside the soundtracks; it is never touched.
+- The first time Music opens, groupings other than by system wait a moment while the app reads RomM's track list. It keeps what it learned until RomM's soundtracks change.
+- A game with a soundtrack shows RomM's size for it, which includes the music. Only the game is downloaded.
+- Starring tracks and making playlists is done in RomM; the app reads them.
+- The app plays `.mp3`, `.ogg`, `.flac`, `.wav` and `.opus`. EmulationStation plays the same formats as menu music.
+
 ## v0.13.3 (2026-11-11)
 
 Xbox 360 discs that only start a package now start on Batocera, and patch files still download on RomM 5.5
