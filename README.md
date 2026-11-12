@@ -55,6 +55,9 @@ open-source games plus invented "lorem ipsum" titles, with generated covers.</su
   (saves are kept), see where the space went and free some up, clean up
   leftovers, fetch missing BIOS files from RomM, and check for damaged or
   cut-short games and replace them. → [On this box](docs/on-this-box.md)
+- **Menu music from your games.** RomM's soundtracks play in
+  EmulationStation's menus: your RomM favourites, playlists, the games on the
+  box, or mixes by genre, artist, platform and decade. → [Music](docs/music.md)
 - **Save space without losing anything.** Disc games are compressed in the
   background, lossless and verified: CHD for CD systems, PS2 and PSP; RVZ
   for GameCube, Wii and Triforce; squashfs for Xbox; .zcci for 3DS; .zar for Xbox
@@ -148,6 +151,7 @@ Easiest to read on the **[documentation site](https://fraygox.github.io/romm-o-c
 | | |
 |---|---|
 | [Browsing and downloading](docs/browsing-and-downloading.md) | finding games, Game night, Backlog, filters, Play now, the queue, space, download hours, game info |
+| [Music](docs/music.md) | RomM soundtracks as menu music: sources, mixes, space |
 | [On this box](docs/on-this-box.md) | installed games, space, compressing what's here, BIOS, Check games, conversions, game info |
 | [Disc compression](docs/disc-compression.md) | CHD, RVZ, Xbox, 3DS, Xbox 360, Wii U, converting a library you already have |
 | [PS3 games](docs/ps3.md) | `.ps3` game folders, encrypted discs, where disc keys go (`bios/ps3keys`), keys in RomM |
