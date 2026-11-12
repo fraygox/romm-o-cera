@@ -30,7 +30,8 @@ MODE_AREAS = {
     "rvz": ("romm/tools.py",),               # dolphin-tool's pin and installer
     "squashfs": ("romm/discs.py",),          # make_xiso runs first
     "z3ds": (),
-    "zar": ("romm/tools.py",),
+    "xpkg": ("romm/tools.py", "romm/stfs.py"),      # the package unpacker
+    "zar": ("romm/tools.py", "romm/stfs.py"),       # (a package disc queued as .zar takes the same path)
     "wua": ("romm/wiiu.py", "romm/tools.py"),
     "wux": ("romm/wiiu.py", "romm/tools.py"),
     "ps3": ("romm/ps3.py",),

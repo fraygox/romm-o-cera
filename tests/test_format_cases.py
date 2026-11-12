@@ -61,7 +61,7 @@ def test_every_system_has_a_library_folder_name():
     (["romm/wiiu.py"], ["wua-wiiu", "wux-wiiu"]),
     (["./romm/ps3.py"], ["ps3-ps3", "ps3decrypt-ps3"]),
     (["README.md", "rbui/app.py", "tests/test_logic.py"], []),
-    (["romm/tools.py"], ["rvz-gamecube", "rvz-triforce", "rvz-wii", "wua-wiiu", "wux-wiiu", "zar-xbox360"]),
+    (["romm/tools.py"], ["rvz-gamecube", "rvz-triforce", "rvz-wii", "wua-wiiu", "wux-wiiu", "xpkg-xbox360", "zar-xbox360"]),
 ])
 def test_cases_touched(changed, want):
     assert keys(cases.cases_touched(changed)) == want

@@ -688,7 +688,18 @@ def cmd_pick(a):
     scratch = os.path.join(REPO, "build", "formats", "pick")
     os.makedirs(scratch, exist_ok=True)
     out = {"_roots": {"library": a.library, "lab": a.lab or [], "bios": a.bios}, "cases": {}}
+    before = load_inputs(a.inputs).get("cases") or {}
     for case in _cases.CASES:
+        if case.mode == "xpkg":
+            # a disc that only starts a package: nothing in a file's name or first bytes says so, and
+            # reading its file list means reading the image. Picked by hand: an entry already there stays
+            e = before.get(case.key)
+            if not (isinstance(e, dict) and e.get("path") and os.path.isfile(e["path"])):
+                e = {"why": "pick it by hand: add a disc that only starts a package to %s"
+                     % os.path.relpath(a.inputs, REPO)}
+            out["cases"][case.key] = e
+            say("%-22s %s" % (case.key, "kept as it was" if "path" in e else "no input (%s)" % e["why"]))
+            continue
         if case.keys == "wiiukeys":
             have = any(os.path.isdir(os.path.join(a.bios, d)) and os.listdir(os.path.join(a.bios, d))
                        for d in ("wiiukeys", "wiiu", "cemu"))
