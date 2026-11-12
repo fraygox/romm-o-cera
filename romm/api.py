@@ -44,7 +44,9 @@ class Api:
     def from_config(cls, cfg):
         return cls(_config.config_value(cfg, "url"), _config.config_value(cfg, "token"), _config.config_value(cfg, "verify_tls"))
 
-    def get(self, path, params=None, timeout=20):
+    def get(self, path, params=None, timeout=20, scope=None):
+        """scope: the token scope this path needs beyond the ones every token of the app
+        has; a 403 then says the token isn't allowed it (ScopeMissing), not that it's bad."""
         if not self.base:
             raise _core.RommError("No RomM server set — open Settings")
         if _config.url_has_userinfo(self.base):
@@ -61,6 +63,9 @@ class Api:
             if isinstance(e, OSError) and isinstance(ca, str) and not os.path.exists(ca):
                 raise _core.RommError("The CA bundle isn't there: %s" % ca) from None
             raise _core.RommError("Request failed (%s)" % e.__class__.__name__) from None
+        if r.status_code == 403 and scope:
+            raise ScopeMissing("This token can't read %s (it needs %s): pair again, or make a token that may"
+                               % (SCOPE_WHAT.get(scope, scope), scope))
         if r.status_code in (401, 403):
             moved = _moved_to(self.base, r)
             if moved:               # requests drops the token when a redirect changes the host or port
@@ -385,6 +390,75 @@ class Api:
             return None
         return self.fetch_asset(paths[i], "coll-%s" % hashlib.sha1(paths[i].encode("utf-8", "replace")).hexdigest()[:16])
 
+    # ---- the jukebox (RomM 5.3+): soundtrack tracks, their facets, favourites and playlists
+    def music_all(self, what, cancel=None, **filters):
+        """Every item of a paged /api/music/<what> listing ("tracks", "favorites",
+        "playlists/<id>/tracks", "games", "albums", "artists", "genres", "years",
+        "game-genres", "platforms"), page after page. filters: RomM's own (artist, album,
+        genre, game_genre, platform_ids, year, min_year, max_year, min_duration,
+        max_duration, search, rom_id, order_by, order_dir); None is left out. None if
+        cancel was set."""
+        params = {k: v for k, v in filters.items() if v is not None and v != []}
+        out, off = [], 0
+        while True:
+            if cancel is not None and cancel.is_set():
+                return None
+            page = self.get("/api/music/" + what, dict(params, limit=MUSIC_PAGE, offset=off), timeout=60,
+                            scope=MUSIC_LISTS_SCOPE if what.startswith(("favorites", "playlists")) else None)
+            got = page.get("items") if isinstance(page, dict) else None
+            if not isinstance(got, list):
+                raise _core.RommError(NOT_ROMM)
+            out += [x for x in got if isinstance(x, dict)]
+            off += len(got)
+            total = page.get("total")
+            if not got or not isinstance(total, int) or off >= total:
+                return out
+
+    def music_stats(self):
+        """{"total_tracks", "total_duration_seconds"} of the whole jukebox."""
+        d = self.get("/api/music/stats")
+        return d if isinstance(d, dict) else {}
+
+    def music_playlists(self):
+        """The playlists this user may see (their own and public ones)."""
+        d = self.get("/api/music/playlists", scope=MUSIC_LISTS_SCOPE)
+        return [p for p in d if isinstance(p, dict)] if isinstance(d, list) else []
+
+    def download_music(self, track, part, cap):
+        """Stream a jukebox track to `part` (on disk before it returns); its size.
+        RommError, with `part` removed, when it can't be fetched or passes cap."""
+        path = track.get("stream_url")
+        if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+            raise _core.RommError("That track has no address on this RomM")     # only server paths: the session carries the token
+        try:
+            r = self.s.get(self.base + path, timeout=60, stream=True)
+        except Exception as e:
+            raise _core.RommError("Track download failed (%s)" % e.__class__.__name__) from None
+        try:
+            if r.status_code != 200:
+                _net.discard(r)
+                raise _core.RommError("Track download failed: HTTP %d" % r.status_code)
+            n = 0
+            with open(part, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    n += len(chunk)
+                    if n > cap:
+                        raise _core.RommError("That track is larger than any soundtrack file")
+                    f.write(chunk)
+                f.flush()
+                os.fsync(f.fileno())
+            return n
+        except (_core.RommError, requests.RequestException, OSError) as e:
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+            if isinstance(e, _core.RommError):
+                raise
+            raise _core.RommError("Track download failed (%s)" % e.__class__.__name__) from None
+        finally:
+            r.close()
+
     def fetch_asset(self, path, key, cap=None):
         """A RomM asset (a server path: cover, screenshot...) in the cover
         cache as <key>.img, fetched once and pruned with the covers (least
@@ -694,6 +768,13 @@ def exchange_pair_code(url, code, verify_tls=True, timeout=20):
     return {"token": tok, "name": name[:60], "scopes": scopes}
 
 
+MUSIC_PAGE = 1000         # the most /api/music gives in one page
+MUSIC_LISTS_SCOPE = "playlists.read"      # favourites and playlists need it; tracks and facets only roms.read
+SCOPE_WHAT = {"playlists.read": "your favourites and playlists"}
+
+
+class ScopeMissing(_core.RommError):
+    """The token is good but wasn't given the scope a call needs."""
 COVER_MAX = 32 << 20      # a cover bigger than this isn't a cover
 
 

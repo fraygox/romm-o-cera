@@ -24,6 +24,7 @@ import json
 import os
 import random
 import re
+import struct
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -449,6 +450,125 @@ def build_virtual(roms, vtype):
     return out
 
 
+# ---------------------------------------------------------------- music (RomM's jukebox)
+# Soundtracks for a few invented games: short generated tones as .wav (nothing recorded, no
+# real music), tagged the way RomM reads a file's tags, one track in a format EmulationStation
+# can't play (.spc). The same endpoints and fields as RomM 5.4's /api/music.
+MUSIC_COMPOSERS = ["Ada Quill", "Bram Oduya", "Chiyo Marlow", "Dov Castellan"]
+MUSIC_GENRES = ["Chiptune", "Ambient", "Synthwave", "Orchestral"]
+MUSIC_TITLES = ["Opening", "Title Screen", "Overworld", "Shop", "Cave", "Boss", "Victory", "Ending", "Credits"]
+MUSIC_PLATFORMS = (1, 3, 4, 6, 8)           # two albums on each
+MUSIC_FIRST_ID = 900001
+
+
+def _tone(freq, ms=200, rate=8000):
+    """A WAV file holding a square-ish tone: enough to be a real audio file."""
+    n = rate * ms // 1000
+    half = max(1, rate // (2 * freq))
+    pcm = b"".join(struct.pack("<h", 9000 if (i // half) % 2 else -9000) for i in range(n))
+    return (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+            + b"data" + struct.pack("<I", len(pcm)) + pcm)
+
+
+def build_music(roms, seed=23):
+    """(tracks, favourite track ids, playlists). A track is RomM's MusicTrackSchema plus
+    `_data` (the file) and `_playlists`; the games get has_soundtrack."""
+    rng = random.Random(seed)
+    plat = {p[0]: p for p in PLATFORMS}
+    tracks, fid = [], MUSIC_FIRST_ID
+    for pid in MUSIC_PLATFORMS:
+        games = [r for r in roms if r["platform_id"] == pid and not is_real(r) and r["fs_name"].endswith(".zip")][:2]
+        for r in games:
+            r["has_soundtrack"] = True
+            composer, genre = rng.choice(MUSIC_COMPOSERS), rng.choice(MUSIC_GENRES)
+            year = time.gmtime(r["metadatum"]["first_release_date"] / 1000).tm_year
+            titles = MUSIC_TITLES[:rng.randint(4, len(MUSIC_TITLES))]
+            for n, title in enumerate(titles, 1):
+                odd = n == len(titles) and r is games[0] and pid == MUSIC_PLATFORMS[0]      # one unplayable file
+                name = "%02d - %s%s" % (n, title, ".spc" if odd else ".wav")
+                data = b"SNES-SPC700 Sound File Data (mock)" if odd else _tone(220 + 40 * n + 7 * (fid % 9))
+                tracks.append({
+                    "rom_file_id": fid, "rom_id": r["id"], "file_name": name,
+                    "title": None if odd else title, "artist": None if odd else composer,
+                    "album": None if odd else r["name"], "genre": None if odd else genre, "year": None if odd else year,
+                    "track": None if odd else n, "disc": None if odd else 1,
+                    "duration_seconds": None if odd else float(rng.randint(45, 330)),
+                    "has_embedded_cover": not odd, "is_favorite": False, "game_name": r["name"],
+                    "game_genres": list(r["metadatum"]["genres"]), "added_at": "2026-11-%02dT10:00:00Z" % (1 + fid % 12),
+                    "platform_id": pid, "platform_slug": plat[pid][1], "platform_name": plat[pid][2],
+                    "stream_url": "/api/roms/%d/files/content/%s" % (fid, urllib.parse.quote(name)),
+                    "cover_url": r["path_cover_large"], "game_cover_url": r["path_cover_large"], "_data": data})
+                fid += 1
+    playable = [t for t in tracks if t["title"]]
+    favourites = {t["rom_file_id"] for t in playable[::5]}
+    for t in tracks:
+        t["is_favorite"] = t["rom_file_id"] in favourites
+    longest = sorted(playable, key=lambda t: -t["duration_seconds"])[:12]
+    first = [t for t in playable if t["track"] == 1]
+    playlists = [
+        {"id": 1, "name": "Menu music", "description": "Longer tracks for the menus", "is_public": True, "user_id": 2,
+         "owner_username": "sam", "_tracks": [t["rom_file_id"] for t in longest]},
+        {"id": 2, "name": "First tracks", "description": None, "is_public": False, "user_id": USER_ID,
+         "owner_username": "demo", "_tracks": [t["rom_file_id"] for t in first]},
+    ]
+    for pl in playlists:
+        pl.update(track_count=len(pl["_tracks"]), created_at="2026-11-01T10:00:00Z", updated_at="2026-11-02T10:00:00Z")
+    return tracks, favourites, playlists
+
+
+def music_filter(tracks, q):
+    """RomM's MusicTrackFilters: exact artist, album, genre, game_genre; platform_ids; year and
+    year range; duration range; a substring search; one rom."""
+    def one(k):
+        return q[k][0] if q.get(k) else None
+    out = tracks
+    for k in ("artist", "album", "genre"):
+        if one(k) is not None:
+            out = [t for t in out if t[k] == one(k)]
+    if one("game_genre") is not None:
+        out = [t for t in out if one("game_genre") in t["game_genres"]]
+    if q.get("platform_ids"):
+        pids = {int(x) for x in q["platform_ids"]}
+        out = [t for t in out if t["platform_id"] in pids]
+    if one("rom_id") is not None:
+        out = [t for t in out if t["rom_id"] == int(one("rom_id"))]
+    for k, test in (("year", lambda t, v: t["year"] == v), ("min_year", lambda t, v: t["year"] is not None and t["year"] >= v),
+                    ("max_year", lambda t, v: t["year"] is not None and t["year"] <= v),
+                    ("min_duration", lambda t, v: t["duration_seconds"] is not None and t["duration_seconds"] >= v),
+                    ("max_duration", lambda t, v: t["duration_seconds"] is not None and t["duration_seconds"] <= v)):
+        if one(k) is not None:
+            v = float(one(k))
+            out = [t for t in out if test(t, v)]
+    if one("search"):
+        s = one("search").lower()
+        out = [t for t in out if any(s in (t[k] or "").lower() for k in ("title", "artist", "album"))]
+    key = {"title": "title", "artist": "artist", "album": "album", "duration": "duration_seconds", "year": "year",
+           "platform": "platform_name", "added": "added_at"}.get(one("order_by") or "title", "title")
+    out = sorted(out, key=lambda t: (t[key] is None, t[key] if t[key] is not None else 0, t["rom_file_id"]),
+                 reverse=(one("order_dir") or "asc") == "desc")
+    return out
+
+
+def music_page(items, q, public=lambda x: x):
+    limit = max(1, min(1000, int(q.get("limit", ["50"])[0])))
+    offset = max(0, int(q.get("offset", ["0"])[0]))
+    return {"items": [public(x) for x in items[offset:offset + limit]], "total": len(items), "limit": limit, "offset": offset}
+
+
+def music_track(t):
+    return {k: v for k, v in t.items() if not k.startswith("_")}
+
+
+def music_facet(tracks, key):
+    """[{value, count}] of a track field (a list field counts each of its values)."""
+    counts = {}
+    for t in tracks:
+        for v in (t[key] if isinstance(t[key], list) else [t[key]]):
+            if v is not None:
+                counts[v] = counts.get(v, 0) + 1
+    return [{"value": v, "count": n} for v, n in sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))]
+
+
 _FONT = None
 
 
@@ -562,6 +682,7 @@ HIDDEN = ("files", "_data", "sibling_roms", "_notes", "_slug")      # never in l
 class Handler(BaseHTTPRequestHandler):
     roms, by_id, files, collections, smart, rate = [], {}, {}, [], [], 12 * 1024 * 1024
     covers = {}
+    music, music_favourites, music_playlists = [], set(), []
 
     def log_message(self, *a):
         pass
@@ -681,6 +802,8 @@ class Handler(BaseHTTPRequestHandler):
             tag = m.group(1) or "v0.9.0"
             return self._json({"tag_name": tag, "name": tag, "body": RELEASE_NOTES,
                                "html_url": "https://example.com/releases/" + tag, "assets": []})
+        if path.startswith("/api/music/"):
+            return self._music(path[len("/api/music/"):], q)
         if path == "/api/roms/filters":            # every filter's values across the library
             return self._json(self.filter_values())
         if path == "/api/recommendations":
@@ -843,6 +966,49 @@ class Handler(BaseHTTPRequestHandler):
     EXT = {"nes": ".nes", "gb": ".gb", "gba": ".gba", "snes": ".sfc", "genesis": ".md",
            "n64": ".z64", "zxs": ".tzx", "gbc": ".gbc", "mastersystem": ".sms", "turbografx16": ".pce"}
 
+    def _music(self, what, q):
+        """RomM 5.4's jukebox: tracks, facets, stats, favourites, playlists."""
+        if what == "stats":
+            return self._json({"total_tracks": len(self.music),
+                               "total_duration_seconds": sum(t["duration_seconds"] or 0 for t in self.music)})
+        if what == "tracks":
+            return self._json(music_page(music_filter(self.music, q), q, music_track))
+        if what.startswith(("favorites", "playlists")) and "no-lists" in (self.headers.get("Authorization") or ""):
+            return self._json({"detail": "Forbidden"}, 403)          # a token without playlists.read
+        if what == "favorites":
+            return self._json(music_page(music_filter([t for t in self.music if t["is_favorite"]], q), q, music_track))
+        if what == "playlists":
+            return self._json([{k: v for k, v in p.items() if not k.startswith("_")} for p in self.music_playlists])
+        m = re.match(r"^playlists/(\d+)(/tracks)?$", what)
+        if m:
+            pl = next((p for p in self.music_playlists if p["id"] == int(m.group(1))), None)
+            if pl is None:
+                return self._json({"detail": "Playlist not found"}, 404)
+            if not m.group(2):
+                return self._json({k: v for k, v in pl.items() if not k.startswith("_")})
+            by = {t["rom_file_id"]: t for t in self.music}
+            return self._json(music_page([by[i] for i in pl["_tracks"]], q, music_track))
+        found = music_filter(self.music, q)
+        field = {"albums": "album", "artists": "artist", "genres": "genre", "years": "year", "game-genres": "game_genres"}.get(what)
+        if field:
+            return self._json(music_page(music_facet(found, field), q))
+        if what == "platforms":
+            rows = {}
+            for t in found:
+                row = rows.setdefault(t["platform_id"], {"id": t["platform_id"], "slug": t["platform_slug"],
+                                                         "name": t["platform_name"], "count": 0})
+                row["count"] += 1
+            return self._json(music_page(sorted(rows.values(), key=lambda r: r["name"]), q))
+        if what == "games":
+            rows = {}
+            for t in found:
+                row = rows.setdefault(t["rom_id"], {"rom_id": t["rom_id"], "name": t["game_name"], "platform_id": t["platform_id"],
+                                                    "platform_slug": t["platform_slug"], "platform_name": t["platform_name"],
+                                                    "cover_url": t["game_cover_url"], "count": 0})
+                row["count"] += 1
+            return self._json(music_page(sorted(rows.values(), key=lambda r: r["name"]), q))
+        return self._json({"detail": "Not Found"}, 404)
+
     def _zip_for(self, r):
         """A real stored zip of exactly fs_size_bytes, so the app's zip/size
         checks pass (contents are zeros — it's a stand-in, not a game)."""
@@ -914,6 +1080,8 @@ def main():
     add_user_data(Handler.roms)
     Handler.by_id = {r["id"]: r for r in Handler.roms}
     Handler.files = {f["id"]: f for r in Handler.roms for f in r["files"]}
+    Handler.music, Handler.music_favourites, Handler.music_playlists = build_music(Handler.roms)
+    Handler.files.update({t["rom_file_id"]: {"file_size_bytes": len(t["_data"]), "_data": t["_data"]} for t in Handler.music})
     Handler.collections = build_collections(Handler.roms) + build_more(Handler.roms, a.collections)
     Handler.smart = build_smart(Handler.roms)
     Handler.rate = a.rate_mb * 1024 * 1024
