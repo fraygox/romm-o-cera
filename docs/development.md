@@ -265,7 +265,7 @@ modules, in import order (each uses only the ones above it):
 | `romm/qr.py` | a small QR code encoder (byte mode, versions 1-6) for the Documentation row |
 | `romm/mine.py` | your side of RomM, read-only: statuses and lists (`USER_LISTS`), notes, RetroAchievements progress, screenshot paths |
 | `romm/compare.py` | Compare with RomM per platform or collection, which backlog games fit now, plays here (from ES) |
-| `romm/music.py` | menu music: the sources that pick RomM jukebox tracks (`MUSIC_SOURCES`), the plan under the space cap, and `sync_music()`, which keeps the app's folder in EmulationStation's music folder in step and removes only what it placed; `fetch_music()` and the listening cache for tracks played in the app |
+| `romm/music.py` | menu music: the sources that pick RomM jukebox tracks (`MUSIC_SOURCES`), the plan under the space cap, and `sync_music()`, which keeps the app's folder in EmulationStation's music folder in step and removes only what it placed; `fetch_music()` and the listening cache for tracks played in the app; `build_music_index()`, `music_groups()`, `music_sorted()` and `music_find()` behind Music's shelves, sort orders and search |
 
 The rules (`tests/test_package.py` checks them):
 
@@ -378,7 +378,7 @@ on `sys.path`, imports it and runs `main()`. The modules, in import order
 | `rbui/pads.py` | controller styles: the glyph and label each hint token shows, `PAD_STYLE`, `INPUT_MODE` |
 | `rbui/draw.py` | fonts, drawing primitives, text (glyph fallback, the rendered-text cache and its budget), wrapping, prose with controller glyphs, text that scrolls in its box (`scroll_text`, `marquee`, and `scroll_box` for any content), bars (`progress_bar`, `meter`, `state_stripe`), covers' scaling |
 | `rbui/sfx.py` | the UI's sounds |
-| `rbui/player.py` | `Player`: the queue of jukebox tracks playing in the app through the mixer's music stream (fetch, play, pause, skip, shuffle); `App.player`, ticked every frame; its screens are in `rbui/screens/jukebox.py` (`JukeboxScreen`, Music's wall of covers; `TracksScreen`, a list with what's playing), menu music's in `rbui/screens/music.py` |
+| `rbui/player.py` | `Player`: the queue of jukebox tracks playing in the app through the mixer's music stream (fetch, play, pause, skip, shuffle); `App.player`, ticked every frame; its screens are in `rbui/screens/jukebox.py` (`JukeboxScreen`, Music's shelves and Browse by; `AlbumWallScreen`, one shelf as a wall; `MusicSearchScreen`; `TracksScreen`, a list with what's playing), menu music's in `rbui/screens/music.py` |
 | `rbui/input.py` | keyboard, game controllers and raw joysticks to actions; Batocera's pad mappings (`es_input.cfg`) handed to SDL before the controllers open |
 | `rbui/modals.py` | menus and dialogs: `ActionMenu`, `ManageMenu`, `Confirm`, `InfoDialog`, `DownloadConfirm` |
 | `rbui/widgets/` | what screens compose instead of drawing it themselves: `tiles.py` (the scaled-cover cache `cover_variant`, `cover`, `art`, `cover_tile`, `Shelf`, `mosaic`, `collection_tile`, `collection_card`), `hero.py` (`verb_button`, `game_verb`, `verb_note`, `backdrop`), `chips.py` (`pill_row`, `fill_widths`, `status_chip`, `tag`, `stars`), `factsheet.py` (`facts`, `facts_layout`) |

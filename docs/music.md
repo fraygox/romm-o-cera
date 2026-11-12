@@ -10,19 +10,41 @@ RomM calls this its jukebox: the audio files in a game's `soundtrack/` folder
 
 ## Listening in the app
 
-Music opens on what there is to listen to:
+Music opens on what there is to listen to, top to bottom:
 
-- two pills at the top: **Shuffle everything** (every track in RomM, in a new
-  order each time) and **Menu music**, which says whether it's on and opens
-  [its screen](#menu-music)
-- **Your lists**: your RomM favourites and playlists (with a token that may
+- **Pills:** **Shuffle everything** (every track in RomM, in a new order each
+  time), **Search**, and **Menu music**, which says whether it's on and opens
+  [its screen](#menu-music). While something plays, **Now playing** comes
+  first.
+- **Browse by:** how the shelves below are grouped. **Systems**, **Game
+  genres**, **Composers**, **Decades** or **A–Z**. Left and right on that row
+  change it; **L** and **R** change it from anywhere on the screen.
+- **Your lists:** your RomM favourites and playlists (with a token that may
   read them, [below](#favourites-and-playlists-need-a-token-that-may-read-them))
-  and the mixes you saved, each shown by the covers its tracks are from
-- **Soundtracks**: every game RomM has a soundtrack for, as a wall of covers
+  and the mixes you saved, each shown by the covers its tracks are from.
+- **Recently added** (once RomM has more soundtracks than fit on one shelf) and
+  **On this box**, the soundtracks of the games you've downloaded.
+- One shelf for each group, covers side by side, with how many it holds. A game
+  sits under each of its genres; a composer gets a shelf when two or more
+  soundtracks are mostly theirs.
 
 The panel on the right shows what's focused: its cover, who it's by, how long
-it is and its first tracks. **A** opens it; **X** plays it at once. **L** and
-**R** move three rows at a time.
+it is and its first tracks. **A** opens it and **X** plays it at once.
+
+**Y** on a shelf shows all of it as a wall. There **Y** changes the order (by
+name, newest in RomM, longest, oldest game), **L2** and **R2** jump to the
+next letter while it's in name order, and **L** and **R** go a screenful.
+
+**Search** finds soundtracks by the game's name, composers, and tracks by
+their title, artist or album. A soundtrack opens, a composer shows everything
+of theirs as a wall, and a track plays, with the other tracks found playing
+on after it.
+
+Grouping by system works as soon as Music opens. The other groupings, the
+sort orders and search by name need to know more about each soundtrack than
+RomM's list gives, so the first time the app reads RomM's whole track list in
+the background, which takes a moment. It keeps what it
+learned on the box and reads again only when RomM's soundtracks have changed.
 
 In a list of tracks:
 
@@ -39,8 +61,8 @@ otherwise it describes the list.
 
 The music goes on while you look around the app, and the top bar names the
 track and the soundtrack it's from (tap it to get back to its list). It stops
-when the app closes or a game starts. While something plays, Music has a
-**Now playing** pill first, and the cover that's playing carries a play mark.
+when the app closes or a game starts. The cover that's playing carries a play
+mark on every shelf it's on.
 
 Tracks are fetched from RomM as they come up, the next one while the current
 plays. Up to 256 MB of them stay on the box so they start at once the next

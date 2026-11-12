@@ -658,14 +658,22 @@ class Hush:
         return self.pos
 
 
-def music_play(tracks=None, paused=False, focus=("albums", 4), back=False, mix=False):
-    """Music: the wall of soundtracks, focus (region, index) on it; tracks: "open", the focused
-    thing's list; "game", it playing; "all", everything shuffled; paused: paused there; back:
-    back on the wall while it plays; mix: with a saved mix among your lists."""
+def music_play(tracks=None, paused=False, focus=None, back=False, mix=False, view=0, wall=False, search=None):
+    """Music: the shelves, grouped by `view` (an index of Browse by), focus (row key, index along it; default
+    the first group's shelf); tracks: "open", the focused thing's list; "game", it playing; "all", everything
+    shuffled; paused: paused there; back: back on the shelves while it plays; mix: with a saved mix among your
+    lists; wall: the focused shelf as a wall; search: what a search for that finds."""
     if mix:
         rommlib.save_music_sources({"favourites": False, "on_box": False, "playlists": [], "games": [],
                                     "mixes": [{"name": "Rainy day", "on": False,
                                                "filters": {"genre": ["Ambient"], "decade": [1990], "max_minutes": 5}}]})
+    for g in app.api.music_all("games")[:3]:          # a few of them on the box: the On this box shelf
+        r = app.api.rom(g["rom_id"])
+        sy = app.platform_by_id[r["platform_id"]]["_system"]
+        path = os.path.join(R, sy, r["fs_name"])
+        if not os.path.exists(path):
+            mk(os.path.relpath(path, R), 4 * MB)
+        app.library.mark(r, sy, [path])
     juke = rb.JukeboxScreen(app)
     app.push(juke)
     sys.modules[type(juke).__module__].FOCUS_WAIT = 0      # the focused thing's tracks at once: the panel is what's shot
@@ -673,10 +681,19 @@ def music_play(tracks=None, paused=False, focus=("albums", 4), back=False, mix=F
     app.player.rng.seed(7)
 
     def opened():
-        juke.region, juke.i = focus
+        juke.set_view(view)
+        rows = juke.rows()
+        key, col = focus or (next(r["key"] for r in rows if isinstance(r["key"], tuple)), 1)
+        juke.at = key
+        juke.cols[key] = col
         if tracks == "all":
-            juke.region, juke.i = "pills", 0
-        if tracks:
+            juke.at = "pills"
+            juke.cols["pills"] = next(i for i, p in enumerate(juke.pills()) if p["key"] == ("all",))
+        if search:
+            app.push(rb.MusicSearchScreen(app, search, {"albums": juke.albums()}))
+        elif wall:
+            juke.action("y")
+        elif tracks:
             juke.action("ok" if tracks in ("open", "all") else "x")
 
             def playing():
@@ -684,7 +701,6 @@ def music_play(tracks=None, paused=False, focus=("albums", 4), back=False, mix=F
                     app.player.toggle()
                 if back:
                     app.pop()
-                    juke.region, juke.i = "albums", 8
             app._after = playing
     app._after = opened
 
@@ -734,9 +750,14 @@ SCENES = [
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
     ("music", lambda: music_screen()),
     ("music-on", lambda: music_screen(on=True, sel=3)),
-    ("music-wall", lambda: music_play(mix=True)),
-    ("music-wall-list", lambda: music_play(mix=True, focus=("lists", 1))),
-    ("music-wall-playing", lambda: music_play("game", back=True, mix=True)),
+    ("music-shelves", lambda: music_play(mix=True)),
+    ("music-shelves-list", lambda: music_play(mix=True, focus=("lists", 1))),
+    ("music-shelves-genres", lambda: music_play(mix=True, view=1)),
+    ("music-shelves-composers", lambda: music_play(view=2)),
+    ("music-shelves-browse", lambda: music_play(mix=True, view=3, focus=("views", 3))),
+    ("music-shelves-playing", lambda: music_play("game", back=True, mix=True)),
+    ("music-wall", lambda: music_play(view=4, focus=("here", 0), wall=True)),
+    ("music-search", lambda: music_play(search="o")),
     ("music-album", lambda: music_play("open")),
     ("music-play-tracks", lambda: music_play("game")),
     ("music-play-all", lambda: music_play("all", paused=True)),

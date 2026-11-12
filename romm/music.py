@@ -523,3 +523,141 @@ def fetch_music(api, t, keep=()):
         raise _core.RommError("Couldn't keep that track on the drive (%s)" % (e.strerror or e)) from None
     prune_music_cache(MUSIC_CACHE_MAX, tuple(keep) + (path,))
     return path
+
+
+# ---------------------------------------------------------------- the jukebox, soundtrack by soundtrack
+
+MUSIC_INDEX_VERSION = 1
+MUSIC_GROUPINGS = ("system", "genre", "composer", "decade", "letter")       # the ways Music's shelves can be grouped
+MUSIC_SORTS = ("name", "added", "length", "year")
+MUSIC_COMPOSER_SHELVES = 60     # the most composers shown as shelves
+
+
+def music_index_path():
+    return os.path.join(_core.DATA_DIR, "music-index.json")
+
+
+def load_music_index():
+    """The index build_music_index() last saved, or None (never built, another version, unreadable)."""
+    try:
+        with open(music_index_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict) or d.get("version") != MUSIC_INDEX_VERSION or not isinstance(d.get("albums"), list):
+        return None
+    return d
+
+
+def build_music_index(api, stats=None, cancel=None):
+    """Read RomM's whole track listing once and keep, per soundtrack, what Music groups, sorts and
+    searches by: {"version", "stats" (RomM's totals when it was read: it's stale once they differ),
+    "albums": [{"rom_id", "name", "platform_id", "platform", "cover", "count", "seconds", "year",
+    "genres" (the game's), "artist" (who most of it is by, "" when unknown), "artists", "added"}]}.
+    Saved for the next start. None if cancel was set; RommError when RomM can't be asked."""
+    tracks = api.music_all("tracks", cancel=cancel)
+    if tracks is None:
+        return None
+    albums = {}
+    for t in tracks:
+        rid = t.get("rom_id")
+        if not isinstance(rid, int):
+            continue
+        a = albums.get(rid)
+        if a is None:
+            a = albums[rid] = {"rom_id": rid, "name": t.get("game_name") or t.get("album") or "", "platform_id": t.get("platform_id"),
+                               "platform": t.get("platform_name") or "", "cover": t.get("game_cover_url") or t.get("cover_url"),
+                               "count": 0, "seconds": 0.0, "year": None, "genres": [], "artist": "", "artists": {}, "added": ""}
+        a["count"] += 1
+        secs = t.get("duration_seconds")
+        a["seconds"] += secs if isinstance(secs, (int, float)) else 0
+        if isinstance(t.get("year"), int) and (a["year"] is None or t["year"] < a["year"]):
+            a["year"] = t["year"]
+        for g in t.get("game_genres") or []:
+            if isinstance(g, str) and g not in a["genres"]:
+                a["genres"].append(g)
+        if isinstance(t.get("artist"), str) and t["artist"].strip():
+            a["artists"][t["artist"].strip()] = a["artists"].get(t["artist"].strip(), 0) + 1
+        if isinstance(t.get("added_at"), str) and t["added_at"] > a["added"]:
+            a["added"] = t["added_at"]
+    for a in albums.values():
+        names = sorted(a["artists"], key=lambda n: (-a["artists"][n], n.lower()))
+        a["artist"], a["artists"] = (names[0] if names else ""), names[:4]
+        a["seconds"] = round(a["seconds"], 1)
+    index = {"version": MUSIC_INDEX_VERSION, "stats": stats if isinstance(stats, dict) else {},
+             "albums": sorted(albums.values(), key=lambda a: (a["name"].lower(), a["rom_id"]))}
+    try:
+        os.makedirs(_core.DATA_DIR, exist_ok=True)
+        _core.atomic_write_json(music_index_path(), index)
+    except OSError as e:
+        _core.log("music: the index wasn't saved (%s); it's read again next time" % (e.strerror or e))
+    return index
+
+
+def music_letter(name):
+    """The letter a soundtrack files under: its name's first letter or digit ("#" for a digit or none)."""
+    for ch in name or "":
+        if ch.isalpha():
+            return ch.upper()
+        if ch.isdigit():
+            return "#"
+    return "#"
+
+
+def music_sorted(albums, how="name"):
+    """Albums in one of MUSIC_SORTS' orders: by name; newest in RomM first; longest first; oldest game first
+    (the ones with no year last)."""
+    by_name = sorted(albums, key=lambda a: ((a.get("name") or "").lower(), a.get("rom_id") or 0))
+    if how == "added":
+        return sorted(by_name, key=lambda a: a.get("added") or "", reverse=True)
+    if how == "length":
+        return sorted(by_name, key=lambda a: -(a.get("seconds") or 0))
+    if how == "year":
+        return sorted(by_name, key=lambda a: (not isinstance(a.get("year"), int), a.get("year") or 0))
+    return by_name
+
+
+def music_groups(albums, by):
+    """[(label, [album, ...])]: the shelves Music shows for one of MUSIC_GROUPINGS. A game counts under
+    each of its genres. Systems, genres and composers come biggest first; decades and letters in order.
+    Composers: who most of a soundtrack is by; only those with two or more soundtracks when there are
+    enough of them, MUSIC_COMPOSER_SHELVES at most. A soundtrack with no value for the grouping (no
+    year, no composer) is on no shelf."""
+    groups = {}
+    for a in albums:
+        if by == "system":
+            keys = [a.get("platform") or "Other"]
+        elif by == "genre":
+            keys = a.get("genres") or []
+        elif by == "composer":
+            keys = [a["artist"]] if a.get("artist") else []
+        elif by == "decade":
+            keys = ["%ds" % (a["year"] // 10 * 10)] if isinstance(a.get("year"), int) else []
+        else:
+            keys = [music_letter(a.get("name"))]
+        for k in keys:
+            groups.setdefault(k, []).append(a)
+    out = [(k, music_sorted(v)) for k, v in groups.items()]
+    if by in ("decade", "letter"):
+        return sorted(out, key=lambda kv: kv[0])
+    out.sort(key=lambda kv: (-len(kv[1]), kv[0].lower()))
+    if by == "composer":
+        several = [kv for kv in out if len(kv[1]) > 1]
+        out = (several if len(several) >= 3 else out)[:MUSIC_COMPOSER_SHELVES]
+    return out
+
+
+def music_find(index, query):
+    """(soundtracks, composers) of the index that hold every word of query, ignoring case: albums by
+    name, and [(composer, their albums)] by name, both in name order. Empty for an empty query."""
+    words = [w for w in (query or "").lower().split() if w]
+    albums = (index or {}).get("albums") or []
+    if not words:
+        return [], []
+    found = [a for a in albums if all(w in (a.get("name") or "").lower() for w in words)]
+    by = {}
+    for a in albums:
+        for n in a.get("artists") or []:
+            if all(w in n.lower() for w in words):
+                by.setdefault(n, []).append(a)
+    return music_sorted(found), sorted(((n, music_sorted(v)) for n, v in by.items()), key=lambda kv: kv[0].lower())

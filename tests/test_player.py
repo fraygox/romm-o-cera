@@ -228,73 +228,282 @@ def wall(app, rb, monkeypatch):
     return juke
 
 
-def test_music_is_a_wall_of_soundtracks_under_your_lists_and_two_pills(app, rb, monkeypatch):
-    rommlib.save_music_sources({"favourites": False, "on_box": False, "playlists": [], "games": [],
-                                "mixes": [{"name": "Short ones", "on": False, "filters": {"max_minutes": 2}}]})
+def groups(juke):
+    return [r for r in juke.rows() if isinstance(r["key"], tuple)]
+
+
+MIX = {"favourites": False, "on_box": False, "playlists": [], "games": [],
+       "mixes": [{"name": "Short ones", "on": False, "filters": {"max_minutes": 2}}]}
+
+
+def test_music_is_shelves_under_pills_and_browse_by(app, rb, monkeypatch):
+    rommlib.save_music_sources(MIX)
     juke = wall(app, rb, monkeypatch)
-    games = sorted(app.api.music_all("games"), key=lambda g: g["name"].lower())
-    assert [p["key"] for p in juke.pills()] == [("all",), "menu"] and juke.pills()[1]["label"] == "Menu music: Off"
-    assert [li["key"] for li in juke.lists()] == [("favourites",), ("playlist", 1), ("playlist", 2), ("mix", "Short ones")]
-    assert [al["key"][1] for al in juke.albums()] == [g["rom_id"] for g in games]
-    assert (juke.region, juke.i) == ("albums", 0) and juke.hints() == [("A", "Open"), ("X", "Play"), ("B", "Back")]
+    games = app.api.music_all("games")
+    assert [p["key"] for p in juke.pills()] == [("all",), "search", "menu"] and juke.pills()[2]["label"] == "Menu music: Off"
+    rows = juke.rows()
+    assert [r["key"] for r in rows[:3]] == ["pills", "views", "lists"]
+    assert [li["key"] for li in rows[2]["items"]] == [("favourites",), ("playlist", 1), ("playlist", 2), ("mix", "Short ones")]
+    assert juke.index and len(juke.index["albums"]) == len(games)         # the jukebox was read in the background
+    by_system = groups(juke)
+    assert {g["key"][1] for g in by_system} == {"system"} and sum(len(g["items"]) for g in by_system) == len(games)
+    assert [len(g["items"]) for g in by_system] == sorted((len(g["items"]) for g in by_system), reverse=True)
+    row, it = juke.current()
+    assert row is by_system[0] and it is row["items"][0]                 # the focus starts on the first system's shelf
+    assert juke.hints() == [("A", "Open"), ("X", "Play"), ("Y", "See all"), ("L R", "Browse by"), ("B", "Back")]
     juke.draw(app.canvas)
     juke.draw(app.canvas)                                             # the focused soundtrack's tracks are in: the panel lists them
-    assert len(juke.tracks[("game", games[0]["rom_id"])]) == games[0]["count"]
-    # the focus moves along a row, down a row, and between the three parts
-    per = len(games) if len(games) < 6 else 6
+    assert len(juke.tracks[it["key"]]) == it["count"]
+    # along a shelf, and no further than its ends
     juke.action("right")
-    assert juke.i == 1
+    assert juke.current()[1] is row["items"][1]
     juke.action("left")
     juke.action("left")
-    assert juke.i == 0                                                # the row's end stays the end
-    juke.action("down")
-    assert juke.i == min(per, len(games) - 1) and juke.region == "albums"
+    assert juke.current()[1] is row["items"][0]
+    # up: your lists, Browse by, the pills
     juke.action("up")
-    juke.action("up")
-    assert (juke.region, juke.i) == ("lists", 0)
-    juke.action("right")
-    juke.action("right")
-    juke.action("right")
-    juke.action("right")
-    assert juke.i == 3 and juke.current()["key"] == ("mix", "Short ones")
+    assert juke.current()[0]["key"] == "lists" and juke.hints()[:3] == [("A", "Open"), ("X", "Play"), ("L R", "Browse by")]
     juke.draw(app.canvas)
     juke.action("up")
-    assert (juke.region, juke.i) == ("pills", 0) and juke.hints() == [("A", "Play"), ("B", "Back")]
+    assert juke.at == "views" and juke.hints() == [("LEFT RIGHT", "Browse by"), ("B", "Back")]
+    juke.draw(app.canvas)
+    juke.action("right")                                              # on Browse by, left and right regroup at once
+    assert juke.view == 1 and juke.at == "views" and {g["key"][1] for g in groups(juke)} == {"genre"}
+    every = [it["rom_id"] for g in groups(juke) for it in g["items"]]
+    assert set(every) == {g["rom_id"] for g in games} and len(every) > len(games)      # a game sits under each of its genres
+    juke.draw(app.canvas)
+    juke.action("left")
+    juke.action("left")
+    assert juke.view == 0                                             # the first grouping is the end
     juke.action("up")
-    assert juke.region == "pills"                                     # the top stays the top
+    assert juke.at == "pills" and juke.hints()[0] == ("A", "Play")
+    juke.action("up")
+    assert juke.at == "pills"                                         # the top stays the top
+    juke.action("right")
+    assert juke.current()[1]["key"] == "search" and juke.hints()[0] == ("A", "Open")
     juke.draw(app.canvas)
     juke.action("right")
-    assert juke.current()["key"] == "menu" and juke.hints() == [("A", "Open"), ("B", "Back")]
+    juke.action("right")
+    assert juke.current()[1]["key"] == "menu"
     juke.draw(app.canvas)
     juke.action("ok")
     assert isinstance(app.stack[-1], rb.MusicScreen) and app.stack[-1].crumbs() == ["Music", "Menu music"]
     app.pop()
-    juke.action("down")
-    juke.action("down")
-    juke.action("down")
-    juke.action("down")
-    assert juke.region == "albums" and juke.i == min(per, len(games) - 1)
-    juke.action("down")
-    assert juke.i == per                                              # the last row stays the last
-    juke.action("up")
-    for _ in range(per - 1):
-        juke.action("right")
-    juke.action("down")
-    assert per < len(games) < 2 * per and juke.i == len(games) - 1    # under a shorter last row: its end
+    # L and R regroup from anywhere; from a group's shelf the focus goes to the new grouping's first shelf
+    for _ in range(3):
+        juke.action("down")
+    assert juke.current()[0] is groups(juke)[0]
     juke.action("r1")
+    juke.action("r1")
+    assert juke.view == 2 and juke.current()[0]["key"][:2] == ("group", "composer")
+    assert all(a["artist"] == g["label"] for g in groups(juke) for a in g["albums"])
+    juke.action("r1")
+    labels = [g["label"] for g in groups(juke)]
+    assert juke.view == 3 and labels == sorted(labels) and all(lab.endswith("0s") for lab in labels)
+    juke.action("r1")
+    labels = [g["label"] for g in groups(juke)]
+    assert juke.view == 4 and labels == sorted(labels) and all(len(lab) == 1 for lab in labels)
+    juke.action("r1")
+    assert juke.view == 0 and app.music_view == 0                     # round again; the app remembers the grouping
     juke.action("l1")
-    assert juke.i == 0                                                # L and R go three rows at a time
+    assert juke.view == 4 and rb.JukeboxScreen(app).view == 4
+    # the last shelf is the end, scrolled into view
+    for _ in range(60):
+        juke.action("down")
+    assert juke.current()[0] is groups(juke)[-1]
     juke.draw(app.canvas)
-    assert juke.off >= 0
+    assert juke.off > 0
+    for _ in range(60):
+        juke.action("up")
+    juke.draw(app.canvas)
+    assert juke.at == "pills" and juke.off == 0
+
+
+def test_shelves_for_whats_on_this_box_and_whats_new(app, rb, monkeypatch):
+    import sys
+    juke = wall(app, rb, monkeypatch)
+    assert not [r for r in juke.rows() if r["key"] in ("here", "recent")]        # nothing installed, and few enough to see at once
+    two = [a["rom_id"] for a in juke.index["albums"][:2]]
+    juke.here = set(two)
+    monkeypatch.setattr(sys.modules[type(juke).__module__], "RECENT", 3)
+    juke.cached = (None, None)
+    rows = {r["key"]: r for r in juke.rows()}
+    assert sorted(it["rom_id"] for it in rows["here"]["items"]) == sorted(two) and rows["here"]["label"] == "On this box"
+    newest = sorted(juke.index["albums"], key=lambda a: a["added"], reverse=True)[:3]
+    assert len(rows["recent"]["items"]) == 3 and {it["rom_id"] for it in rows["recent"]["items"]} <= \
+        {a["rom_id"] for a in juke.index["albums"] if a["added"] >= newest[-1]["added"]}
+    assert [r["key"] for r in juke.rows()][2:5] == ["lists", "recent", "here"]
+    juke.draw(app.canvas)
+    juke.at = "here"
+    juke.action("y")                                                  # Y: the shelf as a wall
+    assert isinstance(app.stack[-1], rb.AlbumWallScreen) and app.stack[-1].title == "On this box"
+    assert len(app.stack[-1].items()) == 2
+
+
+def test_other_groupings_wait_for_the_index_and_a_kept_one_is_used_until_romm_changes(app, rb, monkeypatch):
+    real, calls = rommlib.build_music_index, []
+
+    def build(api, stats=None, cancel=None):
+        calls.append(stats)
+        if len(calls) == 1:
+            raise rommlib.RommError("RomM didn't answer")
+        return real(api, stats, cancel)
+    monkeypatch.setattr(rommlib, "build_music_index", build)
+    juke = wall(app, rb, monkeypatch)
+    games = app.api.music_all("games")
+    assert juke.index is None and "didn't answer" in juke.index_error
+    assert sum(len(g["items"]) for g in groups(juke)) == len(games)   # by system works from RomM's list of games alone
+    juke.draw(app.canvas)
+    juke.set_view(1)
+    rows = juke.rows()
+    assert not groups(juke) and rows[-1]["kind"] == "note" and "didn't answer" in rows[-1]["label"]
+    juke.at = "views"
+    juke.action("down")
+    assert juke.current()[0]["kind"] != "note"                        # a line to read, never the focus
+    juke.draw(app.canvas)
+    juke.at = "views"
+    juke.draw(app.canvas)                                             # Browse by's panel says the jukebox couldn't be read
+    app.pop()
+    again = wall(app, rb, monkeypatch)                                # the next time it's read and kept
+    assert again.index and len(calls) == 2 and rommlib.load_music_index()["stats"] == app.api.music_stats()
+    app.pop()
+    third = wall(app, rb, monkeypatch)
+    assert third.index and len(calls) == 2                            # RomM's totals are as they were: not read again
+    idx = rommlib.load_music_index()
+    idx["stats"] = {"total_tracks": 1}
+    rommlib.atomic_write_json(rommlib.music_index_path(), idx)
+    app.pop()
+    fourth = wall(app, rb, monkeypatch)
+    assert len(calls) == 3 and fourth.index["stats"] == app.api.music_stats()      # they changed: read again
+
+
+def test_a_wall_sorts_and_jumps_by_letter(app, rb, monkeypatch):
+    juke = wall(app, rb, monkeypatch)
+    juke.action("y")
+    w = app.stack[-1]
+    assert isinstance(w, rb.AlbumWallScreen) and w.title == juke.current()[0]["label"] and w.crumbs() == ["Music", w.title]
+    app.pop()
+    w = rb.AlbumWallScreen(app, "Everything", juke.index["albums"])
+    app.push(w)
+    names = [it["name"] for it in w.items()]
+    n = len(names)
+    assert names == sorted(names, key=str.lower) and 6 < n <= 12
+    assert ("Y", "Sort: A–Z") in w.hints() and ("L2 R2", "A–Z") in w.hints()
+    w.draw(app.canvas)
+    w.action("r2")
+    first = rommlib.music_letter(names[0])
+    assert w.i == next(i for i, x in enumerate(names) if rommlib.music_letter(x) != first)
+    w.action("l2")
+    assert w.i == 0
+    w.action("right")
+    w.action("down")
+    assert w.i == 7
+    w.action("down")
+    assert w.i == 7                                                   # the last row stays the last
+    w.action("up")
+    for _ in range(9):
+        w.action("right")
+    assert w.i == 5                                                   # a row's end stays its end
+    w.action("down")
+    assert w.i == n - 1                                               # under a shorter last row: its end
+    w.action("y")
+    added = [a["added"] for a in rommlib.music_sorted(juke.index["albums"], "added")]
+    assert w.i == 0 and [it["rom_id"] for it in w.items()] == [a["rom_id"] for a in rommlib.music_sorted(juke.index["albums"], "added")]
+    assert added == sorted(added, reverse=True) and ("Y", "Sort: Newest in RomM") in w.hints() and ("L2 R2", "A–Z") not in w.hints()
+    w.action("r2")
+    assert w.i == 0                                                   # letters only mean something in name order
+    w.action("y")
+    secs = [a["seconds"] for a in rommlib.music_sorted(juke.index["albums"], "length")]
+    assert secs == sorted(secs, reverse=True) and w.items()[0]["rom_id"] == rommlib.music_sorted(juke.index["albums"], "length")[0]["rom_id"]
+    w.action("y")
+    years = [it["year"] for it in w.items()]
+    assert years == sorted(years)
+    w.action("y")
+    assert [it["name"] for it in w.items()] == names
+    w.draw(app.canvas)
+    w.tap(2)
+    assert w.i == 2 and app.stack[-1] is w                            # a tap selects, a second opens
+    w.tap(2)
+    assert isinstance(app.stack[-1], rb.TracksScreen) and app.stack[-1].key == w.items()[2]["key"]
+    app.pop()
+    w.action("x")
+    assert app.player.state == "playing" and app.player.key == w.items()[2]["key"]
+    app.pop()
+    w.draw(app.canvas)                                                # the playing one carries its mark
+    empty = rb.AlbumWallScreen(app, "Nobody", [])
+    app.push(empty)
+    empty.action("ok")
+    empty.draw(app.canvas)
+    assert app.stack[-1] is empty
+
+
+def test_search_finds_soundtracks_composers_and_tracks(app, rb, monkeypatch):
+    juke = wall(app, rb, monkeypatch)
+    juke.at = "pills"
+    juke.cols["pills"] = next(i for i, p in enumerate(juke.pills()) if p["key"] == "search")
+    juke.draw(app.canvas)
+    juke.action("ok")
+    assert isinstance(app.stack[-1], rb.MusicSearchInput) and app.stack[-1].crumbs() == ["Music", "Search"]
+    juke.search("   ")
+    assert app.stack[-1] is juke                                      # nothing typed: back on Music
+    one = juke.index["albums"][3]
+    word = max(one["name"].split(), key=len)
+    juke.action("ok")
+    juke.search("  %s " % word.upper())
+    res = app.stack[-1]
+    assert isinstance(res, rb.MusicSearchScreen) and res.query == word.upper() and res.crumbs()[-1] == "\"%s\"" % word.upper()
+    rows = res.listed()
+    assert one["rom_id"] in [r["item"]["rom_id"] for r in rows if r["kind"] == "album"]
+    assert all(word.lower() in r["item"]["name"].lower() for r in rows if r["kind"] == "album")
+    tracks = [r["track"] for r in rows if r["kind"] == "track"]
+    assert tracks and all(any(word.lower() in (t[k] or "").lower() for k in ("title", "artist", "album")) for t in tracks)
+    res.draw(app.canvas)
+    res.sel = next(i for i, r in enumerate(rows) if r["kind"] == "album" and r["item"]["rom_id"] == one["rom_id"])
+    assert res.hints()[0] == ("A", "Open")
+    res.action("ok")
+    assert isinstance(app.stack[-1], rb.TracksScreen) and app.stack[-1].key == ("game", one["rom_id"])
+    app.pop()
+    # a track plays, and the tracks found play on from it
+    res.sel = next(i for i, r in enumerate(rows) if r["kind"] == "track" and rommlib.music_playable(r["track"]))
+    assert res.hints()[0] == ("A", "Play")
+    res.draw(app.canvas)
+    res.action("ok")
+    pl = app.player
+    assert pl.state == "playing" and pl.key == ("search", word.upper()) and pl.current()["rom_file_id"] == rows[res.sel]["track"]["rom_file_id"]
+    res.draw(app.canvas)
+    res.action("ok")
+    assert pl.state == "paused"
+    app.pop()
+    # a composer: found by name, opens as a wall of what's theirs
+    who = one["artist"]
+    comp = rb.MusicSearchScreen(app, who.split()[0], juke.index)
+    app.push(comp)
+    rows = comp.listed()
+    i = next(i for i, r in enumerate(rows) if r["kind"] == "composer" and r["name"] == who)
+    comp.sel = i
+    comp.draw(app.canvas)
+    comp.action("ok")
+    w = app.stack[-1]
+    assert isinstance(w, rb.AlbumWallScreen) and w.title == who and one["rom_id"] in [it["rom_id"] for it in w.items()]
+    assert all(who in a["artists"] for a in w.albums)
+    app.pop()
+    app.pop()
+    # nothing found says so
+    none = rb.MusicSearchScreen(app, "zzzzqq", juke.index)
+    app.push(none)
+    assert none.listed() == [] and none.hints() == [("B", "Back")]
+    none.draw(app.canvas)
+    none.action("ok")
+    assert app.stack[-1] is none
 
 
 def test_a_opens_what_is_focused_x_plays_it_and_what_plays_gets_a_pill(app, rb, monkeypatch):
-    rommlib.save_music_sources({"favourites": False, "on_box": False, "playlists": [], "games": [],
-                                "mixes": [{"name": "Short ones", "on": False, "filters": {"max_minutes": 2}}]})
+    rommlib.save_music_sources(MIX)
     juke = wall(app, rb, monkeypatch)
     pl = app.player
     # a mix: its tracks, opened without playing
-    juke.region, juke.i = "lists", 3
+    juke.at = "lists"
+    juke.cols["lists"] = 3
     juke.action("ok")
     mix = app.stack[-1]
     assert mix.title == "Short ones" and mix.many and mix.listed() and not pl.active()
@@ -302,8 +511,8 @@ def test_a_opens_what_is_focused_x_plays_it_and_what_plays_gets_a_pill(app, rb, 
     mix.draw(app.canvas)                                              # the list, and the panel about it
     app.pop()
     # X on a soundtrack: its list in front, playing from the first track
-    juke.region, juke.i = "albums", 0
-    key = juke.current()["key"]
+    juke.at = groups(juke)[0]["key"]
+    key = juke.current()[1]["key"]
     juke.action("x")
     scr = app.stack[-1]
     assert isinstance(scr, rb.TracksScreen) and pl.state == "playing" and pl.key == key
@@ -313,10 +522,11 @@ def test_a_opens_what_is_focused_x_plays_it_and_what_plays_gets_a_pill(app, rb, 
     scr.draw(app.canvas)
     pl.toggle()
     app.pop()
-    # back on the wall: Now playing is the first pill, and opens the list that's playing
+    # back on the shelves: Now playing is the first pill, and opens the list that's playing
     assert [p["key"] for p in juke.pills()][0] == "now"
-    juke.draw(app.canvas)
-    juke.region, juke.i = "pills", 0
+    juke.draw(app.canvas)                                             # the playing cover carries its mark
+    juke.at = "pills"
+    juke.cols["pills"] = 0
     juke.draw(app.canvas)
     juke.action("ok")
     assert app.stack[-1].key == pl.key
@@ -330,21 +540,25 @@ def test_a_opens_what_is_focused_x_plays_it_and_what_plays_gets_a_pill(app, rb, 
     assert isinstance(app.stack[-1], rb.TracksScreen) and app.stack[-1].key == pl.key
     app.pop()
     # A on Shuffle everything plays at once
-    juke.region, juke.i = "pills", 1
-    assert juke.current()["key"] == ("all",)
+    juke.cols["pills"] = 1
+    assert juke.current()[1]["key"] == ("all",)
+    juke.draw(app.canvas)
     juke.action("ok")
     assert pl.shuffle and pl.key == ("all",) and len(pl.queue) == len([t for t in app.api.music_all("tracks")
                                                                     if rommlib.music_playable(t)])
     assert app.stack[-1].many
     app.stack[-1].draw(app.canvas)
-    # a tap: the first selects a cover, the second opens it; a pill opens at once
+    # a tap: the first selects a cover, the second opens it; a pill opens at once; a grouping is chosen at once
     app.pop()
-    juke.tap("albums", 2)
-    assert (juke.region, juke.i) == ("albums", 2) and app.stack[-1] is juke
-    juke.tap("albums", 2)
-    assert isinstance(app.stack[-1], rb.TracksScreen) and app.stack[-1].key == juke.albums()[2]["key"]
+    shelf = groups(juke)[0]
+    juke.tap(shelf["key"], 1)
+    assert juke.current() == (shelf, shelf["items"][1]) and app.stack[-1] is juke
+    juke.tap(shelf["key"], 1)
+    assert isinstance(app.stack[-1], rb.TracksScreen) and app.stack[-1].key == shelf["items"][1]["key"]
     app.pop()
-    juke.tap("pills", 2)
+    juke.tap("views", 3)
+    assert juke.view == 3 and juke.at == "views"
+    juke.tap("pills", len(juke.pills()) - 1)
     assert isinstance(app.stack[-1], rb.MusicScreen)
 
 
@@ -352,11 +566,12 @@ def test_a_token_that_cant_read_lists_still_plays_everything_else(app, rb, fast_
     app.api = rommlib.Api(fast_mock_url, "demo-no-lists")
     juke = wall(app, rb, monkeypatch)
     assert juke.lists() == [] and "playlists.read" in juke.lists_why        # no favourites, no playlists; the screen says why
+    assert [r["key"] for r in juke.rows()][:2] == ["pills", "views"] and "lists" not in [r["key"] for r in juke.rows()]
     juke.draw(app.canvas)
     juke.action("up")
-    assert juke.region == "pills"                                     # nothing between the wall and the pills to stop on
+    assert juke.at == "views"                                         # nothing between the shelves and Browse by to stop on
     juke.action("down")
-    assert juke.region == "albums"
+    assert juke.current()[0] is groups(juke)[0]
     juke.action("x")
     assert app.player.state == "playing"
 

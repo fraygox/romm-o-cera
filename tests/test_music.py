@@ -360,3 +360,77 @@ def test_no_track_is_fetched_onto_a_drive_thats_all_but_full(api, monkeypatch):
     assert rommlib.fetch_music(api, t) == kept                                     # one that's here needs no room
     monkeypatch.setattr(rommlib, "free_bytes", lambda path=None: 1 << 30)          # room, though less than downloads keep free
     assert os.path.isfile(rommlib.fetch_music(api, other))
+
+
+# ---------------------------------------------------------------- the jukebox index: grouping, sorting, finding
+
+def test_the_index_keeps_what_music_groups_sorts_and_searches_by(api):
+    stats = api.music_stats()
+    idx = rommlib.build_music_index(api, stats)
+    games = api.music_all("games")
+    albums = idx["albums"]
+    assert len(albums) == len(games) and sum(a["count"] for a in albums) == stats["total_tracks"]
+    assert rommlib.load_music_index() == idx and idx["stats"] == stats        # kept for the next start
+    assert [a["name"] for a in albums] == sorted((a["name"] for a in albums), key=str.lower)
+    a = albums[0]
+    tracks = api.music_all("tracks", rom_id=a["rom_id"])
+    assert a["count"] == len(tracks) and abs(a["seconds"] - sum(t["duration_seconds"] or 0 for t in tracks)) < 0.2
+    assert a["platform"] == tracks[0]["platform_name"] and a["genres"] == tracks[0]["game_genres"]
+    assert a["artist"] in {t["artist"] for t in tracks} and a["artist"] == a["artists"][0]
+    assert a["year"] == min(t["year"] for t in tracks if t["year"]) and a["added"] == max(t["added_at"] for t in tracks)
+    assert a["cover"] == tracks[0]["game_cover_url"]
+    # the shelves each grouping gives
+    by_system = rommlib.music_groups(albums, "system")
+    assert sum(len(v) for _, v in by_system) == len(albums) and all(x["platform"] == lab for lab, v in by_system for x in v)
+    assert [len(v) for _, v in by_system] == sorted((len(v) for _, v in by_system), reverse=True)
+    by_genre = dict(rommlib.music_groups(albums, "genre"))
+    assert all(x in by_genre[g] for x in albums for g in x["genres"]) and sum(len(v) for v in by_genre.values()) == sum(len(x["genres"]) for x in albums)
+    by_decade = rommlib.music_groups(albums, "decade")
+    assert [lab for lab, _ in by_decade] == sorted(lab for lab, _ in by_decade)
+    assert all(lab == "%ds" % (x["year"] // 10 * 10) for lab, v in by_decade for x in v)
+    by_letter = rommlib.music_groups(albums, "letter")
+    assert [lab for lab, _ in by_letter] == sorted(lab for lab, _ in by_letter) and sum(len(v) for _, v in by_letter) == len(albums)
+    assert all(rommlib.music_letter(x["name"]) == lab for lab, v in by_letter for x in v)
+    by_composer = rommlib.music_groups(albums, "composer")
+    assert by_composer and all(x["artist"] == lab for lab, v in by_composer for x in v)
+    assert all([x["name"].lower() for x in v] == sorted(x["name"].lower() for x in v) for _, v in by_system)
+    # the orders a wall can be in
+    assert [x["added"] for x in rommlib.music_sorted(albums, "added")] == sorted((x["added"] for x in albums), reverse=True)
+    assert [x["seconds"] for x in rommlib.music_sorted(albums, "length")] == sorted((x["seconds"] for x in albums), reverse=True)
+    assert [x["year"] for x in rommlib.music_sorted(albums, "year")] == sorted(x["year"] for x in albums)
+    assert rommlib.music_sorted(albums) == albums
+    # finding
+    one = albums[3]
+    word = max(one["name"].split(), key=len)
+    found, composers = rommlib.music_find(idx, "  " + word.upper())
+    assert one in found and all(word.lower() in x["name"].lower() for x in found)
+    found, composers = rommlib.music_find(idx, one["artist"].split()[0].lower())
+    assert one["artist"] in [n for n, _ in composers] and one in dict(composers)[one["artist"]]
+    assert rommlib.music_find(idx, " ") == ([], []) and rommlib.music_find(None, "x") == ([], [])
+    assert rommlib.music_find(idx, word + " zzzz") == ([], [])               # every word has to be there
+    # stopped, and a file that can't be read
+    stop = threading.Event()
+    stop.set()
+    assert rommlib.build_music_index(api, stats, cancel=stop) is None
+    with open(rommlib.music_index_path(), "w") as f:
+        f.write("{")
+    assert rommlib.load_music_index() is None
+
+
+def test_groupings_leave_out_what_has_no_value_and_composers_need_two_when_there_are_enough():
+    def al(i, **kw):
+        return dict({"rom_id": i, "name": "Game %02d" % i, "platform": "P", "genres": [], "artist": "", "year": None,
+                     "added": "", "seconds": 0, "artists": []}, **kw)
+    albums = [al(1, artist="Ann", year=1994), al(2, artist="Ann", year=1999), al(3, artist="Bo"), al(4, artist="Bo"),
+              al(5, artist="Cy"), al(6, artist="Cy", platform=""), al(7, artist="Dee"), al(8), al(9, name="7th Game"), al(10, name="")]
+    comp = rommlib.music_groups(albums, "composer")
+    assert [lab for lab, _ in comp] == ["Ann", "Bo", "Cy"]            # Dee has one; the unknown aren't a composer
+    assert [lab for lab, _ in rommlib.music_groups(albums[:5] + albums[6:7], "composer")] == ["Ann", "Bo", "Cy", "Dee"]      # too few with two: everyone
+    assert rommlib.music_groups(albums, "decade") == [("1990s", albums[:2])]
+    assert dict(rommlib.music_groups(albums, "system"))["Other"] == [albums[5]]
+    assert [lab for lab, _ in rommlib.music_groups(albums, "letter")] == ["#", "G"]
+    assert rommlib.music_groups(albums, "genre") == [] and rommlib.music_groups([], "system") == []
+    assert [rommlib.music_letter(n) for n in ("  the Thing", "007", "", None, "¡Ay!")] == ["T", "#", "#", "#", "A"]
+    assert [x["rom_id"] for x in rommlib.music_sorted(albums, "year")][:2] == [1, 2] and rommlib.music_sorted(albums, "year")[-1]["year"] is None
+    many = [al(i, artist="C%d" % (i % 70)) for i in range(140)]
+    assert len(rommlib.music_groups(many, "composer")) == rommlib.MUSIC_COMPOSER_SHELVES
