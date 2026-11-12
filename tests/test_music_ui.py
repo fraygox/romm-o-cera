@@ -71,7 +71,7 @@ def test_music_is_on_homes_rail_only_when_romm_has_soundtracks(app, rb):
 def test_the_screen_lists_the_switch_the_cap_and_every_source(app, rb):
     scr = music(app, rb)
     keys = [r[0] for r in scr.rows()]
-    assert keys == ["on", "cap", "favourites", "on_box", "playlist:1", "playlist:2"]
+    assert keys == ["on", "cap", "favourites", "on_box", "playlist:1", "playlist:2", "add_game", "new_mix"]
     assert row(scr, "favourites")[2].endswith("you starred in RomM") and row(scr, "playlist:1")[2] == "Playlist · 12 tracks · shared by sam"
     assert row(scr, "playlist:2")[2].endswith("private")
     assert scr.summary()[0][0] == "Menu music is off"
@@ -121,7 +121,7 @@ def test_a_token_that_cant_read_lists_shows_them_unavailable_with_the_reason(app
     scr = music(app, rb)
     fav = row(scr, "favourites")
     assert fav[4] is False and fav[2] == "Not available with this token"
-    assert [r[0] for r in scr.rows()] == ["on", "cap", "favourites", "on_box"]      # no playlists to list
+    assert [r[0] for r in scr.rows()] == ["on", "cap", "favourites", "on_box", "add_game", "new_mix"]      # no playlists to list
     scr.action("ok")
     assert rommlib.load_music_sources()["favourites"] is False
     assert "playlists.read" in app.toasts[-1][0]
@@ -160,3 +160,145 @@ def test_sync_now_says_why_when_its_off_and_the_app_asks_once_more_after_a_chang
     app.sync_music()
     assert app.music["busy"] is False and app.music["again"] is False and len(files()) == 10
     assert rb.minutes(4080) == "68 min" and rb.minutes(12000) == "3 h 20 min" and rb.cap_label(0) == "No limit"
+
+
+# ---------------------------------------------------------------- adding a game, and mixes
+
+def test_a_games_soundtrack_is_added_from_the_list_of_games_that_have_one(app, rb):
+    scr = music(app, rb)
+    row(scr, "add_game")
+    scr.action("ok")
+    pick = app.stack[-1]
+    pick.enter()
+    assert isinstance(pick, rb.MusicPickScreen) and pick.single and len(pick.items) == len(app.api.music_all("games"))
+    assert pick.hints()[0] == ("A", "Add")
+    import pygame
+    pick.draw(pygame.Surface((1280, 720)))
+    pick.sel = 2
+    chosen = pick.items[2]
+    pick.action("ok")
+    assert app.stack[-1] is scr and rommlib.load_music_sources()["games"] == [chosen["value"]]
+    assert row(scr, "game:%d" % chosen["value"])[1] == chosen["label"]
+    scr.action("ok")                                                # switched off again: it leaves the list
+    assert rommlib.load_music_sources()["games"] == []
+    row(scr, "add_game")
+    scr.action("ok")
+    app.stack[-1].enter()
+    app.stack[-1].action("back")                                    # left without choosing: nothing added
+    assert rommlib.load_music_sources()["games"] == [] and app.stack[-1] is scr
+
+
+def test_a_mix_is_made_by_ticking_values_counted_as_you_go_and_saved(app, rb):
+    scr = music(app, rb)
+    row(scr, "new_mix")
+    scr.action("ok")
+    mix = app.stack[-1]
+    mix.enter()
+    total = len(app.api.music_all("tracks"))
+    assert isinstance(mix, rb.MixScreen) and mix.count[0] == total and mix.title() == "Everything"
+    mix.sel = [r[0] for r in mix.rows()].index("game_genre")
+    mix.action("ok")
+    pick = app.stack[-1]
+    pick.enter()
+    assert not pick.single and pick.hints()[0] == ("A", "Pick") and pick.hints()[-1] == ("B", "Done")
+    genres = [r["value"] for r in pick.items[:2]]
+    for i in (0, 1):
+        pick.sel = i
+        pick.action("ok")
+    pick.action("ok")                                               # the second one unticked again
+    pick.action("back")
+    assert app.stack[-1] is mix and mix.filters == {"game_genre": genres[:1]}
+    want = [t for t in app.api.music_all("tracks") if genres[0] in t["game_genres"]]
+    assert mix.count == (len(want), sum(t["duration_seconds"] or 0 for t in want)) and 0 < len(want) < total
+    mix.sel = [r[0] for r in mix.rows()].index("length")
+    mix.action("ok")
+    assert mix.filters["max_minutes"] == 2 and mix.count[0] < len(want)
+    for _ in range(len(rb.MIX_LENGTHS) - 1):
+        mix.action("ok")
+    assert "max_minutes" not in mix.filters                         # round to "Any length"
+    mix.sel = [r[0] for r in mix.rows()].index("decade")
+    mix.action("ok")
+    pick = app.stack[-1]
+    pick.enter()
+    assert all(r["label"].endswith("0s") for r in pick.items) and sum(r["count"] for r in pick.items) <= total
+    pick.action("back")                                             # nothing ticked: the row stays "Any"
+    assert "decade" not in mix.filters
+    import pygame
+    mix.draw(pygame.Surface((1280, 720)))
+    assert "save" in [r[0] for r in mix.rows()] and "delete" not in [r[0] for r in mix.rows()]
+    mix.sel = [r[0] for r in mix.rows()].index("save")
+    mix.action("ok")
+    saved = rommlib.load_music_sources()["mixes"]
+    assert saved == [{"name": genres[0], "on": True, "filters": {"game_genre": genres[:1]}}] and app.stack[-1] is scr
+    assert row(scr, "mix:" + genres[0])[3] is True and ("Y", "Edit mix") in scr.hints()
+
+
+def test_a_mix_can_be_renamed_changed_and_deleted_and_two_cant_share_a_name(app, rb):
+    rommlib.save_music_sources({"favourites": False, "on_box": False, "playlists": [], "games": [], "mixes": [
+        {"name": "Rainy day", "on": True, "filters": {"genre": ["Ambient"]}},
+        {"name": "Loud", "on": False, "filters": {"genre": ["Chiptune"]}}]})
+    app.cfg["menu_music"] = True
+    scr = music(app, rb)
+    app.sync_music()
+    before = len(files())
+    assert before == len(app.api.music_all("tracks", genre="Ambient")) > 0
+    row(scr, "mix:Rainy day")
+    scr.action("y")
+    mix = app.stack[-1]
+    mix.enter()
+    assert mix.was == "Rainy day" and "delete" in [r[0] for r in mix.rows()] and mix.crumbs()[-1] == "Change mix"
+    mix.rename(" loud ")                                            # (the keyboard's Save; it pops the keyboard screen)
+    app.push(mix)
+    mix.sel = [r[0] for r in mix.rows()].index("save")
+    mix.action("ok")
+    assert "of its own" in app.toasts[-1][0] and app.stack[-1] is mix      # "Loud" is taken, whatever the case
+    mix.name = "Calm"
+    mix.action("ok")
+    assert [m["name"] for m in rommlib.load_music_sources()["mixes"]] == ["Calm", "Loud"] and len(files()) == before
+    assert rommlib.load_music_state()["tracks"] and all(r["sources"] == ["mix:Calm"] for r in rommlib.load_music_state()["tracks"].values())
+    row(scr, "mix:Calm")
+    scr.action("y")
+    mix = app.stack[-1]
+    mix.sel = [r[0] for r in mix.rows()].index("delete")
+    mix.action("ok")
+    assert isinstance(app.modal, rb.Confirm) and "Calm" in app.modal.body
+    app.modal.action("left")
+    app.modal.action("ok")
+    assert [m["name"] for m in rommlib.load_music_sources()["mixes"]] == ["Loud"] and files() == []
+    row(scr, "on")
+    scr.action("y")                                                 # Y on a row that isn't a mix does nothing
+    assert app.stack[-1] is scr
+
+
+# ---------------------------------------------------------------- the game page
+
+def test_a_games_page_shows_its_soundtrack_and_offers_it_for_the_menu_music(app, rb):
+    g = app.api.music_all("games")[0]
+    rom = app.api.rom(g["rom_id"])
+    tracks = [t for t in app.api.music_all("tracks", rom_id=g["rom_id"])]
+    page = rb.GameScreen(app, rom)
+    app.push(page)
+    facts = dict(page.facts(page.record()))
+    assert facts["Soundtrack"] == "%d tracks · %s" % (len(tracks), rb.minutes(sum(t["duration_seconds"] or 0 for t in tracks)))
+    page.open_menu()
+    entry = next(e for e in app.modal.entries if e and e[0] == "Add soundtrack to menu music")
+    app.modal = None
+    entry[2]()
+    assert rommlib.load_music_sources()["games"] == [g["rom_id"]] and files() == []        # saved; menu music is off
+    assert "Menu music is off" in app.toasts[-1][0]
+    assert dict(page.facts(page.record()))["Soundtrack"].endswith("in the menu music")
+    app.cfg["menu_music"] = True
+    app.sync_music()
+    playable = [t for t in tracks if rommlib.music_playable(t)]
+    assert len(files()) == len(playable) > 0
+    page.open_menu()
+    entry = next(e for e in app.modal.entries if e and e[0] == "Remove soundtrack from menu music")
+    app.modal = None
+    entry[2]()
+    assert rommlib.load_music_sources()["games"] == [] and files() == []
+    # a game without one: no line, nothing offered
+    other = next(r for r in app.api.roms(platform_ids=[rom["platform_id"]], limit=50)["items"] if not r.get("has_soundtrack"))
+    page.show(other)
+    assert dict(page.facts(page.record()))["Soundtrack"] == ""
+    page.open_menu()
+    assert not [e for e in app.modal.entries if e and "soundtrack" in e[0].lower()]

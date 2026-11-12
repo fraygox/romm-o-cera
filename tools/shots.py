@@ -457,6 +457,17 @@ def party_list(players=2, menu=False):
         app._after = opened
 
 
+def game_soundtrack(menu=False):
+    """The page of a game RomM has a soundtrack for; menu: its Actions, offering it for the menu music."""
+    g = app.api.music_all("games")[0]
+    rom = app.api.rom(g["rom_id"])
+    gl = show_list(app.platform_by_id[rom["platform_id"]])
+    app.push(gl)
+    app.push(rb.GameScreen(app, rom, source=gl))
+    if menu:
+        setattr(app, "_after", lambda: app.dispatch("x"))
+
+
 def game_page(here=False, plain=False):
     """A game's page from its platform's list: the featured homebrew (your status, note, RA,
     manual, screenshots); here: on the box, played 3 days ago; plain: a game RomM knows little about."""
@@ -621,6 +632,17 @@ def music_screen(on=False, sel=0):
     scr.sel = sel
 
 
+def music_mix(pick=False):
+    """The mix editor on a saved mix; pick: its game genres being ticked."""
+    music_screen(on=True)
+    mix = {"name": "Rainy day", "on": True, "filters": {"game_genre": ["Adventure", "Puzzle"], "decade": [1990], "max_minutes": 5}}
+    scr = rb.MixScreen(app, app.stack[-1], mix)
+    app.push(scr)
+    if pick:
+        scr.sel = 1
+        setattr(app, "_after", lambda: scr.action("ok"))
+
+
 def collections_at(row, col, wall=False, menu=False, inside=None, size="medium", door=False):
     """Collections with a shelf (row; -1: the last, Browse by) and tile focused; wall: that kind as
     a wall; menu: its Actions; inside: its games ("away": the Not here pills); size: Settings'
@@ -655,6 +677,9 @@ SCENES = [
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
     ("music", lambda: music_screen()),
     ("music-on", lambda: music_screen(on=True, sel=4)),
+    ("music-mix", lambda: music_mix()),
+    ("music-mix-pick", lambda: music_mix(pick=True)),
+    ("music-add-game", lambda: (music_screen(), app.stack[-1].add_game())),
     ("collections", lambda: collections_at(1, 4)),
     ("collections-small", lambda: collections_at(1, 4, size="small")),
     ("collections-small-wall", lambda: collections_at(1, 9, wall=True, size="small")),
@@ -812,6 +837,8 @@ SCENES = [
     ("game-page", lambda: game_page()),
     ("game-page-here", lambda: game_page(here=True)),
     ("game-page-plain", lambda: game_page(plain=True)),
+    ("game-page-soundtrack", lambda: game_soundtrack()),
+    ("game-page-soundtrack-actions", lambda: game_soundtrack(menu=True)),
     ("game-page-actions", lambda: (game_page(here=True), setattr(app, "_after", lambda: app.dispatch("x")))),
     ("toast", lambda: app.toast("Picked 3 games (4.2 GB) — check the list, then {X} to delete them")),
     ("confirm-long-verb", lambda: setattr(app, "modal", rb.Confirm(

@@ -6,8 +6,9 @@ from rbui import theme
 from rbui.draw import card, hline, meter, rrect, scroll_text, scrollbar, state_stripe, text
 from rbui.theme import W
 from rbui.widgets.chips import switch
-from rbui.widgets.layout import list_row
-from rbui.screens.base import ListScreen
+from rbui.widgets.layout import list_head, list_row, split, ROWS_TOP
+from rbui.screens.base import ListScreen, Screen
+from rbui.screens.text_input import TextInputScreen
 from rbui.modals import Confirm
 
 
@@ -105,6 +106,11 @@ class MusicScreen(ListScreen):
                         ("Loading…" if self.games is None else "RomM has no soundtrack for it now"), True, True))
         for m in s["mixes"]:
             out.append(("mix:" + m["name"], m["name"], "Mix · " + (mix_summary(m["filters"]) or "every track"), m["on"], True))
+        n = len(self.games or {})
+        out.append(("add_game", "Add a game's soundtrack",
+                    "Loading…" if self.games is None else "%d game%s in RomM %s one" % (n, "" if n == 1 else "s", "has" if n == 1 else "have"),
+                    None, True))
+        out.append(("new_mix", "New mix", "By game genre, music genre, artist, platform or decade", None, True))
         return out
 
     # ---------------------------------------------------------------- acting
@@ -115,7 +121,8 @@ class MusicScreen(ListScreen):
     def hints(self):
         rows = self.rows()
         key = rows[min(self.sel, len(rows) - 1)][0]
-        return [("A", "Change" if key == "cap" else "Switch"), ("X", "Sync now"), ("B", "Back")]
+        verb = "Change" if key == "cap" else "Open" if key in ("add_game", "new_mix") else "Switch"
+        return [("A", verb)] + ([("Y", "Edit mix")] if key.startswith("mix:") else []) + [("X", "Sync now"), ("B", "Back")]
 
     def action(self, a):
         app = self.app
@@ -132,8 +139,17 @@ class MusicScreen(ListScreen):
                 app.cfg["menu_music_cap_gb"] = ch[(ch.index(cur) + 1) % len(ch)] if cur in ch else ch[0]
                 app.apply_config()
                 app.sync_music()
+            elif key == "add_game":
+                self.add_game()
+            elif key == "new_mix":
+                app.push(MixScreen(app, self))
             else:
                 self.switch_source(key, not on)
+        elif a == "y":
+            key = rows[min(self.sel, len(rows) - 1)][0]
+            mix = next((m for m in self.sources["mixes"] if "mix:" + m["name"] == key), None)
+            if mix:
+                app.push(MixScreen(app, self, mix))
         elif a == "x":
             if not app.cfg["menu_music"]:
                 app.toast("Menu music is off: switch it on first")
@@ -142,6 +158,22 @@ class MusicScreen(ListScreen):
                 app.toast("Checking RomM for changes…")
         elif not self.nav(a):
             super().action(a)
+
+    def add_game(self):
+        """A list of the games RomM has a soundtrack for: A adds one to the menu music."""
+        app = self.app
+
+        def load():
+            return [{"value": g["rom_id"], "label": g["name"], "count": g["count"], "note": g["platform_name"]}
+                    for g in sorted(app.api.music_all("games") or [], key=lambda g: g["name"].lower())
+                    if g["rom_id"] not in self.sources["games"]]
+
+        def picked(values):
+            for v in values:
+                self.switch_source("game:%d" % v, True)
+        app.push(MusicPickScreen(app, "Add a game's soundtrack", load, [], picked, single=True,
+                                 about="The game's whole soundtrack joins the menu music, whether or not the game is "
+                                       "on this box. Switch it off on the Music screen to drop it again."))
 
     def switch_all(self, on):
         app = self.app
@@ -245,7 +277,8 @@ class MusicScreen(ListScreen):
             focus = i == self.sel
             status = cap_label(app.cfg["menu_music_cap_gb"]) if key == "cap" else ""
             list_row(c, f, r, focus, label, sub, status, theme.DIM, slot="music-row", box=theme.PANEL,
-                     label_color=None if ok else theme.FAINT, sub_color=None if ok else theme.AMBER)
+                     label_color=None if ok else theme.FAINT, sub_color=None if ok else theme.AMBER,
+                     chevron=key in ("add_game", "new_mix"))
             if on is not None and ok:
                 switch(c, (r.right - 76, r.centery - 13, 52, 26), on)
             state_stripe(c, r, theme.ACCENT if on and ok and (key == "on" or app.cfg["menu_music"]) else theme.LINE)
@@ -289,7 +322,12 @@ class MusicScreen(ListScreen):
             "playlist": "A playlist from RomM's jukebox: yours, or one someone shared with everyone. Change it in "
                         "RomM and the box follows.",
             "game": "This game's whole soundtrack, added from its page. It stays whether or not the game is on the box.",
-            "mix": "A mix you saved: every track in RomM that fits it, so new soundtracks that fit arrive by themselves.",
+            "mix": "A mix you saved: every track in RomM that fits it, so new soundtracks that fit arrive by "
+                   "themselves. {Y} changes or deletes it.",
+            "add_game": "Pick a game from the ones RomM has a soundtrack for. Its page in the game lists offers the "
+                        "same.",
+            "new_mix": "A mix is every track that fits what you pick: game genres, music genres, artists, platforms, "
+                       "decades and a longest length. It's saved on this box and switched like any other source.",
         }[kind]
 
 
@@ -308,3 +346,287 @@ def mix_summary(filters):
         parts.append("up to %g min" % filters["max_minutes"])
     return " · ".join(parts)
 
+
+
+# ---------------------------------------------------------------- picking values, and mixes
+
+MIX_LENGTHS = (0, 2, 3, 5, 8, 12)        # a mix's longest track, minutes; 0: any length
+
+
+class MusicPickScreen(ListScreen):
+    """Rows with a count each, ticked with A: the values of one facet of RomM's jukebox (a
+    mix's game genres, artists...), or, single, a list one row is chosen from. load() gives
+    [{"value", "label", "count", "note"}] in the background; done(values) gets what's ticked
+    when the screen is left (single: the row chosen, at once)."""
+    PICKS = PICK_ALWAYS = True
+    PICK_ALL = False
+    ROWS, ROW_H = 9, 56
+
+    def __init__(self, app, title, load, chosen, done, about="", single=False):
+        super().__init__(app)
+        self.title, self.load, self.done, self.about, self.single = title, load, done, about, single
+        self.chosen = list(chosen)
+        self.items = None
+        self.sel = self.scroll = 0
+
+    def enter(self):
+        if self.items is not None:
+            return
+
+        def got(rows):
+            self.items = rows
+            self.picks.update((r["value"], r) for r in rows if r["value"] in self.chosen)
+        self.app.bg(self.load, got, self.load_failed("items"))
+
+    def pick_key(self, row):
+        return row["value"]
+
+    def showing_picks(self):
+        return not self.single
+
+    def crumbs(self):
+        return self.trail(self.title)
+
+    def hints(self):
+        if self.single:
+            return self.list_hints(("A", "Add"))
+        return self.list_hints(("A", "Pick"), back="Done")
+
+    def list_hints(self, *own, back="Back"):
+        own = list(own)
+        if len(self.listed()) > self.ROWS:
+            own += [("L", "Page up"), ("R", "Page down")]
+        return own + [("B", back)]
+
+    def action(self, a):
+        rows = self.listed()
+        if a == "ok" and rows:
+            if self.single:
+                self.app.pop()
+                self.done([rows[self.sel]["value"]])
+            else:
+                self.toggle_pick(move=False)
+        elif a == "back":
+            if not self.single and self.items is not None:
+                self.done([r["value"] for r in self.picked()])
+            self.app.pop()
+        elif not self.nav(a):
+            super().action(a)
+
+    def tap_row(self, i):
+        self.sel = i
+        self.action("ok")
+
+    def draw(self, c):
+        f = self.f
+        lst, pan = split()
+        rows = self.listed()
+        n = self.pick_count()
+        list_head(c, f, lst, self.title, "" if self.single else "%d picked" % n if n else "None picked: any will do")
+        if self.draw_load_error(c, ROWS_TOP + 8):
+            return
+        if self.items is None:
+            text(c, f.body, "Loading…", (lst.left + 8, ROWS_TOP + 12), theme.DIM)
+        elif not rows:
+            text(c, f.body, "Nothing to pick here", (lst.left + 8, ROWS_TOP + 12), theme.DIM)
+        self.clamp()
+        for i in self.visible():
+            row = rows[i]
+            r = pygame.Rect(lst.left, ROWS_TOP + (i - self.scroll) * self.ROW_H, lst.width, self.ROW_H - 6)
+            self.app.hit(r, lambda i=i: self.tap_row(i))
+            list_row(c, f, r, i == self.sel, row["label"], row.get("note") or "", plural_tracks(row["count"]), theme.DIM,
+                     slot="music-pick", mark=(lambda ctr, row=row: self.draw_pick(c, row, ctr)) if not self.single else None)
+        if len(rows) > self.ROWS:
+            scrollbar(c, (lst.right + 6, ROWS_TOP, 4, self.ROW_H * self.ROWS - 6), self.ROWS / len(rows),
+                      self.scroll / max(1, len(rows) - self.ROWS))
+        rrect(c, theme.PANEL, pan, 16)
+        text(c, f.h2, self.title, (pan.left + 28, pan.top + 22), theme.TEXT, maxw=pan.width - 56)
+        scroll_text(c, f.body, self.about, (pan.left + 28, pan.top + 72, pan.width - 56, pan.height - 100), theme.DIM,
+                    bg=theme.PANEL, line_h=26, slot="music-pick-about")
+
+
+class MixScreen(Screen):
+    """A mix being made or changed: its name, a row per facet (each opens its values to tick), the
+    longest track, Save and, for one that exists, Delete. The card on top counts the tracks that
+    fit as the picks change."""
+    HEAD = MusicScreen.HEAD
+    LIST = MusicScreen.LIST
+    ROW_H = 54
+    FACETS = (("game_genre", "Game genre", "game-genres", "Tracks from games of these genres"),
+              ("genre", "Music genre", "genres", "Tracks tagged with these music genres"),
+              ("artist", "Artist", "artists", "Tracks by these artists"),
+              ("platform", "Platform", "platforms", "Tracks from games on these platforms"),
+              ("decade", "Decade", "years", "Tracks from these decades"))
+
+    def __init__(self, app, music, mix=None):
+        super().__init__(app)
+        self.music = music                       # the Music screen: its sources are saved from here
+        self.was = mix["name"] if mix else None  # the mix being changed
+        self.name = mix["name"] if mix else ""   # "": named after what's picked
+        self.on = mix["on"] if mix else True
+        self.filters = {k: list(v) if isinstance(v, list) else v for k, v in (mix["filters"] if mix else {}).items()}
+        self.sel = 0
+        self.count = None                        # (tracks, seconds) that fit; None while counting
+        self.gen = 0
+        self.names = {}                          # platform id -> name, for the rows' values
+
+    def enter(self):
+        self.recount()
+
+    def title(self):
+        return self.name or mix_summary(self.filters) or "Everything"
+
+    def rows(self):
+        f = self.filters
+        out = [("name", "Name", self.title() if self.name else "%s (named after what you pick)" % self.title())]
+        for key, label, _, _ in self.FACETS:
+            v = f.get(key) or []
+            shown = [self.names.get(x, "Platform %s" % x) for x in v] if key == "platform" else \
+                ["%ds" % x for x in sorted(v)] if key == "decade" else v
+            out.append((key, label, ", ".join(shown) if v else "Any"))
+        out.append(("length", "Longest track", "%g min" % f["max_minutes"] if f.get("max_minutes") else "Any length"))
+        out.append(("save", "Save mix", "It joins the sources on the Music screen, switched %s" % ("on" if self.on else "off")))
+        if self.was:
+            out.append(("delete", "Delete mix", "Its tracks leave the menus unless another source asks for them"))
+        return out
+
+    def crumbs(self):
+        return self.trail("Change mix" if self.was else "New mix")
+
+    def hints(self):
+        key = self.rows()[self.sel][0]
+        verb = {"save": "Save", "delete": "Delete", "length": "Change", "name": "Edit"}.get(key, "Pick")
+        return [("A", verb), ("B", "Back")]
+
+    def recount(self):
+        self.gen += 1
+        gen, f, api = self.gen, dict(self.filters), self.app.api
+        self.count = None
+
+        def got(tracks):
+            if gen == self.gen:
+                self.count = (len(tracks or []), sum(t.get("duration_seconds") or 0 for t in tracks or []))
+        self.app.bg(lambda: rommlib.music_mix_tracks(api, f), got, lambda e: got([]) or self.app.toast(str(e), theme.RED))
+
+    def facet_rows(self, key, what):
+        """A facet's values with their track counts, as MusicPickScreen lists them."""
+        api = self.app.api
+        got = api.music_all(what) or []
+        if key == "platform":
+            self.names.update({p["id"]: p["name"] for p in got})
+            return [{"value": p["id"], "label": p["name"], "count": p["count"]} for p in got]
+        if key == "decade":
+            tens = {}
+            for y in got:
+                if isinstance(y.get("value"), int):
+                    tens[y["value"] // 10 * 10] = tens.get(y["value"] // 10 * 10, 0) + y["count"]
+            return [{"value": d, "label": "%ds" % d, "count": n} for d, n in sorted(tens.items())]
+        return [{"value": x["value"], "label": str(x["value"]), "count": x["count"]}
+                for x in sorted(got, key=lambda x: str(x["value"]).lower())]
+
+    def action(self, a):
+        app = self.app
+        rows = self.rows()
+        if a in ("up", "down"):
+            self.sel = (self.sel + (1 if a == "down" else -1)) % len(rows)
+        elif a == "ok":
+            key = rows[self.sel][0]
+            facet = next((x for x in self.FACETS if x[0] == key), None)
+            if facet:
+                def picked(values, key=key):
+                    self.filters[key] = values
+                    if not values:
+                        del self.filters[key]
+                    self.recount()
+                app.push(MusicPickScreen(app, facet[1], lambda: self.facet_rows(key, facet[2]),
+                                         self.filters.get(key) or [], picked,
+                                         about=facet[3] + ". Tick as many as you like: a track fits when it matches any "
+                                                          "one of them. None ticked means any."))
+            elif key == "name":
+                app.push(TextInputScreen(app, "Name this mix", self.name, self.rename,
+                                         help="What the mix is called on the Music screen. Leave it empty to name it "
+                                              "after what you pick."))
+            elif key == "length":
+                cur = self.filters.get("max_minutes") or 0
+                nxt = MIX_LENGTHS[(MIX_LENGTHS.index(cur) + 1) % len(MIX_LENGTHS)] if cur in MIX_LENGTHS else 0
+                if nxt:
+                    self.filters["max_minutes"] = nxt
+                else:
+                    self.filters.pop("max_minutes", None)
+                self.recount()
+            elif key == "save":
+                self.save()
+            elif key == "delete":
+                app.modal = Confirm(app, "Delete this mix?",
+                                    "\"%s\" goes from the Music screen. Its tracks leave the menus at the next sync, "
+                                    "unless another source still asks for them." % self.was, "Delete", self.delete, danger=True)
+        else:
+            super().action(a)
+
+    def rename(self, value):
+        self.name = (value or "").strip()
+        self.app.pop()
+
+    def others(self):
+        return [m for m in self.music.sources["mixes"] if m["name"] != self.was]
+
+    def save(self):
+        app, name = self.app, self.title()
+        if name.lower() in {m["name"].lower() for m in self.others()}:
+            app.toast("Another mix is called \"%s\": give this one a name of its own" % name, theme.AMBER)
+            return
+        mix = rommlib.music_mix({"name": name, "on": self.on, "filters": self.filters})
+        mixes = self.music.sources["mixes"]
+        at = next((i for i, m in enumerate(mixes) if m["name"] == self.was), None)
+        if at is None:
+            mixes.append(mix)
+        else:
+            mixes[at] = mix
+        self.store("Saved \"%s\"" % name)
+
+    def delete(self):
+        self.music.sources["mixes"] = self.others()
+        self.store("Deleted \"%s\"" % self.was)
+
+    def store(self, said):
+        app = self.app
+        try:
+            rommlib.save_music_sources(self.music.sources)
+        except OSError as e:
+            app.toast("That couldn't be saved (%s)" % (e.strerror or e), theme.RED)
+            return
+        app.pop()
+        app.toast(said, theme.GREEN)
+        if app.cfg["menu_music"]:
+            app.sync_music()
+
+    def draw(self, c):
+        app, f = self.app, self.f
+        hr = self.HEAD
+        card(c, hr)
+        if self.count is None:
+            line = "Counting what fits…"
+        else:
+            n, secs = self.count
+            size = secs * rommlib.music_rate(rommlib.load_music_state()["tracks"])
+            line = "%s fit%s · %s · about %s" % (plural_tracks(n), "s" if n == 1 else "", minutes(secs), human_size(size)) \
+                if n else "Nothing in RomM fits this yet"
+        text(c, f.h2, line, (hr.left + 20, hr.top + 12), theme.TEXT, maxw=hr.width - 40)
+        text(c, f.small, "A track fits when it matches one pick in every row that has any", (hr.left + 20, hr.bottom - 28),
+             theme.FAINT, maxw=hr.width - 40)
+        rows = self.rows()
+        self.sel = min(self.sel, len(rows) - 1)
+        for i, (key, label, value) in enumerate(rows):
+            r = pygame.Rect(self.LIST.left, self.LIST.top + i * self.ROW_H, self.LIST.width, self.ROW_H - 6)
+            app.hit(r, lambda i=i: self.tap_now(i))
+            list_row(c, f, r, i == self.sel, label, value, slot="mix-row", box=theme.PANEL,
+                     label_color=theme.RED if key == "delete" else None, chevron=key not in ("save", "delete", "length"))
+            state_stripe(c, r, theme.ACCENT if key == "save" else theme.LINE)
+        p = pygame.Rect(640, self.LIST.top, W - 32 - 640, MusicScreen.ROW_H * MusicScreen.ROWS - 6)
+        rrect(c, theme.PANEL, p, 16)
+        text(c, f.h2, self.title(), (p.left + 28, p.top + 22), theme.TEXT, maxw=p.width - 56)
+        scroll_text(c, f.body,
+                    "A mix is every track in RomM that fits what you pick here, so soundtracks added later that fit "
+                    "arrive by themselves. Pick nothing in a row and it doesn't narrow the mix. Mixes are saved on "
+                    "this box.", (p.left + 28, p.top + 72, p.width - 56, p.height - 100), theme.DIM, bg=theme.PANEL,
+                    line_h=26, slot="mix-about")
