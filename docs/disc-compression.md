@@ -183,8 +183,8 @@ updates only as folders of files under its own content folder
 update is linked from there: content they hold (later episodes, for instance)
 is found with nothing to install by hand. An add-on already installed there
 from xenia's own menu is left as it is. Deleting the game removes the
-launcher and the folder; the links it leaves lead nowhere, and xenia ignores
-them. A disc is treated this way only when it's plain: a small `default.xex`,
+launcher and the folder; the links it had there then lead nowhere (they take
+no space, and are replaced if the game is downloaded again). A disc is treated this way only when it's plain: a small `default.xex`,
 no other program on it, and exactly one title package. Check games checks
 that the package a launcher names is still there.
 
