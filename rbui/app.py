@@ -193,6 +193,10 @@ class App:
         self.player_counts = None     # RomM's player count values (the Players filter), asked for on first use
         self.recs = None              # Recommended for you: [(rom, why, seed name)], [] when RomM has none (Home asks once)
         self.conn_gen = 0             # bumped on every reconnect: per-server data from before it is dropped
+        self.music_total = None       # tracks in RomM's jukebox (Home shows Music when there are any); None: not asked yet
+        # menu music: the sync in the background and what the last one did (the Music screen shows it)
+        self.music = {"busy": False, "done": 0, "total": 0, "again": False, "result": rommlib.music_status()["last"]}
+        self.music_stop = threading.Event()
         self.update_tag = None
         self.library = rommlib.Library()
         self.downloader = rommlib.Downloader(self.api, self.library, self.cfg)
@@ -284,8 +288,22 @@ class App:
             self.status = "Online"
             self.error = None
             self.loaded = True
-            self.bg(self.api.server_version,
-                    lambda v: setattr(self, "romm_version", v) if gen == self.conn_gen else None, lambda e: None)
+            def about():
+                """RomM's version, and how many tracks its jukebox holds: Home offers Music when
+                there are any (a RomM without a jukebox: none). Asking for that never changes
+                what the header says about the connection."""
+                api, was = self.api, self.api.down
+                try:
+                    tracks = int(api.music_stats().get("total_tracks") or 0)
+                except (rommlib.RommError, TypeError, ValueError):
+                    tracks, api.down = 0, was
+                return api.server_version(), tracks
+
+            def told(v):
+                if gen == self.conn_gen:
+                    self.romm_version, self.music_total = v
+            self.bg(about, told, lambda e: None)
+            self.sync_music()
 
         first, self.fetched = not self.fetched, True
 
@@ -528,7 +546,7 @@ class App:
             self.downloader.api = self.api
             self.forget_covers()
             self.details.clear()
-            self.player_counts = self.recs = None
+            self.player_counts = self.recs = self.music_total = None
             self.platforms, self.platform_by_id, self.loaded = [], {}, False
             self.status, self.error, self.romm_version = "Connecting…", None, None
             self.load_platforms()
@@ -950,6 +968,30 @@ class App:
                     spec.slug, e if isinstance(e, rommlib.RommError) else e.__class__.__name__), theme.RED)
         self.bg(install, done, failed)
 
+    def sync_music(self):
+        """Bring the menu music folder in step with the Music screen's sources, in the
+        background; asked again while one runs, it runs once more after. Off with nothing
+        placed: nothing to do."""
+        m = self.music
+        if self.headless and not getattr(self, "music_in_tests", False):
+            return
+        if not self.cfg["menu_music"] and not rommlib.music_status()["tracks"]:
+            return
+        if m["busy"]:
+            m["again"] = True
+            return
+        m.update(busy=True, done=0, total=0, again=False)
+        cfg, sel, api, library = dict(self.cfg), rommlib.load_music_sources(), self.api, self.library
+
+        def finished(res):
+            m.update(busy=False, result=res if isinstance(res, dict) else {})
+            if m["again"]:
+                self.sync_music()
+        self.bg(lambda: rommlib.sync_music(api, sel, library, on=cfg["menu_music"], cap=rommlib.music_cap_bytes(cfg),
+                                           keep_free=rommlib.keep_free_bytes(cfg), cancel=self.music_stop,
+                                           progress=lambda d, t: m.update(done=d, total=t)),
+                finished, lambda e: finished({"error": str(e)}))
+
     def startup_checks(self):
         """Things the player must know before anything else."""
         if rommlib.config_unreadable():
@@ -1240,6 +1282,7 @@ class App:
 
     def on_exit(self):
         rommlib.stop_running_checks()             # a Check games tool (chdman, dolphin-tool…) must not outlive the app
+        self.music_stop.set()                     # a menu-music sync ends after the track it's on; the next start goes on
         pending = 0 if self.downloader.hold else self.downloader.pending_count()
         # keeps them in download-queue.json, and kills a running 7z before it returns:
         # its thread dies with this process, and a 7z left running would go on

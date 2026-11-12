@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from . import core as _core
+from . import core as _core, config as _config
 
 MUSIC_FOLDER = "romm-o-cera"                               # inside ES's music folder: ES plays its subfolders too
 MUSIC_PLAYABLE = (".mp3", ".ogg", ".flac", ".wav", ".opus")   # what Batocera's ES plays (41+ for .opus)
@@ -21,6 +21,7 @@ MUSIC_RATE = 32000              # bytes a second assumed for a track not here ye
 MUSIC_UNKNOWN_SECONDS = 180     # ... and its length when RomM read none
 MUSIC_FILE_MAX = 512 << 20      # no single track is larger
 MUSIC_FAILS = 3                 # downloads failing in a row before a sync gives up
+MUSIC_CAP_CHOICES = (1, 2, 5, 10, 20, 50, 0)       # GB the Music screen offers; 0: no limit
 MUSIC_MIX_FACETS = ("game_genre", "genre", "artist", "platform", "decade")     # a mix's lists; "max_minutes" beside them
 _MUSIC_BUSY = threading.Lock()
 
@@ -36,6 +37,15 @@ def music_state_path():
 
 def music_sources_path():
     return os.path.join(_core.DATA_DIR, "music-sources.json")
+
+
+def music_cap_bytes(cfg):
+    """The space menu music may take (menu_music_cap_gb; 0 or unreadable-as-zero: no limit)."""
+    try:
+        gb = float(_config.config_value(cfg, "menu_music_cap_gb") or 0)
+    except (TypeError, ValueError, OverflowError):
+        gb = _config.DEFAULT_CONFIG["menu_music_cap_gb"]
+    return int(gb * (1 << 30)) if 0 < gb < 1e6 else 1 << 62
 
 
 # ---------------------------------------------------------------- what the owner chose

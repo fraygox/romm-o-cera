@@ -244,7 +244,8 @@ def test_settings_screen_matches_the_golden_record(screen, rb):
 DEFAULTS_LITERAL = [
     ("url", ""), ("token", ""), ("verify_tls", True), ("verify_tls_ca", ""), ("swap_ab", False),
     ("button_style", "auto"), ("check_updates", True), ("chd", True), ("chd_threads", "auto"),
-    ("chd_low_memory", "auto"), ("keep_free_gb", 20), ("extract_parallel", True), ("rvz", False),
+    ("chd_low_memory", "auto"), ("keep_free_gb", 20), ("menu_music", False), ("menu_music_cap_gb", 10),
+    ("extract_parallel", True), ("rvz", False),
     ("xbox_bootable", True), ("squashfs", False), ("z3ds", True), ("zar", False), ("x360_packages", True), ("wux", True), ("wua", False), ("ps3_folders", True),
     ("ps3_decrypt", False), ("cache_limit_mb", 1024), ("download_hours", "any"), ("background_downloads", True),
     ("download_speed", 0), ("speed_while_playing", 0), ("notify", True), ("manuals", True), ("es_image", "screenshot"),

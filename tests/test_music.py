@@ -51,7 +51,7 @@ def test_the_jukebox_listing_comes_whole_and_filters_the_way_romm_does(api):
     favs = api.music_all("favorites")
     assert favs and all(t["is_favorite"] for t in favs)
     lists = api.music_playlists()
-    assert [p["name"] for p in lists] == ["Menu music", "First tracks"] and lists[0]["is_public"]
+    assert [p["name"] for p in lists] == ["Late night", "First tracks"] and lists[0]["is_public"]
     assert len(api.music_all("playlists/%d/tracks" % lists[0]["id"])) == lists[0]["track_count"]
 
 

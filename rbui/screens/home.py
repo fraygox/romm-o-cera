@@ -17,6 +17,7 @@ from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.game import GameScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
+from rbui.screens.music import MusicScreen, plural_tracks
 from rbui.widgets.chips import pill_row, tag
 from rbui.widgets.hero import game_state, game_verb, meta_line, state_line, time_ago
 from rbui.widgets.layout import list_head, Panel, split
@@ -37,6 +38,7 @@ class HomeScreen(Screen):
             ("downloads", "Activity", "Downloads and compressing, as they run"),
             ("installed", "On this box", "Your games, space, BIOS files and checks"),
             ("settings", "Settings", "Server, controller, downloads, compression")]
+    MUSIC = ("music", "Music", "RomM soundtracks as your menu music")     # on the rail once RomM's jukebox holds a track
     RAIL_Y = 84
     Y0, Y1 = 138, 674               # the shelf area, under the rail and above the hint bar
     GAP = 12
@@ -63,6 +65,16 @@ class HomeScreen(Screen):
 
     def nav_key(self):
         return self.focus, self.rail_i, tuple(sorted(self.cols.items()))
+
+    def set_rail(self):
+        """Music joins the rail when RomM has soundtracks, at its end: the other pills stay
+        where they are. The pill that had the focus keeps it."""
+        base = HomeScreen.RAIL
+        want = base + [self.MUSIC] if self.app.music_total else base
+        if len(want) != len(self.RAIL):
+            key = self.RAIL[min(self.rail_i, len(self.RAIL) - 1)][0]
+            self.RAIL = want
+            self.rail_i = next((i for i, r in enumerate(want) if r[0] == key), 0)
 
     # ---------------------------------------------------------------- data
 
@@ -182,6 +194,7 @@ class HomeScreen(Screen):
         except Exception:                          # noqa: BLE001 — a glance, never an error
             self.on_box = 0
         self.played = {}                           # back from a game list: installs may have changed
+        self.set_rail()
         self.follow_connection()
         self.retry_failed()
 
@@ -348,6 +361,8 @@ class HomeScreen(Screen):
             app.push(OnThisBoxScreen(app))
         elif key == "downloads":
             app.push(DownloadsScreen(app))
+        elif key == "music":
+            app.push(MusicScreen(app))
         elif not app.platforms:
             app.load_platforms()
             msg = app.error or ("No RomM platform maps to a Batocera system"
@@ -385,6 +400,7 @@ class HomeScreen(Screen):
 
     def draw_rail(self, c, key):
         n = self.app.downloader.active_count()
+        self.set_rail()                            # (RomM's jukebox total arrives after Home opens)
         labels = [label + (" · %d" % n if k == "downloads" and n else "") for k, label, _ in self.RAIL]
         self.rail_rects = pill_row(c, self.f.body, labels, HOME_COLUMN.left, HOME_COLUMN.right, self.RAIL_Y,
                                    focus=self.rail_i if key == "rail" else None, app=self.app, on_tap=self.tap_rail)
@@ -470,6 +486,11 @@ class HomeScreen(Screen):
         if key == "downloads":
             jobs = [j for j in app.downloader.jobs if j.active]
             return [(j.name, j.state) for j in jobs] or [("Nothing downloading right now", "")]
+        if key == "music":
+            st = rommlib.music_status()
+            return [("Menu music", "On" if app.cfg["menu_music"] else "Off"),
+                    ("In the menus", plural_tracks(st["tracks"]) + (" · " + human_size(st["bytes"]) if st["tracks"] else "")),
+                    ("In RomM", plural_tracks(app.music_total or 0))]
         if key == "installed":
             return [("Games from RomM", "{:,}".format(self.on_box)),
                     ("Free space", human_size(self.free) if self.free is not None else "?")]

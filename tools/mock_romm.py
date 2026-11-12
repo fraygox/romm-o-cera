@@ -506,7 +506,7 @@ def build_music(roms, seed=23):
     longest = sorted(playable, key=lambda t: -t["duration_seconds"])[:12]
     first = [t for t in playable if t["track"] == 1]
     playlists = [
-        {"id": 1, "name": "Menu music", "description": "Longer tracks for the menus", "is_public": True, "user_id": 2,
+        {"id": 1, "name": "Late night", "description": "Longer tracks for the menus", "is_public": True, "user_id": 2,
          "owner_username": "sam", "_tracks": [t["rom_file_id"] for t in longest]},
         {"id": 2, "name": "First tracks", "description": None, "is_public": False, "user_id": USER_ID,
          "owner_username": "demo", "_tracks": [t["rom_file_id"] for t in first]},

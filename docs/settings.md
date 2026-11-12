@@ -131,6 +131,8 @@ seven, six or four. It takes effect at once.
 | `speed_while_playing` | `0` | MB/s cap for background downloads while a game runs (`0` = none) |
 | `download_hours` | `any` | `any`, or a local-time window like `1-7` / `22-6` |
 | `keep_free_gb` | `20` | downloads and conversions leave at least this much free (GB); a download that doesn't fit waits for space (`0` = no reserve beyond a small margin) |
+| `menu_music` | `false` | keep RomM soundtracks in `/userdata/music/romm-o-cera/` for EmulationStation's menu music (switched on the Music screen) |
+| `menu_music_cap_gb` | `10` | the most space those tracks take (GB); `0` = no limit |
 | `extract_parallel` | `true` | start the next download while the last one is extracted (`false` for slow storage) |
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail (a full drive or a refused token gets a message box either way) |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |

@@ -603,6 +603,24 @@ def collections_box():
             lib.mark(r, sy, [p])
 
 
+def music_screen(on=False, sel=0):
+    """The Music screen; on: menu music switched on with a few sources and tracks in place."""
+    if on:
+        app.cfg["menu_music"] = True
+        rommlib.save_music_sources({"favourites": True, "on_box": False, "playlists": [1], "games": [],
+                                    "mixes": [{"name": "Rainy day", "on": True,
+                                               "filters": {"genre": ["Ambient"], "decade": [1990], "max_minutes": 5}}]})
+        last = {"on": True, "wanted": 41, "placed": 38, "bytes": 286 << 20, "downloaded": 38, "removed": 0, "left_out": 3,
+                "skipped": 0, "failed": 0, "no_room": False, "stopped": False, "error": "", "when": 1}
+        rommlib.atomic_write_json(rommlib.music_state_path(), {
+            "tracks": {str(i): {"file": "t%d.mp3" % i, "bytes": (286 << 20) // 38, "seconds": 230.0} for i in range(38)},
+            "last": last})
+        app.music["result"] = last
+    scr = rb.MusicScreen(app)
+    app.push(scr)
+    scr.sel = sel
+
+
 def collections_at(row, col, wall=False, menu=False, inside=None, size="medium", door=False):
     """Collections with a shelf (row; -1: the last, Browse by) and tile focused; wall: that kind as
     a wall; menu: its Actions; inside: its games ("away": the Not here pills); size: Settings'
@@ -635,6 +653,8 @@ def collections_at(row, col, wall=False, menu=False, inside=None, size="medium",
 SCENES = [
     ("home", lambda: None),
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
+    ("music", lambda: music_screen()),
+    ("music-on", lambda: music_screen(on=True, sel=4)),
     ("collections", lambda: collections_at(1, 4)),
     ("collections-small", lambda: collections_at(1, 4, size="small")),
     ("collections-small-wall", lambda: collections_at(1, 9, wall=True, size="small")),
@@ -839,6 +859,11 @@ def reset():
     app.downloader.hold = True
     app.cfg["keep_free_gb"] = KEEP_FREE
     app.cfg["collection_tiles"] = "medium"
+    app.cfg["menu_music"] = False                 # the Music scenes' state
+    for p in (rommlib.music_state_path(), rommlib.music_sources_path()):
+        if os.path.exists(p):
+            os.remove(p)
+    app.music["result"] = {}
     rommlib.VERSION_LABEL = VERSION_LABEL         # a nightly's label (whats-new-nightly)
 
 

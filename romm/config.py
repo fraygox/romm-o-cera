@@ -92,6 +92,10 @@ SETTINGS = (
             valid=_parses(lambda v: int(float(v or 0) * (1 << 30))),     # 0: no reserve; inf/nan fail; null/"" show as Nothing but keep 20 GB (keep_free_bytes)
             help="Downloads and conversions never leave less than this free. One that doesn't fit waits for room; "
                  "smaller ones keep going."),
+    Setting("menu_music", False,        # RomM soundtracks as EmulationStation's menu music (the Music screen switches it)
+            valid=lambda v: isinstance(v, bool)),
+    Setting("menu_music_cap_gb", 10,    # the most space those tracks may take (GB); 0: no limit
+            valid=_parses(lambda v: int(float(v or 0) * (1 << 30)))),
     Setting("extract_parallel", True,   # the next download starts while the last one is being extracted
             row="overlap", label="Download while extracting", sub="Next download starts during unpacking",
             kind="onoff", effects=("downloader",),
