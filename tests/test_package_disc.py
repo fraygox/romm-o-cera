@@ -230,12 +230,31 @@ def test_an_add_on_xenia_already_has_is_left_alone(chd):
     assert "xenia already has that add-on" in _log() and "1 of 2 add-ons and updates" in _log()
 
 
-def test_a_link_a_deleted_game_left_is_replaced(chd):
+def test_a_link_a_deleted_game_left_is_replaced_and_the_owners_own_link_never(chd):
     sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc())
     os.makedirs(_content("00000002"))
-    os.symlink("/nowhere/gone", _content("00000002", "EF56AB78"))
+    os.makedirs(_content("000B0000"))
+    # the app's own, from a copy of the game deleted since: leads into a ".packages" folder that's gone
+    os.symlink(os.path.join(sysdir, "Old Name (World).packages", ADDON), _content("00000002", "EF56AB78"))
+    # the owner's: the update kept on a drive that isn't plugged in now
+    os.symlink("/elsewhere/xbox360/update", _content("000B0000", "tu00000001_00000000"))
     assert _convert(chd, src) is True
     assert os.path.isfile(_content("00000002", "EF56AB78", "spa.bin"))
+    assert os.readlink(_content("000B0000", "tu00000001_00000000")) == "/elsewhere/xbox360/update"
+    assert "1 of 2 add-ons and updates" in _log()
+
+
+def test_a_launcher_that_cant_be_written_leaves_no_folder_behind(chd, monkeypatch):
+    sysdir, src = _image("Lorem Ipsum (World).iso", stub_disc())
+    real = rommlib.atomic_write_text
+
+    def full(path, text, **kw):
+        if path.endswith(".xbox360.part"):
+            raise OSError(28, "No space left on device")
+        return real(path, text, **kw)
+    monkeypatch.setattr(rommlib, "atomic_write_text", full)
+    assert _convert(chd, src) is False
+    assert os.listdir(sysdir) == ["Lorem Ipsum (World).iso"] and "launcher couldn't be written" in _log()
 
 
 def test_a_damaged_add_on_keeps_the_image(chd):

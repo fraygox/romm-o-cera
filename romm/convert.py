@@ -403,17 +403,19 @@ def zar_listing(path):
     out = {}
     try:
         todo = [(0, "")]                       # the root is the first entry, a folder with no name
-        seen = 0
+        seen = set()
         while todo:
             i, base = todo.pop()
-            a, b, c = (int.from_bytes(tree[i * 16 + k:i * 16 + k + 4], "big") for k in (0, 4, 8))
-            seen += 1
-            if i >= count or seen > count:
+            if i >= count or i in seen:        # every entry once: a tree that loops isn't one
                 return None
+            seen.add(i)
+            a, b, c = (int.from_bytes(tree[i * 16 + k:i * 16 + k + 4], "big") for k in (0, 4, 8))
             here = base if i == 0 else (base + "/" if base else "") + name(a & 0x7FFFFFFF)
             if a & 0x80000000:                 # a file: its size's low 32 bits, then the high 16
                 out[here] = c | int.from_bytes(tree[i * 16 + 12:i * 16 + 14], "big") << 32
             else:                              # a folder: its entries' first index and how many
+                if b + c > count:              # (checked before anything is built from it)
+                    return None
                 todo += [(j, here) for j in range(b, b + c)]
     except IndexError:
         return None
@@ -1191,9 +1193,11 @@ def convert_words(mode):
 
 def needed_to_play(mode):
     """A conversion of this mode makes the game startable at all (a package disc's
-    launcher): until it's done the game isn't ready to play."""
+    launcher): until it's done the game isn't ready to play. Only once its tool is
+    here: before that the file couldn't be read, and it may be an ordinary game."""
     c = CONVERTER.get(mode)
-    return c is not None and bool(c.words)
+    # (without its tool nothing was told of the file yet: an ordinary disc is queued too, and plays)
+    return c is not None and bool(c.words) and (c.tool is None or c.tool.installed() is not None)
 CONVERT_OUTPUTS = {c.mode: c.outputs for c in CONVERTERS}
 
 

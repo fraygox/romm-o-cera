@@ -437,6 +437,11 @@ def test_a_package_disc_isnt_ready_until_its_set_up(isolated, rb, monkeypatch):
                         label="Lorem Tales")
     state = {"st": "queued"}
     monkeypatch.setattr(rommlib, "chd_status", lambda *a, **k: state["st"])
+    # before the Xbox 360 tools are here nothing could be told of the disc (an ordinary game is
+    # queued too, and plays): it isn't held back on a guess
+    monkeypatch.setattr(rommlib, "x360_tools", lambda: None)
+    assert scr.status(j) == ("Ready to play", rb.theme.GREEN)
+    monkeypatch.setattr(rommlib, "x360_tools", lambda: ("extract-xiso", "zarchive"))
     assert scr.status(j) == ("Getting it ready", rb.theme.AMBER)
     assert scr.detail(j) == ("roms/xbox360 · waiting to be set up for xenia", rb.theme.FAINT)
     said = []

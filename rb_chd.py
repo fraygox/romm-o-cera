@@ -818,14 +818,18 @@ def _content_place(rel, path):
 def link_packages(folder, links):
     """Link a landed packages folder's unpacked add-ons and update into
     xenia's content folder, where it looks for them. Never over anything there
-    but a link that leads nowhere (a game deleted earlier): an add-on installed
-    from xenia's own menu stays as it is. Returns how many are in place."""
+    but a link of the app's own that leads nowhere (a game deleted earlier): an
+    add-on installed from xenia's own menu, or linked there by the owner, stays
+    as it is. Returns how many are in place."""
     done = 0
     saves = getattr(rommlib, "SAVES_ROOT", "/userdata/saves")
     for rel, place in links:
         target, link = os.path.join(folder, rel), os.path.join(saves, XENIA_CONTENT, place)
         try:
-            if os.path.islink(link) and not os.path.exists(link):
+            # a link leading nowhere that this app made (into a ".packages" folder: a game deleted
+            # since) is replaced; anyone else's (add-ons kept on a drive that isn't plugged in) stays
+            if os.path.islink(link) and not os.path.exists(link) and any(
+                    part.endswith(PACKAGE_DIR_EXT) for part in os.readlink(link).split(os.sep)):
                 os.remove(link)
             if os.path.lexists(link):
                 same = os.path.realpath(link) == os.path.realpath(target)
@@ -1635,8 +1639,14 @@ def convert(task):
             plan[plan.index((src, out))] = (src, launcher)
             out, tmp = launcher, launcher + ".part"
             _PACKAGE_OF[tmp] = _PACKAGE_OF[out] = folder        # goes with the launcher if it's dropped
-            rommlib.atomic_write_text(tmp, "%s/%s\n" % (os.path.basename(folder), title.replace(os.sep, "/")),
-                                      errors="surrogateescape")
+            try:
+                rommlib.atomic_write_text(tmp, "%s/%s\n" % (os.path.basename(folder), title.replace(os.sep, "/")),
+                                          errors="surrogateescape")
+            except OSError as e:               # (a full disk): no folder left without its launcher
+                note("chd: FAIL %s: its launcher couldn't be written (%s)" % (src, e.strerror or e))
+                for m in made + [tmp]:
+                    _drop(m)
+                return False
             note("chd: %s only starts a package: keeping its packages and a launcher, not a .zar"
                  % os.path.basename(src))
         # the output must be on disk before it takes its name, and before any original

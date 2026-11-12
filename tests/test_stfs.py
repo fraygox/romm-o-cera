@@ -89,3 +89,17 @@ def test_unpacking_never_writes_into_a_folder_already_there(tmp_path):
     with pytest.raises(rommlib.StfsError):
         rommlib.stfs_unpack(p, str(out))
     assert os.listdir(out) == []
+
+
+def test_a_file_table_listing_more_than_the_package_holds_is_refused(tmp_path):
+    """A size no package of that many blocks could hold (with a block chain that loops it
+    would be written out until the disk is full)."""
+    import hashlib
+    data = bytearray(build_package({"zzzz": b"1"}))
+    at = data.index(b"zzzz", 0xA000)
+    data[at + 0x34:at + 0x38] = (0xFFFFFF00).to_bytes(4, "big")
+    block = at // 0x1000 * 0x1000
+    data[0xA000:0xA014] = hashlib.sha1(bytes(data[block:block + 0x1000])).digest()
+    with pytest.raises(rommlib.StfsError, match="more in its files than it holds"):
+        rommlib.stfs_unpack(_package(tmp_path, bytes(data)), str(tmp_path / "out"))
+    assert not os.path.exists(tmp_path / "out")

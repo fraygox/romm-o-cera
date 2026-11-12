@@ -224,6 +224,14 @@ def test_a_zars_file_list_is_read_without_unpacking_it(tools, tmp_path):
     assert rommlib.zar_listing(z) == want and len(want) == 5
     assert rommlib.zar_listing(iso) is None and rommlib.zar_listing(str(tmp_path / "none")) is None
     raw = open(z, "rb").read()
+    # a file tree that can't be one is refused at once, never walked: a folder naming billions of
+    # entries, and one that lists itself
+    tree_at = int.from_bytes(raw[-144 + 48:-144 + 56], "big")
+    for first, n in ((1, 0xFFFFFFF0), (0, 1)):
+        bad = bytearray(raw)
+        bad[tree_at + 4:tree_at + 12] = first.to_bytes(4, "big") + n.to_bytes(4, "big")
+        open(z, "wb").write(bad)
+        assert rommlib.zar_listing(z) is None
     open(z, "wb").write(raw[:-200])                                 # cut short: no footer where one must be
     assert rommlib.zar_listing(z) is None
 

@@ -95,7 +95,7 @@ class _Stfs:
         second = False
         if self.info["tables"] == 2:             # a console-written package keeps two copies of each table:
             second = self.info["active"]         # the level above says which one is current
-            levels = next((i for i, per in enumerate(STFS_PER_LEVEL) if self.info["blocks"] < per), 0)
+            levels = next((i for i, per in enumerate(STFS_PER_LEVEL) if self.info["blocks"] <= per), 0)
             for level in range(levels, 0, -1):
                 rec = n // STFS_PER_LEVEL[level - 1] % STFS_PER_LEVEL[0]
                 e = self._table(n, level, second)[rec * 0x18:rec * 0x18 + 0x18]
@@ -115,6 +115,7 @@ class _Stfs:
     def listing(self):
         """[(path, is a folder, first block, size)], folders before what they hold."""
         out, n = [], self.info["dir_block"]
+        room = self.info["blocks"] * STFS_BLOCK          # no file, nor all of them, can hold more than the package
         for _ in range(self.info["dir_blocks"]):
             if n == STFS_END:
                 break
@@ -128,8 +129,13 @@ class _Stfs:
                 if not name or name in (".", "..") or "/" in name or "\\" in name or "\0" in name \
                         or (parent != 0xFFFF and (parent >= len(out) or not out[parent][1])):
                     raise StfsError("has a file table entry that can't be right")
-                out.append((name if parent == 0xFFFF else out[parent][0] + "/" + name, bool(e[0x28] & 0x80),
-                            int.from_bytes(e[0x2F:0x32], "little"), int.from_bytes(e[0x34:0x38], "big")))
+                is_dir, size = bool(e[0x28] & 0x80), int.from_bytes(e[0x34:0x38], "big")
+                if not is_dir:
+                    room -= size
+                    if room < 0:               # (a chain that loops would be written out until the disk is full)
+                        raise StfsError("lists more in its files than it holds")
+                out.append((name if parent == 0xFFFF else out[parent][0] + "/" + name, is_dir,
+                            int.from_bytes(e[0x2F:0x32], "little"), size))
                 if len(out) > STFS_MAX_ENTRIES:
                     raise StfsError("has a file table that never ends")
         return out
