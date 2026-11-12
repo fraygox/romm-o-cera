@@ -632,6 +632,53 @@ def music_screen(on=False, sel=0):
     scr.sel = sel
 
 
+class Hush:
+    """A music stream that makes no sound (the harness has none), a while into its track."""
+    def __init__(self, pos):
+        self.busy, self.pos = False, pos
+
+    def load(self, path):
+        pass
+
+    def play(self):
+        self.busy = True
+
+    def pause(self):
+        self.busy = False
+
+    unpause = play
+    stop = pause
+    unload = pause
+
+    def get_busy(self):
+        return True
+
+    def get_pos(self):
+        return self.pos
+
+
+def music_play(tracks=None, paused=False):
+    """Play music: what there is to listen to, on a game's row; tracks: "game", that game's
+    list playing, or "all", everything shuffled; paused: paused there."""
+    music_screen()
+    juke = rb.JukeboxScreen(app)
+    app.push(juke)
+    app.player.out = Hush(42000)
+    app.player.rng.seed(7)
+
+    def opened():
+        rows = juke.listed()
+        juke.sel = next(i for i, r in enumerate(rows) if r["key"][0] == ("all" if tracks == "all" else "game"))
+        if tracks:
+            juke.action("x")
+
+            def playing():
+                if paused:
+                    app.player.toggle()
+            app._after = playing
+    app._after = opened
+
+
 def music_mix(pick=False):
     """The mix editor on a saved mix; pick: its game genres being ticked."""
     music_screen(on=True)
@@ -676,7 +723,10 @@ SCENES = [
     ("home", lambda: None),
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
     ("music", lambda: music_screen()),
-    ("music-on", lambda: music_screen(on=True, sel=4)),
+    ("music-on", lambda: music_screen(on=True, sel=5)),
+    ("music-play", lambda: music_play()),
+    ("music-play-tracks", lambda: music_play("game")),
+    ("music-play-all", lambda: music_play("all", paused=True)),
     ("music-mix", lambda: music_mix()),
     ("music-mix-pick", lambda: music_mix(pick=True)),
     ("music-add-game", lambda: (music_screen(), app.stack[-1].add_game())),
@@ -891,6 +941,8 @@ def reset():
         if os.path.exists(p):
             os.remove(p)
     app.music["result"] = {}
+    app.player.stop()                             # the Play music scenes' state
+    app.player.queue, app.player.order, app.player.shuffle, app.player.error, app.player.out = [], [], False, "", None
     rommlib.VERSION_LABEL = VERSION_LABEL         # a nightly's label (whats-new-nightly)
 
 

@@ -23,6 +23,9 @@ MUSIC_FILE_MAX = 512 << 20      # no single track is larger
 MUSIC_FAILS = 3                 # downloads failing in a row before a sync gives up
 MUSIC_CAP_CHOICES = (1, 2, 5, 10, 20, 50, 0)       # GB the Music screen offers; 0: no limit
 MUSIC_MIX_FACETS = ("game_genre", "genre", "artist", "platform", "decade")     # a mix's lists; "max_minutes" beside them
+MUSIC_CACHE_MAX = 256 << 20     # tracks fetched to be listened to in the app, kept for the next time
+MUSIC_PART_AGE = 3600           # a ".part" in that cache older than this was left by a fetch that died
+MUSIC_CACHE_ROOM = 64 << 20     # free space a fetch into that cache leaves on the drive, at the least
 _MUSIC_BUSY = threading.Lock()
 
 
@@ -37,6 +40,11 @@ def music_state_path():
 
 def music_sources_path():
     return os.path.join(_core.DATA_DIR, "music-sources.json")
+
+
+def music_cache_dir():
+    """Tracks fetched to be played in the app (not ES's: it never looks here)."""
+    return os.path.join(_core.DATA_DIR, "music-cache")
 
 
 def music_cap_bytes(cfg):
@@ -429,3 +437,89 @@ def _sync_music(api, sel, library, on, cap, keep_free, progress, cancel):
         except OSError:
             pass
     return done()
+
+
+# ---------------------------------------------------------------- listening in the app
+
+def _music_cached_path(t):
+    return os.path.join(music_cache_dir(), "%d%s" % (t["rom_file_id"], os.path.splitext(t.get("file_name") or "")[1].lower()))
+
+
+def music_local(t):
+    """The file of a track that's on the box already: in the menu music, or fetched
+    earlier to be listened to. None when it has to be fetched."""
+    if not isinstance(t.get("rom_file_id"), int):
+        return None
+    rec = load_music_state()["tracks"].get(str(t["rom_file_id"]))
+    for path in ([_music_placed_path(rec)] if rec else []) + [_music_cached_path(t)]:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def prune_music_cache(limit=MUSIC_CACHE_MAX, keep=()):
+    """Bring the listening cache under limit bytes, the tracks played longest ago first;
+    keep: paths that stay whatever their age (what's playing). Returns the bytes freed."""
+    d, now, files, freed = music_cache_dir(), time.time(), [], 0
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return 0
+    for n in names:
+        path = os.path.join(d, n)
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        if n.endswith(".part"):
+            if now - st.st_mtime > MUSIC_PART_AGE:
+                files.append((0, st.st_size, path))        # a fetch that died: first to go, whatever the limit
+            continue
+        files.append((st.st_mtime, st.st_size, path))
+    total = sum(size for _, size, path in files if not path.endswith(".part"))
+    for when, size, path in sorted(files):
+        part = path.endswith(".part")
+        if not part and (total <= limit or path in keep):
+            continue
+        try:
+            os.remove(path)
+        except OSError:
+            continue
+        freed += size
+        if not part:
+            total -= size
+    return freed
+
+
+def fetch_music(api, t, keep=()):
+    """A file to play a track from: the one on the box when it's here (touched, so the
+    cache keeps what's listened to), else fetched from RomM into the listening cache,
+    which is then pruned (never the paths in keep). The cache is small and bounded, like
+    the covers', so the space kept free for downloads isn't asked about; a drive that's
+    all but full is. RommError when the track can't be had."""
+    if not isinstance(t.get("rom_file_id"), int):
+        raise _core.RommError("That isn't a track of RomM's jukebox")
+    path = music_local(t)
+    if path:
+        if os.path.dirname(path) == music_cache_dir():
+            try:
+                os.utime(path)
+            except OSError:
+                pass
+        return path
+    d, path = music_cache_dir(), _music_cached_path(t)
+    secs = t.get("duration_seconds")
+    guess = int((secs if isinstance(secs, (int, float)) and secs > 0 else MUSIC_UNKNOWN_SECONDS) * MUSIC_RATE)
+    try:
+        os.makedirs(d, exist_ok=True)
+        if _core.free_bytes(d) - guess < MUSIC_CACHE_ROOM:
+            prune_music_cache(0, keep)                      # room for this one before giving up
+            if _core.free_bytes(d) - guess < MUSIC_CACHE_ROOM:
+                raise _core.RommError("No room on the drive to fetch that track")
+        part = "%s.%d.part" % (path, threading.get_ident())
+        api.download_music(t, part, MUSIC_FILE_MAX)
+        os.replace(part, path)
+    except OSError as e:
+        raise _core.RommError("Couldn't keep that track on the drive (%s)" % (e.strerror or e)) from None
+    prune_music_cache(MUSIC_CACHE_MAX, tuple(keep) + (path,))
+    return path

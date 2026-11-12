@@ -5,6 +5,7 @@ from rommlib import human_size
 from rbui import theme
 from rbui.draw import card, hline, meter, rrect, scroll_text, scrollbar, state_stripe, text
 from rbui.theme import W
+from rbui.player import track_title
 from rbui.widgets.chips import switch
 from rbui.widgets.layout import list_head, list_row, split, ROWS_TOP
 from rbui.screens.base import ListScreen, Screen
@@ -24,6 +25,31 @@ def minutes(secs):
     """ "68 min", "3 h 20 min"."""
     m = int(round((secs or 0) / 60))
     return "%d min" % m if m < 100 else "%d h %02d min" % divmod(m, 60)
+
+
+def jukebox_failed(scr, attr):
+    """The err callback of load_jukebox's totals: {} for them, and the reason kept for the screen to draw."""
+    def failed(e):
+        scr.load_error = str(e) or e.__class__.__name__
+        setattr(scr, attr, {})
+    return failed
+
+
+def load_jukebox(scr):
+    """Ask RomM, in the background, what its jukebox holds, onto scr: stats (its totals; {}
+    when they couldn't be read), games ({rom id: RomM's music-games row}), playlists and
+    favourites (how many are starred); lists_why says why the last two can't be read, when
+    this token may not."""
+    app, api = scr.app, scr.app.api
+    app.bg(api.music_stats, lambda v: setattr(scr, "stats", v), jukebox_failed(scr, "stats"))
+    app.bg(lambda: {g["rom_id"]: g for g in api.music_all("games") or []},
+           lambda v: setattr(scr, "games", v), lambda e: setattr(scr, "games", {}))
+
+    def no_lists(e):
+        scr.playlists, scr.favourites = [], 0
+        scr.lists_why = str(e) if isinstance(e, rommlib.ScopeMissing) else "RomM didn't answer (%s)" % e
+    app.bg(api.music_playlists, lambda v: setattr(scr, "playlists", v), no_lists)
+    app.bg(lambda: len(api.music_all("favorites") or []), lambda n: setattr(scr, "favourites", n), lambda e: None)
 
 
 class MusicScreen(ListScreen):
@@ -50,35 +76,25 @@ class MusicScreen(ListScreen):
     # ---------------------------------------------------------------- data
 
     def enter(self):
-        app, api = self.app, self.app.api
+        app = self.app
         self.sources = rommlib.load_music_sources()
         try:
             self.here = {int(k) for k in app.library.snapshot()}
         except Exception:                                # noqa: BLE001 — a count, never an error
             self.here = set()
-        app.bg(api.music_stats, lambda v: setattr(self, "stats", v), self.load_failed("stats"))
-        app.bg(lambda: {g["rom_id"]: g for g in api.music_all("games") or []},
-               lambda v: setattr(self, "games", v), lambda e: setattr(self, "games", {}))
-
-        def no_lists(e):
-            self.playlists, self.favourites = [], 0
-            self.lists_why = str(e) if isinstance(e, rommlib.ScopeMissing) else "RomM didn't answer (%s)" % e
-        app.bg(api.music_playlists, lambda v: setattr(self, "playlists", v), no_lists)
-        app.bg(lambda: len(api.music_all("favorites") or []), lambda n: setattr(self, "favourites", n), lambda e: None)
-
-    def load_failed(self, attr):
-        def failed(e):
-            self.load_error = str(e) or e.__class__.__name__
-            setattr(self, attr, {})
-        return failed
+        load_jukebox(self)
 
     def listed(self):
         return self.rows()
 
     def rows(self):
-        """[(key, label, grey line, on or None, available)]: the switch and the cap, then the sources."""
-        cfg, s = self.app.cfg, self.sources
-        out = [("on", "Menu music", "EmulationStation plays these tracks in its menus", bool(cfg["menu_music"]), True),
+        """[(key, label, grey line, on or None, available)]: listening here, the switch and the cap,
+        then the sources."""
+        cfg, s, pl = self.app.cfg, self.sources, self.app.player
+        cur = pl.current() if pl.active() else None
+        out = [("listen", "Play music", "Playing: %s" % track_title(cur) if cur else "Listen to RomM's soundtracks here in the app",
+                None, True),
+               ("on", "Menu music", "EmulationStation plays these tracks in its menus", bool(cfg["menu_music"]), True),
                ("cap", "Space for menu music", "The most these tracks may take on the box", None, True)]
         lists = not self.lists_why
         fav = "Loading…" if self.favourites is None else "%s you starred in RomM" % plural_tracks(self.favourites)
@@ -121,7 +137,7 @@ class MusicScreen(ListScreen):
     def hints(self):
         rows = self.rows()
         key = rows[min(self.sel, len(rows) - 1)][0]
-        verb = "Change" if key == "cap" else "Open" if key in ("add_game", "new_mix") else "Switch"
+        verb = "Change" if key == "cap" else "Open" if key in ("listen", "add_game", "new_mix") else "Switch"
         return [("A", verb)] + ([("Y", "Edit mix")] if key.startswith("mix:") else []) + [("X", "Sync now"), ("B", "Back")]
 
     def action(self, a):
@@ -131,6 +147,8 @@ class MusicScreen(ListScreen):
             key, _, _, on, ok = rows[min(self.sel, len(rows) - 1)]
             if not ok:
                 app.toast(self.lists_why or "Not available", theme.AMBER)
+            elif key == "listen":
+                app.open_jukebox()
             elif key == "on":
                 self.switch_all(not on)
             elif key == "cap":
@@ -278,7 +296,7 @@ class MusicScreen(ListScreen):
             status = cap_label(app.cfg["menu_music_cap_gb"]) if key == "cap" else ""
             list_row(c, f, r, focus, label, sub, status, theme.DIM, slot="music-row", box=theme.PANEL,
                      label_color=None if ok else theme.FAINT, sub_color=None if ok else theme.AMBER,
-                     chevron=key in ("add_game", "new_mix"))
+                     chevron=key in ("listen", "add_game", "new_mix"))
             if on is not None and ok:
                 switch(c, (r.right - 76, r.centery - 13, 52, 26), on)
             state_stripe(c, r, theme.ACCENT if on and ok and (key == "on" or app.cfg["menu_music"]) else theme.LINE)
@@ -308,6 +326,9 @@ class MusicScreen(ListScreen):
             return ("%s. Favourites and playlists belong to an account, and the token decides what the box may read "
                     "of them. Mixes, single games and the games on this box work as they are." % self.lists_why.rstrip("."))
         return {
+            "listen": "Listen to RomM's soundtracks in the app: everything shuffled, your favourites, a playlist, a "
+                      "mix, or one game's soundtrack. The music goes on while you look around the app and stops when "
+                      "the app closes or a game starts. It has nothing to do with the menu music below.",
             "on": "RomM-o-Cera keeps the tracks you choose below in a folder of its own inside EmulationStation's "
                   "music folder (music/romm-o-cera), and EmulationStation plays from there at random. While any "
                   "track is there, Batocera's own songs don't play; turn this off and they return. Music of your "

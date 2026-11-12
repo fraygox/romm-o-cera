@@ -38,7 +38,7 @@ class HomeScreen(Screen):
             ("downloads", "Activity", "Downloads and compressing, as they run"),
             ("installed", "On this box", "Your games, space, BIOS files and checks"),
             ("settings", "Settings", "Server, controller, downloads, compression")]
-    MUSIC = ("music", "Music", "RomM soundtracks as your menu music")     # on the rail once RomM's jukebox holds a track
+    MUSIC = ("music", "Music", "RomM's soundtracks, played here or as your menu music")     # on the rail once RomM's jukebox holds a track
     RAIL_Y = 84
     Y0, Y1 = 138, 674               # the shelf area, under the rail and above the hint bar
     GAP = 12

@@ -10,13 +10,15 @@ from rommlib import human_size
 from rbui import APP_NAME, draw, pads, theme
 from rbui.theme import apply_theme, FPS, H, ink_on, S, set_custom, W
 from rbui.draw import (as_rgba, button_glyph, circle, COVER_DECODES, COVER_ENTRIES, cover_fit, Fonts, glyph_width,
-                       hline, marquee, measure, rich_width, rom_title, rrect, shot_fit, surface_bytes, text)
+                       hline, marquee, measure, play_mark, rich_width, rom_title, rrect, shot_fit, surface_bytes, text)
 from rbui.pads import FACE, style_from_names, theme_for, TOKEN_ACTION, TOKEN_BACK
 from rbui.sfx import Sfx, SOUND_FOR
+from rbui.player import Player, track_title
 from rbui.input import Input
 from rbui.screens.base import ListScreen
 from rbui.screens.home import HomeScreen
 from rbui.screens.downloads import DownloadsScreen
+from rbui.screens.jukebox import JukeboxScreen, TracksScreen
 from rbui.screens.whatsnew import notes_at_start, WhatsNewScreen
 from rbui.screens.welcome import WelcomeScreen, welcome_due, welcome_on_rejected
 from rbui.modals import ActionMenu, Confirm
@@ -197,6 +199,7 @@ class App:
         # menu music: the sync in the background and what the last one did (the Music screen shows it)
         self.music = {"busy": False, "done": 0, "total": 0, "again": False, "result": rommlib.music_status()["last"]}
         self.music_stop = threading.Event()
+        self.player = Player(self)    # what's playing in the app (Music, Play music)
         self.update_tag = None
         self.library = rommlib.Library()
         self.downloader = rommlib.Downloader(self.api, self.library, self.cfg)
@@ -992,6 +995,19 @@ class App:
                                            progress=lambda d, t: m.update(done=d, total=t)),
                 finished, lambda e: finished({"error": str(e)}))
 
+    def open_jukebox(self):
+        """Music's "Play music": what there is to listen to."""
+        self.push(JukeboxScreen(self))
+
+    def open_player(self):
+        """The list that's playing, with what's playing beside it (the top bar's title is tapped,
+        or Play music's first row opened); nothing when that's the screen in front."""
+        pl, top = self.player, self.stack[-1]
+        if not pl.queue or (isinstance(top, TracksScreen) and top.key == pl.key):
+            return
+        queue = list(pl.queue)
+        self.push(TracksScreen(self, pl.what, lambda: queue, pl.key))
+
     def startup_checks(self):
         """Things the player must know before anything else."""
         if rommlib.config_unreadable():
@@ -1076,6 +1092,7 @@ class App:
             for a in actions:
                 self.dispatch(a)
             self.tick_downloads()
+            self.player.tick()
             self.draw()
             rest.frame(self.canvas, bool(events or actions or fns))
         self.on_exit()
@@ -1283,6 +1300,7 @@ class App:
     def on_exit(self):
         rommlib.stop_running_checks()             # a Check games tool (chdman, dolphin-tool…) must not outlive the app
         self.music_stop.set()                     # a menu-music sync ends after the track it's on; the next start goes on
+        self.player.stop()
         pending = 0 if self.downloader.hold else self.downloader.pending_count()
         # keeps them in download-queue.json, and kills a running 7z before it returns:
         # its thread dies with this process, and a 7z left running would go on
@@ -1347,6 +1365,13 @@ class App:
             label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed and not j.stalled() else "")
             r = text(c, self.fonts.small, label, (rx, 33), theme.BLUE, "midright")
             rx = r.left
+        if self.player.active() and self.player.current():      # what's playing: a tap opens its list
+            on = self.player.state == "playing"
+            r = text(c, self.fonts.small, track_title(self.player.current()), (rx - (30 if n else 0), 33),
+                     theme.ACCENT_HI if on else theme.DIM, "midright", maxw=220)
+            play_mark(c, theme.ACCENT_HI if on else theme.DIM, (r.left - 14, 33), paused=self.player.state == "paused")
+            self.hit((r.left - 26, 8, r.width + 30, 50), self.open_player)
+            rx = r.left - 22
         crumbs = list(top.crumbs())
 
         def width(cs):

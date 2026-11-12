@@ -10,6 +10,7 @@ from rbui.draw import card, marquee, measure, progress_bar, rom_title, scroll_fi
 from rbui.modals import ActionMenu, ManageMenu
 from rbui.screens.about import draw_qr
 from rbui.screens.base import Screen
+from rbui.screens.jukebox import album_order, TracksScreen
 from rbui.screens.music import minutes, plural_tracks
 from rbui.widgets.chips import stars, status_chip
 from rbui.widgets.factsheet import FACT_ROW, facts
@@ -104,6 +105,12 @@ class GameScreen(Screen):
                     self.ost = (len(tracks), sum(t.get("duration_seconds") or 0 for t in tracks))
             self.app.bg(lambda: api.music_all("tracks", rom_id=rid), got, lambda e: None)
         return self.ost if self.ost_for == rid else None
+
+    def play_soundtrack(self):
+        """The game's soundtrack, playing from its first track, with its list in front."""
+        app, rid = self.app, self.rom["id"]
+        app.push(TracksScreen(app, rom_title(self.rom), lambda: album_order(app.api.music_all("tracks", rom_id=rid)),
+                              ("game", rid), autoplay=True))
 
     def in_menu_music(self):
         if self.menu_music is None:
@@ -249,6 +256,7 @@ class GameScreen(Screen):
         ost = self.soundtrack(self.record())
         if ost:
             about = "%s · %s" % (plural_tracks(ost[0]), minutes(ost[1]))
+            entries.append(("Play soundtrack", about + ", here in the app", self.play_soundtrack))
             entries.append(("Remove soundtrack from menu music", about, self.toggle_menu_music) if self.in_menu_music() else
                            ("Add soundtrack to menu music", about + ", played in EmulationStation's menus", self.toggle_menu_music))
         if self.status()[0] == "installed":

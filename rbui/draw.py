@@ -466,6 +466,18 @@ def card(surf, rect, on=False, radius=12, bg=None):
         rrect(surf, theme.PANEL if bg is None else bg, rect, radius)
 
 
+def play_mark(surf, color, center, paused=False, size=10):
+    """A small play triangle, or two pause bars, centred on center: what the player is doing."""
+    cx, cy = center
+    h = size / 2
+    if paused:
+        w = size * 0.32
+        for x in (cx - h, cx + h - w):
+            pygame.draw.rect(surf, color, (S(x), S(cy - h), max(1, S(w)), max(1, S(size))))
+    else:
+        pygame.draw.polygon(surf, color, [(S(cx - h * 0.8), S(cy - h)), (S(cx + h), S(cy)), (S(cx - h * 0.8), S(cy + h))])
+
+
 def chevron(surf, color, center, side, span=12, depth=6, width=2):
     """A chevron pointing to side ("left", "right", "up", "down"): a choice's ‹ ›, "more above"."""
     cx, cy = center

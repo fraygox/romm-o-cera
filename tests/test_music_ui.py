@@ -71,7 +71,7 @@ def test_music_is_on_homes_rail_only_when_romm_has_soundtracks(app, rb):
 def test_the_screen_lists_the_switch_the_cap_and_every_source(app, rb):
     scr = music(app, rb)
     keys = [r[0] for r in scr.rows()]
-    assert keys == ["on", "cap", "favourites", "on_box", "playlist:1", "playlist:2", "add_game", "new_mix"]
+    assert keys == ["listen", "on", "cap", "favourites", "on_box", "playlist:1", "playlist:2", "add_game", "new_mix"]
     assert row(scr, "favourites")[2].endswith("you starred in RomM") and row(scr, "playlist:1")[2] == "Playlist · 12 tracks · shared by sam"
     assert row(scr, "playlist:2")[2].endswith("private")
     assert scr.summary()[0][0] == "Menu music is off"
@@ -121,7 +121,7 @@ def test_a_token_that_cant_read_lists_shows_them_unavailable_with_the_reason(app
     scr = music(app, rb)
     fav = row(scr, "favourites")
     assert fav[4] is False and fav[2] == "Not available with this token"
-    assert [r[0] for r in scr.rows()] == ["on", "cap", "favourites", "on_box", "add_game", "new_mix"]      # no playlists to list
+    assert [r[0] for r in scr.rows()] == ["listen", "on", "cap", "favourites", "on_box", "add_game", "new_mix"]      # no playlists to list
     scr.action("ok")
     assert rommlib.load_music_sources()["favourites"] is False
     assert "playlists.read" in app.toasts[-1][0]

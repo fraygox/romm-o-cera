@@ -306,3 +306,57 @@ def test_a_record_naming_a_path_outside_the_folder_removes_nothing_there(api, is
     rommlib.atomic_write_json(rommlib.music_state_path(), {"tracks": {"1": {"file": "../../precious.mp3", "bytes": 4}}})
     res = rommlib.sync_music(api, sources(), on=False)
     assert outside.read_bytes() == b"keep" and res["placed"] == 0
+
+
+# ---------------------------------------------------------------- listening in the app
+
+def test_a_track_to_listen_to_is_fetched_once_and_one_in_the_menu_music_is_played_from_there(api, monkeypatch):
+    tracks = [t for t in api.music_all("tracks") if rommlib.music_playable(t)]
+    t = tracks[0]
+    assert rommlib.music_local(t) is None
+    path = rommlib.fetch_music(api, t)
+    assert os.path.dirname(path) == rommlib.music_cache_dir() and os.path.getsize(path) > 100
+    assert rommlib.music_local(t) == path and os.listdir(rommlib.music_cache_dir()) == [os.path.basename(path)]
+    with monkeypatch.context() as m:
+        m.setattr(api, "download_music", lambda *a: pytest.fail("fetched a track that's here"))
+        assert rommlib.fetch_music(api, t) == path
+    # a track the menu music holds is played from the music folder, never fetched a second time
+    fav = api.music_all("favorites")[0]
+    rommlib.sync_music(api, sources(favourites=True))
+    placed = rommlib.fetch_music(api, fav)
+    assert os.path.dirname(placed) == rommlib.music_dir()
+    with pytest.raises(rommlib.RommError):
+        rommlib.fetch_music(api, {"file_name": "x.mp3"})               # not a track of the jukebox
+
+
+def test_the_listening_cache_drops_what_was_played_longest_ago_and_never_what_is_playing(api, monkeypatch):
+    tracks = [t for t in api.music_all("tracks") if rommlib.music_playable(t)][:4]
+    paths = []
+    for i, t in enumerate(tracks[:3]):
+        paths.append(rommlib.fetch_music(api, t))
+        os.utime(paths[-1], (1000 + i, 1000 + i))                      # played in this order, long ago
+    size = os.path.getsize(paths[0])
+    monkeypatch.setattr(rommlib, "MUSIC_CACHE_MAX", int(size * 2.5))    # room for two and a bit
+    dead = os.path.join(rommlib.music_cache_dir(), "9.wav.1.part")
+    open(dead, "wb").write(b"x" * 10)
+    os.utime(dead, (1000, 1000))                                        # a fetch that died long ago
+    new = rommlib.fetch_music(api, tracks[3], keep=(paths[0],))
+    left = sorted(os.listdir(rommlib.music_cache_dir()))
+    # the oldest is playing and stays; the next oldest make room; the dead part is swept
+    assert left == sorted(os.path.basename(p) for p in (paths[0], new))
+    os.utime(paths[0], (1000, 1000))
+    rommlib.fetch_music(api, tracks[0])                                 # listened to again: no longer the oldest
+    assert os.path.getmtime(paths[0]) > 2000
+
+
+def test_no_track_is_fetched_onto_a_drive_thats_all_but_full(api, monkeypatch):
+    t = next(t for t in api.music_all("tracks") if rommlib.music_playable(t))
+    kept = rommlib.fetch_music(api, t)
+    other = next(x for x in api.music_all("tracks") if rommlib.music_playable(x) and x["rom_file_id"] != t["rom_file_id"])
+    monkeypatch.setattr(rommlib, "free_bytes", lambda path=None: 1 << 20)
+    with pytest.raises(rommlib.RommError, match="No room"):
+        rommlib.fetch_music(api, other, keep=(kept,))
+    assert os.listdir(rommlib.music_cache_dir()) == [os.path.basename(kept)]      # what's playing stayed; nothing half-fetched
+    assert rommlib.fetch_music(api, t) == kept                                     # one that's here needs no room
+    monkeypatch.setattr(rommlib, "free_bytes", lambda path=None: 1 << 30)          # room, though less than downloads keep free
+    assert os.path.isfile(rommlib.fetch_music(api, other))
