@@ -270,9 +270,7 @@ def _disc_need(detail, chd, kind):
     number); None when that can't be told or RomM lists no sizes, never a sum
     of every disc that would call this one incomplete."""
     members = []
-    for f in detail.get("files") or []:
-        if f.get("category") not in (None, "game"):
-            continue
+    for f in _library.romm_game_files(detail):
         for m in f.get("archive_members") or [{"name": f.get("file_name"), "size": f.get("file_size_bytes")}]:
             if m.get("name"):
                 members.append((m["name"].replace("\\", "/"), m.get("size")))
@@ -782,7 +780,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             _core.log("audit %s: %s" % (path, e))
             unverified(UNVERIFIED_ROMM)
             return
-        files = [f for f in (detail.get("files") or []) if f.get("category") in (None, "game")]
+        files = _library.romm_game_files(detail)
         if conv and (rom.get("fs_name") or "").lower() != low:
             # converted here from RomM's copy: its converter knows how to check what it made
             try:

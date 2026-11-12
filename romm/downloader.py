@@ -34,7 +34,7 @@ def _archived(rom):
     """The rom's archive files as RomM lists them, [] for loose files. Without
     a file list (a list record) its own file name says: None for an archive
     (or when nothing says), [] for anything else."""
-    files = [f for f in rom.get("files") or [] if f.get("category") in (None, "game")]
+    files = _library.romm_game_files(rom)
     if not files:
         name, ext = rom.get("fs_name") or "", (rom.get("fs_extension") or "").lower()
         if not name and not ext:
@@ -233,7 +233,7 @@ def zip_listing(api, rom, system):
     names = needs_listing(rom, system)
     if not names:
         return _listing(rom)
-    files = [f for f in rom.get("files") or [] if f.get("category") in (None, "game")]
+    files = _library.romm_game_files(rom)
     by_name = {f.get("file_name"): f for f in files}
     out = {}
     try:
@@ -1435,8 +1435,7 @@ class Downloader:
                 raise NetError(str(e) + ".") from None
             raise
         j.rom = rom = dict(rom, **detail)
-        files = [f for f in (detail.get("files") or [])
-                 if f.get("category") in (None, "game")]
+        files = _library.romm_game_files(detail)
         j.total_bytes = sum(f.get("file_size_bytes") or 0 for f in files) or \
             detail.get("fs_size_bytes") or 0
         j.done_bytes, j.verified = 0, None

@@ -1219,6 +1219,25 @@ def conversion_of(paths):
 DISC_RE = re.compile(r"\s*\((?:Disc|Disk|CD(?!32\))|DVD(?![59]\)))\s*([0-9]{1,2}|[A-H])(?:\s*of\s*[0-9]{1,2})?\)", re.I)
 
 
+def romm_game_files(rom):
+    """The files of a RomM game that are the game on the box: the ones RomM
+    calls the game, and a patch (.ips, .bps, .ppf...) lying beside them, which
+    the emulator applies from there. RomM 5.5 calls a patch file a "patch"
+    wherever it lies; RomM up to 5.4 called one beside the game a game file.
+    Manuals, DLC, updates and whatever is in a patch/ folder stay on RomM."""
+    gp = (rom.get("full_path") or "").rstrip("/")
+    out = []
+    for f in rom.get("files") or []:
+        category = f.get("category")
+        if category in (None, "game"):
+            out.append(f)
+        elif category == "patch" and gp:
+            fp = (f.get("full_path") or "").rstrip("/")
+            if fp == gp or os.path.dirname(fp) == gp:
+                out.append(f)
+    return out
+
+
 def rom_is_folder(detail, files=None):
     """True when a RomM game is a folder (cue/bin set, GDI, a folder holding
     one file, per-disc subfolders...): some file of it lives at another path

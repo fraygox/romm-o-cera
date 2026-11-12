@@ -5,11 +5,12 @@
 
 Starts MariaDB + rommapp/romm:<tag> in their own docker network (RomM
 published on 127.0.0.1 only), generates a small library (carts across A–Z,
-a cue/bin folder, a GDI folder, a folder holding one ISO), creates the first
-admin, scans over RomM's websocket (the same call the web UI makes), creates a
-collection and a read-only client token, runs the contract tests, and tears it
-all down. No metadata providers are enabled: every game stays "unidentified",
-which is fine — the tests check API shape, not matching.
+a cue/bin folder, a GDI folder, a folder holding one ISO, a cart with a patch
+beside it), creates the first admin, scans over RomM's websocket (the same
+call the web UI makes), creates a collection and a read-only client token,
+runs the contract tests, and tears it all down. No metadata providers are
+enabled: every game stays "unidentified", which is fine — the tests check API
+shape, not matching.
 
 Exit code = pytest's (0 pass, 1 tests failed); 3 = the harness itself failed
 (couldn't start/scan RomM). Needs docker, requests, pytest, python-socketio.
@@ -86,6 +87,11 @@ def make_library(root):
     ps2 = os.path.join(roms, "ps2", "Contract Nested (USA)")
     os.makedirs(ps2)
     open(os.path.join(ps2, "Contract Nested (USA).iso"), "wb").write(rnd(2048 * 64))
+    snes = os.path.join(roms, "snes", "Contract Patched (USA)")       # a cart, a patch beside it, one in patch/
+    os.makedirs(os.path.join(snes, "patch"))
+    open(os.path.join(snes, "Contract Patched (USA).sfc"), "wb").write(rnd(32 * 1024))
+    open(os.path.join(snes, "Contract Patched (USA).ips"), "wb").write(b"PATCH" + rnd(64) + b"EOF")
+    open(os.path.join(snes, "patch", "Contract Fix.bps"), "wb").write(b"BPS1" + rnd(64))
     os.makedirs(os.path.join(root, "bios"))
     cfg = os.path.join(root, "config")
     os.makedirs(cfg)

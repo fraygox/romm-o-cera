@@ -24,6 +24,7 @@ ROM_FIELDS = {"id", "name", "fs_name", "fs_name_no_ext", "fs_size_bytes", "platf
               "regions", "metadatum", "path_cover_small", "path_cover_large",
               "has_multiple_files", "has_nested_single_file"}
 FILE_FIELDS = {"id", "file_name", "file_size_bytes", "category", "full_path"}
+PATCH_EXTS = (".ips", ".ups", ".bps", ".ppf", ".rup", ".aps", ".bdf", ".pmsr", ".vcdiff", ".xdelta")   # RomM 5.5's
 
 
 @pytest.fixture(scope="module")
@@ -205,6 +206,35 @@ def test_download_folder_file(api, platforms):
     if f["file_size_bytes"] > 16:
         part = api.s.get(url, headers={"Range": "bytes=0-15"}, timeout=60)
         assert part.status_code == 206 and len(part.content) == 16
+
+
+def test_a_patch_beside_a_game_is_one_of_its_files(api, platforms):
+    """A patch (.ips, .bps, .ppf...) lying beside a game comes down with it: RomM 5.5
+    lists it as a "patch", older ones as a game file, and either way with a full_path
+    directly in the game's folder. One in a patch/ folder stays on RomM. (Looks at the
+    first 40 folder games of the smallest platforms only.)"""
+    looked = 0
+    for p in sorted(platforms, key=lambda p: p.get("rom_count") or 0)[:40]:
+        if not p.get("rom_count"):
+            continue
+        for r in api.roms(platform_ids=[p["id"]], limit=100)["items"]:
+            if not r["has_multiple_files"]:
+                continue
+            if looked == 40:
+                pytest.skip("no game with a patch beside it among the first 40 folder games")
+            looked += 1
+            d = api.rom(r["id"])
+            folder = d["full_path"].rstrip("/")
+            beside = [f for f in d["files"] if f["full_path"] == "%s/%s" % (folder, f["file_name"])
+                      and f["file_name"].lower().endswith(PATCH_EXTS)]
+            if not beside:
+                continue
+            assert all(f["category"] in (None, "game", "patch") for f in beside), beside
+            kept = rommlib.romm_game_files(d)
+            assert {f["id"] for f in beside} <= {f["id"] for f in kept}
+            assert not [f for f in kept if f["full_path"].startswith(folder + "/patch/")]
+            return
+    pytest.skip("no game with a patch beside it on this server")
 
 
 def test_cover_fetch(api, busiest, tmp_path, monkeypatch):
