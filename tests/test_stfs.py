@@ -24,7 +24,9 @@ def test_a_package_unpacks_to_its_files(tmp_path):
     assert rommlib.stfs_listing(p) == {k: len(v) for k, v in FILES.items()}
     out = str(tmp_path / "out")
     seen = []
-    got = rommlib.stfs_unpack(p, out, progress=seen.append, pause=lambda: None)
+    pauses = []
+    got = rommlib.stfs_unpack(p, out, progress=seen.append, pause=lambda: pauses.append(1))
+    assert 1 <= len(pauses) <= 3          # now and then (it may ask ES what's running): never per block
     assert got == {"files": len(FILES), "bytes": sum(len(v) for v in FILES.values())}
     for k, v in FILES.items():
         assert open(os.path.join(out, k), "rb").read() == v

@@ -149,8 +149,8 @@ def stfs_unpack(path, dest, progress=None, pause=None):
     """Unpack a package's files into the new folder dest, every block checked
     against the SHA-1 the package keeps for it and every file on disk before
     this returns. Returns {"files", "bytes"}. StfsError: nothing can be
-    trusted (the caller removes dest). progress(fraction); pause() between
-    blocks (it may raise to stop)."""
+    trusted (the caller removes dest). progress(fraction); pause() every
+    16 MB (it may wait, or raise to stop)."""
     info = stfs_info(path)
     try:
         with open(path, "rb") as f:
@@ -169,7 +169,7 @@ def stfs_unpack(path, dest, progress=None, pause=None):
                     while left:
                         if block == STFS_END:
                             raise StfsError("is damaged (%s ends %d bytes early)" % (rel, left))
-                        if pause:
+                        if pause and not done & 0xFFFFFF:        # every 16 MB: it may ask ES what's running
                             pause()
                         b, block = s.checked(block)
                         out.write(b[:left])
