@@ -3,9 +3,8 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import theme
-from rbui.draw import card, hline, meter, rrect, scroll_text, scrollbar, state_stripe, text
+from rbui.draw import card, hline, measure, meter, rrect, scroll_text, scrollbar, state_stripe, text
 from rbui.theme import W
-from rbui.player import track_title
 from rbui.widgets.chips import switch
 from rbui.widgets.layout import list_head, list_row, split, ROWS_TOP
 from rbui.screens.base import ListScreen, Screen
@@ -58,9 +57,9 @@ class MusicScreen(ListScreen):
     a switch; what's switched on adds up, and the app keeps its folder in EmulationStation's music
     folder in step. The card on top says what's there and what the last sync did; the panel on
     the right, what the selected row means."""
-    HEAD = pygame.Rect(32, 80, W - 64, 76)
-    LIST = pygame.Rect(32, 168, 584, 0)
-    ROW_H, ROWS = 70, 7
+    HEAD = pygame.Rect(32, 80, W - 64, 82)
+    LIST = pygame.Rect(32, 176, 584, 480)
+    ROW_H, ROWS = 58, 7
 
     def __init__(self, app):
         super().__init__(app)
@@ -88,14 +87,9 @@ class MusicScreen(ListScreen):
         return self.rows()
 
     def rows(self):
-        """[(key, label, grey line, on or None, available)]: listening here, the switch and the cap,
-        then the sources."""
-        cfg, s, pl = self.app.cfg, self.sources, self.app.player
-        cur = pl.current() if pl.active() else None
-        out = [("listen", "Play music", "Playing: %s" % track_title(cur) if cur else "Listen to RomM's soundtracks here in the app",
-                None, True),
-               ("on", "Menu music", "EmulationStation plays these tracks in its menus", bool(cfg["menu_music"]), True),
-               ("cap", "Space for menu music", "The most these tracks may take on the box", None, True)]
+        """[(key, label, grey line, on or None, available)]: the switch, the sources, then the space."""
+        cfg, s = self.app.cfg, self.sources
+        out = [("on", "Menu music", "", bool(cfg["menu_music"]), True)]
         lists = not self.lists_why
         fav = "Loading…" if self.favourites is None else "%s you starred in RomM" % plural_tracks(self.favourites)
         out.append(("favourites", "My RomM favourites", fav if lists else "Not available with this token", s["favourites"], lists))
@@ -127,17 +121,18 @@ class MusicScreen(ListScreen):
                     "Loading…" if self.games is None else "%d game%s in RomM %s one" % (n, "" if n == 1 else "s", "has" if n == 1 else "have"),
                     None, True))
         out.append(("new_mix", "New mix", "By game genre, music genre, artist, platform or decade", None, True))
+        out.append(("cap", "Space for menu music", "The most these tracks may take on the box", None, True))
         return out
 
     # ---------------------------------------------------------------- acting
 
     def crumbs(self):
-        return ["Music"]
+        return self.trail("Menu music")
 
     def hints(self):
         rows = self.rows()
         key = rows[min(self.sel, len(rows) - 1)][0]
-        verb = "Change" if key == "cap" else "Open" if key in ("listen", "add_game", "new_mix") else "Switch"
+        verb = "Change" if key == "cap" else "Open" if key in ("add_game", "new_mix") else "Switch"
         return [("A", verb)] + ([("Y", "Edit mix")] if key.startswith("mix:") else []) + [("X", "Sync now"), ("B", "Back")]
 
     def action(self, a):
@@ -147,8 +142,6 @@ class MusicScreen(ListScreen):
             key, _, _, on, ok = rows[min(self.sel, len(rows) - 1)]
             if not ok:
                 app.toast(self.lists_why or "Not available", theme.AMBER)
-            elif key == "listen":
-                app.open_jukebox()
             elif key == "on":
                 self.switch_all(not on)
             elif key == "cap":
@@ -241,16 +234,16 @@ class MusicScreen(ListScreen):
     # ---------------------------------------------------------------- drawing
 
     def summary(self):
-        """The card's two lines: (headline, colour), (what the sync is doing or did, colour)."""
+        """The master card's two lines: (what's in the menus, colour), (what the sync is doing or did, colour)."""
         app, m = self.app, self.app.music
         st = rommlib.music_status()
         res = m["result"] or {}
         cap = app.cfg["menu_music_cap_gb"]
         if not app.cfg["menu_music"] and not st["tracks"]:
-            head = ("Menu music is off", theme.TEXT)
+            head = ("Off. Batocera's own songs play in the menus", theme.DIM)
         else:
             head = ("%s in the menus · %s%s" % (plural_tracks(st["tracks"]), human_size(st["bytes"]),
-                                               " of %s" % cap_label(cap) if cap else ""), theme.TEXT)
+                                               " of %s" % cap_label(cap) if cap else ""), theme.DIM)
         if m["busy"]:
             note = ("Fetching %d of %d…" % (min(m["done"] + 1, m["total"]), m["total"]) if m["total"] else "Checking RomM…", theme.ACCENT_HI)
         elif res.get("error"):
@@ -263,47 +256,74 @@ class MusicScreen(ListScreen):
             note = ("%s in a format EmulationStation can't play" % plural_tracks(res["skipped"]), theme.DIM)
         elif app.cfg["menu_music"] and res.get("when"):
             note = ("Up to date", theme.GREEN)
-        elif not app.cfg["menu_music"] and not st["tracks"]:
-            note = ("Batocera's own songs play in the menus", theme.DIM)
         else:
             note = ("", theme.DIM)
         return head, note
 
+    SECTIONS = {"favourites": "What plays in the menus", "cap": "Space"}     # a heading above the row with this key
+    SECTION_H = 34
+
+    def placed(self, rows, first):
+        """[(row index, y)] of the rows under the master card from `first` on, as far as they fit,
+        and [(heading, y)] above the ones that start a section."""
+        out, heads, y = [], [], self.LIST.top
+        for i in range(first, len(rows)):
+            title = self.SECTIONS.get(rows[i][0])
+            h = self.SECTION_H if title else 0
+            if y + h + self.ROW_H - 6 > self.LIST.bottom:
+                break
+            if title:
+                heads.append((title, y))
+            out.append((i, y + h))
+            y += h + self.ROW_H
+        return out, heads
+
     def draw(self, c):
         app, f = self.app, self.f
+        rows = self.rows()
+        self.clamp()
+        # the master switch: one card across the top
         hr = self.HEAD
-        card(c, hr)
+        on = bool(app.cfg["menu_music"])
+        card(c, hr, self.sel == 0)
+        app.hit(hr, lambda: self.tap_now(0))
+        switch(c, (hr.left + 22, hr.top + 18, 52, 26), on)
         (line, col), (note, ncol) = self.summary()
-        nr = text(c, f.small, note, (hr.right - 20, hr.top + 20), ncol, "topright", maxw=hr.width // 2)
-        text(c, f.h2, line, (hr.left + 20, hr.top + 12), col, maxw=(nr.left if note else hr.right) - 40 - hr.left)
+        nr = text(c, f.small, note, (hr.right - 22, hr.top + 20), ncol, "topright", maxw=hr.width // 2)
+        text(c, f.h2, "Menu music", (hr.left + 92, hr.top + 10), theme.TEXT, maxw=(nr.left if note else hr.right) - 112 - hr.left)
         st, cap = rommlib.music_status(), rommlib.music_cap_bytes(app.cfg)
-        if st["tracks"] and cap < 1 << 60:
-            meter(c, (hr.left + 20, hr.bottom - 22, hr.width - 40, 8), [(min(1.0, st["bytes"] / cap), theme.ACCENT)])
+        bar = st["tracks"] and cap < 1 << 60
+        text(c, f.small, line, (hr.left + 92, hr.top + 46), col, maxw=hr.width - 114 - (260 if bar else 0))
+        if bar:
+            meter(c, (hr.right - 22 - 240, hr.top + 56, 240, 8), [(min(1.0, st["bytes"] / cap), theme.ACCENT)])
         if self.load_error and self.stats == {}:
             self.draw_load_error(c, self.LIST.top + 8)
             return
-        rows = self.rows()
-        self.clamp()
-        if self.sel < self.scroll:
-            self.scroll = self.sel
-        if self.sel >= self.scroll + self.ROWS:
-            self.scroll = self.sel - self.ROWS + 1
-        for n, (key, label, sub, on, ok) in enumerate(rows[self.scroll:self.scroll + self.ROWS]):
-            i = self.scroll + n
-            r = pygame.Rect(self.LIST.left, self.LIST.top + n * self.ROW_H, self.LIST.width, self.ROW_H - 6)
+        first = max(1, self.scroll)
+        if 1 <= self.sel < first:
+            first = self.sel
+        placed, heads = self.placed(rows, first)
+        while self.sel >= 1 and placed and self.sel > placed[-1][0]:
+            first += 1
+            placed, heads = self.placed(rows, first)
+        self.scroll = first
+        for title, y in heads:
+            text(c, f.small, title, (self.LIST.left + 4, y + 8), theme.ACCENT_HI)
+            hline(c, theme.LINE, (self.LIST.left + 12 + measure(f.small, title), y + 18), (self.LIST.right, y + 18))
+        for i, y in placed:
+            key, label, sub, on, ok = rows[i]
+            r = pygame.Rect(self.LIST.left, y, self.LIST.width, self.ROW_H - 6)
             app.hit(r, lambda i=i: self.tap_now(i))
-            focus = i == self.sel
             status = cap_label(app.cfg["menu_music_cap_gb"]) if key == "cap" else ""
-            list_row(c, f, r, focus, label, sub, status, theme.DIM, slot="music-row", box=theme.PANEL,
-                     label_color=None if ok else theme.FAINT, sub_color=None if ok else theme.AMBER,
-                     chevron=key in ("listen", "add_game", "new_mix"))
+            list_row(c, f, r, i == self.sel, label, sub, status, theme.TEXT if i == self.sel else theme.DIM, slot="music-row",
+                     box=theme.PANEL, label_color=None if ok else theme.FAINT, sub_color=None if ok else theme.AMBER,
+                     chevron=key in ("add_game", "new_mix"))
             if on is not None and ok:
-                switch(c, (r.right - 76, r.centery - 13, 52, 26), on)
-            state_stripe(c, r, theme.ACCENT if on and ok and (key == "on" or app.cfg["menu_music"]) else theme.LINE)
-        if len(rows) > self.ROWS:
-            scrollbar(c, (self.LIST.right + 6, self.LIST.top, 4, self.ROW_H * self.ROWS - 6), self.ROWS / len(rows),
-                      self.scroll / max(1, len(rows) - self.ROWS))
-        p = pygame.Rect(640, self.LIST.top, W - 32 - 640, self.ROW_H * self.ROWS - 6)
+                switch(c, (r.right - 74, r.centery - 13, 52, 26), on)
+        n = len(rows) - 1
+        if len(placed) < n:
+            scrollbar(c, (self.LIST.right + 6, self.LIST.top, 4, self.LIST.height), len(placed) / n, (first - 1) / max(1, n - len(placed)))
+        p = pygame.Rect(640, self.LIST.top, W - 32 - 640, self.LIST.height)
         rrect(c, theme.PANEL, p, 16)
         self.panel(c, p, rows[min(self.sel, len(rows) - 1)])
 
@@ -326,9 +346,6 @@ class MusicScreen(ListScreen):
             return ("%s. Favourites and playlists belong to an account, and the token decides what the box may read "
                     "of them. Mixes, single games and the games on this box work as they are." % self.lists_why.rstrip("."))
         return {
-            "listen": "Listen to RomM's soundtracks in the app: everything shuffled, your favourites, a playlist, a "
-                      "mix, or one game's soundtrack. The music goes on while you look around the app and stops when "
-                      "the app closes or a game starts. It has nothing to do with the menu music below.",
             "on": "RomM-o-Cera keeps the tracks you choose below in a folder of its own inside EmulationStation's "
                   "music folder (music/romm-o-cera), and EmulationStation plays from there at random. While any "
                   "track is there, Batocera's own songs don't play; turn this off and they return. Music of your "
@@ -643,7 +660,7 @@ class MixScreen(Screen):
             list_row(c, f, r, i == self.sel, label, value, slot="mix-row", box=theme.PANEL,
                      label_color=theme.RED if key == "delete" else None, chevron=key not in ("save", "delete", "length"))
             state_stripe(c, r, theme.ACCENT if key == "save" else theme.LINE)
-        p = pygame.Rect(640, self.LIST.top, W - 32 - 640, MusicScreen.ROW_H * MusicScreen.ROWS - 6)
+        p = pygame.Rect(640, self.LIST.top, W - 32 - 640, self.LIST.height)
         rrect(c, theme.PANEL, p, 16)
         text(c, f.h2, self.title(), (p.left + 28, p.top + 22), theme.TEXT, maxw=p.width - 56)
         scroll_text(c, f.body,

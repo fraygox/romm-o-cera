@@ -362,7 +362,7 @@ class HomeScreen(Screen):
         elif key == "downloads":
             app.push(DownloadsScreen(app))
         elif key == "music":
-            app.push(MusicScreen(app))
+            app.open_jukebox()
         elif not app.platforms:
             app.load_platforms()
             msg = app.error or ("No RomM platform maps to a Batocera system"

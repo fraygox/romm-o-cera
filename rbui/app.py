@@ -1367,11 +1367,19 @@ class App:
             rx = r.left
         if self.player.active() and self.player.current():      # what's playing: a tap opens its list
             on = self.player.state == "playing"
-            r = text(c, self.fonts.small, track_title(self.player.current()), (rx - (30 if n else 0), 33),
-                     theme.ACCENT_HI if on else theme.DIM, "midright", maxw=220)
-            play_mark(c, theme.ACCENT_HI if on else theme.DIM, (r.left - 14, 33), paused=self.player.state == "paused")
-            self.hit((r.left - 26, 8, r.width + 30, 50), self.open_player)
-            rx = r.left - 22
+            cur = self.player.current()
+            title, where = track_title(cur), cur.get("album") or cur.get("game_name") or ""
+            tw = min(200, int(measure(self.fonts.small, title)) + 1)
+            ww = min(190, int(measure(self.fonts.small, where)) + 1) if where and where != title else 0
+            w = 32 + tw + (10 + ww if ww else 0) + 14
+            pill = pygame.Rect(rx - (26 if n else 0) - w, 17, w, 32)      # a pill: it's a button
+            rrect(c, theme.PANEL_HI, pill, 16)
+            play_mark(c, theme.ACCENT_HI if on else theme.DIM, (pill.left + 18, 33), paused=self.player.state == "paused")
+            tr = text(c, self.fonts.small, title, (pill.left + 32, 33), theme.TEXT if on else theme.DIM, "midleft", maxw=tw)
+            if ww:                                     # the soundtrack it's from, quieter
+                text(c, self.fonts.small, where, (tr.right + 10, 33), theme.FAINT, "midleft", maxw=ww)
+            self.hit((pill.left - 4, 8, pill.width + 8, 50), self.open_player)
+            rx = pill.left - 4
         crumbs = list(top.crumbs())
 
         def width(cs):

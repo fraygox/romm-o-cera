@@ -10,16 +10,21 @@ RomM calls this its jukebox: the audio files in a game's `soundtrack/` folder
 
 ## Listening in the app
 
-**Play music**, the first row of the Music screen, lists what there is to
-listen to:
+Music opens on what there is to listen to:
 
-- **Everything, shuffled**: every track in RomM, in a new order each time
-- **My RomM favourites** and your **playlists** (with a token that may read
-  them, [below](#favourites-and-playlists-need-a-token-that-may-read-them))
-- the **mixes** you saved
-- every **game** RomM has a soundtrack for
+- two pills at the top: **Shuffle everything** (every track in RomM, in a new
+  order each time) and **Menu music**, which says whether it's on and opens
+  [its screen](#menu-music)
+- **Your lists**: your RomM favourites and playlists (with a token that may
+  read them, [below](#favourites-and-playlists-need-a-token-that-may-read-them))
+  and the mixes you saved, each shown by the covers its tracks are from
+- **Soundtracks**: every game RomM has a soundtrack for, as a wall of covers
 
-**A** opens a row's tracks; **X** plays it at once. In a list of tracks:
+The panel on the right shows what's focused: its cover, who it's by, how long
+it is and its first tracks. **A** opens it; **X** plays it at once. **L** and
+**R** move three rows at a time.
+
+In a list of tracks:
 
 | Button | What it does |
 |---|---|
@@ -28,12 +33,14 @@ listen to:
 | **Y** | shuffles, or goes back to the list's order |
 | **L2 / R2** | previous and next track |
 
-The panel beside the list shows what's playing, how far in it is, and what
-comes next.
+A soundtrack lists its tracks by number. While something from the list plays,
+the panel beside it shows the track, how far in it is and what's up next;
+otherwise it describes the list.
 
 The music goes on while you look around the app, and the top bar names the
-track (tap it to get back to its list). It stops when the app closes or a game
-starts. While something plays, **Play music** has it as its first row.
+track and the soundtrack it's from (tap it to get back to its list). It stops
+when the app closes or a game starts. While something plays, Music has a
+**Now playing** pill first, and the cover that's playing carries a play mark.
 
 Tracks are fetched from RomM as they come up, the next one while the current
 plays. Up to 256 MB of them stay on the box so they start at once the next
@@ -48,7 +55,8 @@ plays; RomM-o-Cera keeps the tracks on the box and in step with RomM.
 
 ### Turning it on
 
-Open **Music**, switch **Menu music** on, then switch on what should play.
+Open **Music**, choose the **Menu music** pill, switch **Menu music** on (the
+card at the top), then switch on what should play.
 The tracks are downloaded to `music/romm-o-cera/` in the box's music folder
 (`/userdata/music/romm-o-cera/`), and EmulationStation picks from there at
 random, as it does with any music in that folder.
@@ -109,7 +117,8 @@ Mixes are saved on the box, not in RomM.
 
 ### Space
 
-**Space for menu music** is the most room the tracks take: 1, 2, 5, 10 (the
+**Space for menu music**, the last row of the Menu music screen, is the most
+room the tracks take: 1, 2, 5, 10 (the
 default), 20 or 50 GB, or no limit. When what you chose is bigger, every album
 keeps some of its tracks and the card says how many were left out. Downloads
 also stop before the space to keep free on the drive

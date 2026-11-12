@@ -627,6 +627,7 @@ def music_screen(on=False, sel=0):
             "tracks": {str(i): {"file": "t%d.mp3" % i, "bytes": (286 << 20) // 38, "seconds": 230.0} for i in range(38)},
             "last": last})
         app.music["result"] = last
+    app.push(rb.JukeboxScreen(app))
     scr = rb.MusicScreen(app)
     app.push(scr)
     scr.sel = sel
@@ -657,24 +658,33 @@ class Hush:
         return self.pos
 
 
-def music_play(tracks=None, paused=False):
-    """Play music: what there is to listen to, on a game's row; tracks: "game", that game's
-    list playing, or "all", everything shuffled; paused: paused there."""
-    music_screen()
+def music_play(tracks=None, paused=False, focus=("albums", 4), back=False, mix=False):
+    """Music: the wall of soundtracks, focus (region, index) on it; tracks: "open", the focused
+    thing's list; "game", it playing; "all", everything shuffled; paused: paused there; back:
+    back on the wall while it plays; mix: with a saved mix among your lists."""
+    if mix:
+        rommlib.save_music_sources({"favourites": False, "on_box": False, "playlists": [], "games": [],
+                                    "mixes": [{"name": "Rainy day", "on": False,
+                                               "filters": {"genre": ["Ambient"], "decade": [1990], "max_minutes": 5}}]})
     juke = rb.JukeboxScreen(app)
     app.push(juke)
+    sys.modules[type(juke).__module__].FOCUS_WAIT = 0      # the focused thing's tracks at once: the panel is what's shot
     app.player.out = Hush(42000)
     app.player.rng.seed(7)
 
     def opened():
-        rows = juke.listed()
-        juke.sel = next(i for i, r in enumerate(rows) if r["key"][0] == ("all" if tracks == "all" else "game"))
+        juke.region, juke.i = focus
+        if tracks == "all":
+            juke.region, juke.i = "pills", 0
         if tracks:
-            juke.action("x")
+            juke.action("ok" if tracks in ("open", "all") else "x")
 
             def playing():
                 if paused:
                     app.player.toggle()
+                if back:
+                    app.pop()
+                    juke.region, juke.i = "albums", 8
             app._after = playing
     app._after = opened
 
@@ -723,8 +733,11 @@ SCENES = [
     ("home", lambda: None),
     ("platforms", lambda: app.push(rb.PlatformScreen(app))),
     ("music", lambda: music_screen()),
-    ("music-on", lambda: music_screen(on=True, sel=5)),
-    ("music-play", lambda: music_play()),
+    ("music-on", lambda: music_screen(on=True, sel=3)),
+    ("music-wall", lambda: music_play(mix=True)),
+    ("music-wall-list", lambda: music_play(mix=True, focus=("lists", 1))),
+    ("music-wall-playing", lambda: music_play("game", back=True, mix=True)),
+    ("music-album", lambda: music_play("open")),
     ("music-play-tracks", lambda: music_play("game")),
     ("music-play-all", lambda: music_play("all", paused=True)),
     ("music-mix", lambda: music_mix()),

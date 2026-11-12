@@ -64,19 +64,36 @@ def test_music_is_on_homes_rail_only_when_romm_has_soundtracks(app, rb):
     home.set_rail()
     assert home.RAIL[home.rail_i][0] == "settings"                  # the focus stays on its pill
     home.open_rail("music")
-    assert isinstance(app.stack[-1], rb.MusicScreen)
+    assert isinstance(app.stack[-1], rb.JukeboxScreen) and app.stack[-1].crumbs() == ["Music"]
     assert dict(home.rail_rows("music"))["Menu music"] == "Off"
 
 
 def test_the_screen_lists_the_switch_the_cap_and_every_source(app, rb):
     scr = music(app, rb)
     keys = [r[0] for r in scr.rows()]
-    assert keys == ["listen", "on", "cap", "favourites", "on_box", "playlist:1", "playlist:2", "add_game", "new_mix"]
+    assert keys == ["on", "favourites", "on_box", "playlist:1", "playlist:2", "add_game", "new_mix", "cap"]
     assert row(scr, "favourites")[2].endswith("you starred in RomM") and row(scr, "playlist:1")[2] == "Playlist · 12 tracks · shared by sam"
     assert row(scr, "playlist:2")[2].endswith("private")
-    assert scr.summary()[0][0] == "Menu music is off"
+    assert scr.summary()[0][0].startswith("Off") and scr.crumbs()[-1] == "Menu music"
     import pygame
-    scr.draw(pygame.Surface((1280, 720)))                           # every row and the panel draw
+    canvas = pygame.Surface((1280, 720))
+    scr.draw(canvas)                                                # the switch's card, the rows and the panel draw
+    # the rows sit under two headings, and the list scrolls to keep the selection in view
+    placed, heads = scr.placed(scr.rows(), 1)
+    assert [t for t, _ in heads] == ["What plays in the menus", "Space"] and [i for i, _ in placed] == list(range(1, len(keys)))
+    many = [("on", "", "", False, True)] + [("game:%d" % i, "Game %d" % i, "", True, True) for i in range(20)] + [("cap", "", "", None, True)]
+    placed, heads = scr.placed(many, 1)
+    assert len(placed) < 20 and placed[-1][1] + scr.ROW_H - 6 <= scr.LIST.bottom and [t for t, _ in heads] == []
+    rommlib.save_music_sources({"favourites": False, "on_box": False, "playlists": [], "games": list(range(1, 15)), "mixes": []})
+    scr.enter()
+    scr.sel = len(scr.rows()) - 1                                   # the space row, past the fold
+    scr.draw(canvas)
+    assert scr.scroll > 1 and scr.rows()[scr.sel][0] == "cap"
+    scr.sel = 0
+    scr.draw(canvas)
+    scr.sel = 1
+    scr.draw(canvas)
+    assert scr.scroll == 1
 
 
 def test_switching_it_on_and_a_source_brings_the_tracks_and_off_asks_first(app, rb):
@@ -121,7 +138,7 @@ def test_a_token_that_cant_read_lists_shows_them_unavailable_with_the_reason(app
     scr = music(app, rb)
     fav = row(scr, "favourites")
     assert fav[4] is False and fav[2] == "Not available with this token"
-    assert [r[0] for r in scr.rows()] == ["listen", "on", "cap", "favourites", "on_box", "add_game", "new_mix"]      # no playlists to list
+    assert [r[0] for r in scr.rows()] == ["on", "favourites", "on_box", "add_game", "new_mix", "cap"]      # no playlists to list
     scr.action("ok")
     assert rommlib.load_music_sources()["favourites"] is False
     assert "playlists.read" in app.toasts[-1][0]
