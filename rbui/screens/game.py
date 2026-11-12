@@ -10,6 +10,7 @@ from rbui.draw import card, marquee, measure, progress_bar, rom_title, scroll_fi
 from rbui.modals import ActionMenu, ManageMenu
 from rbui.screens.about import draw_qr
 from rbui.screens.base import Screen
+from rbui.screens.music import minutes, plural_tracks
 from rbui.widgets.chips import stars, status_chip
 from rbui.widgets.factsheet import FACT_ROW, facts
 from rbui.widgets.hero import (backdrop, game_note, game_verb, meta_line, press_verb, time_ago, verb_button, verb_note,
@@ -54,6 +55,9 @@ class GameScreen(Screen):
         self.qr = None
         self.box = None                 # {"copy": box_copy, "play": played_here} once asked
         self.box_for = None
+        self.ost = None                 # (tracks, seconds) of its soundtrack in RomM, once asked
+        self.ost_for = None
+        self.menu_music = None          # its soundtrack is one of the menu music's sources (read once)
 
     # ---- data
     def record(self):
@@ -86,6 +90,48 @@ class GameScreen(Screen):
                         self.box = res
                 app.bg(ask, got, lambda e: None)
         return self.box or {}
+
+    def soundtrack(self, rec):
+        """(tracks, seconds) of the game's soundtrack in RomM's jukebox, asked once off the UI
+        thread for a game RomM says has one; None until it's known, or when there is none."""
+        rid = self.rom["id"]
+        if rec.get("has_soundtrack") and self.ost_for != rid:
+            self.ost_for, self.ost = rid, None
+            api = self.app.api
+
+            def got(tracks, rid=rid):
+                if self.ost_for == rid and tracks:
+                    self.ost = (len(tracks), sum(t.get("duration_seconds") or 0 for t in tracks))
+            self.app.bg(lambda: api.music_all("tracks", rom_id=rid), got, lambda e: None)
+        return self.ost if self.ost_for == rid else None
+
+    def in_menu_music(self):
+        if self.menu_music is None:
+            self.menu_music = self.rom["id"] in rommlib.load_music_sources()["games"]
+        return self.menu_music
+
+    def toggle_menu_music(self):
+        """Add this game's soundtrack to the menu music, or take it out again."""
+        app, rid = self.app, self.rom["id"]
+        sel = rommlib.load_music_sources()
+        add = rid not in sel["games"]
+        if add:
+            sel["games"].append(rid)
+        else:
+            sel["games"].remove(rid)
+        try:
+            rommlib.save_music_sources(sel)
+        except OSError as e:
+            app.toast("That couldn't be saved (%s)" % (e.strerror or e), theme.RED)
+            return
+        self.menu_music = add
+        if not add:
+            app.toast("Its soundtrack leaves the menu music")
+        elif app.cfg["menu_music"]:
+            app.toast("Its soundtrack joins the menu music", theme.GREEN)
+        else:
+            app.toast("Saved. Menu music is off: switch it on under Music on Home")
+        app.sync_music()
 
     def notes(self, rec):
         if not self.detail_loaded():
@@ -150,7 +196,14 @@ class GameScreen(Screen):
             ("Developer", ", ".join((md.get("developers") or [])[:2])),
             ("Achievements", ("%d · %d points" % ra) if ra and ra[0] else ""),
             ("Manual", "Included" if rommlib.manual_path(rec) else ""),
+            ("Soundtrack", self.soundtrack_fact(rec)),
         ]
+
+    def soundtrack_fact(self, rec):
+        ost = self.soundtrack(rec)
+        if not ost:
+            return ""
+        return "%s · %s%s" % (plural_tracks(ost[0]), minutes(ost[1]), " · in the menu music" if self.in_menu_music() else "")
 
     # ---- controls
     def verb(self):
@@ -193,6 +246,11 @@ class GameScreen(Screen):
         night = getattr(self.source, "game_night", None)
         if night:
             entries.append(("Game night", "Roll a game from the list this one is in", night))
+        ost = self.soundtrack(self.record())
+        if ost:
+            about = "%s · %s" % (plural_tracks(ost[0]), minutes(ost[1]))
+            entries.append(("Remove soundtrack from menu music", about, self.toggle_menu_music) if self.in_menu_music() else
+                           ("Add soundtrack to menu music", about + ", played in EmulationStation's menus", self.toggle_menu_music))
         if self.status()[0] == "installed":
             entries += [None] + [e for e in ManageMenu(app, rom, then=self.then).entries if e and e[0] != "Play now"]
         app.modal = ActionMenu(app, rom_title(rom), entries)
