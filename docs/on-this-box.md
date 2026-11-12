@@ -91,7 +91,9 @@ Disc games already on the box that could still be compressed: ones copied
 over by hand, or downloaded while a format was off. The scan goes through
 every system and lists each one with its game count, size and the format it
 would become (CHD, RVZ, squashfs, .zcci, .zar, .wux, .wua, a `.ps3` game folder),
-biggest first.
+biggest first. An Xbox 360 disc that only starts a package (as an image, or as
+a `.zar` made of it before) is listed as becoming a "xenia launcher": it can't
+start until then.
 
 - **A** on a system lists its games: **A** compresses one; the **X** menu
   compresses all of them, or the ones you pick.
@@ -167,6 +169,7 @@ made from:
 | `.iso.squashfs` | its superblock, cut short, the image inside and its size (an Xbox game partition cut here counts as right) | the image read out whole; uncut, its CRC32 must be RomM's |
 | `.zcci` | its header, cut short, size against RomM's original | every block decoded; CRC32 against RomM's |
 | `.zar` | its footer, cut short | its whole SHA-256 |
+| `.xbox360` launcher | the package it names is there and is one | the same |
 | `.wux` | its header and sector index, cut short, its disc's size against RomM's `.wud` | expanded whole by wuatool; CRC32 and SHA-1 against RomM's `.wud` |
 | `.wua` | its footer, cut short | its whole SHA-256 |
 | `.ps3` folder | `EBOOT.BIN`, `PARAM.SFO` (with the game's ID), `PS3_DISC.SFB` | every file read to its end |

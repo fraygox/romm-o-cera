@@ -348,7 +348,10 @@ RVZ, squashfs, .zcci, .zar, .wux, .wua, a `.ps3` folder) and when that's done. A
 finished game's menu has [Play now](#play-now). A failed download says why
 under its name. The list, finished ones too (the last 50), is still there
 after the app closes or the box restarts, until you clear it. A finished game
-you've deleted since says **Deleted since** instead of Ready to play.
+you've deleted since says **Deleted since** instead of Ready to play. An Xbox
+360 disc that only starts a package says **Getting it ready** until it has
+been [set up for xenia](disc-compression.md#xbox-360-to-zar-off-by-default):
+it can't start before.
 
 On the right, **Compressing**: the running conversion with its progress and time
 left (**A** pauses or resumes it, **X** stops it: what's made so far goes, the
