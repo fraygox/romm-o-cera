@@ -3,6 +3,14 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## Unreleased
+
+Thanks to @plasmadice for asking for downloads of any size and whole platforms at once (#1, #2).
+
+### Upgrading
+- Nothing to do. RomM-o-Cera now saves the list of games it downloaded (`installed.json`) and the download queue as small changes beside each file, instead of rewriting the whole file each time. On a big library that was gigabytes of writes to your SD card or SSD.
+- **Going back to v0.14.0 or earlier:** use **Settings › Updates › Go back to the previous version**, which saves both files whole first. If you install an older version by hand after RomM-o-Cera or a background download was stopped abruptly (a power cut, a crash), that version can miss the latest changes. Games downloaded since then still play and show as on this box, but it no longer knows it downloaded them, so it won't delete them for you. Downloads that had finished may also queue again. Going back to an older version any other way isn't supported.
+
 ## v0.14.0 (2026-11-12)
 
 Music: your RomM soundtracks, played in the app or as EmulationStation's menu music

@@ -127,7 +127,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Screen | A | X | Y | L2/R2 |
 |---|---|---|---|---|
 | Home | A game: its page; a pill or collection: Open | A game's Actions: more like this, the whole shelf | Game night | |
-| Platforms | Open | Game night from this platform | Search this platform | |
+| Platforms | Open (picking: pick) | Actions: Game night from this platform, pick several platforms (picking: download the selected platforms) | Search this platform (picking: pick all) | |
 | Collections | Open the collection (or a Browse by door) | A collection's Actions: open, Compare with RomM, Game night, download the rest | The kind as a wall, and back | |
 | Game lists | The game's page | Actions: more like this, Game night, download all, filters, sort, show (a collection's All / On this box / Not here pills), pick several | Search this platform or collection | A–Z |
 | A game's page | Download / Play now | Actions: more like this, Game night, delete or download again (on the box) | | |
@@ -136,7 +136,7 @@ A question shows its buttons: **A** for what it offers ("Download",
 | Backlog | The game's page | Actions: download my backlog, free up space | Download my backlog | |
 | Search keyboard | Type the key | Delete | Space | |
 | Text fields | Type the key | Delete | Shift | |
-| Activity (downloads) | That download's options (a finished game: Play now) | Actions: pause or resume all, clear finished, pick several | Clear finished | Conversions |
+| Activity (downloads) | That download's options (a finished game: Play now) | Actions: pause or resume all, retry the failed, check the platforms downloaded to, clear finished, pick several | Clear finished | Conversions |
 | Activity (compressing) | Pause or resume; a queued one: convert next; Compress games | Stop this one; a queued one: take it out | Compress games | Conversions |
 | Conversions | Options: convert next, remove from the queue, try again | Start now | Clear finished | |
 | On this box | Open | | | |

@@ -4,8 +4,9 @@
 
 - **Platforms**: only those with a Batocera system. Each card shows how many
   games RomM has and how many of them are already on the box (green: the
-  games its list ticks ✓). **Y** searches the platform under the cursor, **X** picks a random
-  game from it.
+  games its list ticks ✓). **Y** searches the platform under the cursor; **X Actions** has
+  Game night from it and **Pick several platforms**, to download whole platforms at once (see
+  [Downloading many games](#downloading-many-games)).
 - **Collections**: shelves of cover mosaics, a shelf per kind of collection
   (Top lists, Themes, Series, your own kinds, Smart, Browse by), each tile
   with a green line for how much of it is already on the box. See
@@ -62,7 +63,7 @@ games in PlayStation, for 2+ players").
 Where to find it:
 
 - **Home: Y.** From your whole library.
-- **Platforms: X** on a platform: from that platform.
+- **Platforms: X › Game night** on a platform: from that platform.
 - **Collections: X › Game night** on a collection.
 - **A game list: X › Game night.** From the list as it's filtered right now
   (region, hidden prototypes...); Game night's own players and on-the-box
@@ -79,7 +80,7 @@ Backlog in RomM, in RomM's order: a cover, on-the-box tick or size, and
 **Download my backlog** (**Y**): the total, how many aren't here yet, what
 fits now and what waits (against the space left once the queue has landed,
 keeping Settings' keep-free space), and a line per platform. Everything is
-queued in that order (up to 1,000); the ones that don't fit wait for room.
+queued in that order, however many there are; the ones that don't fit wait for room.
 **X Actions** has Free up space. **A** opens the selected game's page.
 
 ## Collections
@@ -106,8 +107,7 @@ moment after a tile gets the focus, once its games have been read).
   every list of games.
 - **X Actions**: Open, [Compare with RomM](#compare-with-romm), Game night
   from this collection, and **Download the rest** (how many and how big,
-  skipping what's here already; a collection of more than 1,000 games: open
-  it and filter first).
+  skipping what's here already).
 - **Y** turns the focused kind into a wall, six tiles a row with a scrollbar
   (handy with 60 themes or 90 series), and back to the shelves.
 - A **Browse by** door opens that grouping as a wall; each of its groups
@@ -193,7 +193,8 @@ and the menu stays open; the actions close it.
 - **Pick several games**: **A** then picks games, and **Download … picked**
   in this menu downloads them together (see
   [Controls](controls.md#picking-several)).
-- **Download every game in this list** (up to 1,000).
+- **Download every game in this list**, however many (see
+  [Downloading many games](#downloading-many-games)).
 - **Compare with RomM** (a platform's or a collection's list): see
   [Compare with RomM](#compare-with-romm).
 - **Fill in game info** for this system's games already on the box (see
@@ -202,11 +203,42 @@ and the menu stays open; the actions close it.
   your RomM has (checksum-verified; all systems: [On this box](on-this-box.md#bios-files)).
 
 **Download a whole collection** straight from Collections: X on a collection,
-then Download the rest (up to 1,000 games; a bigger one: open it and filter
-first). Inside a collection the same entry is in its Actions menu.
+then Download the rest. Inside a collection the same entry is in its Actions menu.
 
-Bulk downloads estimate the space they need once extracted and offer to
-download only what fits.
+### Downloading many games
+
+![Five platforms picked on Platforms, each card with its size](../screenshots/platforms-picking.png)
+
+A whole list, a collection, your backlog or whole platforms download in one
+go, however many games that is. When the games aren't listed yet, RomM-o-Cera
+lists them first, with how far it has got (**B** stops it, and nothing is
+queued). Games already on this box are left out.
+
+Then one dialog says what it takes: how many games, the download size, the
+room they need while disc games unpack (when that's more), and what's free
+afterwards or how much room is short. A bar shows the space on this box: the
+queue already waiting, these games, and the keep-free space (Settings). It
+counts space as Activity does, so the two never disagree.
+
+![Download 5 platforms? A line per platform, the space bar, Download](../screenshots/bulk-download.png)
+
+- **It fits:** Download.
+- **Whole platforms** (a platform's list with no filters on, or platforms
+  picked on Platforms) download only when every game fits. When they don't,
+  the dialog offers **Free up space**: the games on this box, least played and
+  biggest first, with enough already picked to make the room. Back from there,
+  the dialog counts again.
+
+  ![A whole platform 193 GB short of room: Free up space or Back](../screenshots/bulk-no-room.png)
+
+- **Any other list** that doesn't fit offers the ones that fit, all of them
+  (the rest wait for room), or Free up space.
+
+**Several platforms at once:** on Platforms, **X › Pick several platforms**.
+Each card then shows RomM's size for the platform (RomM 5.4 and later), **A**
+picks, **Y** picks all, and **X** downloads the selected platforms, one after
+another, with a line per platform in the dialog. **B** stops picking.
+Multi-disc games are kept together, and discs already here join their set.
 
 ### Compare with RomM
 
@@ -338,7 +370,11 @@ On the left, the queue comes first, in the order it
 runs, then finished downloads, newest first. **A** on a download gives its
 options: move it to the top, up or down, Download now (outside the download
 hours), pause, resume, cancel, retry, or remove it from the list. The **X**
-menu pauses or resumes everything and clears finished ones (so does **Y**).
+menu pauses or resumes everything, retries every failed download at once,
+runs a full [check](on-this-box.md#check-games) of the platforms the downloads
+went to (reading every file against RomM's checksums), and clears finished
+ones (so does **Y**). With 20 or more waiting, the line on top also says how
+far along the queue is ("12 of 4,411 done") and what's left by platform.
 Pick several (X › Pick several) to pause, resume, cancel, retry or remove
 them at once; cancelling (one or several, active or paused) asks first, since it
 deletes the partial files and any file the download had already finished
