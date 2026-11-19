@@ -165,7 +165,8 @@ class AuditScreen(ListScreen):
                 app.toast("Check stopped; the last result is kept" if os.path.exists(rommlib.audit_path())
                           else "Check stopped; nothing was saved")
                 return
-            if (self.stats or {}).get("checked") and systems is None:   # nothing checked, or some systems: keep the last
+            # some systems, or no games folder (a drive not mounted?): keep the last; no games at all clears it
+            if systems is None and by_sys and not (self.stats or {}).get("no_games_folder"):
                 try:
                     rommlib.save_audit(self.findings, self.stats, deep)
                 except OSError as e:

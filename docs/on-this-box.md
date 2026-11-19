@@ -193,7 +193,9 @@ A file the box can't read shows as **Can't be read** and is left out of
 findings for files that haven't changed.
 
 The last check's results stay here until you check again. A game whose file
-has changed since (replaced or deleted) drops off the list.
+has changed since (replaced or deleted) drops off the list, and so does a
+missing file once you delete its game. A check that finds no games left on
+the box clears the list.
 
 Damaged games can be downloaded again, one at a time (**A**) or all at once
 (X › **Download all damaged again**); a fresh copy replaces a cut-short CHD. To download several findings

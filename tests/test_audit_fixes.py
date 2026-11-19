@@ -1,6 +1,7 @@
 """Check games: what it calls damaged is damaged, one bad file never ends the
 check, a quick check doesn't wipe out a full one, and B stops the work."""
 import errno
+import shutil
 import os
 import subprocess
 import sys
@@ -1089,3 +1090,35 @@ def test_a_cue_sheet_lists_each_folder_once(tmp_path, monkeypatch):
     got = rommlib.sheet_sources(str(cue))
     assert got[:2] == [str(tmp_path / "Disc.BIN")] * 2 and got[2] == str(tmp_path / "gone.bin")
     assert len(calls) == 1
+
+
+# ------------------------------------------------------------ #3: a deleted game's missing files, and no games left
+
+def test_a_missing_file_finding_goes_with_its_deleted_game(isolated, no_es, no_chdman):
+    """A file that was missing stays missing once its game is deleted: the
+    finding goes with the game instead of staying behind for good."""
+    _put("psx", "Set Run (USA)/Set Run (USA) (Disc 1).chd", whole_chd())
+    findings, stats = rommlib.audit(_two_disc_set(), {"psx": [1]})
+    rommlib.save_audit(findings, stats, False)
+    assert len(rommlib.load_audit()["findings"]) == 2
+    shutil.rmtree(os.path.join(rommlib.ROMS_ROOT, "psx", "Set Run (USA)"))
+    assert rommlib.load_audit()["findings"] == []
+
+
+def test_a_check_with_no_games_left_clears_the_last_one(isolated, rb, monkeypatch):
+    """With every game deleted, a check finds none to check: the last check's
+    findings no longer stand, so it's saved (empty) in place of them. With no
+    games folder at all (a drive not mounted?) the last result is kept."""
+    gone = os.path.join(rommlib.ROMS_ROOT, "psx", "Gone (USA)", "Gone (USA) (Disc 2).cue")
+    rommlib.save_audit([{"system": "psx", "path": gone, "severity": "damaged", "problem": "Missing file: x",
+                         "rom": None}], {"checked": 1}, False)        # from before findings named their game
+    app = _app(rb, monkeypatch)
+    app.platforms = [{"id": 1, "_system": "psx"}]
+    monkeypatch.setattr(rommlib, "audit", lambda *a, **k: ([], {"checked": 0, "no_games_folder": True}))
+    app.push(rb.CheckScreen(app))
+    app.push(rb.AuditScreen(app))
+    assert len(rommlib.load_audit()["findings"]) == 1
+    monkeypatch.setattr(rommlib, "audit", lambda *a, **k: ([], {"checked": 0, "matched": 0, "unmatched": 0}))
+    app.push(rb.AuditScreen(app))
+    d = rommlib.load_audit()
+    assert d["findings"] == [] and d["stats"]["checked"] == 0

@@ -599,6 +599,8 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
     def add(system, path, problem, rom=None, severity="damaged", deep_only=False, io_error=False):
         f = {"system": system, "path": path, "problem": problem, "severity": severity,
              "rom": _slim(rom) if rom else None}
+        if game_now[0]:                 # the game's own file or folder: a missing file's finding goes with it
+            f["game"] = os.path.join(_core.ROMS_ROOT, *game_now[0])
         if deep_only:
             f["deep"] = True
         if io_error:
@@ -1045,7 +1047,7 @@ def _number(v):
 def load_audit():
     """The last finished check, or None: {"time", "deep", "stats", "findings"},
     without findings whose file is gone or changed since, or, for a file that
-    was missing ("Missing file: …"), is there now."""
+    was missing ("Missing file: …"), is there now or whose game is gone."""
     try:
         with open(audit_path()) as fh:
             d = json.load(fh)
@@ -1068,7 +1070,8 @@ def load_audit():
         try:
             st = os.stat(f["path"])
         except OSError:
-            if f.get("sig") is None:            # missing when checked, still missing ("Missing file: …")
+            # missing when checked, still missing ("Missing file: …"), while its game is still here
+            if f.get("sig") is None and not (isinstance(f.get("game"), str) and not os.path.lexists(f["game"])):
                 keep.append(f)
             continue
         if f.get("sig") == [st.st_size, int(st.st_mtime)]:     # missing when checked (None): there now
