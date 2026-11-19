@@ -29,8 +29,10 @@ def app(isolated, rb, monkeypatch, fast_mock_url):
     return a
 
 
-def _free(monkeypatch, gb):
+def _free(monkeypatch, gb, drive_gb=4000):
+    """gb free on a drive of drive_gb (the test machine's own disk decides nothing)."""
     monkeypatch.setattr(rommlib, "free_bytes", lambda path=None, default=0: gb * GB)
+    monkeypatch.setattr(rommlib, "disk_bytes", lambda path=None, default=0: drive_gb * GB)
 
 
 def _roms(app, pid):
@@ -231,8 +233,7 @@ def test_free_space_that_cant_be_read_isnt_taken_for_none(app, rb, monkeypatch):
 
 
 def test_a_platform_bigger_than_the_drive_offers_only_back(app, rb, monkeypatch):
-    _free(monkeypatch, 60)
-    monkeypatch.setattr(rommlib, "disk_bytes", lambda path=None, default=0: 89 * GB)
+    _free(monkeypatch, 60, drive_gb=89)
     m = rb.BulkDownload(app, "x", roms=_roms(app, 6), whole=True)
     assert m.never and m.options() == []
     app.modal = m
