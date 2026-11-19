@@ -42,8 +42,9 @@ class BacklogScreen(ListScreen):
     waits for room), X: the actions (Free up space among them)."""
     ROWS, ROW_H = 9, 56
     PAGE = 100
-    CAP = 1000                  # as many as one download-every-game takes
-    BULK_MAX = 1000
+    # every game on the backlog, each kept to what a download and these rows need (a whole
+    # record is ~14 KB: 5,000 of them would be 70 MB; this, about 4 KB each)
+    KEEP = rommlib.BULK_FIELDS + ("rom_user",)
 
     def __init__(self, app):
         super().__init__(app)
@@ -73,12 +74,12 @@ class BacklogScreen(ListScreen):
             if gen != self.gen:
                 return
             for r in got.get("items") or []:
-                if r and r.get("id") not in seen and len(self.items) < self.CAP:
+                if r and r.get("id") not in seen:
                     seen.add(r["id"])
-                    self.items.append(r)
+                    self.items.append({k: r[k] for k in self.KEEP if k in r})
             self.total = got.get("total") or 0
             self.filtered = self.filtered or got.get("filtered")
-            if off + self.PAGE < self.total and len(self.items) < self.CAP:
+            if off + self.PAGE < self.total:
                 fetch(off + self.PAGE)
             else:
                 self.loading = False
@@ -134,7 +135,7 @@ class BacklogScreen(ListScreen):
         if not p or not p["todo"]:
             self.app.toast("Every game on your backlog is on this box or queued", theme.AMBER)
             return
-        self.app.queue_many(p["todo"][:self.BULK_MAX], "Download my backlog?")
+        self.app.queue_many(p["todo"], "Download my backlog?")
 
     def menu_entries(self):
         app, rom, p = self.app, self.current(), self.plan
