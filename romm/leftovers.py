@@ -123,7 +123,7 @@ def recorded_paths():
     """Every path installed.json records, or None when it can't be read now (then
     nothing may be deleted as not being a recorded game's)."""
     try:
-        recs = _library._read_records(_core.STATE_PATH)[0]
+        recs = _library.read_installed()
     except FileNotFoundError:
         recs = _library._read_backup() or {}
     except (OSError, ValueError):
@@ -135,8 +135,7 @@ def app_download_paths():
     """Where the downloads the app knows of (queued, paused, finished, failed, cancelled: its saved
     queue and history) go: their .part files are its own. Normalised paths."""
     try:
-        with open(_core.QUEUE_PATH) as f:
-            data = json.load(f)
+        data = _core.read_queue()
     except (OSError, ValueError):
         return set()
     if not isinstance(data, dict):

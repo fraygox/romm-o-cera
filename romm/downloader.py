@@ -1,4 +1,6 @@
 """Downloads: the queue, the workers, space planning."""
+import atexit
+import contextlib
 import itertools
 import json
 import os
@@ -310,7 +312,23 @@ def queue_forecast(jobs, free, keep, chd=True, cfg=None):
             "fits": free - total >= keep, "short": max(0, total + keep - free)}
 
 
-MARGIN_MIN = 32 << 20               # keep_free_gb 0: what a download still leaves free, at least
+def bulk_space(items, jobs, free, keep, cfg=None, chd=True):
+    """What adding these downloads [(rom, system)] to the queue (jobs) takes, counted as
+    Activity's forecast counts it (queue_forecast: the queue already waiting, the biggest
+    archive beside what it unpacks to, the biggest conversion's working space): queue_forecast's
+    answer for the queue with them, plus "queue" (what the queue needed before), "need" (what
+    they add) and "estimated" (some archive's unpacked size is a guess until it's read). keep:
+    the keep-free reserve; 0 means the downloader's own small margin, as there."""
+    before = queue_forecast(jobs, free, keep, chd, cfg)
+    after = queue_forecast(list(jobs) + [Job(r, s) for r, s in items], free, keep, chd, cfg)
+    if not keep:
+        after = queue_forecast(list(jobs) + [Job(r, s) for r, s in items], free,
+                               space_margin(after["need"]), chd, cfg)
+    return dict(after, queue=before["need"], need=after["need"] - before["need"],
+                estimated=any(needs_listing(r, s) or unpacked_upper_bound(r, s) for r, s in items))
+
+
+MARGIN_MIN = 32 << 20              # keep_free_gb 0: what a download still leaves free, at least
 MARGIN_SHARE = 20                   # ... or 1/20 (5%) of what it writes, up to core.SPACE_MARGIN (2 GB)
 
 
@@ -339,11 +357,28 @@ def fit_in_space(items, free, reserve=_core.SPACE_MARGIN):
 HISTORY_KEEP = 50                   # finished downloads Activity still lists after a restart
 
 
+_SAVED_VER = itertools.count(1)
+
+
 class Job:
     QUEUED, DOWNLOADING, VERIFYING, EXTRACTING, DONE, FAILED, CANCELLED, PAUSED = (
         "Queued", "Downloading", "Verifying", "Extracting", "Done", "Failed", "Cancelled", "Paused")
     FINISHED = (DONE, FAILED, CANCELLED)
     restored = False              # listed by an earlier session (Activity's history): never announced
+    # what the saved queue keeps of a job: setting one of these marks it changed (saved_ver), so a
+    # save makes its entry again; one changed in place says so with touch()
+    SAVED = frozenset(("rom", "system", "group", "user_paused", "replace", "replace_pins", "made", "checked",
+                       "state", "message", "verified", "chd_task", "chd_mode"))
+    saved_ver = 0
+
+    def __setattr__(self, k, v):
+        object.__setattr__(self, k, v)
+        if k in Job.SAVED:
+            object.__setattr__(self, "saved_ver", next(_SAVED_VER))
+
+    def touch(self):
+        """Something SAVED was changed in place (the archive listing put in j.rom)."""
+        object.__setattr__(self, "saved_ver", next(_SAVED_VER))
 
     def __init__(self, rom, system, group=None):
         self.rom = rom
@@ -639,6 +674,24 @@ def file_hash_ok(path, f, name=None):
     return None, None
 
 
+class _Jobs(list):
+    """Downloader.jobs: a list that counts its changes, so job_for's index is made again only
+    after one (a lookup per game on screen, every frame, scanned the whole queue)."""
+    ver = 0
+
+    def _counted(name):
+        real = getattr(list, name)
+
+        def f(self, *a):
+            self.ver += 1
+            return real(self, *a)
+        return f
+    for _n in ("append", "extend", "insert", "remove", "pop", "clear", "sort", "reverse",
+               "__setitem__", "__delitem__", "__iadd__"):
+        locals()[_n] = _counted(_n)
+    del _n, _counted
+
+
 class Downloader:
     """One worker thread; downloads are sequential (one at a time saturates a
     typical link). The queue is the ordered list self.jobs: the worker takes
@@ -680,6 +733,7 @@ class Downloader:
             self._closed = True
             self.cv.notify_all()
         self.t.join(30)
+        self.fold_log()
 
     # -- queue ------------------------------------------------------------
     def enqueue(self, rom, system, group=None, replace=None, save=True, pins=None):
@@ -712,6 +766,37 @@ class Downloader:
         if save:
             self.save_queue()
         return j
+
+    def enqueue_many(self, items, save=True):
+        """Queue [(rom, system, group)] at once, each as enqueue would (one already queued stays
+        as it is; a paused, failed or cancelled one is queued again in its place; a finished one's
+        row goes), with one look over the queue and one save. Returns their jobs, in order."""
+        out, add, drop = [], [], set()
+        with self.cv:
+            by_id = {}
+            for j in self.jobs:
+                by_id.setdefault(j.rom["id"], []).append(j)
+            for rom, system, group in items:
+                mine = by_id.get(rom["id"], [])
+                j = next((x for x in mine if x.active), None)
+                if j is None:
+                    j = next((x for x in mine if x.state in (Job.PAUSED, Job.FAILED, Job.CANCELLED)), None)
+                    if j is not None:
+                        j.requeue()
+                        j.group = group or j.group
+                    else:
+                        drop.update(id(x) for x in mine if x.state == Job.DONE)
+                        j = Job(rom, system, group)
+                        add.append(j)
+                        by_id[rom["id"]] = [x for x in mine if x.state != Job.DONE] + [j]
+                out.append(j)
+            if drop:
+                self.jobs = [x for x in self.jobs if id(x) not in drop]
+            self.jobs.extend(add)
+            self.cv.notify_all()
+        if save:
+            self.save_queue()
+        return out
 
     @staticmethod
     def _pin(j, paths, given=None):
@@ -921,8 +1006,20 @@ class Downloader:
         return n
 
     # -- persistence: pending jobs survive exit, reboot, or a hand-over to rb_dl.py
+    @contextlib.contextmanager
+    def one_save(self):
+        """Many jobs changed in a row (retry, cancel or pause several): their saves become one,
+        at the end. Without it each requeued job writes the whole queue again."""
+        self._deferred = getattr(self, "_deferred", 0) + 1
+        try:
+            yield
+        finally:
+            self._deferred -= 1
+            if not self._deferred:
+                self.save_queue()
+
     def save_queue(self):
-        if not self.persist:
+        if not self.persist or getattr(self, "_deferred", 0):
             return
         try:
             self._save_queue()
@@ -931,26 +1028,135 @@ class Downloader:
 
     def _save_queue(self):
         with self.qlock:
-            # the game's media for ES ride along as paths (_es_media), not RomM's whole metadata
-            pend = [{"rom": dict({k: j.rom.get(k) for k in self.SLIM_KEYS}, _es_media=_library.es_media(j.rom)),
-                     "system": j.system,
-                     "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None,
-                     "replace_pins": getattr(j, "replace_pins", None) or None,
-                     "made": list(j.made) or None, "checked": list(getattr(j, "checked", None) or []) or None}
-                    for j in list(self.jobs) if j.active or j.state == Job.PAUSED]
+            pend, fin, gone = [], [], Job.FINISHED
+            for j in list(self.jobs):
+                if j.state in gone:
+                    fin.append(j)
+                else:                              # queued, under way or paused
+                    pend.append(self._entry(j))
             # finished ones (Activity's list) survive a restart too: the last HISTORY_KEEP of them
-            done = [{"rom": {k: j.rom.get(k) for k in self.HISTORY_KEYS if j.rom.get(k) is not None},
-                     "system": j.system, "group": j.group, "state": j.state, "message": j.message,
-                     "verified": j.verified, "chd_task": j.chd_task, "chd_mode": getattr(j, "chd_mode", None)}
-                    for j in list(self.jobs) if j.state in Job.FINISHED][-HISTORY_KEEP:]
+            done = [self._entry(j, history=True) for j in fin[-HISTORY_KEEP:]]
             os.makedirs(_core.DATA_DIR, exist_ok=True)
-            _core.atomic_write_json(_core.QUEUE_PATH, {"held": self.hold, "jobs": pend, "history": done})
+            self._write_queue(bool(self.hold), pend, done)
+
+    def _entry(self, j, history=False):
+        """The job as the saved queue lists it (pending, or as history), made again only after
+        one of its Job.SAVED changed: a save looks at every job, thousands of them in a big queue."""
+        k = "_hist" if history else "_pend"
+        got, ver = j.__dict__.get(k), j.saved_ver      # (the version first: a change while it's built makes it stale)
+        if got is not None and got[0] == ver:
+            return got[1]
+        if history:
+            e = {"rom": {key: j.rom.get(key) for key in self.HISTORY_KEYS if j.rom.get(key) is not None},
+                 "system": j.system, "group": j.group, "state": j.state, "message": j.message,
+                 "verified": j.verified, "chd_task": j.chd_task, "chd_mode": getattr(j, "chd_mode", None)}
+        else:
+            # the game's media for ES ride along as paths (_es_media), not RomM's whole metadata
+            e = {"rom": self._saved_rom(j), "system": j.system,
+                 "group": j.group, "paused": bool(j.user_paused), "replace": j.replace or None,
+                 "replace_pins": getattr(j, "replace_pins", None) or None,
+                 "made": list(j.made) or None, "checked": list(getattr(j, "checked", None) or []) or None}
+        j.__dict__[k] = (ver, e)
+        return e
+
+    def _saved_rom(self, j):
+        """The part of j.rom the saved queue keeps, made again only when the record is another or
+        has grown (the archive listing lands in it): a save looks at every job, and one per job
+        state change otherwise rebuilt thousands of them each time."""
+        rom, key = j.rom, (len(j.rom), id(j.rom.get("_members")))
+        got = getattr(j, "_saved", None)
+        if got is None or got[0] is not rom or got[1] != key:
+            got = j._saved = (rom, key, dict({k: rom.get(k) for k in self.SLIM_KEYS}, _es_media=_library.es_media(rom)))
+        return got[2]
+
+    # The queue on disk is a whole copy (download-queue.json, in the format every release reads)
+    # plus a log of what changed since (core.read_queue). A save that only finishes, pauses or
+    # updates jobs already in the copy appends those few lines; one that adds or reorders jobs, or
+    # a log grown as big as the copy (at least LOG_MIN), writes a new copy and empties the log. A
+    # save per job otherwise rewrites the whole queue: a 4,000-game queue wrote ~30 GB that way.
+    LOG_MIN = 64 << 10
+
+    def _write_queue(self, held, pend, done):
+        last, path, log = getattr(self, "_disk", None), _core.QUEUE_PATH, _core.queue_changes_path()
+        ids = [e["rom"].get("id") for e in pend]
+        change = None
+        if last is not None and None not in ids and len(set(ids)) == len(ids):
+            try:
+                on_disk = (os.stat(path).st_mtime_ns, os.path.getsize(path), os.path.getsize(log))
+            except OSError:
+                on_disk = None
+            if on_disk == (last["mtime"], last["size"], last["log"]):   # nobody else wrote it since
+                change = self._queue_change(last, held, pend, ids, done)
+        if change == {}:
+            return
+        line = json.dumps(dict(change, g=last["gen"]), separators=(",", ":")) + "\n" if change else ""
+        if change is None or last["log"] + len(line) > max(self.LOG_MIN, last["size"]):
+            gen = os.urandom(6).hex()
+            _core.atomic_write_json(path, {"held": held, "jobs": pend, "history": done, "gen": gen,
+                                           "hk": HISTORY_KEEP})
+            open(log, "w").close()            # its lines name the old copy: ignored even if this doesn't happen
+            last = {"gen": gen, "mtime": os.stat(path).st_mtime_ns, "size": os.path.getsize(path), "log": 0,
+                    "path": path}
+        else:
+            with open(log, "a") as f:
+                f.write(line)
+                f.flush()
+                os.fsync(f.fileno())
+            last["log"] = os.path.getsize(log)
+        last.update(held=held, ids=ids, jobs=dict(zip(ids, pend)), history=done)
+        self._disk = last
+
+    def fold_log(self):
+        """Leave the saved queue as one whole file with no log beside it, as releases before the
+        log read it (one gone back to after an update reads only download-queue.json): when this
+        process is done with the queue (close, an update, exit; a save after it is folded at exit)."""
+        last = getattr(self, "_disk", None)
+        if not self.persist or last is None or last.get("path") != _core.QUEUE_PATH or not last["log"]:
+            return
+        try:                                  # rb_dl, started as the app closes, may have the queue already
+            mine = (os.stat(_core.QUEUE_PATH).st_mtime_ns, os.path.getsize(_core.QUEUE_PATH),
+                    os.path.getsize(_core.queue_changes_path())) == (last["mtime"], last["size"], last["log"])
+        except OSError:
+            mine = False
+        if mine:
+            self._disk = None                 # a whole copy, whatever changed
+            self.save_queue()
+
+    @staticmethod
+    def _queue_change(last, held, pend, ids, done):
+        """What one log line must say to turn the copy on disk (last) into this queue: {} for
+        nothing, None when a log line can't say it (jobs added or moved, the history not just
+        grown at its end)."""
+        old = last["ids"]
+        it = iter(old)
+        if not all(rid in it for rid in ids):           # not the old order with some gone
+            return None
+        history = last["history"]
+        if done == history:
+            grew = []
+        else:
+            grew = next((done[len(done) - k:] for k in range(1, len(done) + 1)
+                         if (history + done[len(done) - k:])[-HISTORY_KEEP:] == done), None)
+            if grew is None:
+                return None
+        kept = set(ids)
+        change = {}
+        if held != last["held"]:
+            change["held"] = held
+        gone = [rid for rid in old if rid not in kept]
+        if gone:
+            change["x"] = gone
+        changed = [e for rid, e in zip(ids, pend) if last["jobs"][rid] != e]
+        if changed:
+            change["j"] = changed
+        if grew:
+            change["h"] = grew
+        return change
 
     @staticmethod
     def saved_queue():
         try:
-            with open(_core.QUEUE_PATH) as f:
-                data = json.load(f)
+            data = _core.read_queue()
         except OSError:
             return []
         except ValueError:
@@ -961,8 +1167,7 @@ class Downloader:
     @staticmethod
     def saved_held():
         try:
-            with open(_core.QUEUE_PATH) as f:
-                data = json.load(f)
+            data = _core.read_queue()
         except (OSError, ValueError):
             return False
         return bool(isinstance(data, dict) and data.get("held"))
@@ -970,8 +1175,7 @@ class Downloader:
     @staticmethod
     def saved_history():
         try:
-            with open(_core.QUEUE_PATH) as f:
-                data = json.load(f)
+            data = _core.read_queue()
         except (OSError, ValueError):
             return []
         got = data.get("history") if isinstance(data, dict) else None
@@ -1007,11 +1211,13 @@ class Downloader:
             with self.cv:
                 self.hold = True
         self._restore_history()
+        saved = [it for it in self.saved_queue() if it.get("rom", {}).get("id") and it.get("system")]
         n = 0
-        for it in self.saved_queue():
-            if it.get("rom", {}).get("id") and it.get("system"):
-                j = self.enqueue(it["rom"], it["system"], it.get("group"), it.get("replace"), save=False)
+        with self.cv:                     # (reentrant) the worker starts none of them before they're as they were
+            jobs = self.enqueue_many([(it["rom"], it["system"], it.get("group")) for it in saved], save=False)
+            for it, j in zip(saved, jobs):
                 if it.get("replace"):
+                    j.replace = sorted(set(j.replace or []) | set(it["replace"]))
                     # what the files were when the user confirmed, not now (swapped while it was closed)
                     j.replace_pins = dict(it.get("replace_pins") or {}) or \
                         {os.path.normpath(p): None for p in it.get("replace") or []}
@@ -1019,10 +1225,9 @@ class Downloader:
                     j.made = [p for p in it["made"] if isinstance(p, str)]
                     j.checked = [p for p in it.get("checked") or [] if isinstance(p, str)]
                 if it.get("paused"):
-                    with self.cv:
-                        j.user_paused = True
-                        if j.state == Job.QUEUED:
-                            j.state, j.message = Job.PAUSED, "Paused"
+                    j.user_paused = True
+                    if j.state == Job.QUEUED:
+                        j.state, j.message = Job.PAUSED, "Paused"
                 n += 1
         if n:
             self.save_queue()            # once, whole: never a partly re-added queue on disk
@@ -1063,11 +1268,24 @@ class Downloader:
                 tick(busy, waited)
             sleep(0.1)
 
+    @property
+    def jobs(self):
+        return self._jobs
+
+    @jobs.setter
+    def jobs(self, jobs):
+        self._jobs = jobs if isinstance(jobs, _Jobs) else _Jobs(jobs)
+
     def job_for(self, rom_id):
-        for j in reversed(self.jobs):
-            if j.rom["id"] == rom_id:
-                return j
-        return None
+        """The latest job for this game, or None."""
+        jobs, idx = self._jobs, getattr(self, "_idx", None)
+        if idx is None or idx[0] is not jobs or idx[1] != jobs.ver:
+            ver = jobs.ver                           # before the copy: a change made meanwhile makes it stale
+            by_id = {}
+            for j in list(jobs):
+                by_id[j.rom["id"]] = j               # the later one wins, as a scan from the end found it
+            idx = self._idx = (jobs, ver, by_id)
+        return idx[2].get(rom_id)
 
     def active_count(self):
         return sum(1 for j in self.jobs if j.active)
@@ -1164,6 +1382,13 @@ class Downloader:
                 self._finish_group(j.group, j.system)
             except Exception as e:
                 _core.log("group %s: %r" % (j.group.get("base"), e))
+        if j.state in Job.FINISHED:
+            # what the saved history keeps, as a restart brings it back (_process merged RomM's whole
+            # record in: ~30 KB a game, held until Clear finished): Activity's row, Play now and a
+            # retry (which fetches it again) need no more
+            j.rom = {k: j.rom[k] for k in self.HISTORY_KEYS if k in j.rom}
+            j._saved = None                   # (it held the whole record)
+            j.__dict__.pop("_pend", None)
         self.save_queue()
 
     # -- archive listings for the space forecast -----------------------------
@@ -1190,6 +1415,7 @@ class Downloader:
                 continue
             if j.rom is not rom and j.rom.get("id") == rom.get("id") and "_members" not in j.rom:
                 j.rom["_members"] = got    # the job's record was replaced meanwhile
+            j.touch()                      # zip_listing put it in j.rom in place
             self.save_queue()
 
     # -- unpacking while the next download runs ------------------------------
@@ -1377,7 +1603,7 @@ class Downloader:
         existed = os.path.lexists(dest)
         self._fetch(j, url_path, dest, size_hint, record)
         if not existed and dest not in j.made:
-            j.made.append(dest)
+            j.made = j.made + [dest]           # a new list: saved_ver (and the saved queue) see it
 
     def _free_bytes(self, path):
         st = os.statvfs(path)
@@ -1444,6 +1670,7 @@ class Downloader:
                 zip_listing(self.api, rom, system)
             except NetError as e:
                 _core.log("LIST %s: %s" % (j.name, e))      # the estimate stands; read again next time
+            j.touch()                        # it went into j.rom in place
         is_folder = files and _library.rom_is_folder(detail, files)
         rec = files[0] if len(files) == 1 else None
         dest = _core.rom_dest(detail, system)
@@ -2327,3 +2554,22 @@ class Downloader:
         os.makedirs(_core.DATA_DIR, exist_ok=True)
         _core.append_gamelist(entry)
         return entry
+
+
+def _fold_logs():
+    """At exit: every downloader's saved queue left whole (Downloader.fold_log)."""
+    for d in list(Downloader.instances):
+        try:
+            d.fold_log()
+        except Exception as e:              # exiting anyway: the log stays, and this release reads it
+            _core.log("queue fold at exit: %r" % e)
+
+
+atexit.register(_fold_logs)
+
+
+# A bulk download's listing keeps only these of each game (a scraped library's records are
+# ~5 KB each; thousands of them held whole cost hundreds of MB): what the queue, its space
+# forecast, the disc sets and Activity read before the download fetches the game's own record.
+BULK_FIELDS = Downloader.SLIM_KEYS + ("fs_extension", "files", "full_path", "platform_fs_slug",
+                                      "platform_display_name", "merged_screenshots", "path_video", "_es_media")

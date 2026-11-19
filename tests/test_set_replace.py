@@ -221,7 +221,7 @@ def test_get_the_newer_one_of_each_disc_of_a_downloaded_set(isolated, mock_url, 
     assert os.path.isfile(m3u) and os.path.isfile(cue1) and os.path.isfile(cue2)
     assert not any(os.path.exists(p) for p in chd)
     assert open(m3u).read().splitlines() == [os.path.relpath(p, sysdir) for p in (cue1, cue2)]
-    inst = json.load(open(rommlib.STATE_PATH))
+    inst = rommlib.read_installed()
     for r, folder in zip(full, (cue1, cue2)):
         assert inst[str(r["id"])]["paths"] == [os.path.dirname(folder), m3u]
     assert to_es() == ["Lorem Odyssey (Europe).m3u"]        # the playlist shown, both discs hidden

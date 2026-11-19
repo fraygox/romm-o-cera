@@ -50,7 +50,7 @@ def test_downloads_on_a_fresh_box(isolated, fast_mock_url):
     assert sorted(os.listdir(fdir)) == sorted(f["file_name"] for f in api.rom(folder["id"])["files"])
     iso = os.path.join(roms, "ps2", nested["fs_name"], nested["fs_name_no_ext"] + ".iso")
     assert os.path.isfile(iso)
-    installed = json.load(open(rommlib.STATE_PATH))
+    installed = rommlib.read_installed()
     assert {str(cart["id"]), str(folder["id"]), str(nested["id"])} <= set(installed)
     tasks = [json.load(open(os.path.join(rommlib.CHD_QUEUE_DIR, t))) for t in os.listdir(rommlib.CHD_QUEUE_DIR)]
     assert {t["system"] for t in tasks} == {"dreamcast", "ps2"}

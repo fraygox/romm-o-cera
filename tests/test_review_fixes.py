@@ -245,7 +245,7 @@ def test_a_truncated_installed_json_is_kept_before_the_next_write(isolated):
     full = json.dumps({str(i): {"name": "Game %d" % i, "system": "psx", "paths": []} for i in range(39)})
     open(rommlib.STATE_PATH, "w").write(full[: len(full) // 2])       # cut short
     rommlib.Library().update(lambda inst: inst.update({"99": {"name": "New", "system": "psx", "paths": []}}))
-    now = json.load(open(rommlib.STATE_PATH))           # every whole record before the cut is salvaged
+    now = rommlib.read_installed()           # every whole record before the cut is salvaged
     orig = json.loads(full)
     assert "99" in now and len(now) > 10 and all(now[k] == orig[k] for k in now if k != "99")
     kept = [n for n in os.listdir(rommlib.DATA_DIR) if n.startswith("installed.json.bad-")]
@@ -610,7 +610,7 @@ def test_resume_writes_the_queue_once(isolated, monkeypatch):
 
     def spy():
         real()
-        sizes.append(len(json.load(open(rommlib.QUEUE_PATH))["jobs"]))
+        sizes.append(len(rommlib.read_queue()["jobs"]))
     monkeypatch.setattr(d, "_save_queue", spy)
     assert d.resume() == 3
     assert sizes and min(sizes) == 3, "the queue on disk shrank while resuming: %s" % sizes

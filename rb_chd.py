@@ -369,11 +369,16 @@ _downloaded = [None, frozenset()]                # (installed.json's stat, the p
 
 def downloaded_paths():
     """Every path installed.json records (what the app downloaded), re-read when it changes."""
+    path = os.path.join(rommlib.DATA_DIR, "installed.json")
     try:
-        st = os.stat(os.path.join(rommlib.DATA_DIR, "installed.json"))
+        st = os.stat(path)
         sig = (st.st_mtime_ns, st.st_size, st.st_ino)
     except OSError:
         sig = None
+    try:                                          # changes logged beside it count too (a release from 0.15 on)
+        sig = (sig, os.path.getsize(path + ".changes"))
+    except OSError:
+        pass
     if sig != _downloaded[0]:
         try:
             recs = rommlib.Library().installed.values()

@@ -40,7 +40,7 @@ def _setup(mock_url, es=PSX_ES):
     d.es = es
     # let _wait see when a Done job's _settled step has finished too (a paused
     # job settles as Paused; resumed and Done, it must settle again)
-    real_settled, real_enqueue = d._settled, d.enqueue
+    real_settled, real_enqueue, real_many = d._settled, d.enqueue, d.enqueue_many
 
     def settled(j):
         try:
@@ -52,7 +52,13 @@ def _setup(mock_url, es=PSX_ES):
         j = real_enqueue(*a, **k)
         j._test_dl = True
         return j
-    d._settled, d.enqueue = settled, enqueue
+
+    def enqueue_many(*a, **k):                 # a set's discs (App.queue_set) come in this way
+        jobs = real_many(*a, **k)
+        for j in jobs:
+            j._test_dl = True
+        return jobs
+    d._settled, d.enqueue, d.enqueue_many = settled, enqueue, enqueue_many
     return api, d
 
 
@@ -152,7 +158,7 @@ def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, 
     assert open(m3u).read().splitlines() == [
         "Lorem Odyssey (USA) (Disc %d)/Lorem Odyssey (USA) (Disc %d).cue" % (n, n) for n in (1, 2, 3)]
     assert lines
-    inst = json.load(open(rommlib.STATE_PATH))
+    inst = rommlib.read_installed()
     recs = [inst[str(r["id"])] for _, r in discs]
     assert all(rec["group"]["id"] == group["id"] and m3u in rec["paths"] for rec in recs)
     # gamelist hand-off: 3 disc entries, then hide + the playlist's own entry
@@ -177,7 +183,7 @@ def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, 
     assert open(m3u).read().splitlines() == ["Lorem Odyssey (USA) (Disc %d).chd" % n for n in (1, 2, 3)]
     assert sorted(os.listdir(sysdir)) == ["Lorem Odyssey (USA) (Disc %d).chd" % n for n in (1, 2, 3)] + \
         ["Lorem Odyssey (USA).m3u"]
-    inst = json.load(open(rommlib.STATE_PATH))
+    inst = rommlib.read_installed()
     for n, (_, r) in enumerate(discs, 1):
         assert inst[str(r["id"])]["paths"] == [
             os.path.join(sysdir, "Lorem Odyssey (USA) (Disc %d).chd" % n), m3u]
@@ -201,7 +207,7 @@ def test_multi_disc_download_m3u_gamelist_and_chd(isolated, mock_url, tmp_path, 
     assert lib.group_for(discs[0][1]["id"])["id"] == group["id"]
     paths, freed = lib.uninstall_group(group, "psx")
     assert freed > 0 and sorted(n for n in os.listdir(sysdir) if n != "images") == ["gamelist.xml"]
-    assert not any(str(r["id"]) in json.load(open(rommlib.STATE_PATH)) for _, r in discs)
+    assert not any(str(r["id"]) in rommlib.read_installed() for _, r in discs)
 
 
 def test_chd_before_set_finishes(isolated, mock_url, tmp_path, monkeypatch):
@@ -387,7 +393,7 @@ def test_queue_reorder_pause_and_persist(isolated):
     d.cancel_job(c)
     assert c.state == "Cancelled"
     assert d.clear_finished() == 1 and c not in d.jobs
-    saved = json.load(open(rommlib.QUEUE_PATH))
+    saved = rommlib.read_queue()
     assert saved["held"] is True and [it["rom"]["name"] for it in saved["jobs"]] == ["Cart 0", "Cart 1"]
     # a new session keeps the queue paused (and so does the background worker)
     d2 = rommlib.Downloader(d.api, rommlib.Library(), cfg)
@@ -395,7 +401,7 @@ def test_queue_reorder_pause_and_persist(isolated):
     # Cart 1 was paused by hand: it stays paused across a restart (sweep A3)
     assert {j.name: j.state for j in d2.jobs} == {"Cart 0": "Queued", "Cart 1": "Paused"}
     d2.release_all()
-    assert not d2.hold and not json.load(open(rommlib.QUEUE_PATH))["held"]
+    assert not d2.hold and not rommlib.read_queue()["held"]
 
 
 @pytest.mark.parametrize("stop,go", [("hold_all", "release_all"), ("pause_job", "resume_job")])
@@ -444,7 +450,7 @@ def test_installed_json_survives_concurrent_writers(isolated):
     app_lib.mark({"id": 1, "name": "A", "fs_name": "A.zip"}, "psx", ["/x/A"])
     chd_lib.rename_paths({"/x/A": "/x/A.chd"})
     app_lib.mark({"id": 2, "name": "B", "fs_name": "B.zip"}, "psx", ["/x/B"])
-    inst = json.load(open(rommlib.STATE_PATH))
+    inst = rommlib.read_installed()
     assert inst["1"]["paths"] == ["/x/A.chd"] and inst["2"]["paths"] == ["/x/B"]
 
 

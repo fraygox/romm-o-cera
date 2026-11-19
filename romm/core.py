@@ -315,6 +315,51 @@ def atomic_write_json(path, obj, mode=None, sync=True, **dump_kw):
     _atomic_write(path, lambda f: json.dump(obj, f, **dump_kw), mode=mode, sync=sync)
 
 
+def queue_changes_path():
+    """The saved download queue's change log, beside it (read_queue)."""
+    return QUEUE_PATH + ".changes"
+
+
+def read_queue():
+    """The saved download queue ({"held", "jobs", "history"}) as it stands: the whole queue as
+    download-queue.json last had it, with the changes logged since (queue_changes_path, one JSON
+    line each) played over it in order. A line counts only for the copy whose "gen" it carries:
+    one left over from an earlier copy (a crash, or a copy an older release wrote without a log)
+    is ignored, and a torn last line (the box died mid-write) ends the replay. OSError when there's
+    no saved queue, ValueError when it won't parse; an old saved queue (a bare list) comes back as it is."""
+    with open(QUEUE_PATH) as f:
+        data = json.load(f)
+    gen = data.get("gen") if isinstance(data, dict) else None
+    if not gen:
+        return data
+    try:
+        with open(queue_changes_path()) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return data
+    jobs = {}
+    for i, e in enumerate(data.get("jobs") or []):
+        rid = (e.get("rom") or {}).get("id") if isinstance(e, dict) else None
+        jobs[("#", i) if rid is None else rid] = e
+    history, held = list(data.get("history") or []), data.get("held")
+    for line in lines:
+        try:
+            c = json.loads(line)
+        except ValueError:
+            break
+        if not isinstance(c, dict) or c.get("g") != gen:
+            continue
+        if "held" in c:
+            held = c["held"]
+        for rid in c.get("x") or []:
+            jobs.pop(rid, None)
+        for e in c.get("j") or []:
+            jobs[e["rom"]["id"]] = e
+        history.extend(c.get("h") or [])
+    keep = data.get("hk") or len(history)
+    return dict(data, held=held, jobs=list(jobs.values()), history=history[-keep:])
+
+
 def spawn_detached(script, python=None):
     """Start one of the app's scripts (rb_chd.py, rb_dl.py, rb_finalize.py)
     in its own session with no stdio, so it outlives its parent. They're
@@ -426,11 +471,21 @@ class ConfigUnreadable(RommError):
 SPACE_MARGIN = 2 << 30
 
 
-def free_bytes(path=None):
+def disk_bytes(path=None, default=0):
+    """The size of the drive path is on (the roms folder), all of it; default when it can't be read."""
     try:
         st = os.statvfs(path or ROMS_ROOT)
     except OSError:
-        return 0
+        return default
+    return st.f_blocks * st.f_frsize
+
+
+def free_bytes(path=None, default=0):
+    """Bytes free where path is (the roms folder); default when that can't be read now."""
+    try:
+        st = os.statvfs(path or ROMS_ROOT)
+    except OSError:
+        return default
     return st.f_bavail * st.f_frsize
 
 

@@ -46,7 +46,7 @@ def test_a_damaged_installed_json_carries_on_from_its_last_good_copy(isolated, m
     fresh = rommlib.Library()                                            # e.g. rb_dl starting now
     assert len(fresh.snapshot()) == 40                                   # salvage + the copy after the last write
     fresh.update(lambda inst: inst.update({"99": {"name": "New", "system": "psx", "paths": []}}))
-    data = json.load(open(rommlib.STATE_PATH))
+    data = rommlib.read_installed()
     assert len(data) == 41 and "99" in data
     kept = [n for n in os.listdir(rommlib.DATA_DIR) if n.startswith("installed.json.bad-")]
     assert len(kept) == 1
@@ -89,7 +89,7 @@ def test_a_deleted_installed_json_isnt_written_back_by_the_next_change(isolated)
     os.remove(rommlib.STATE_PATH)                                        # reset elsewhere
     os.remove(rommlib.STATE_PATH + ".bak")
     lib.update(lambda inst: inst.update({"9": {"name": "New", "system": "psx", "paths": []}}))
-    assert list(json.load(open(rommlib.STATE_PATH))) == ["9"]
+    assert list(rommlib.read_installed()) == ["9"]
 
 
 # -- 4: two writes within one timestamp tick
@@ -135,7 +135,7 @@ def test_odd_records_dont_break_reading(isolated):
     assert lib.paths_for(_rom(3, "Odd (USA).chd"), "psx") == [p]
     assert lib.group_for(3) is None and lib.group_for(2) is None
     lib.rename_paths({p: p + ".new"})
-    assert json.load(open(rommlib.STATE_PATH))["3"]["paths"] == [p + ".new"]
+    assert rommlib.read_installed()["3"]["paths"] == [p + ".new"]
 
 
 def test_odd_media_skip_notes_dont_break_reading(isolated):
@@ -380,7 +380,7 @@ def test_a_damaged_installed_json_with_no_good_copy_carries_on_from_what_is_salv
     lib = rommlib.Library()
     for i in range(3):
         lib.mark({"id": 1 + i, "name": "Fresh", "fs_name": "Fresh.chd"}, "psx", [p])
-    data = json.load(open(rommlib.STATE_PATH))
+    data = rommlib.read_installed()
     assert {"1", "2", "3"} <= set(data)
     if damage == "half":
         assert len(data) > 3 + 5 and all(data[k] == recs[k] for k in data if k in recs)
@@ -394,6 +394,9 @@ def test_the_salvage_wins_over_an_older_bak(isolated):
                                          "2": {"name": "Two", "system": "psx", "paths": []}}))
     lib.update(lambda inst: inst["1"].update(name="New"))                # .bak: name Old
     lib.update(lambda inst: inst.update({"3": {"name": "Three", "system": "psx", "paths": []}}))
+    assert rommlib.fold_changes()                                        # installed.json whole: name New, 3
+    json.dump({"1": {"name": "Old", "system": "psx", "paths": []}},     # an older .bak (another copy: no log on it)
+              open(rommlib.STATE_PATH + ".bak", "w"), indent=1)
     text = open(rommlib.STATE_PATH).read()
     open(rommlib.STATE_PATH, "w").write(text[: text.index('"3":')])     # 3 cut off
     snap = rommlib.Library().snapshot()
@@ -411,7 +414,7 @@ def test_a_lost_installed_json_carries_on_from_its_bak(isolated, monkeypatch):
     assert len(rommlib.Library().snapshot()) == 6                       # a fresh reader sees them
     assert len(lib.snapshot()) == 6                                     # and so does one that had read it
     lib.update(lambda inst: inst.update({"new": {"name": "New", "system": "psx", "paths": []}}))
-    data = json.load(open(rommlib.STATE_PATH))
+    data = rommlib.read_installed()
     assert set(_records(6)) <= set(data) and "new" in data
     assert os.path.exists(rommlib.STATE_PATH + ".bak")
     assert "MISSING" in open(rommlib.LOG_PATH).read()
@@ -425,7 +428,7 @@ def test_a_lost_installed_json_with_no_good_bak_starts_empty(isolated):
     open(rommlib.STATE_PATH + ".bak", "w").write("{")                   # damaged too
     assert rommlib.Library().snapshot() == {}
     lib.update(lambda inst: inst.update({"new": {"name": "New", "system": "psx", "paths": []}}))
-    assert list(json.load(open(rommlib.STATE_PATH))) == ["new"]
+    assert list(rommlib.read_installed()) == ["new"]
 
 
 def test_an_installed_json_that_cant_be_opened_now_works_again_later(isolated, monkeypatch):
@@ -440,12 +443,14 @@ def test_an_installed_json_that_cant_be_opened_now_works_again_later(isolated, m
             raise OSError(5, "Input/output error")
         return real(path, mode, *a, **k)
     monkeypatch.setattr(builtins, "open", fake)
+    st = os.stat(rommlib.STATE_PATH)                                     # changed meanwhile: it must be read again
+    os.utime(rommlib.STATE_PATH, ns=(st.st_atime_ns, st.st_mtime_ns + 10 ** 9))
     with pytest.raises(rommlib.LibraryUnreadable) as e:
         lib.update(lambda inst: inst.update(_records(4)))
     assert "try again" in str(e.value)
     fail[0] = False
     lib.update(lambda inst: inst.update(_records(4)))
-    assert len(json.load(real(rommlib.STATE_PATH))) == 4
+    assert len(rommlib.read_installed()) == 4
 
 
 def test_a_bak_already_the_same_file_leaves_no_temp_file(isolated):
@@ -621,8 +626,8 @@ def test_bak_holds_the_state_after_the_last_write(isolated, monkeypatch):
     lib = rommlib.Library()
     lib.update(lambda inst: inst.update(_records(2)))
     lib.update(lambda inst: inst.update({"7": {"name": "Last", "system": "psx", "paths": []}}))
-    assert json.load(open(rommlib.STATE_PATH + ".bak")) == json.load(open(rommlib.STATE_PATH))
-    assert "7" in json.load(open(rommlib.STATE_PATH + ".bak"))
+    assert rommlib._read_backup() == rommlib.read_installed()           # .bak with the log played over it
+    assert "7" in rommlib._read_backup()
 
 
 def test_bak_is_not_refreshed_from_a_damaged_file_but_after_a_recovery(isolated):

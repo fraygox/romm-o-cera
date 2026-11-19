@@ -201,7 +201,6 @@ def test_what_a_job_made_survives_a_restart_for_its_cancel(isolated):
     d.jobs.append(j)
     d.save_queue()
     d2 = _downloader()
-    d2.enqueue = lambda rom, system, *a, **k: d2.jobs.append(rommlib.Job(rom, system)) or d2.jobs[-1]
     assert d2.resume() == 1
     d2.cancel_job(d2.jobs[0])
     assert not os.path.exists(os.path.join(sysdir, "Game"))

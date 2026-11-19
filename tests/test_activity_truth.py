@@ -212,8 +212,7 @@ def test_finished_downloads_are_still_listed_after_a_restart(isolated, monkeypat
         d.save_queue()
     finally:
         d.close()
-    with open(rommlib.QUEUE_PATH) as f:
-        hist = json.load(f)["history"]
+    hist = rommlib.read_queue()["history"]
     assert [h["state"] for h in hist] == ["Done", "Failed"] and "summary" not in hist[0]["rom"]
     d2 = rommlib.Downloader(None, lib, dict(rommlib.DEFAULT_CONFIG))
     try:
@@ -223,8 +222,7 @@ def test_finished_downloads_are_still_listed_after_a_restart(isolated, monkeypat
         d2.resume()
         assert len(d2.jobs) == 2                            # read once
         assert d2.clear_finished() == 2
-        with open(rommlib.QUEUE_PATH) as f:
-            assert json.load(f)["history"] == []
+        assert rommlib.read_queue()["history"] == []
     finally:
         d2.close()
 
@@ -237,8 +235,7 @@ def test_history_keeps_the_last_ones(isolated):
             j.state = rommlib.Job.DONE
             d.jobs.append(j)
         d.save_queue()
-        with open(rommlib.QUEUE_PATH) as f:
-            hist = json.load(f)["history"]
+        hist = rommlib.read_queue()["history"]
         assert len(hist) == rommlib.HISTORY_KEEP and hist[-1]["rom"]["name"] == "G%d" % (rommlib.HISTORY_KEEP + 4)
     finally:
         d.close()

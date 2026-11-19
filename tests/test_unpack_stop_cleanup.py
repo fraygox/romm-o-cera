@@ -311,9 +311,10 @@ def test_free_up_space_deletes_the_rest_when_one_file_wont_go(isolated, monkeypa
 
 # ------------------------------------------------------------ 6. installed.json.bak without hard links
 
-def test_bak_is_copied_at_most_once_a_minute(isolated, monkeypatch):
-    """.bak is a real copy (never a hard link: damage in place would take both), at
-    most once a minute: a batch of 200 deletes doesn't copy the file 200 times."""
+def test_bak_is_copied_only_when_installed_json_is_written_whole(isolated, monkeypatch):
+    """.bak is a real copy (never a hard link: damage in place would take both), made when
+    installed.json is written whole: a batch of 200 deletes are lines of the change log, which
+    play over .bak as over installed.json."""
     copies = []
     real = shutil.copyfile
 
@@ -323,17 +324,16 @@ def test_bak_is_copied_at_most_once_a_minute(isolated, monkeypatch):
         return real(a, b, *x, **k)
     monkeypatch.setattr(shutil, "copyfile", copy)
     lib = rommlib.Library()
-    lib.update(lambda inst: inst.update({"1": {"system": "psx", "paths": ["/a"]}}))     # the first write: copied
+    lib.update(lambda inst: inst.update({"1": {"system": "psx", "paths": ["/a"]}}))     # the first write: whole, copied
     for n in range(2, 12):                                               # a batch of deletes, say
         lib.update(lambda inst: inst.update({str(n): {"system": "psx", "paths": ["/b"]}}))
     assert len(copies) == 1
     bak = rommlib.STATE_PATH + ".bak"
     assert set(json.load(open(bak))) == {"1"}
     assert os.stat(bak).st_ino != os.stat(rommlib.STATE_PATH).st_ino     # its own copy, not a link
-    t = time.time() - rommlib.BAK_COPY_EVERY - 1
-    os.utime(bak, (t, t))
     lib.update(lambda inst: inst.pop("1"))
-    assert len(copies) == 2 and len(json.load(open(bak))) == 10           # the state after that write
+    assert len(copies) == 1 and len(rommlib.read_installed()) == 10
+    assert rommlib._read_backup() == rommlib.read_installed()            # .bak and the log: the state after that write
 
 
 # ------------------------------------------------------------ 7. round 5
@@ -489,7 +489,7 @@ def test_an_archive_reused_after_a_pause_still_says_checksum_ok(isolated, monkey
     dest = d._process(j)["path"]
     assert j.verified is True and j.made == [dest] and j.checked == [dest] and len(api.asked) == 1
     d.save_queue()
-    assert json.load(open(rommlib.QUEUE_PATH))["jobs"][0]["checked"] == [dest]
+    assert rommlib.read_queue()["jobs"][0]["checked"] == [dest]
     j2 = rommlib.Job(dict(detail), "psx")                               # as resume() rebuilds it
     j2.made, j2.checked = [dest], [dest]
     d._process(j2)

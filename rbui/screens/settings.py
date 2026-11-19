@@ -652,6 +652,13 @@ class SettingsScreen(Screen):
                         break
                     time.sleep(0.2)
                 rommlib.stop_helpers()
+                # installed.json and the download queue whole, their change logs folded in: the
+                # release that starts next may be one from before the logs (going back)
+                for fold in (rommlib.fold_changes, app.downloader.fold_log):
+                    try:
+                        fold()
+                    except Exception as e:
+                        rommlib.log("UPDATE fold before the swap: %r" % e)
                 return install(staged) if staged is not None else install()
             app.bg(run, done, err)
 

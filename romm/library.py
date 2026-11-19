@@ -1,5 +1,8 @@
 """installed.json (Library), multi-disc sets and gamelist entries."""
+import atexit
 import contextlib
+import copy
+import hashlib
 import json
 import os
 import re
@@ -459,15 +462,19 @@ def _clean_records(data, dropped=None):
     return out
 
 
-def _read_records(path):
+def _read_records(path, digest=None):
     """(records, signature) of an installed.json; OSError or ValueError when it
     can't be read or isn't a JSON object. Records that cleaning has to drop (JSON
     that parses but holds the wrong types) are logged, and the file is kept as
     <name>.bad-<when> first (once per content), as a damaged one is: a write
-    from the cleaned records would otherwise lose them without a trace."""
-    with open(path) as f:
+    from the cleaned records would otherwise lose them without a trace.
+    digest: a list the sha1 of the bytes read is put in."""
+    with open(path, "rb") as f:
         sig = _file_sig(os.fstat(f.fileno()))
-        data = json.load(f)
+        raw = f.read()
+    if digest is not None:
+        digest.append(hashlib.sha1(raw).hexdigest())
+    data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError("not an object")
     dropped = []
@@ -483,13 +490,201 @@ def _backup_path():
     return _core.STATE_PATH + ".bak"
 
 
-def _read_backup():
+def _read_backup(with_log=True):
     """The records of installed.json.bak (installed.json as it was after its last
-    good write), or None."""
+    whole write), or None. with_log: the changes logged since played over it, when
+    it is a copy of the installed.json they were logged against (_log_header's sha)."""
     try:
-        return _read_records(_backup_path())[0]
+        recs = _read_records(_backup_path())[0]
     except (OSError, ValueError):
         return None
+    if with_log and _backup_has_log():
+        _replay(recs, 0)
+    return recs
+
+
+def _backup_has_log():
+    """installed.json.bak is the very copy the change log was started against."""
+    h = _log_header()
+    if not (h and h.get("sha")):
+        return False
+    try:
+        return _sha(_backup_path()) == h["sha"]
+    except OSError:
+        return False
+
+
+# ---------------------------------------------- installed.json's change log
+# installed.json stays one whole JSON object, as every release reads it. What changed since it
+# was last written whole goes in installed.json.changes: a first line naming that copy by its
+# bytes' hash ({"sha"}), then a line per change, {"set": {id: record}, "del": [id]}. A copy
+# written with other contents by anything else (an older release, a hand) has another hash, and
+# the log is ignored. The log is folded into a whole installed.json once it's as
+# big as installed.json, as a process that logged changes exits, and before a rollback, so a
+# release from before the log finds every record. (A rewrite per installed game made a
+# 4,000-game download write ~14 GB.)
+LOG_MIN = 256 << 10
+_LOGGED = set()          # the installed.json paths this process logged changes to: folded at exit
+
+
+def _changes_path():
+    return _core.STATE_PATH + ".changes"
+
+
+def _log_size():
+    try:
+        return os.path.getsize(_changes_path())
+    except OSError:
+        return 0
+
+
+def _sha(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def _fp(rec):
+    """A record's fingerprint: what tells a changed record from the one written."""
+    return hashlib.blake2b(json.dumps(rec, sort_keys=True).encode(), digest_size=16).digest()
+
+
+def _log_header():
+    """The change log's first line ({"sha", "len": its own length}), or None."""
+    try:
+        with open(_changes_path(), "rb") as f:
+            first = f.readline()
+    except OSError:
+        return None
+    try:
+        h = json.loads(first)
+    except ValueError:
+        return None
+    if not (isinstance(h, dict) and isinstance(h.get("sha"), str) and first.endswith(b"\n")):
+        return None
+    return dict(h, len=len(first))
+
+
+def _replay(recs, start, fps=None):
+    """Play the log's whole lines from byte offset start over recs (fps: their fingerprints,
+    kept up). A line that won't parse (the box died writing it) is skipped. Returns the
+    offset after the last whole line."""
+    try:
+        with open(_changes_path(), "rb") as f:
+            f.seek(start)
+            data = f.read()
+    except OSError:
+        return start
+    end = data.rfind(b"\n") + 1
+    for line in data[:end].splitlines():
+        try:
+            c = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(c, dict):
+            continue
+        for rid in c.get("del") or []:
+            recs.pop(str(rid), None)
+            if fps is not None:
+                fps.pop(str(rid), None)
+        if isinstance(c.get("set"), dict):
+            for rid, rec in _clean_records(c["set"]).items():
+                recs[rid] = rec
+                if fps is not None:
+                    fps[rid] = _fp(rec)
+    return start + end
+
+
+def _read_state():
+    """(records, sig): installed.json with its change log played over it. sig: (installed.json's
+    signature, how far into the log was read, whether the log is installed.json's own). Raises
+    as _read_records does."""
+    sha = []
+    recs, ssig = _read_records(_core.STATE_PATH, sha)
+    h = _log_header()
+    if h is not None and h.get("sha") == sha[0]:       # by content: a touched date doesn't part them
+        return recs, (ssig, _replay(recs, 0), True)
+    return recs, (ssig, _log_size(), False)
+
+
+def read_installed():
+    """installed.json's records as they stand (its change log played over it). Raises as
+    _read_records does."""
+    return _read_state()[0]
+
+
+class _Touched(dict):
+    """The records an update's fn works on: each record it reaches is a copy made then (records
+    others hold are never changed under them), and which ones it reached is noted (touched;
+    everything once it iterates the records), so only those are compared for the log."""
+
+    def __init__(self, recs):
+        super().__init__(recs)
+        self.touched, self.copied, self.everything = set(), set(), False
+
+    def _own(self, k):
+        self.touched.add(k)
+        if k not in self.copied and dict.__contains__(self, k):
+            dict.__setitem__(self, k, copy.deepcopy(dict.__getitem__(self, k)))
+            self.copied.add(k)
+
+    def _all(self):
+        self.everything = True
+        for k in list(dict.keys(self)):
+            self._own(k)
+
+    def __getitem__(self, k):
+        self._own(k)
+        return dict.__getitem__(self, k)
+
+    def get(self, k, default=None):
+        self._own(k)
+        return dict.get(self, k, default)
+
+    def __setitem__(self, k, v):
+        self.touched.add(k)
+        self.copied.add(k)
+        dict.__setitem__(self, k, v)
+
+    def __delitem__(self, k):
+        self.touched.add(k)
+        dict.__delitem__(self, k)
+
+    def pop(self, k, *default):
+        self.touched.add(k)
+        return dict.pop(self, k, *default)
+
+    def setdefault(self, k, default=None):
+        if dict.__contains__(self, k):
+            return self[k]
+        self[k] = default
+        return default
+
+    def values(self):
+        self._all()
+        return dict.values(self)
+
+    def items(self):
+        self._all()
+        return dict.items(self)
+
+    def update(self, *a, **kw):
+        self._all()
+        dict.update(self, *a, **kw)
+
+    def popitem(self):
+        self._all()
+        return dict.popitem(self)
+
+    def clear(self):
+        self._all()
+        dict.clear(self)
+
+    def copy(self):
+        self._all()
+        return dict(self)
 
 
 BAK_COPY_EVERY = 60     # seconds: where .bak has to be a copy, at most one per this long
@@ -629,9 +824,11 @@ def _recover():
     safe = _bad_copy_kept(raw)
     recs, whole = salvage_records(raw.decode("utf-8", "replace"))
     found = len(recs)
-    bak = None if whole else _read_backup()
+    bak = None if whole else _read_backup(with_log=False)
     if bak:
         recs = dict(bak, **recs)
+    if _backup_has_log():                      # what was logged since is newer than both
+        _replay(recs, 0)
     _core.log("installed.json is damaged (%d bytes): %d records salvaged%s%s" % (
         len(raw), found, ", %d more from installed.json.bak" % (len(recs) - found) if bak else "",
         "" if safe else "; its copy couldn't be kept, so it is left as it is"))
@@ -655,6 +852,7 @@ class Library:
         self._sig = None         # installed.json's signature when last read
         self._bad = None         # ... when last found unreadable: not read again until it changes
         self._bak_sig = False    # installed.json.bak's when read in installed.json's place (False: never)
+        self._fps = None         # {id: _fp(record)} as written, while self.installed is installed.json's (else None)
         self._reload()
 
     # installed.json is shared with rb_chd.py / rb_dl.py (other processes):
@@ -674,17 +872,25 @@ class Library:
             return
         except OSError:
             return
-        if sig == self._sig or sig == self._bad:
+        if sig == self._bad:
             return
+        cur = self._sig
+        if cur is not None and cur[0] == sig:
+            n = _log_size()
+            if n == cur[1]:
+                return
+            if cur[2] and n > cur[1]:      # lines another process logged: just those
+                self._sig = (sig, _replay(self.installed, cur[1], self._fps), True)
+                return
         try:
-            self.installed, self._sig = _read_records(_core.STATE_PATH)
-            self._bad = None
+            self.installed, self._sig = _read_state()
+            self._bad, self._fps = None, None
         except FileNotFoundError:
-            self.installed, self._sig, self._bad = _from_backup() or {}, None, None
+            self.installed, self._sig, self._bad, self._fps = _from_backup() or {}, None, None, None
         except OSError:
             pass                           # can't open it now: what we had stands, try again later
         except ValueError:
-            self._bad = sig
+            self._bad, self._fps = sig, None
             recs = _recover()[0]
             if recs is not None:           # what the next write carries on from
                 self.installed = recs
@@ -712,7 +918,7 @@ class Library:
         fresh rb_dl or rb_chd holds nothing): LibraryUnreadable when it can't be
         opened now (try again later) or its damaged bytes couldn't be kept aside."""
         try:
-            return _read_records(_core.STATE_PATH)[0], "good"
+            return read_installed(), "good"
         except FileNotFoundError:
             return _from_backup() or {}, "missing"
         except OSError as e:
@@ -727,21 +933,102 @@ class Library:
             return recs, "recovered"
 
     def update(self, fn):
-        """Apply fn(installed) to the freshest installed.json and write it back.
-        Raises LibraryUnreadable (nothing written) when it's there but can't be
-        read now, or is damaged and couldn't be copied aside first."""
+        """Apply fn(installed) to the freshest installed.json and save it: the records it
+        changed as a line of the change log, or (the log as big as installed.json, or not its
+        own) installed.json written whole. Raises LibraryUnreadable (nothing written) when it's
+        there but can't be read now, or is damaged and couldn't be copied aside first."""
         import fcntl
         with self.lock:
             os.makedirs(_core.DATA_DIR, exist_ok=True)
             with open(_core.STATE_PATH + ".lock", "w") as lk:
                 fcntl.flock(lk, fcntl.LOCK_EX)
-                self.installed, state = self._load_for_write()
-                self._sig = None                     # memory may now differ from the file
-                out = fn(self.installed)
-                _core.atomic_write_json(_core.STATE_PATH, self.installed, indent=1)
-                _keep_backup(force=state != "good")   # the file just written is the last good state
-                self._sig, self._bad = _file_sig(os.stat(_core.STATE_PATH)), None
+                state = self._fresh()
+                before = self.installed
+                if self._fps is None:
+                    self._fps = {k: _fp(v) for k, v in before.items()}
+                t = _Touched(before)
+                try:
+                    out = fn(t)
+                except BaseException:
+                    self._sig = self._fps = None      # read again next time
+                    raise
+                after = dict(t)
+                sets, dels = {}, []
+                for k in (set(before) | set(after)) if t.everything else t.touched:
+                    if k not in after:
+                        if k in self._fps:
+                            dels.append(k)
+                    else:
+                        f = _fp(after[k])
+                        if f != self._fps.get(k):
+                            sets[k] = after[k]
+                self.installed = after
+                try:
+                    self._save(state, sets, dels)
+                except BaseException:
+                    self._sig = self._fps = None      # not on disk: read it again next time
+                    raise
             return out
+
+    def _fresh(self):
+        """Bring self.installed up to installed.json (and its log) as it is now: "good", or how
+        it was had when it couldn't be read as it is (_load_for_write's state)."""
+        self._reload()
+        try:
+            now = _file_sig(os.stat(_core.STATE_PATH))
+        except OSError:
+            now = None
+        if self._bad is None and self._sig is not None and self._sig[0] == now:
+            return "good"              # (else changed and not read: _load_for_write tries, or refuses)
+        self.installed, state = self._load_for_write()
+        self._sig = self._fps = None
+        return state
+
+    def _save(self, state, sets, dels):
+        cur = self._sig
+        line = json.dumps({"set": sets, "del": dels}, separators=(",", ":")) + "\n" if sets or dels else ""
+        if state == "good" and cur is not None and cur[2] and _log_size() == cur[1] \
+                and cur[1] + len(line) <= max(LOG_MIN, cur[0][1]):
+            if line:
+                with open(_changes_path(), "a") as f:
+                    f.write(line)
+                    f.flush()
+                    os.fsync(f.fileno())
+                self._sig = (cur[0], cur[1] + len(line.encode()), True)
+                _LOGGED.add(_core.STATE_PATH)
+        else:
+            self._write_whole()
+        for k in dels:
+            self._fps.pop(k, None)
+        for k, rec in sets.items():
+            self._fps[k] = _fp(rec)
+
+    def _write_whole(self):
+        """installed.json written whole, a new log started against it, and .bak the same bytes
+        (a recovery from it carries the log on)."""
+        _core.atomic_write_json(_core.STATE_PATH, self.installed, indent=1)
+        sig = _file_sig(os.stat(_core.STATE_PATH))
+        head = json.dumps({"sha": _sha(_core.STATE_PATH)}) + "\n"
+        _core.atomic_write_text(_changes_path(), head)
+        _keep_backup(force=True)
+        self._sig, self._bad = (sig, len(head.encode()), True), None
+
+    def fold(self):
+        """installed.json whole again, with what's logged in it: what a release from before the
+        log reads (a rollback, a process exiting). False when there was nothing to fold."""
+        import fcntl
+        with self.lock:
+            if not os.path.exists(_core.STATE_PATH):
+                return False
+            with open(_core.STATE_PATH + ".lock", "w") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)
+                if self._fresh() != "good" or not self._sig[2]:
+                    return False
+                h = _log_header()
+                if h is None or _log_size() <= h["len"]:
+                    return False                      # only the header: installed.json is whole already
+                self._write_whole()
+                return True
 
     def _scan(self, system):
         """The lowercased names and stems of the game files in roms/<system>, listed
@@ -1868,3 +2155,20 @@ def fix_m3us(sysdir, old_to_new):
                         pass
                 touched.append(p)
     return touched
+
+
+def fold_changes():
+    """installed.json whole again with its logged changes in it (Library.fold): before a
+    rollback, so the release it goes back to (which reads only installed.json) has every record."""
+    return Library().fold()
+
+
+def _fold_at_exit():
+    if _core.STATE_PATH in _LOGGED:
+        try:
+            fold_changes()
+        except Exception as e:                   # exiting anyway: the log stays, and this release reads it
+            _core.log("installed.json fold at exit: %r" % e)
+
+
+atexit.register(_fold_at_exit)

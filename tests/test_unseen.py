@@ -156,7 +156,7 @@ def test_unpacking_our_own_archive_updates_its_record(isolated):
     d = _dl()
     d.library.mark({"id": 5, "name": "Ipsum Quest", "fs_name": "Ipsum Quest.zip"}, "psp", [arc])
     out, _ = rommlib.unpack_unseen(d, _by_name(rommlib.find_unseen(ES))["psp/Ipsum Quest.zip"])
-    assert json.load(open(rommlib.STATE_PATH))["5"]["paths"] == out
+    assert rommlib.read_installed()["5"]["paths"] == out
 
 
 def test_unpack_a_cue_bin_zip_into_its_own_folder(isolated):
@@ -222,7 +222,7 @@ def test_move_carries_cue_tracks_and_updates_our_record(isolated):
     assert new == os.path.join(psx, "Amet Saga.cue")
     assert sorted(os.listdir(psx)) == ["Amet Saga.bin", "Amet Saga.cue"]
     assert sorted(os.listdir(os.path.join(rommlib.ROMS_ROOT, "n64"))) == []
-    rec = json.load(open(rommlib.STATE_PATH))["7"]
+    rec = rommlib.read_installed()["7"]
     assert rec["system"] == "psx" and rec["paths"] == [new] and rec["meta"]["system"] == "psx"
     q = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
     assert q[0] == {"system": "psx", "rename": {cue: new}}
@@ -288,7 +288,7 @@ def test_delete_takes_the_tracks_it_names_and_updates_our_record(isolated):
     assert paths == [cue, cue[:-4] + ".bin"] and freed == size
     assert sorted(os.listdir(os.path.join(rommlib.ROMS_ROOT, "n64"))) == ["Homebrew Demo.z64", "Other Disc.z64"]
     assert os.path.exists(keep) and os.path.exists(save)
-    inst = json.load(open(rommlib.STATE_PATH))
+    inst = rommlib.read_installed()
     assert "7" not in inst and inst["8"]["paths"] == [disc2]
     q = [json.loads(ln) for ln in open(rommlib.GAMELIST_QUEUE)]
     assert q[-1] == {"system": "n64", "remove": paths, "keep_media": True}

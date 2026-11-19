@@ -281,25 +281,30 @@ class Api:
         finally:
             r.close()
 
-    def roms_all(self, limit=500, cap=None, cancel=None, keep=None, fields=None, **kw):
+    def roms_all(self, limit=500, cap=None, cancel=None, keep=None, fields=None, query=None, progress=None, **kw):
         """Every page of a roms() listing, in order: the first page gives the
         total, the rest are fetched PAGE_WORKERS at a time. cap: stop at that
         many (rounded up to a page). keep(rom): only the games it's True for
         are kept, each page filtered as it arrives (a big platform's full
         listing is hundreds of MB once parsed); fields: only these keys of
-        each are kept. None if cancel was set."""
+        each are kept. query(offset, limit): one page, in place of roms(**kw)
+        (a list screen's own filters). progress(listed, total): after each
+        page, from the threads fetching them. None if cancel was set."""
         def page_at(off):
-            page = self.roms(offset=off, limit=limit, **kw)
+            page = query(off, limit) if query else self.roms(offset=off, limit=limit, **kw)
             got = page.get("items") or []
             n = len(got)
             with once:           # a library that grows while it's listed shifts a game onto the next page too
                 fresh = [r for r in got if not (isinstance(r, dict) and r.get("id") in ids)]
                 ids.update(r["id"] for r in fresh if isinstance(r, dict) and r.get("id") is not None)
+                done[0] += n
+                if progress:
+                    progress(done[0], page.get("total") or 0)
             got = [r for r in fresh if keep(r)] if keep else fresh
             if fields:
                 got = [{k: r[k] for k in fields if k in r} for r in got]
             return n, page.get("total") or 0, got
-        ids, once = set(), threading.Lock()
+        ids, once, done = set(), threading.Lock(), [0]
         step, total, items = page_at(0)
         if not step:
             return items

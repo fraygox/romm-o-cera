@@ -676,7 +676,34 @@ for _i, (_pid, _name) in enumerate([(6, "scph5501.bin"), (6, "scph1001.bin")]):
                      "data": _data})
 
 
-HIDDEN = ("files", "_data", "sibling_roms", "_notes", "_slug")      # never in list records
+HIDDEN = ("files", "_data", "sibling_roms", "_notes", "_slug", "ss_metadata")   # never in list records
+
+
+def fatten(roms, seed=29):
+    """--fat: records as big as a real RomM's (a listed game ~5.5 KB of JSON, its detail ~9 KB:
+    a scraped library's metadata), so memory measured against the mock means something."""
+    rng = random.Random(seed)
+    words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor".split()
+    def text(n):
+        return " ".join(rng.choice(words) for _ in range(n // 6))
+    for r in roms:
+        r["igdb_metadata"] = {"total_rating": "%.1f" % rng.uniform(50, 95), "aggregated_rating": None,
+                              "first_release_date": r["metadatum"]["first_release_date"],
+                              "youtube_video_id": text(12), "genres": r["metadatum"]["genres"],
+                              "franchises": [text(14)], "alternative_names": [text(30) for _ in range(4)],
+                              "collections": [text(18)], "companies": [text(20) for _ in range(3)],
+                              "game_modes": ["Single player"], "age_ratings": [{"rating": "E", "category": "ESRB"}],
+                              "platforms": [{"igdb_id": rng.randint(1, 500), "name": text(24)}],
+                              "expansions": [], "dlcs": [], "remasters": [], "remakes": [],
+                              "similar_games": [{"id": rng.randint(1, 99999), "name": text(24),
+                                                 "slug": text(18), "type": "game", "cover_url": text(60)}
+                                                for _ in range(10)]}
+        r["merged_screenshots"] = ["/assets/romm/resources/roms/%d/%d/screenshots/%d.jpg"
+                                   % (r["platform_id"], r["id"], i) for i in range(4)]
+        r["summary"] = (r.get("summary") or "") + " " + text(700)
+        r["ss_metadata"] = {"bezel_path": text(60), "box3d_path": text(60), "manual_path": text(60),
+                            "synopsis": text(2400), "genres": r["metadatum"]["genres"],
+                            "franchises": [text(14)], "game_modes": ["Single player"]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -775,9 +802,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/platforms":
             out = []
             for pid, slug, name in PLATFORMS:
-                n = sum(1 for r in self.roms if r["platform_id"] == pid)
-                out.append({"id": pid, "slug": slug, "fs_slug": slug, "name": name,
-                            "display_name": name, "rom_count": n})
+                mine = [r for r in self.roms if r["platform_id"] == pid]
+                out.append({"id": pid, "slug": slug, "fs_slug": slug, "name": name, "display_name": name,
+                            "rom_count": len(mine), "fs_size_bytes": sum(r["fs_size_bytes"] for r in mine)})
             return self._json(out)
         if path == "/api/collections":
             return self._json([collection_record(c, self.by_id) for c in self.collections])
@@ -1073,11 +1100,14 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--rate-mb", type=float, default=12, help="download speed, MB/s")
     ap.add_argument("--collections", type=int, default=0, help="this many more lorem-named collections (a curated server)")
+    ap.add_argument("--fat", action="store_true", help="records as big as a real RomM's (memory measurements)")
     a = ap.parse_args()
     _REAL.update({g["slug"]: g for g in load_real()})
     Handler.roms = build_library()
     add_special(Handler.roms)
     add_user_data(Handler.roms)
+    if a.fat:
+        fatten(Handler.roms)
     Handler.by_id = {r["id"]: r for r in Handler.roms}
     Handler.files = {f["id"]: f for r in Handler.roms for f in r["files"]}
     Handler.music, Handler.music_favourites, Handler.music_playlists = build_music(Handler.roms)

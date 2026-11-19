@@ -317,7 +317,7 @@ def test_delete_game_playlist_tracks_folders_library(isolated):
     assert not os.path.exists(m3u) and not os.path.exists(os.path.join(sysdir, "Game (USA)"))
     assert os.path.exists(outside) and os.path.exists(other) and freed > 0
     assert len(files) == 5                                  # m3u + 2 × (cue + bin); never escape.txt
-    inst = json.load(open(rommlib.STATE_PATH))
+    inst = rommlib.read_installed()
     assert "5" not in inst and "6" in inst
     q = [json.loads(l) for l in open(rommlib.GAMELIST_QUEUE)]
     assert q[-1]["system"] == "psx" and m3u in q[-1]["remove"]

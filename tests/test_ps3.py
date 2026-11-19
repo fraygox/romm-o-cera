@@ -264,7 +264,7 @@ def test_worker_turns_a_zipped_disc_into_a_game_folder(worker):
     out = os.path.join(sysdir, "Ipsum Quest (USA).ps3")
     assert sorted(os.listdir(sysdir)) == ["Ipsum Quest (USA).ps3"]
     assert _tree(out) == _want()
-    assert json.load(open(rommlib.STATE_PATH))["9"]["paths"] == [out]
+    assert rommlib.read_installed()["9"]["paths"] == [out]
     assert "disc key Ipsum Quest (USA)" in open(rommlib.LOG_PATH).read()
 
 
