@@ -257,8 +257,10 @@ def test_game_night_from_home_platforms_and_collections(live, rb):
     plats = rb.PlatformScreen(app)
     app.push(plats)
     plats.sel = next(i for i, p in enumerate(app.platforms) if p["_system"] == "snes")
-    assert ("X", "Game night") in plats.hints()
-    app.dispatch("x")
+    assert ("X", rb.pads.ACTIONS) in plats.hints()
+    app.dispatch("x")                                   # Actions: Game night first
+    assert app.modal.entries[0][0] == "Game night"
+    app.dispatch("ok")
     gn = app.stack[-1]
     _pump(app, lambda: gn.picks)
     assert app.platform_by_id[gn.picks[0]["platform_id"]]["_system"] == "snes"

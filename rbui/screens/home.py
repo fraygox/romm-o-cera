@@ -1,12 +1,13 @@
 """Home and the platform list."""
 import os
+import time
 
 import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import SR, W
-from rbui.draw import _fade, card, COVER_BOX, installed_mark, measure, rom_title, scrollbar, text, wrap
+from rbui.draw import _fade, card, COVER_BOX, installed_mark, measure, rom_title, rrect, scrollbar, text, tick_box, wrap
 from rbui.screens.base import Screen
 from rbui.screens.collection import collection_items, CollectionArt, CollectionScreen
 from rbui.screens.games import GameListScreen, SearchScreen, more_like
@@ -607,16 +608,19 @@ def here_counts(app):
 
 
 class PlatformScreen(Screen):
+    """The platforms as tiles. X Actions: Game night, or pick several platforms to download
+    whole (A picks, X downloads them, Y picks all or none, B stops picking)."""
     COLS, CW, CH, GAP = 4, 284, 98, 14
 
     def __init__(self, app):
         super().__init__(app)
         self.sel = 0
         self.scroll = 0
+        self.picking, self.picks = False, set()
         app.bg(lambda: here_counts(app), lambda n: app.here_count.update(n), lambda e: None)
 
     def crumbs(self):
-        return ["Platforms"]
+        return ["Platforms", "Picking"] if self.picking else ["Platforms"]
 
     def action(self, a):
         n = len(self.app.platforms)
@@ -624,27 +628,67 @@ class PlatformScreen(Screen):
             return super().action(a)
         moves = {"left": -1, "right": 1, "up": -self.COLS, "down": self.COLS,
                  "l1": -self.COLS * 4, "r1": self.COLS * 4}
+        p = self.app.platforms[self.sel]
         if a in moves:
             self.sel = max(0, min(n - 1, self.sel + moves[a]))
+        elif self.picking:
+            if a == "ok":
+                self.picks ^= {p["id"]}
+            elif a == "x":
+                self.download_picked()
+            elif a == "y":
+                every = {q["id"] for q in self.app.platforms}
+                self.picks = set() if self.picks == every else every
+            elif a in ("back", "quit"):
+                self.stop_picking()
+            else:
+                super().action(a)
         elif a == "ok":
-            p = self.app.platforms[self.sel]
-            self.app.push(GameListScreen(self.app, p.get("display_name") or p["name"],
-                                         platform=p))
+            self.app.push(GameListScreen(self.app, p.get("display_name") or p["name"], platform=p))
         elif a == "y":
-            self.app.push(SearchScreen(self.app, platform=self.app.platforms[self.sel]))
+            self.app.push(SearchScreen(self.app, platform=p))
         elif a == "x":
-            self.app.push(GameNightScreen(self.app, Scope.platform(self.app, self.app.platforms[self.sel])))
+            self.app.modal = ActionMenu(self.app, p.get("display_name") or p["name"], [
+                ("Game night", "Roll a game from this platform for tonight",
+                 lambda: self.app.push(GameNightScreen(self.app, Scope.platform(self.app, p)))),
+                ("Pick several platforms", "Then {A} picks, {X} downloads them whole, {B} stops",
+                 self.start_picking)])
         else:
             super().action(a)
 
+    def start_picking(self):
+        self.picking, self.picks = True, set()
+
+    def stop_picking(self):
+        self.picking, self.picks = False, set()
+
+    def picked(self):
+        return [p for p in self.app.platforms if p["id"] in self.picks]
+
+    def download_picked(self):
+        plats = self.picked()
+        if not plats:
+            self.app.toast("Pick platforms with {A} first", theme.AMBER)
+            return
+        n = len(plats)
+        scopes = [(p.get("display_name") or p["name"], {"platform_ids": [p["id"]]}, p.get("rom_count") or 0)
+                  for p in plats]
+        self.app.bulk_download("Download %d platform%s?" % (n, "" if n == 1 else "s"), scopes, whole=True,
+                               after=self.stop_picking,
+                               what="Every game not on this box yet, one platform after another.")
+
     def hints(self):
-        return [("A", "Open"), ("X", "Game night"), ("Y", "Search platform"), ("L", "Page up"),
+        if self.picking:
+            return [("A", "Pick"), ("X", "Download selected platforms"),
+                    ("Y", "Pick none" if self.picks and len(self.picks) == len(self.app.platforms) else "Pick all"),
+                    ("B", "Stop picking")]
+        return [("A", "Open"), ("X", pads.ACTIONS), ("Y", "Search platform"), ("L", "Page up"),
                 ("R", "Page down"), ("B", "Back")]
 
     def draw(self, c):
         plats = self.app.platforms
         x0, y0 = 48, 88
-        rows_vis = 5
+        rows_vis = 4 if self.picking else 5          # picking: the picks' total under them
         row = self.sel // self.COLS
         if row < self.scroll:
             self.scroll = row
@@ -663,23 +707,56 @@ class PlatformScreen(Screen):
             lines = wrap(self.f.h3, name, r.width - 36, 2)
             for k, ln in enumerate(lines):
                 text(c, self.f.h3, ln, (r.left + 18, r.top + 14 + k * 24), theme.TEXT if on else theme.DIM)
+            gx = r.left + 18
+            if self.picking:                             # the tick box before the count: the name keeps its room
+                tick_box(c, (gx + 9, r.bottom - 19), p["id"] in self.picks)
+                gx += 28
             games = "{:,} game{}".format(p["rom_count"], "" if p["rom_count"] == 1 else "s")
             here = self.app.here_count.get(p["id"])
-            hx = r.left + 18 + measure(self.f.small, games) + 16
+            hx = gx + measure(self.f.small, games) + 16
             # what's on the box comes before the folder: "games", then the count, then the tag
             used = (hx + 11 + measure(self.f.small, "{:,}".format(here)) if here else
-                    r.left + 18 + measure(self.f.small, games)) + 10
+                    gx + measure(self.f.small, games)) + 10
             room = r.right - 14
-            for label in ("roms/" + p["_system"], p["_system"]):    # the folder gives way, never "games"
+            size = p.get("fs_size_bytes")
+            # picking: RomM's size for it where the folder was (RomM 5.4 says it; an older one doesn't)
+            tags = ([human_size(size)] if size else []) if self.picking else ["roms/" + p["_system"], p["_system"]]
+            for label in tags:                                      # it gives way, never "games"
                 if used + measure(self.f.tiny, label) + 12 <= room:
                     room = tag(c, self.f.tiny, label, (r.right - 14, r.bottom - 30), "topright").left - 10
                     break
-            text(c, self.f.small, games, (r.left + 18, r.bottom - 28), theme.DIM if on else theme.FAINT)
+            text(c, self.f.small, games, (gx, r.bottom - 28), theme.DIM if on else theme.FAINT)
             if here and hx + 11 + measure(self.f.small, "{:,}".format(here)) <= room:
                 installed_mark(c, (hx, r.bottom - 19), 7)     # its games on the box, as its list ticks them
                 text(c, self.f.small, "{:,}".format(here), (hx + 11, r.bottom - 28), theme.GREEN)
+        if self.picking:
+            self.draw_picked(c, pygame.Rect(x0, y0 + rows_vis * (self.CH + self.GAP) + 4,
+                                            self.COLS * (self.CW + self.GAP) - self.GAP, 60))
         # scrollbar
         total_rows = (len(plats) + self.COLS - 1) // self.COLS
         if total_rows > rows_vis:
             scrollbar(c, (W - 20, y0, 4, rows_vis * (self.CH + self.GAP) - self.GAP), rows_vis / total_rows,
                       self.scroll / (total_rows - rows_vis))
+
+    def draw_picked(self, c, r):
+        """The picks in one line: how many platforms, games and GB (RomM's sizes), and the room here."""
+        rrect(c, theme.PANEL_HI, r, 14)
+        plats = self.picked()
+        f = self.f
+        if not plats:
+            text(c, f.body, "Pick platforms with {A}: every game of each comes down", (r.left + 22, r.centery),
+                 theme.DIM, "midleft", maxw=r.width - 44)
+            return
+        games = sum(p.get("rom_count") or 0 for p in plats)
+        sizes = [p.get("fs_size_bytes") for p in plats]
+        lead = text(c, f.h3, "%d platform%s" % (len(plats), "" if len(plats) == 1 else "s"),
+                    (r.left + 22, r.centery), theme.TEXT, "midleft")
+        now = time.time()
+        if now - getattr(self, "_free_at", 0) > 1.0:          # a statvfs a second, not a frame (a share can be slow)
+            self._free, self._free_at = rommlib.free_bytes(), now
+        free = text(c, f.body, "%s free" % human_size(self._free), (r.right - 22, r.centery),
+                    theme.DIM, "midright")
+        what = "{:,} game{}".format(games, "" if games == 1 else "s") + (
+            ", %s from RomM" % human_size(sum(sizes)) if all(sizes) else "")
+        text(c, f.body, what, (lead.right + 20, r.centery), theme.DIM, "midleft",
+             maxw=max(0, free.left - lead.right - 40))

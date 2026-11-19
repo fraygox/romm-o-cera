@@ -746,6 +746,63 @@ def collections_at(row, col, wall=False, menu=False, inside=None, size="medium",
     app._after = after
 
 
+def platform_roms(pid):
+    return app.api.roms_all(limit=250, platform_ids=[pid], fields=rommlib.BULK_FIELDS)
+
+
+def bulk(kind):
+    """The bulk download dialog: listing (part way), fits (a cart platform, whole), whole (a disc
+    platform too big for the box), list (the same as a filtered list: its three choices), many
+    (five whole platforms)."""
+    app.push(rb.PlatformScreen(app))
+    if kind == "listing":
+        m = rb.BulkDownload(app, "Download this whole list?", roms=[],
+                            what="Nintendo Entertainment System, every game.")
+        m.state, m.listed, m.total = "listing", 750, 1240
+    elif kind == "many":
+        pids = (1, 4, 3, 5, 2)
+        names = {p["id"]: p.get("display_name") or p["name"] for p in app.platforms}
+        roms, labels = [], []
+        for pid in pids:
+            got = platform_roms(pid)
+            roms += got
+            labels += [names[pid]] * len(got)
+        m = rb.BulkDownload(app, "Download 5 platforms?", roms=roms, labels=labels, whole=True,
+                            what="Every game not on this box yet, one platform after another.")
+    else:
+        pid = 1 if kind == "fits" else 6
+        name = next(p.get("display_name") or p["name"] for p in app.platforms if p["id"] == pid)
+        m = rb.BulkDownload(app, "Download this whole list?", roms=platform_roms(pid), whole=kind != "list",
+                            what=name + (", every game." if kind != "list" else ", with this list's filters."))
+    app.modal = m
+
+
+def platforms_picking():
+    scr = rb.PlatformScreen(app)
+    app.push(scr)
+    scr.start_picking()
+    scr.picks = {1, 2, 3, 4, 5}
+    scr.sel = next(i for i, p in enumerate(app.platforms) if p["id"] == 6)
+
+
+def big_run():
+    """Activity part way through a whole-platforms download: 12 done, 4,399 to come."""
+    jobs, k = [], 0
+    for system, n in (("nes", 1240), ("snes", 980), ("gba", 821), ("megadrive", 760), ("gb", 610)):
+        for i in range(n):
+            k += 1
+            j = J({"id": 500000 + k, "name": "Lorem %s %04d" % (system, i), "fs_name": "L%d.zip" % k,
+                   "fs_size_bytes": 300 * 1024}, system)
+            j.state = J.DONE if k <= 12 else J.QUEUED
+            if k == 13:
+                j.state, j.done_bytes, j.speed, j.total_bytes = J.DOWNLOADING, 120 * 1024, 31 * MB, 300 * 1024
+            jobs.append(j)
+    app.downloader.jobs.__init__(jobs[12:] + jobs[:12])
+    app.downloader.hold = False
+    fake_conversions()
+    app.push(rb.DownloadsScreen(app))
+
+
 # (name, setup) — setup pushes a screen / opens a modal; returns an optional
 # "ready" predicate (default: no background work pending)
 SCENES = [
@@ -805,6 +862,16 @@ SCENES = [
     ("recommended", lambda: setattr(app, "_after", lambda: app.stack[0].open_recs())),
     ("search", search_ready),
     ("download-confirm", lambda: setattr(app, "modal", rb.DownloadConfirm(app, a_rom()))),
+    ("bulk-listing", lambda: bulk("listing")),
+    ("bulk-fits", lambda: bulk("fits")),
+    ("bulk-whole-too-big", lambda: bulk("whole")),
+    ("bulk-list-too-big", lambda: bulk("list")),
+    ("bulk-platforms", lambda: bulk("many")),
+    ("platforms-picking", platforms_picking),
+    ("downloads-big-run", big_run),
+    ("downloads-actions", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
+                                   fake_conversions(), app.push(rb.DownloadsScreen(app)),
+                                   setattr(app, "_after", lambda: app.dispatch("x")))),
     ("downloads", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
                            fake_conversions(), app.push(rb.DownloadsScreen(app)))),
     ("downloads-compress", lambda: (app.downloader.jobs.__init__(fake_jobs()), setattr(app.downloader, "hold", False),
@@ -1086,7 +1153,9 @@ README_SET = {"home": "home", "platforms": "platforms", "game-list": "game-list"
               "conversions": "conversions", "storage": "storage", "free-up": "free-up", "credits": "credits",
               "compress-system": "compress", "theme-picker": "theme-picker", "theme-custom": "custom-theme",
               "game-night": "game-night", "home-recommended": "recommended",
-              "music-shelves-genres": "music", "music-play-tracks": "music-playing"}
+              "music-shelves-genres": "music", "music-play-tracks": "music-playing",
+              "platforms-picking": "platforms-picking", "bulk-platforms": "bulk-download",
+              "bulk-whole-too-big": "bulk-no-room"}
 if args.readme:
     import shutil
     dst = os.path.join(APP, "screenshots")
