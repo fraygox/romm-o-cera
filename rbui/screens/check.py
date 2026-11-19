@@ -132,7 +132,9 @@ class AuditScreen(ListScreen):
     PICKS, PICK_WHAT, JUMP = True, "findings", "System"
     running = None        # the last check's "finished" event: one check runs at a time, even after B
 
-    def __init__(self, app, deep=False):
+    def __init__(self, app, deep=False, systems=None):
+        """systems: only these folders (the platforms a big download brought in); such a check
+        isn't kept as the last check, which covers every system."""
         super().__init__(app)
         self.deep = deep
         self.cancel = threading.Event()
@@ -145,7 +147,8 @@ class AuditScreen(ListScreen):
         self.t0 = time.time()
         by_sys = {}
         for p in app.platforms:
-            by_sys.setdefault(p["_system"], []).append(p["id"])
+            if systems is None or p["_system"] in systems:
+                by_sys.setdefault(p["_system"], []).append(p["id"])
 
         def progress(system, name):
             self.where = "roms/%s/%s" % (system, name)
@@ -163,7 +166,7 @@ class AuditScreen(ListScreen):
                 app.toast("Check stopped; the last result is kept" if os.path.exists(rommlib.audit_path())
                           else "Check stopped; nothing was saved")
                 return
-            if (self.stats or {}).get("checked"):        # nothing checked: keep the last
+            if (self.stats or {}).get("checked") and systems is None:   # nothing checked, or some systems: keep the last
                 try:
                     rommlib.save_audit(self.findings, self.stats, deep)
                 except OSError as e:

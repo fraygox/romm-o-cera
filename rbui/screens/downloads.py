@@ -7,12 +7,13 @@ import pygame
 import rommlib
 from rommlib import human_size
 from rbui import pads, theme
-from rbui.draw import card, circle, installed_mark, progress_bar, state_stripe, text
+from rbui.draw import card, circle, installed_mark, marquee, measure, progress_bar, state_stripe, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import (RESULT_LABELS, conversion_left, conversion_rows, conversion_status, plural,
                                    result_line, time_left)
 from rbui.screens.compress import CompressScreen
 from rbui.screens.installed import ConversionsScreen
+from rbui.screens.check import AuditScreen
 from rbui.modals import ActionMenu, Confirm
 from rbui.widgets.chips import button_chip
 from rbui.widgets.layout import CONTENT, Panel, list_head, list_row, split
@@ -60,13 +61,18 @@ class DownloadsScreen(ListScreen):
         return self.focus, id(getattr(self, "sel_job", None))
 
     def listed(self):
-        return self.view()
+        drawing = getattr(self, "_drawing", None)       # the list this frame is drawing: one look at the queue a frame
+        return drawing if drawing is not None else self.view()
 
     def view(self):
         d = self.app.downloader
         jobs = list(d.jobs)
-        pend = [j for j in jobs if j.active or j.state == rommlib.Job.PAUSED]
-        return pend + [j for j in reversed(jobs) if j not in pend]
+        paused = rommlib.Job.PAUSED
+        pend = [j for j in jobs if j.active or j.state == paused]
+        if len(pend) == len(jobs):
+            return pend
+        waiting = set(map(id, pend))           # a set: a list's "in" made this quadratic (4,000 jobs: ¼ s a frame)
+        return pend + [j for j in reversed(jobs) if id(j) not in waiting]
 
     def refresh(self):
         """What the conversion worker publishes and the space forecast: disk reads, once a second."""
@@ -75,6 +81,28 @@ class DownloadsScreen(ListScreen):
         self._chd_st = {}
         self._fc = rommlib.queue_forecast(d.jobs, rommlib.free_bytes(), rommlib.keep_free_bytes(self.app.cfg),
                                           rommlib.chd_enabled(self.app.cfg), self.app.cfg)
+        self._run = self.run_counts(d.jobs)
+
+    RUN_SHOWN = 20                # a queue this long says how far along it is, and what's left by platform
+
+    def run_counts(self, jobs):
+        """How far along a big run is, for the header: "12 of 4,411 done", then what's still
+        to come by platform, the most first ("" for a short queue). Once a second, not a frame."""
+        J, app = rommlib.Job, self.app
+        left, done = {}, 0
+        for j in list(jobs):
+            if j.active or j.state == J.PAUSED:
+                left[j.system] = left.get(j.system, 0) + 1
+            elif j.state == J.DONE and not j.restored:
+                done += 1
+        n = sum(left.values())
+        if n < self.RUN_SHOWN:
+            return ""
+        out = "{:,} of {:,} done".format(done, done + n)
+        if len(left) > 1:
+            out += " · " + ", ".join("{:,} {}".format(k, app.system_name(sy))
+                                     for sy, k in sorted(left.items(), key=lambda x: -x[1]))
+        return out
 
     # -- the compressing panel
     def running(self):
@@ -185,11 +213,12 @@ class DownloadsScreen(ListScreen):
                  "queued": [("A", "Convert next"), ("X", "Take out")]}.get(k, [("A", "Compress games")])
             if k != "more":
                 h.append(("Y", "Compress games"))
-            if self.view():
+            if d.jobs:                                 # (what view() lists: every job)
                 h.append(("LEFT RIGHT", "Downloads"))
             return h + [("L2 R2", "Conversions"), ("B", "Back")]
         h = [("A", "Manage"), ("X", pads.ACTIONS)] if d.jobs else []
-        if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
+        P = rommlib.Job.PAUSED
+        if any(not (j.active or j.state == P) for j in d.jobs):
             h.append(("Y", "Clear finished"))
         h += [] if self.picking else [("LEFT RIGHT", "Compressing")]
         return self.list_hints(*h + [("L2 R2", "Conversions")])
@@ -206,14 +235,39 @@ class DownloadsScreen(ListScreen):
             else:
                 e.append(("Pause all", "The partial files are kept", lambda: (
                     d.hold_all(), app.toast("Downloads paused — partial files are kept", theme.AMBER))))
-        if any(not (j.active or j.state == rommlib.Job.PAUSED) for j in d.jobs):
+        J = rommlib.Job
+        failed = [j for j in list(d.jobs) if j.state == J.FAILED]
+        if failed:
+            e.append(("Retry the %s that failed" % ("{:,}".format(len(failed)) if len(failed) > 1 else "one"),
+                      "A file that stopped partway picks up where it was",
+                      self.each(d.resume_job, failed, "Queued %s again")))
+        systems = sorted({j.system for j in list(d.jobs) if j.state == J.DONE and not j.restored})
+        if systems:
+            names = [app.system_name(sy) for sy in systems]
+            e.append(("Check the games on %s" % (names[0] if len(names) == 1 else "these %d platforms" % len(names)),
+                      "Every file there read against RomM's checksums again" +
+                      (": " + ", ".join(names) if len(names) > 1 else ""),
+                      lambda: app.push(AuditScreen(app, deep=True, systems=systems))))
+        if any(not (j.active or j.state == J.PAUSED) for j in d.jobs):
             e.append(("Clear finished", "Done, failed and cancelled ones leave the list", self.clear_finished))
         return e
+
 
     def clear_finished(self):
         n = self.app.downloader.clear_finished()
         if n:
             self.app.toast("Cleared %d finished" % n)
+
+    def each(self, fn, todo, msg):
+        """An action on several downloads: fn for each, picking ends, a toast says how many (msg)."""
+        def run():
+            with self.app.downloader.one_save():     # one save for all of them, not one each
+                for j in todo:
+                    fn(j)
+            self.picks.clear()
+            self.picking = False
+            self.app.toast(msg % plural(len(todo), "download"))
+        return run
 
     def pick_entries(self, jobs):
         """Pause, resume, cancel, retry or remove the picked downloads (each
@@ -224,14 +278,7 @@ class DownloadsScreen(ListScreen):
         again = [j for j in jobs if j.state in (J.FAILED, J.CANCELLED)]
         over = [j for j in jobs if not (j.active or j.state == J.PAUSED)]
 
-        def each(fn, todo, msg):
-            def run():
-                for j in todo:
-                    fn(j)
-                self.picks.clear()
-                self.picking = False
-                app.toast(msg % plural(len(todo), "download"))
-            return run
+        each = self.each
         stop = live + paused
         cancel = each(d.cancel_job, stop, "Cancelled %s")
         e = []
@@ -527,15 +574,25 @@ class DownloadsScreen(ListScreen):
         card(c, rr)
         jobs = self.app.downloader.jobs
         queued = self.app.downloader.active_count()          # as the header counts them
-        paused = sum(1 for j in jobs if j.state == rommlib.Job.PAUSED)
+        P = rommlib.Job.PAUSED
+        paused = sum(1 for j in jobs if j.state == P)
         parts = (["%d in the queue" % queued] if queued else []) + (["%d paused" % paused] if paused else []) + \
             (["%d compressing" % o["convs"]] if o["convs"] and o.get("running", True) else
              ["%d to compress" % o["convs"]] if o["convs"] else [])       # none running: they only wait
         n = self.pick_count()
         if n:
             parts.append("%d picked" % n)
-        cr = text(c, f.small, " · ".join(parts), (rr.right - 20, rr.top + 20), theme.DIM, "topright",
-                  maxw=rr.width // 3) if parts else pygame.Rect(rr.right - 20, 0, 0, 0)
+        run = getattr(self, "_run", "")
+        if run:                                    # a big run: how far along, and what's left by platform
+            parts = [run] + [p for p in parts if not p.endswith("in the queue")]
+        line = " · ".join(parts)
+        if parts:
+            w = min(int(measure(f.small, line)) + 1, rr.width // 2)
+            marquee(c, f.small, line, (rr.right - 20 - w, rr.top + 20), theme.DIM, maxw=w, bg=theme.PANEL,
+                    slot="activity-head")
+            cr = pygame.Rect(rr.right - 20 - w, rr.top + 20, w, 20)
+        else:
+            cr = pygame.Rect(rr.right - 20, 0, 0, 0)
         line, col = self.headline(o)
         text(c, f.h2, line, (rr.left + 20, rr.top + 12), col, maxw=cr.left - 40 - rr.left)
         if o["live"] or o["convs"]:
@@ -546,20 +603,24 @@ class DownloadsScreen(ListScreen):
         now = time.time()
         if now - self.conv_at > 1.0:
             self.refresh()
-        jobs = self.view()
-        self.follow(jobs)
-        if not jobs and self.focus == "list":
-            self.focus = "panel"
-        self.draw_head(c, self.outlook(now))
-        lst, pan = split(None, ACT_BODY)
-        self.draw_list(c, lst, jobs)
-        self.draw_panel(c, pan)
+        jobs = self._drawing = self.view()
+        try:
+            self.follow(jobs)
+            if not jobs and self.focus == "list":
+                self.focus = "panel"
+            self.draw_head(c, self.outlook(now))
+            lst, pan = split(None, ACT_BODY)
+            self.draw_list(c, lst, jobs)
+            self.draw_panel(c, pan)
+        finally:
+            self._drawing = None
 
     def draw_list(self, c, lst, jobs):
         f, fc = self.f, self._fc
         # a download waiting for space says the same number as its row; otherwise the
         # whole queue's shortfall, said as the queue's
-        waits = max((j.short_space for j in jobs if j.state == rommlib.Job.QUEUED and j.short_space), default=0)
+        Q = rommlib.Job.QUEUED
+        waits = max((j.short_space for j in jobs if j.state == Q and j.short_space), default=0)
         note, ncol = ("waiting for %s of space" % human_size(waits), theme.AMBER) if waits else \
             ("%s free" % human_size(fc["free"]), theme.FAINT) if fc["fits"] else \
             ("the queue needs %s more space" % human_size(fc["short"]), theme.AMBER)
