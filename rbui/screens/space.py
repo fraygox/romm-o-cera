@@ -147,9 +147,13 @@ class FreeUpScreen(ListScreen):
     PICKS, PICK_ALWAYS, PICK_ALL, PICK_WHAT = True, True, False, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works when sorted by name ({Y})"
 
-    def __init__(self, app, systems=None):
+    def __init__(self, app, systems=None, free_gb=None, then=None, spare=()):
+        """free_gb: enough picked to free that much once the games are measured (a download
+        that doesn't fit); then: called on the way back; spare: systems whose games aren't
+        offered (the ones that download would fetch again)."""
         super().__init__(app)
         self.systems = systems
+        self.free_gb, self.then, self.spare = free_gb, then, set(spare)
         self.items = None
         self.sort = "unplayed"
         self.sel = self.scroll = 0
@@ -161,11 +165,24 @@ class FreeUpScreen(ListScreen):
         self.app.bg(lambda: freeable_games(self.app.library, self.systems), self._loaded, self.load_failed("items"))
 
     def _loaded(self, items):
+        items = [g for g in items if g.get("system") not in self.spare]
         self.items = items
         keep = {g["path"]: g for g in items if g["path"] in self.picks}
         self.picks.clear()
         self.picks.update(keep)
         self.resort()
+        if self.free_gb and items:
+            gb, self.free_gb = self.free_gb, None
+            every = sum(g["size"] for g in items)
+            if every >= gb << 30:
+                self.suggest(gb)
+            else:                                  # never every game here for room it can't make
+                self.app.toast("Every game here comes to %s: not the %d GB that download needs"
+                               % (human_size(every), gb), theme.AMBER)
+
+    def leave(self):
+        if self.then:
+            self.then()
 
     def resort(self):
         if self.items is None:

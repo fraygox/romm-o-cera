@@ -83,7 +83,7 @@ class GameListScreen(ListScreen):
     REGION_CHOICES = [(None, "All regions"), (["USA", "World"], "USA + World"),
                       (["Europe", "World"], "Europe + World"), (["Japan"], "Japan")]
     PLAYER_CHOICES = [(0, "Any"), (2, "2+"), (3, "3+"), (4, "4+")]     # the party filter: n or more players
-    BULK_MAX = 1000
+    HOLD_MAX = 1000         # a collection this size or less is held whole, with the box pills (downloads: any size)
     PICKS, PICK_ALL, PICK_WHAT = True, False, "games"
     JUMP, JUMP_OFF = "A–Z", "A–Z jump works in full lists sorted by name"
     BUBBLE_AT = bubble_at(GAME_LIST)
@@ -91,7 +91,7 @@ class GameListScreen(ListScreen):
 
     def __init__(self, app, title, platform=None, collection=None, search=None,
                  order_by="name", static=None, why=None, crumb="More like this", group=None, whole=False):
-        """collection with whole: every game of it is fetched (up to BULK_MAX) and the list is held
+        """collection with whole: every game of it is fetched (up to HOLD_MAX) and the list is held
         here, with the box filter pills (All / On this box / Not here); without: paged from RomM
         as a platform's list is. group: the collection's shelf, for the crumbs."""
         super().__init__(app)
@@ -132,7 +132,7 @@ class GameListScreen(ListScreen):
                 self.static = []
                 self.load_failed("items")(e)
                 self.total = 0
-            app.bg(lambda: app.api.roms_all(limit=250, cap=self.BULK_MAX, collection=col), got, failed)
+            app.bg(lambda: app.api.roms_all(limit=250, cap=self.HOLD_MAX, collection=col), got, failed)
         if platform and platform.get("_system"):
             app.bg(lambda: rommlib.bios_offer(app.api, platform["_system"], platform["id"]),
                    lambda offers: setattr(self, "bios", offers), lambda e: None)
@@ -448,13 +448,9 @@ class GameListScreen(ListScreen):
         elif tot is None:
             e.append(("Download every game in this list", "Counting games…", None))
         elif tot:
-            if tot <= self.BULK_MAX:
-                e.append(("Download every game in this list",
-                          ("{:,} games, skipping any already on this box".format(tot) if tot != 1 else
-                           "1 game, skipped if it's already on this box"), self._download_all))
-            else:
-                e.append(("Download every game in this list",
-                          "{:,} is more than 1,000. Narrow it with the filters below.".format(tot), None))
+            e.append(("Download every game in this list",
+                      ("{:,} games, skipping any already on this box".format(tot) if tot != 1 else
+                       "1 game, skipped if it's already on this box"), self._download_all))
         if (self.platform or self.collection) and not self.search and (self.static is None or self.whole):
             e.append(compare_entry(self.app, self.menu_title(), self.platform, self.collection))
         if self.platform:
@@ -571,11 +567,12 @@ class GameListScreen(ListScreen):
         self.region_i = (self.region_i + step) % len(self.REGION_CHOICES)
         self.reset()
 
+    def _unpick(self):
+        self.picks.clear()
+        self.picking = False
+
     def _queue_many(self, roms, title):
-        def picked():
-            self.picks.clear()
-            self.picking = False
-        self.app.queue_many(roms, title, picked)
+        self.app.queue_many(roms, title, self._unpick)
 
     def _download_marked(self):
         self._queue_many(self.picked(), "Download picked games?")
@@ -589,23 +586,12 @@ class GameListScreen(ListScreen):
         app = self.app
         if self.static is not None:                # "More like this": exactly what's shown
             return self._queue_many([r for r in self.items if r], "Download this whole list?")
-        app.toast("Listing every game…")
-
-        def collect():
-            out, off = [], 0
-            while True:
-                page = self._query(off, 250)
-                got = page.get("items", [])
-                out.extend(got)
-                off += len(got)
-                if not got or off >= page.get("total", 0) or off >= self.BULK_MAX:
-                    return out
-        def listed(roms):
-            if app.modal is not None or app.stack[-1] is not self:
-                app.toast("List ready — open the menu again to download it", theme.AMBER)   # don't cover another dialog
-                return
-            self._queue_many(roms, "Download this whole list?")
-        app.bg(collect, listed)
+        whole = bool(self.platform) and not (self.search or self.regions or self.hide_junk or self.only_verified
+                                             or self.players or self.collection)
+        what = (self.title + (", every game." if whole else ", with this list's filters."))
+        app.bulk_download("Download this whole list?", [(self.title, {"query": lambda off, n: self._query(off, n)},
+                                                         self.server_total)],
+                          whole=whole, after=self._unpick, what=what)
 
     def _fetch_bios(self):
         app, offers, system = self.app, self.bios, self.platform["_system"]

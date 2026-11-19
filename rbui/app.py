@@ -21,7 +21,7 @@ from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.jukebox import JukeboxScreen, TracksScreen
 from rbui.screens.whatsnew import notes_at_start, WhatsNewScreen
 from rbui.screens.welcome import WelcomeScreen, welcome_due, welcome_on_rejected
-from rbui.modals import ActionMenu, Confirm
+from rbui.modals import ActionMenu, BulkDownload, Confirm
 from rbui.startup import read_marker, write_marker
 
 
@@ -714,13 +714,15 @@ class App:
         return rommlib.disc_group(plat.get("fs_slug") or str(rom.get("platform_id")), discs,
                                   self.set_title(rom))
 
-    def queue_set(self, group, items, system):
-        """items: [(rom, system)] of one disc set. Discs already on the box
-        join the set instead of downloading again. Returns discs queued."""
-        lib, dl = self.library, self.downloader
-        queued, unrecorded = 0, None
-        for r, _ in items:
-            j = dl.job_for(r["id"])
+    @staticmethod
+    def set_entries(lib, dl, group, items, active=None):
+        """One disc set's part of a download: [(rom, system, group)] for enqueue_many, its discs
+        already on the box joining the set instead of downloading again. Returns (entries, the
+        installed.json error that kept a disc unrecorded or None). active: {rom id: job} of the
+        downloads under way (looked up per disc otherwise)."""
+        entries, unrecorded = [], None
+        for r, system in items:
+            j = active.get(r["id"]) if active is not None else dl.job_for(r["id"])
             if j and j.active:
                 j.group = group
                 continue
@@ -731,16 +733,25 @@ class App:
                 rommlib.log("adopt %s: %s" % (r.get("id"), e))
                 unrecorded = e
                 continue
-            dl.enqueue(r, system, group)
-            queued += 1
+            entries.append((r, system, group))
+        return entries, unrecorded
+
+    def queue_set(self, group, items, system):
+        """items: [(rom, system)] of one disc set. Discs already on the box
+        join the set instead of downloading again. Returns discs queued."""
+        dl = self.downloader
+        entries, unrecorded = App.set_entries(self.library, dl, group, items)
+        if entries:
+            dl.enqueue_many(entries)
+        else:
+            dl.save_queue()                  # the discs already downloading may have joined the set
         if unrecorded is not None:
             self.toast(str(unrecorded), theme.AMBER)
-        elif not queued:                     # everything already here: just make the playlist
+        elif not entries:                    # everything already here: just make the playlist
             self.bg(lambda: dl._finish_group(group, system),
                     lambda m3u: self.toast("Playlist made: %s" % os.path.basename(m3u) if m3u
                                            else "All discs are already on this box", theme.GREEN))
-        dl.save_queue()
-        return queued
+        return len(entries)
 
     def download_set(self, rom, discs):
         system = self.system_for(rom)
@@ -750,89 +761,123 @@ class App:
             self.toast("Queued %d disc%s: %s" % (n, "" if n == 1 else "s", group["title"]), theme.GREEN)
             self.space_check()
 
-    def expand_sets(self, items):
-        """Bulk downloads: give every disc its whole set (found in RomM) and
-        a shared group. Runs in a worker thread. Returns [(group|None, [(rom, system)])]."""
-        out, seen = [], {}
-        for r, sy in items:
+    def expand_sets(self, items, pool=None):
+        """Bulk downloads: give every disc its whole set and a shared group. Runs in a worker
+        thread. pool: [(rom, system)] every disc game of the platforms listed, on the box or not
+        (a whole platform's listing): a set is put together from it; else (picked games, a
+        filtered list, two copies of one disc) it's found in RomM (find_disc_set: a few requests
+        a set). Returns [(group|None, [(rom, system)])]."""
+        def key_of(r):
             d = rommlib.disc_info(r.get("fs_name_no_ext") or "")
+            return (d, (r.get("platform_id"), d[0].lower())) if d else (None, None)
+        known = {}
+        for r, sy in pool or []:
+            d, key = key_of(r)
+            if d:
+                known.setdefault(key, []).append((d[1], r))
+        out, asked = [], {}
+        for r, sy in items:
+            d, key = key_of(r)
             if not d:
                 out.append((None, [(r, sy)]))
                 continue
-            key = (r.get("platform_id"), d[0].lower())
-            if key in seen:
+            if key not in asked:
+                asked[key] = []
+                out.append(("set", key))
+            asked[key].append((r, sy))
+        groups = []
+        for it in out:
+            if it[0] != "set":
+                groups.append(it)
                 continue
-            discs, _ = rommlib.find_disc_set(self.api, r)
-            if not discs or len(discs) < 2:
-                out.append((None, [(r, sy)]))
+            mine = asked[it[1]]
+            discs = known.get(it[1])
+            nums = [n for n, _ in discs or []]
+            if discs and len(set(nums)) == len(nums):
+                found = sorted(discs, key=lambda x: x[0])
+            else:
+                found = rommlib.find_disc_set(self.api, mine[0][0])[0]
+            sy = mine[0][1]
+            if not found or len(found) < 2:
+                groups += [(None, [m]) for m in mine]
                 continue
-            seen[key] = True
-            out.append((self.make_group(r, discs), [(x, sy) for _, x in discs]))
-        return out
+            groups.append((self.make_group(found[0][1], found), [(x, sy) for _, x in found]))
+        return groups
 
-    def queue_many(self, roms, title, after=None):
-        """Queue many games (a list, a collection, picked games) with the space
-        check, the keep-free reserve and whole multi-disc sets."""
+    def queue_bulk(self, chosen, pool=None):
+        """Worker side of queue_many: the sets put together (pool: expand_sets'), every game
+        queued in one go. Returns (downloads queued, disc sets, an installed.json error or None,
+        playlists made)."""
+        lib, dl = self.library, self.downloader
+        if any(rommlib.disc_info(r.get("fs_name_no_ext") or "") for r, _ in chosen):
+            groups = self.expand_sets(chosen, pool)
+        else:
+            groups = [(None, [it]) for it in chosen]
+        active = {j.rom["id"]: j for j in list(dl.jobs) if j.active}
+        entries, unrecorded, sets, whole_sets = [], None, 0, []
+        for group, members in groups:
+            if not group:
+                entries += [(r, sy, None) for r, sy in members]
+                continue
+            sets += 1
+            got, bad = App.set_entries(lib, dl, group, members, active)
+            entries += got
+            unrecorded = bad or unrecorded
+            if not got and bad is None:
+                whole_sets.append((group, members[0][1]))
+        dl.enqueue_many(entries)
+        made = 0
+        for group, system in whole_sets:         # every disc already here: just the playlist
+            try:
+                made += bool(dl._finish_group(group, system))
+            except Exception as e:
+                rommlib.log("group %s: %r" % (group.get("base"), e))
+        return len(entries), sets, unrecorded, made
+
+    def queue_many(self, roms, title, after=None, whole=False, what=""):
+        """Queue many games already in hand (a list, a collection, picked games): the bulk
+        download dialog with them (BulkDownload: what they take, whether it fits). whole: they're
+        every game of their platforms, the disc games here among them."""
+        self.modal = BulkDownload(self, title, roms=roms, whole=whole, after=after, what=what)
+
+    def bulk_download(self, title, scopes, whole=False, after=None, what=""):
+        """Every game of the scopes ([(label, roms_all arguments[, games expected])]) listed from
+        RomM, then the bulk download dialog."""
+        self.modal = BulkDownload(self, title, scopes=scopes, whole=whole, after=after, what=what)
+
+    def show_modal(self, m):
+        """Open this dialog now, or, while another is open, once it closes (show_waiting)."""
+        if self.modal is None or self.modal is m:
+            self.modal = m
+        else:
+            self.modal_waiting = m
+
+    def show_waiting(self):
+        m = getattr(self, "modal_waiting", None)
+        if m is not None and self.modal is None:
+            self.modal, self.modal_waiting = m, None
+
+    def bulk_go(self, chosen, pool=None, after=None):
+        """Queue these [(rom, system)] in the background, all at once (queue_bulk), and say so."""
         app = self
-        def busy(r):
-            j = app.downloader.job_for(r["id"])
-            return bool(j and j.active)
-        roms = [r for r in roms if app.system_for(r) and not app.library.is_installed(r, app.system_for(r))
-                and not busy(r)]
-        if not roms:
-            app.toast("Nothing to download — all on this box already", theme.AMBER)
-            return
-        size = sum(r.get("fs_size_bytes") or 0 for r in roms)
-        items = [(r, app.system_for(r)) for r in roms]
-        need = rommlib.space_for(items)          # the queue's real peak, as Downloads forecasts it
-        keep = rommlib.keep_free_bytes(app.cfg)
-        free = app.free_after_queue()
+        if after:
+            after()
+        app.toast("Queueing {:,} games…".format(len(chosen)) if len(chosen) != 1 else "Queueing 1 game…")
 
-        def go(chosen):
-            if after:
-                after()
-            if not any(rommlib.disc_info(r.get("fs_name_no_ext") or "") for r, _ in chosen):
-                for r, sy in chosen:
-                    app.downloader.enqueue(r, sy)
-                app.toast("Queued %d games" % len(chosen) + app.hours_note(), theme.GREEN)
-                app.space_check()
+        def queued(res):
+            n, sets, unrecorded, made = res
+            if unrecorded is not None:
+                app.toast(str(unrecorded), theme.AMBER)       # then what was queued all the same
+            if not n:
+                app.toast("Playlist%s made: every disc was already on this box" % ("" if made == 1 else "s")
+                          if made else "Nothing to download — all on this box already",
+                          theme.GREEN if made else theme.AMBER)
                 return
-            app.toast("Finding the other discs of multi-disc games…")
-
-            def queued(groups):
-                n = 0
-                for group, members in groups:
-                    if group:
-                        n += app.queue_set(group, members, members[0][1])
-                    else:
-                        for r, sy in members:
-                            app.downloader.enqueue(r, sy)
-                            n += 1
-                sets = sum(1 for g, _ in groups if g)
-                app.toast("Queued %d download%s%s" % (n, "" if n == 1 else "s",
-                          (", %d multi-disc set%s kept together" % (sets, "" if sets == 1 else "s"))
-                          if sets else "") + app.hours_note(), theme.GREEN)
-                app.space_check()
-            app.bg(lambda: app.expand_sets(chosen), queued)
-
-        reserve = keep or rommlib.space_margin(need)        # the downloader's own margin when keep-free is 0
-        if free is not None and need + reserve > free:
-            fit, used = rommlib.fit_in_space(items, free, reserve)
-            entries = []
-            if fit:
-                entries.append(("Download the %d that fit" % len(fit),
-                                "About %s once extracted" % human_size(used), lambda: go(fit)))
-            entries.append(("Download all %d anyway" % len(items),
-                            "Needs about %s; %s free after the queue, keeping %s free. Later ones wait "
-                            "for space." % (human_size(need), human_size(max(0, free)), human_size(keep)),
-                            lambda: go(items)))
-            entries.append(("Cancel", "", lambda: None))
-            app.modal = ActionMenu(app, "Not enough space for all %d" % len(items), entries)
-            return
-        body = "%d games, %s to download (about %s once extracted)%s." % (
-            len(roms), human_size(size), human_size(need),
-            "" if free is None else ". %s free on this box" % human_size(max(0, free)))
-        app.modal = Confirm(app, title, body, "Download %d" % len(roms), lambda: go(items))
+            app.toast("Queued {:,} download{}{}".format(n, "" if n == 1 else "s",
+                      (", %d multi-disc set%s kept together" % (sets, "" if sets == 1 else "s"))
+                      if sets else "") + app.hours_note(), theme.GREEN)
+            app.space_check()
+        app.bg(lambda: app.queue_bulk(chosen, pool), queued)
 
     def space_freed(self):
         """Space was just freed: conversions waiting for room shouldn't wait for
@@ -852,8 +897,9 @@ class App:
 
     def pop(self):
         if len(self.stack) > 1:
-            self.stack.pop()
+            gone = self.stack.pop()
             self.stack[-1].enter()
+            gone.leave()
             self.show_notes()
 
     notes_pending = None             # (release, previous version): What's new, waiting for Home
@@ -1109,6 +1155,7 @@ class App:
             for a in actions:
                 self.dispatch(a)
             self.tick_downloads()
+            self.show_waiting()
             self.player.tick()
             self.draw()
             rest.frame(self.canvas, bool(events or actions or fns))
@@ -1267,22 +1314,38 @@ class App:
         if before is not None and self.nav_state() != before:
             self.sfx.play(snd)
 
+    READY_EVERY = 8.0           # seconds: during a big run, finished games are announced together this often
+
     def tick_downloads(self):
+        J = rommlib.Job                              # once: every frame looks at every job
+        waiting, ready, failed = 0, [], []
         for j in self.downloader.jobs:
-            if getattr(j, "restored", False):
-                continue                             # an earlier session's, back from the saved history
-            if j.state == rommlib.Job.DONE and not getattr(j, "_announced", False):
+            st = j.state
+            if j.active or st == J.PAUSED:
+                waiting += 1
+            elif (st == J.DONE or st == J.FAILED) and not getattr(j, "_announced", False) \
+                    and not getattr(j, "restored", False):  # (restored: an earlier session's, from the saved history)
                 j._announced = True
+                (ready if st == J.DONE else failed).append(j)
+        big = waiting >= DownloadsScreen.RUN_SHOWN       # (as Activity's header tells a big run)
+        for j in ready:
+            if big:
+                self._ready_n = getattr(self, "_ready_n", 0) + 1          # told together, below
+            else:
                 self.toast_ready(j)
-                for scr in self.stack:
-                    scr.__dict__.pop("_variants", None)
-                if j.chd_queued and not self.headless:
-                    self.spawn_helper("rb_chd.py")   # flock'd: no-op if already running
-                if j.system in self.TOOL_SYSTEMS:
-                    self.fetch_tools({j.system})     # a first Wii U game: its converter's tool
-            elif j.state == rommlib.Job.FAILED and not getattr(j, "_announced", False):
-                j._announced = True
-                self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)
+            for scr in self.stack:
+                scr.__dict__.pop("_variants", None)
+            if j.chd_queued and not self.headless:
+                self.spawn_helper("rb_chd.py")   # flock'd: no-op if already running
+            if j.system in self.TOOL_SYSTEMS:
+                self.fetch_tools({j.system})     # a first Wii U game: its converter's tool
+        for j in failed:
+            self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)
+        n, now = getattr(self, "_ready_n", 0), time.time()
+        if n and (not big or now - getattr(self, "_ready_at", 0) >= self.READY_EVERY):
+            self._ready_n, self._ready_at = 0, now
+            self.toast("Ready: {:,} more game{} · {{SELECT}} Activity lists them".format(n, "" if n == 1 else "s"),
+                       theme.GREEN)
         self.watch_conversions()
 
     CONV_WATCH = 10.0           # seconds between looks for a conversion worker that died mid-task
@@ -1378,8 +1441,9 @@ class App:
         circle(c, dot, (r.left - 12, 33), 5)
         rx = r.left - 30
         if n:
-            j = next((j for j in self.downloader.jobs if j.state == rommlib.Job.DOWNLOADING), None)
-            label = "%d in queue" % n + (", %s/s" % human_size(j.speed) if j and j.speed and not j.stalled() else "")
+            busy = rommlib.Job.DOWNLOADING
+            j = next((j for j in self.downloader.jobs if j.state == busy), None)
+            label = "{:,} in queue".format(n) + (", %s/s" % human_size(j.speed) if j and j.speed and not j.stalled() else "")
             r = text(c, self.fonts.small, label, (rx, 33), theme.BLUE, "midright")
             rx = r.left
         if self.player.active() and self.player.current():      # what's playing: a tap opens its list

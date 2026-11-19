@@ -90,6 +90,15 @@ def focus_box(surf, rect, radius=10):
     rrect(surf, theme.ACCENT, rect, radius, 2)
 
 
+def tick_box(surf, center, on, size=18):
+    """A pick's box: filled and ticked when picked, an outline when not."""
+    x, y = center
+    h = size / 2
+    rrect(surf, theme.ACCENT if on else theme.LINE, (x - h, y - h, size, size), 4, 0 if on else 2)
+    if on:
+        polyline(surf, theme.TEXT, [(x - 4, y), (x - 1, y + 3), (x + 4, y - 3)], 2)
+
+
 def circle(surf, color, center, radius, width=0):
     pygame.draw.circle(surf, color, (S(center[0]), S(center[1])), max(1, S(radius)),
                        max(1, S(width)) if width else 0)

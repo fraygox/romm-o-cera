@@ -7,7 +7,8 @@ import rommlib
 from rommlib import human_size
 from rbui import theme
 from rbui.theme import H, W
-from rbui.draw import chevron, focus_box, glyph_width, hline, marquee, measure, rom_title, rrect, scroll_text, text
+from rbui.draw import (chevron, focus_box, glyph_width, hline, marquee, measure, meter, progress_bar, rom_title, rrect,
+                       scroll_text, text)
 from rbui.widgets.chips import switch
 from rbui.widgets.hero import already_queued, verb_button
 
@@ -254,6 +255,33 @@ class ManageMenu(ActionMenu):
         ])
 
 
+def dialog_frame(app, c, size):
+    """A dialog's ground: the screen dimmed, a panel of size (w, h) centred on it, taps
+    outside it caught. Returns the panel's rect."""
+    veil = pygame.Surface(c.get_size(), pygame.SRCALPHA)
+    veil.fill((0, 0, 0, 170))
+    c.blit(veil, (0, 0))
+    r = pygame.Rect(0, 0, *size)
+    r.center = (W // 2, H // 2)
+    app.hit(r, None)
+    rrect(c, theme.PANEL, r, 18)
+    rrect(c, theme.LINE, r, 18, 1)
+    return r
+
+
+def dialog_buttons(app, c, r, label, on_ok, kind="go", back="Back", on_back=None, glyph="A"):
+    """A dialog's buttons along its bottom: the action (as wide as its glyph and label need, a
+    keyboard's Enter being wider than a pad's A) and, unless back is None, the way out (B)."""
+    f = app.fonts
+    bx, by = r.left + 32, r.bottom - 58
+    need = 18 + glyph_width(f, glyph) + 12 + int(measure(f.h3, label)) + 22
+    okr = verb_button(c, f, (bx, by, max(260, min(need, r.width - 64 - 16 - 180)), 40), label, kind, glyph=glyph)
+    app.hit(okr, on_ok)
+    if back is not None:
+        nr = verb_button(c, f, (okr.right + 16, by, 180, 40), back, "quiet", glyph="B")
+        app.hit(nr, on_back)
+
+
 class Confirm:
     def __init__(self, app, title, body, ok_label, on_ok, danger=False):
         self.app, self.title, self.body = app, title, body
@@ -268,14 +296,7 @@ class Confirm:
 
     def draw(self, c):
         f = self.app.fonts
-        veil = pygame.Surface(c.get_size(), pygame.SRCALPHA)
-        veil.fill((0, 0, 0, 170))
-        c.blit(veil, (0, 0))
-        r = pygame.Rect(0, 0, 640, 260)
-        r.center = (W // 2, H // 2)
-        self.app.hit(r, None)
-        rrect(c, theme.PANEL, r, 18)
-        rrect(c, theme.LINE, r, 18, 1)
+        r = dialog_frame(self.app, c, (640, 260))
         # a long title (a game's full name) takes the smaller heading before it slides: a sliding
         # title reads as cut off at its edge
         tf = f.h2 if measure(f.h2, self.title) <= r.width - 64 else f.h3
@@ -284,16 +305,8 @@ class Confirm:
         # a body longer than its four lines scrolls by itself (never cut)
         scroll_text(c, f.body, self.body, (r.left + 32, r.top + 74, r.width - 64, 4 * 26 + 2), theme.DIM,
                     key=self.title, line_h=26, slot=("confirm", id(self)))
-        bx = r.left + 32
-        by = r.bottom - 58
-        # as wide as its glyph and label need (a keyboard's Enter is wider than a pad's A), up to Back's
-        need = 18 + glyph_width(f, "A") + 12 + int(measure(f.h3, self.ok_label)) + 22
-        okr = verb_button(c, f, (bx, by, max(260, min(need, r.width - 64 - 16 - 180)), 40), self.ok_label,
-                          "danger" if self.danger else "go")
-        self.app.hit(okr, lambda: self.action("ok"))
-        nr = verb_button(c, f, (okr.right + 16, by, 180, 40), "Keep" if self.danger else "Back", "quiet",
-                         glyph="B")                  # deleting: B keeps it
-        self.app.hit(nr, lambda: self.action("back"))
+        dialog_buttons(self.app, c, r, self.ok_label, lambda: self.action("ok"), "danger" if self.danger else "go",
+                       "Keep" if self.danger else "Back", lambda: self.action("back"))     # deleting: B keeps it
 
 
 class InfoDialog(Confirm):
@@ -389,6 +402,314 @@ class InfoDialog(Confirm):
         super().action(a)
 
 
+class BulkDownload:
+    """Many games at once, one dialog. First, when they aren't in hand, every game of the
+    scopes is listed from RomM ([(label, roms_all arguments)], one after another, with progress;
+    B stops it). Then what they take, counted as Activity's forecast counts space (bulk_space),
+    on a bar: the queue already waiting, these, the keep-free reserve. Whole platforms download
+    only when they all fit (else: Free up space, back here after); any other list can take the
+    ones that fit, or all of them waiting for room."""
+    WIDTH = 820
+
+    def __init__(self, app, title, scopes=None, roms=None, whole=False, after=None, what="", labels=None):
+        """roms: the games already in hand (labels: each one's platform, for the table), else
+        scopes [(label, roms_all arguments[, games expected])] to list from RomM first."""
+        self.app, self.title, self.whole, self.after, self.what = app, title, whole, after, what
+        self.cancel = threading.Event()
+        self.state, self.error, self.sel, self.unknown, self.never, self.drive = "listing", None, 0, False, False, 0
+        self.listed, self.total, self.wanted = 0, 0, 0
+        self.labels, self.roms = [], []
+        if roms is not None:
+            self.labels = list(labels) if labels else [None] * len(roms)
+            self.roms = list(roms)
+            self.plan()
+            return
+        self.scopes = scopes
+        self.total = sum(sc[2] for sc in scopes if len(sc) > 2 and sc[2])
+        app.bg(self._list, self._listed, self._failed)
+
+    # -- listing (a worker thread)
+    def keep(self, r):
+        """A game a download takes: one this box has a system for and doesn't hold yet; for
+        whole platforms the disc games here too (their sets are put together from the listing)."""
+        app = self.app
+        sy = app.system_for(r)
+        return bool(sy) and (not app.library.is_installed(r, sy)
+                             or self.whole and bool(rommlib.disc_info(r.get("fs_name_no_ext") or "")))
+
+    def _list(self):
+        out, labels, before = [], [], 0
+        for sc in self.scopes:
+            label, kw = sc[0], sc[1]
+            base = before
+
+            def progress(n, total, base=base):
+                self.listed = base + n
+                if len(self.scopes) == 1 or not self.total:
+                    self.total = max(self.total, base + total)
+            got = self.app.api.roms_all(limit=250, cancel=self.cancel, keep=self.keep,
+                                        fields=rommlib.BULK_FIELDS, progress=progress, **kw)
+            if got is None:
+                return None                           # stopped
+            out += got
+            labels += [label] * len(got)
+            self.wanted = len(out)
+            before = self.listed
+        return out, labels
+
+    def _listed(self, res):
+        if res is None or self.cancel.is_set():
+            return
+        self.roms, self.labels = res
+        self.plan()
+        self.app.show_modal(self)           # (another dialog opened meanwhile: once it closes)
+
+    def _failed(self, e):
+        self.state, self.error = "failed", str(e)
+
+    # -- what it takes
+    def plan(self):
+        """What's to download of the listing, what it takes and whether it fits, worked out
+        (again, after Free up space) now."""
+        app, d = self.app, self.app.downloader
+        busy = {j.rom["id"] for j in list(d.jobs) if j.active}
+        pick, labels = [], []
+        for r, label in zip(self.roms, self.labels):
+            sy = app.system_for(r)
+            if sy and r["id"] not in busy and not app.library.is_installed(r, sy):
+                pick.append((r, sy))
+                labels.append(label)
+        self.items = pick
+        self.pool = [(r, app.system_for(r)) for r in self.roms if app.system_for(r)
+                     and rommlib.disc_info(r.get("fs_name_no_ext") or "")] if self.whole else None
+        rows = {}
+        for (r, _), label in zip(pick, labels):
+            n, b = rows.get(label, (0, 0))
+            rows[label] = (n + 1, b + (r.get("fs_size_bytes") or 0))
+        self.rows = [(k, n, b) for k, (n, b) in rows.items()] if len(rows) > 1 else []
+        self.size = sum(r.get("fs_size_bytes") or 0 for r, _ in pick)
+        free = rommlib.free_bytes(default=None)
+        self.unknown = free is None             # can't tell (a share that's away): no fit to judge, as before
+        if self.unknown:
+            free = 1 << 62
+        self.space = rommlib.bulk_space(pick, list(d.jobs), free, rommlib.keep_free_bytes(app.cfg),
+                                        app.cfg, rommlib.chd_enabled(app.cfg))
+        # bigger than the whole drive (with what's queued and the keep-free space): no deleting makes room
+        drive = rommlib.disk_bytes()
+        self.never = bool(drive) and not self.space["fits"] and \
+            self.space["queue"] + self.space["need"] + self.space["keep"] > drive
+        self.drive = drive
+        self.fit = []
+        if pick and not self.space["fits"] and not self.whole:
+            room = free - self.space["queue"]
+            self.fit = rommlib.fit_in_space(pick, room, self.space["keep"])[0]
+        speed = max([j.speed for j in list(d.jobs) if j.state == rommlib.Job.DOWNLOADING and j.speed] or [0])
+        self.hours = self.size / speed / 3600 if speed else None
+        self.speed = speed
+        self.state = "empty" if not pick else "confirm"
+        self.sel = 0
+
+    def options(self):
+        """The choices under the bar: (label, sub, fn)."""
+        n = len(self.items)
+        if self.state == "empty" or self.state == "failed":
+            return [("OK", "", lambda: None)]
+        if self.space["fits"]:
+            return [("Download {:,}".format(n), "", lambda: self.go(self.items))]
+        if self.whole:
+            return [] if self.never else \
+                [("Free up space", "Pick games on this box to delete; back here after", self.free_up)]
+        out = []
+        if self.fit:
+            out.append(("Download the {:,} that fit".format(len(self.fit)),
+                        "The other {:,} aren't queued".format(n - len(self.fit)), lambda: self.go(self.fit)))
+        out.append(("Download all {:,} anyway".format(n),
+                    "The rest wait in the queue until there's room", lambda: self.go(self.items)))
+        if not self.never:
+            out.append(("Free up space", "Pick games on this box to delete; back here after", self.free_up))
+        return out
+
+    def go(self, chosen):
+        self.app.bulk_go(chosen, self.pool, self.after)
+
+    def free_up(self):
+        from rbui.screens.space import FreeUpScreen         # (screens import this module)
+        gb = max(1, -(-self.space["short"] // (1 << 30)))
+
+        def back():
+            self.plan()
+            self.app.modal = self
+        self.app.push(FreeUpScreen(self.app, free_gb=gb, then=back,
+                                   spare={sy for _, sy in self.items}))   # never the games it would fetch again
+
+    def action(self, a):
+        app = self.app
+        if self.state == "listing":
+            if a in ("back", "quit"):
+                self.cancel.set()
+                app.modal = None
+                app.toast("Stopped listing; nothing was queued")
+            return
+        opts = self.options()
+        if self.state == "confirm" and not self.space["fits"] and not self.whole and a in ("up", "down"):
+            self.sel = (self.sel + (1 if a == "down" else -1)) % len(opts)
+        elif a == "ok":
+            app.modal = None
+            if opts:                                # (bigger than the drive: only Back)
+                opts[min(self.sel, len(opts) - 1)][2]()
+        elif a in ("back", "quit"):
+            app.modal = None
+
+    # -- drawing
+    def draw(self, c):
+        app, f = self.app, self.app.fonts
+        listing = self.state in ("listing", "failed")
+        list_opts = self.state == "confirm" and not self.space["fits"] and not self.whole
+        r = dialog_frame(app, c, (self.WIDTH, min(self.height(list_opts), H - 120)))
+        x, y, w = r.left + 32, r.top + 26, r.width - 64
+        title = "Listing every game" if listing else ("Nothing to download" if self.state == "empty" else self.title)
+        marquee(c, f.h2, title, (x, y), theme.TEXT, maxw=w, bg=theme.PANEL, slot=("bulk-title", id(self)))
+        y += 42
+        if self.state == "failed":
+            scroll_text(c, f.body, "RomM couldn't list them: %s" % self.error, (x, y, w, 3 * 26), theme.RED,
+                        line_h=26, slot=("bulk-err", id(self)))
+            return self._buttons(c, r, [("OK", "", None)])
+        if self.state == "listing":
+            scroll_text(c, f.body, self.what + " Games already on this box are left out.", (x, y, w, 2 * 26),
+                        theme.DIM, line_h=26, slot=("bulk-what", id(self)))
+            y += 66
+            tot = max(self.total, self.listed)
+            text(c, f.body, "{:,} of {:,} listed".format(self.listed, tot) if tot else "Asking RomM…", (x, y),
+                 theme.TEXT)
+            progress_bar(c, (x, y + 34, w, 10), self.listed / tot if tot else 0)
+            return self._buttons(c, r, [("Stop", "", None)], glyph="B", kind="quiet")
+        if self.state == "empty":
+            scroll_text(c, f.body, "Every game here is on this box or already queued.", (x, y, w, 2 * 26),
+                        theme.DIM, line_h=26, slot=("bulk-empty", id(self)))
+            return self._buttons(c, r, [("OK", "", None)])
+        sp, n = self.space, len(self.items)
+        scroll_text(c, f.body, self.what, (x, y, w, 26), theme.DIM, line_h=26, slot=("bulk-what", id(self)))
+        y += 40
+        if self.rows:
+            y = self._table(c, f, x, y, w)
+        else:
+            y = self._facts(c, f, x, y, w)
+        y = self._bar(c, f, x, y + 8, w)
+        if list_opts:
+            return self._list_opts(c, f, r, y + 10)
+        if not sp["fits"]:
+            why = ("This drive holds %s in all: %s can't come to this box whole%s."
+                   % (human_size(self.drive), "these platforms" if self.rows else "this platform",
+                      " (pick fewer)" if self.rows else "")) if self.never else \
+                ("Whole platforms download only when every game fits: free up %s first%s."
+                 % (human_size(sp["short"]), ", or pick fewer" if self.rows else ""))
+            scroll_text(c, f.small, why, (x, y + 4, w, 44), theme.AMBER, line_h=22, slot=("bulk-short", id(self)))
+        opts = self.options()
+        self._buttons(c, r, [(o[0], o[1], o[2]) for o in opts] or [("Back", "", None)],
+                      glyph="B" if not opts else "A", kind="quiet" if not opts else "go")
+
+    def facts(self):
+        """The dialog's numbers: (big, small, colour) each."""
+        sp, n = self.space, len(self.items)
+        out = [("{:,}".format(n), "games" if n != 1 else "game", theme.TEXT),
+               (human_size(self.size), "to download", theme.TEXT)]
+        if sp["need"] > self.size * 1.02:                 # disc games: more while they unpack
+            out.append((human_size(sp["need"]), "room, estimated" if sp["estimated"] else "room needed", theme.TEXT))
+        left = sp["free"] - sp["queue"] - sp["need"]
+        if not self.unknown:
+            out.append((human_size(left), "free afterwards", theme.TEXT) if sp["fits"] else
+                       (human_size(sp["short"]), "short of room", theme.AMBER))
+        return out
+
+    def _facts(self, c, f, x, y, w):
+        cells = self.facts()
+        cw = (w - 16 * (len(cells) - 1)) // len(cells)
+        for k, (big, small, col) in enumerate(cells):
+            box = pygame.Rect(x + k * (cw + 16), y, cw, 74)
+            rrect(c, theme.BG2, box, 12)
+            marquee(c, f.h2, big, (box.left + 16, box.top + 10), col, maxw=box.width - 32, bg=theme.BG2,
+                    slot=("bulk-big", k, id(self)))
+            marquee(c, f.small, small, (box.left + 16, box.top + 46), theme.DIM, maxw=box.width - 32,
+                    bg=theme.BG2, slot=("bulk-fact", k, id(self)))
+        return y + 86
+
+    def height(self, list_opts):
+        """The dialog's height for what it shows (the layout draw() lays down)."""
+        if self.state != "confirm":
+            return 26 + 42 + 66 + 48 + 20 + 62
+        h = 26 + 42 + 40 + (28 + (len(self.rows) + 1) * 30 + 6 if self.rows else 86) + 8 + (30 if self.unknown else 84)
+        h += 26 if self.hours is not None else 0
+        if list_opts:
+            return h + 10 + len(self.options()) * 66 + 16
+        return h + (52 if not self.space["fits"] else 0) + 82
+
+    def _table(self, c, f, x, y, w):
+        nw, sw = 120, 130
+        text(c, f.small, "Platform", (x, y), theme.FAINT)
+        text(c, f.small, "Games", (x + w - sw - 16, y), theme.FAINT, "topright")
+        text(c, f.small, "Download", (x + w, y), theme.FAINT, "topright")
+        y += 28
+        total = ("All {:,}".format(len(self.rows)), len(self.items), self.size)
+        for k, (label, n, b) in enumerate(self.rows + [total]):
+            col = theme.TEXT if k == len(self.rows) else theme.DIM
+            text(c, f.body, label, (x, y), theme.TEXT, maxw=w - nw - sw - 32)
+            text(c, f.body, "{:,}".format(n), (x + w - sw - 16, y), col, "topright")
+            text(c, f.body, human_size(b), (x + w, y), col, "topright")
+            y += 30
+        return y + 6
+
+    def _bar(self, c, f, x, y, w):
+        sp = self.space
+        if self.unknown:
+            text(c, f.small, "The free space on this box can't be read right now", (x, y), theme.AMBER)
+            return y + 30
+        free, queue, need, keep = sp["free"], sp["queue"], sp["need"], sp["keep"]
+        whole = max(free, queue + need + keep, 1)
+        text(c, f.small, "Space on this box", (x, y), theme.DIM)
+        text(c, f.small, "%s free" % human_size(free), (x + w, y), theme.FAINT, "topright")
+        y += 28
+        over = max(0, queue + need + keep - free)
+        parts = [(queue / whole, theme.FAINT), (min(need, max(0, free - queue - keep)) / whole, theme.ACCENT)]
+        if over:
+            parts.append((over / whole, theme.AMBER))
+        meter(c, (x, y, w, 16), parts, reserve=keep / whole if not over else 0)
+        y += 26
+        key = ([("waiting in the queue", theme.FAINT)] if queue else []) + [("these games", theme.ACCENT),
+                                                                           ("kept free: %s" % human_size(keep), theme.LINE)]
+        if over:
+            key.append(("%s more than the box has" % human_size(over), theme.AMBER))
+        kx = x
+        for label, col in key:
+            rrect(c, col, (kx, y + 4, 12, 12), 3)
+            kx = text(c, f.small, label, (kx + 18, y), theme.DIM).right + 22
+            if kx > x + w:
+                break
+        if self.hours is not None:            # at the speed of the download under way
+            t = ("about %d min" % max(1, round(self.hours * 60))) if self.hours < 1 else \
+                ("about %.1f hours" % self.hours if self.hours < 48 else "about %d days" % round(self.hours / 24))
+            text(c, f.small, "%s at %s/s" % (t, human_size(self.speed)), (x, y + 26), theme.FAINT)
+            return y + 56
+        return y + 30
+
+    def _list_opts(self, c, f, r, y):
+        for i, (label, sub, _) in enumerate(self.options()):
+            row = pygame.Rect(r.left + 20, y, r.width - 40, 60)
+            if i == self.sel:
+                focus_box(c, row, 12)
+            marquee(c, f.h3, label, (row.left + 14, row.top + 8), theme.TEXT, maxw=row.width - 28,
+                    focused=i == self.sel, slot=("bulk-opt", i, id(self)))
+            marquee(c, f.small, sub, (row.left + 14, row.top + 34), theme.DIM, maxw=row.width - 28,
+                    focused=i == self.sel, slot=("bulk-sub", i, id(self)))
+            self.app.hit(row, lambda i=i: (setattr(self, "sel", i), self.action("ok")))
+            y += 66
+
+    def _buttons(self, c, r, opts, glyph="A", kind="go"):
+        label = opts[0][0]
+        stop = glyph == "B"                          # listing: B is the one button
+        dialog_buttons(self.app, c, r, label, lambda: self.action("back" if stop else "ok"), kind,
+                       None if stop or label == "OK" else "Back", lambda: self.action("back"), glyph=glyph)
+
+
 class DownloadConfirm(Confirm):
     """Download one game. A disc of a multi-disc set first looks the set up in
     RomM, then offers all discs (one ES entry via an .m3u) or just this one."""
@@ -414,6 +735,9 @@ class DownloadConfirm(Confirm):
         super().__init__(app, name, body, "Download", self._start)
         if rommlib.needs_listing(rom, system):       # an estimate until RomM tells what the zip holds
             def listed(_):
+                j = app.downloader.job_for(rom["id"])
+                if j is not None and j.rom is rom:
+                    j.touch()                        # queued meanwhile: the listing went into its record
                 if app.modal is self and not self.pending:
                     about = self.body[:len(self.body) - len(body)] if self.body.endswith(body) else ""
                     self.body = about + self._body(rom, system, st)

@@ -322,7 +322,7 @@ class HomeScreen(Screen):
 
     def open_collection(self, coll):
         self.app.push(GameListScreen(self.app, coll["full"], collection=coll, group=coll.get("group"),
-                                     whole=coll["count"] <= GameListScreen.BULK_MAX))
+                                     whole=coll["count"] <= GameListScreen.HOLD_MAX))
 
     def open_shelf(self, key):
         """The shelf as a full list: New in RomM is the Recently added list."""

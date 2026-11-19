@@ -315,7 +315,7 @@ class CollectionScreen(Screen):
         def failed(e):
             self._busy = None
             app.toast(str(e), theme.RED)
-        app.bg(lambda: app.api.roms_all(limit=250, cap=GameListScreen.BULK_MAX, collection=key), done, failed)
+        app.bg(lambda: app.api.roms_all(limit=250, cap=GameListScreen.HOLD_MAX, collection=key), done, failed)
 
     # ---------------------------------------------------------------- input
 
@@ -394,15 +394,16 @@ class CollectionScreen(Screen):
         """The collection's games as a list (its games handed over when they're in already)."""
         st = self.box.get((it.get("param"), it["id"]), {})
         return GameListScreen(self.app, it["full"], collection=it, group=it["group"], static=st.get("roms"),
-                              whole=it["count"] <= GameListScreen.BULK_MAX)
+                              whole=it["count"] <= GameListScreen.HOLD_MAX)
 
     def menu(self, it):
         app, st = self.app, self.state(it)
         rest = it["count"] - st["here"]
         if not rest:
             dl = ("Download the rest", "Every game is on this box already", None)
-        elif it["count"] > GameListScreen.BULK_MAX:
-            dl = ("Download the rest", "{:,} is more than 1,000: open it and filter first".format(it["count"]), None)
+        elif it["count"] > GameListScreen.HOLD_MAX:            # too many to hold whole: listed for the download
+            dl = ("Download the rest", "{:,} games, skipping any already on this box".format(it["count"]),
+                  lambda: self.download_rest(it))
         else:
             sub = "{:,} game{}".format(rest, "" if rest == 1 else "s")
             if st.get("rest") is not None:
@@ -425,6 +426,10 @@ class CollectionScreen(Screen):
                 app.toast("List ready — press {X} on the collection again to download it", theme.AMBER)
                 return
             app.queue_many(roms, "Download %s?" % it["full"])
+        if it["count"] > GameListScreen.HOLD_MAX:            # too many to hold whole: listed for the download
+            app.bulk_download("Download %s?" % it["full"], [(it["full"], {"collection": (it.get("param"), it["id"])},
+                                                             it["count"])], what="Every game of the collection.")
+            return
         if self.box.get((it.get("param"), it["id"]), {}).get("roms") is None:
             app.toast("Listing %s…" % it["full"])
         self.fetch_roms(it, listed)

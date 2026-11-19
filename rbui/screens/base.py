@@ -4,7 +4,7 @@ import time
 import pygame
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import measure, polyline, rrect, scroll_text, scrollbar, text
+from rbui.draw import measure, rrect, scroll_text, scrollbar, text, tick_box
 from rbui.modals import ActionMenu
 
 
@@ -17,6 +17,9 @@ class Screen:
 
     def enter(self):
         pass
+
+    def leave(self):
+        """Back from this screen (app.pop), once the one under it is shown again."""
 
     def crumbs(self):
         return []
@@ -285,7 +288,7 @@ class ListScreen(Screen):
                           lambda: setattr(self, "picking", True)))
             can = [r for r in self.listed() if r is not None and self.pickable(r)] if self.PICK_ALL else []
             if can and len(rows) < len(can):
-                e.append(("Pick all %d" % len(can), "", lambda: (self.pick_all(), setattr(self, "picking", True))))
+                e.append(("Pick all {:,}".format(len(can)), "", lambda: (self.pick_all(), setattr(self, "picking", True))))
             if rows:
                 e.append(("Clear picks", "", self.picks.clear))
         ctl = self.list_controls()
@@ -301,11 +304,7 @@ class ListScreen(Screen):
         place of the row's own dot or icon)."""
         if not self.showing_picks():
             return False
-        x, y = center
-        on = self.pick_key(row) in self.picks
-        rrect(c, theme.ACCENT if on else theme.LINE, (x - 9, y - 9, 18, 18), 4, 0 if on else 2)
-        if on:
-            polyline(c, theme.TEXT, [(x - 4, y), (x - 1, y + 3), (x + 4, y - 3)], 2)
+        tick_box(c, center, self.pick_key(row) in self.picks)
         return True
 
     def visible(self, rows=None):
