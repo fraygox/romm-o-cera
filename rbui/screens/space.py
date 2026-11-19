@@ -6,7 +6,7 @@ import rommlib
 from rommlib import human_size
 from rbui import pads, theme
 from rbui.theme import H, W
-from rbui.draw import circle, focus_box, hline, measure, rrect, scroll_text, text
+from rbui.draw import circle, focus_box, hline, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.box_data import disk_space, pending_roms, plural, space_bar, space_parts, storage_by_system
 from rbui.screens.installed import _lastplayed_label, delete_outcome

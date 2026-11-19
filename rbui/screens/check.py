@@ -3,7 +3,6 @@ import os
 import threading
 import time
 
-import pygame
 import rommlib
 from rbui import pads, theme
 from rbui.theme import W

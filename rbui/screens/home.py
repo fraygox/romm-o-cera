@@ -18,7 +18,7 @@ from rbui.screens.downloads import DownloadsScreen
 from rbui.screens.game import GameScreen
 from rbui.screens.settings import SettingsScreen
 from rbui.screens.box import OnThisBoxScreen
-from rbui.screens.music import MusicScreen, plural_tracks
+from rbui.screens.music import plural_tracks
 from rbui.widgets.chips import pill_row, tag
 from rbui.widgets.hero import game_state, game_verb, meta_line, state_line, time_ago
 from rbui.widgets.layout import list_head, Panel, split

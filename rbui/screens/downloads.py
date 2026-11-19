@@ -1,6 +1,5 @@
 """Activity: the downloads, and the conversions on this box, on one screen."""
 import math
-import re
 import time
 
 import pygame
