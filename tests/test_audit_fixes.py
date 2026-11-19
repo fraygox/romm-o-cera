@@ -1122,3 +1122,21 @@ def test_a_check_with_no_games_left_clears_the_last_one(isolated, rb, monkeypatc
     app.push(rb.AuditScreen(app))
     d = rommlib.load_audit()
     assert d["findings"] == [] and d["stats"]["checked"] == 0
+
+
+def test_a_missing_track_is_one_finding_not_two(isolated, no_es):
+    """A track its sheet names and RomM lists, gone: one finding, under the sheet
+    (it needs no RomM), never a second "Missing file" for the same file."""
+    stem = "Lone Track (USA)"
+    cue = 'FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % stem
+    _put("psx", "%s/%s.cue" % (stem, stem), cue.encode())
+    api = Api([(1, stem + ".zip", [_rec(stem + ".zip", 30, archive_members=[
+        {"name": stem + ".cue", "size": len(cue)}, {"name": stem + ".bin", "size": 20}])])])
+    findings, _ = rommlib.audit(api, {"psx": [1]})
+    assert [(os.path.basename(f["path"]), f["problem"]) for f in findings] == [
+        (stem + ".cue", "Missing track file: %s.bin" % stem)]
+    assert findings[0]["rom"] and findings[0]["severity"] == "damaged"
+    os.remove(os.path.join(rommlib.ROMS_ROOT, "psx", stem, stem + ".cue"))      # the sheet gone, the track there
+    _put("psx", "%s/%s.bin" % (stem, stem), b"b" * 20)
+    got, _ = _run(api, {"psx": [1]})
+    assert {k: f["problem"] for k, f in got.items()} == {stem + ".cue": "Missing file: %s.cue" % stem}

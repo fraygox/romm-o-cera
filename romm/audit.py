@@ -707,6 +707,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
         path = os.path.join(sysdir, n)
         low = n.lower()
         details = {}
+        no_track = set()        # tracks its sheets name that aren't there: said once, under the sheet
 
         def detail_of(rid):
             """RomM's record, fetched once for the game (a CHD in its folder asks too)."""
@@ -725,6 +726,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             for ref in _discs.sheet_sources(sheet, strict=True):
                 if _missing(ref):
                     guard()
+                    no_track.add(os.path.normpath(ref))
                     add(system, sheet, "Missing track file: %s" % os.path.basename(ref),
                         find(os.path.splitext(n)[0], low))
         # 1b) disc images cut short (an interrupted copy): the game can't
@@ -842,7 +844,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             _stop_point(cancel)
             cur["path"] = fp
             if fp in covered:
-                if not covered[fp]:
+                if not covered[fp] and os.path.normpath(fp) not in no_track:   # a sheet's track: said above
                     add(system, fp, "Missing file: %s" % os.path.basename(fp), rom)
                 continue
             if fp in bad_chds or _discs.xbox_cut(system, fp, f):
