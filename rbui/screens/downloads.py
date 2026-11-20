@@ -21,6 +21,8 @@ from rbui.widgets.tiles import cover
 ACT_HEAD = pygame.Rect(CONTENT.left, CONTENT.top, CONTENT.width, 76)       # the one line for everything
 ACT_BODY = pygame.Rect(CONTENT.left, ACT_HEAD.bottom + 16, CONTENT.width, CONTENT.bottom - ACT_HEAD.bottom - 16)
 SPEED_TAU = 5.0             # seconds: the headline's speed is smoothed over about this long
+RATE_WINDOW = 60.0          # seconds: once it has RATE_MIN of them, the bytes that came in over this long
+RATE_MIN = 5.0              # set the pace (many small files: the time between them counts too)
 RESULT_COLOURS = {"ok": "GREEN", "failed": "RED", "stopped": "AMBER", "skipped": "AMBER", "waiting": "AMBER"}
 PAUSED_WHY = {"hold": "paused by you", "game": "paused while you play", "es": "paused while ES is busy"}
 
@@ -30,6 +32,40 @@ def sentence(msg):
     "ES" into "es"); never a file name it starts with ("installed.json")."""
     first = msg.split(" ", 1)[0]
     return msg if "." in first or "/" in first else msg[:1].upper() + msg[1:]
+
+
+class RateMeter:
+    """How fast the queue really goes: the bytes downloads add, over the time they took,
+    the last RATE_WINDOW seconds of it. Unlike the transfer speed it doesn't drop to nothing
+    between two small files, nor jump with each one's burst. Kept on the app, so it goes on
+    measuring while Activity is closed."""
+
+    def __init__(self):
+        self.seen, self.total, self.marks = {}, 0, []
+
+    def rate(self, jobs, going, now):
+        """Bytes a second over the window, or None until it has RATE_MIN seconds of downloading.
+        going: something downloads (not paused, nor all of it on hold)."""
+        if not going:                              # stopped: what comes next is measured afresh
+            self.seen, self.total, self.marks = {}, 0, []
+            return None
+        seen, fresh = {}, not self.marks
+        for j in jobs:
+            b = j.done_bytes or 0
+            # one queued since counts from nothing: a small file can come and finish between two looks
+            was = self.seen.get(j, b if fresh else 0)
+            if b > was:
+                self.total += b - was
+            seen[j] = b
+        self.seen = seen
+        if not self.marks or now - self.marks[-1][0] >= 0.5:
+            self.marks.append((now, self.total))
+        while len(self.marks) > 2 and now - self.marks[1][0] >= RATE_WINDOW:
+            self.marks.pop(0)
+        t0, b0 = self.marks[0]
+        if now - t0 < RATE_MIN or self.total <= b0:
+            return None
+        return (self.total - b0) / (now - t0)
 
 
 class DownloadsScreen(ListScreen):
@@ -502,7 +538,8 @@ class DownloadsScreen(ListScreen):
     def outlook(self, now=None):
         """The whole picture: {"live", "convs" (counts), "secs" (until everything's done, None
         when a part can't be told), "dl_secs", "frac" (done of all of it)}. Downloads: what's
-        left over the smoothed speed; the running conversion from the worker's progress, the
+        left over the pace the queue keeps (RateMeter; the smoothed transfer speed for its first
+        RATE_MIN seconds); the running conversion from the worker's progress, the
         ones queued behind it about as long each."""
         J = rommlib.Job
         now = time.time() if now is None else now
@@ -510,6 +547,11 @@ class DownloadsScreen(ListScreen):
         total = sum(max(j.total_bytes or j.rom.get("fs_size_bytes") or 0, j.done_bytes) for j in live)
         done = sum(j.done_bytes for j in live)
         speed = self.smoothed(sum(j.speed for j in live if j.state == J.DOWNLOADING and not j.stalled(now)), now)
+        d = self.app.downloader
+        meter = getattr(self.app, "dl_rate", None) or RateMeter()
+        self.app.dl_rate = meter
+        pace = meter.rate(d.jobs, not d.hold and any(j.active for j in live), now)
+        speed = pace or speed                      # the pace once it's known; the transfer speed till then
         dl = 0.0 if total <= done else (total - done) / speed if speed else None
         if any(j.state == J.PAUSED or (j.state == J.QUEUED and getattr(j, "short_space", 0)) for j in live):
             dl = None            # one is on hold (paused, no room for it): when it all ends can't be told

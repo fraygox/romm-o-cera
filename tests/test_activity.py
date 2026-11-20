@@ -170,6 +170,37 @@ def test_the_line_on_top_adds_downloads_and_conversions(rb, app):
     assert 600 / 20 < o["dl_secs"] < 60
 
 
+def test_the_time_left_keeps_the_queues_pace_with_many_small_files(rb, app):
+    """40 files of 1 MB, each a 10 MB/s burst then a pause (its check, the next request): the
+    queue really moves 1 MB a second. Once it has 5 s of that, the time left is what's left at
+    that pace, shown between two files too, and steady instead of following each burst (#7)."""
+    J = rommlib.Job
+    files = [_job(app, "Cart %02d" % i, J.QUEUED, 0, MB) for i in range(40)]
+    scr = _screen(rb, app)
+    t, said = time.time(), []
+    for k, j in enumerate(files[:30]):
+        j.state, j.done_bytes, j.speed = J.DOWNLOADING, MB // 2, 10 * MB       # its burst
+        o_burst = scr.outlook(t)
+        t += 0.5
+        j.state, j.done_bytes, j.speed = J.DONE, MB, 0.0                      # between two files
+        o_gap = scr.outlook(t)
+        t += 0.5
+        if k >= 7:
+            left = 40 - k - 1                                                  # MB, at 1 MB/s
+            for o in (o_burst, o_gap):
+                assert o["dl_secs"] is not None and o["dl_secs"] == pytest.approx(left, rel=0.2)
+            said.append(scr.headline(o_gap)[0])
+    assert all(x.startswith("Downloads done in") or x.startswith("Everything's done in") for x in said)
+    # one queued and finished between two looks (a small file, no speed of its own): its bytes count
+    late = _job(app, "Cart late", J.DONE, MB, MB)
+    before = app.dl_rate.total
+    scr.outlook(t)
+    assert app.dl_rate.total == before + MB and late in app.dl_rate.seen
+    app.downloader.hold = True                                                 # a pause starts the pace afresh
+    scr.outlook(t)
+    assert app.dl_rate.marks == []
+
+
 def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
     """All of it is downloaded, so nothing is left over the speed: that isn't "done in 1 s"
     while the file is still being unpacked or checked."""

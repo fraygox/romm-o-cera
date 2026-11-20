@@ -354,7 +354,9 @@ before starting a game (a system with missing BIOS files), it asks then too.
 ### Activity: downloads and compressing
 
 **Select** opens it from anywhere (Home's Activity pill too). The line on top says
-when everything is done (downloads at their smoothed speed, plus the running
+when everything is done (downloads at the pace the queue has kept over the last
+minute, the time between small files included, or at their transfer speed for
+the first few seconds; plus the running
 conversion and the ones queued behind it), with one bar for all of it.
 When that can't be told yet it says what's going on instead (Downloading,
 Unpacking, Downloads wait for space, Compressing waits for space), and once
