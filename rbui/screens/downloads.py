@@ -18,7 +18,7 @@ from rbui.widgets.chips import button_chip
 from rbui.widgets.layout import CONTENT, Panel, list_head, list_row, split
 from rbui.widgets.tiles import cover
 
-ACT_HEAD = pygame.Rect(CONTENT.left, CONTENT.top, CONTENT.width, 76)       # the one line for everything
+ACT_HEAD = pygame.Rect(CONTENT.left, CONTENT.top, CONTENT.width, 96)       # what's going on, the time, the counts
 ACT_BODY = pygame.Rect(CONTENT.left, ACT_HEAD.bottom + 16, CONTENT.width, CONTENT.bottom - ACT_HEAD.bottom - 16)
 SPEED_TAU = 5.0             # seconds: the headline's speed is smoothed over about this long
 RATE_WINDOW = 60.0          # seconds: once it has RATE_MIN of them, the bytes that came in over this long
@@ -87,6 +87,7 @@ class DownloadsScreen(ListScreen):
         self.convs, self.held, self.conv_at = [], False, 0.0
         self.speed, self.speed_at = None, 0.0
         self.shown = self.coming = None      # the headline on screen, and one waiting to replace it
+        self.time_shown = None               # (label, time, when) last drawn on the right
         self.refresh()
         if not self.view():
             self.focus = "panel"
@@ -629,7 +630,35 @@ class DownloadsScreen(ListScreen):
             return line, col
         return self.shown[1], self.shown[2]
 
+    def state_line(self, o):
+        """(what's going on, its colour): the line on top without the time, which stands apart."""
+        return self.headline(dict(o, secs=None, dl_secs=None))
+
+    def time_line(self, o):
+        """("Everything's done in" / "Downloads done in", "about 6 min"), or None when it can't be told."""
+        if self.app.downloader.hold and self.app.downloader.pending_count():
+            return None
+        if o["secs"] is not None and (o["live"] or o["convs"]):
+            return "Everything's done in", time_left(o["secs"])
+        if o["live"] and o["dl_secs"]:
+            return "Downloads done in", time_left(o["dl_secs"])
+        return None
+
+    def steady_time(self, said, now):
+        """The time to draw: a moment without one (a file being checked) keeps the last for
+        LABEL_HOLD seconds instead of blinking out."""
+        if said is not None:
+            self.time_shown = (said, now)
+            return said
+        if self.time_shown and now - self.time_shown[1] < LABEL_HOLD:
+            return self.time_shown[0]
+        self.time_shown = None
+        return None
+
     def draw_head(self, c, o, now=None):
+        """The card on top (#6): what's going on, left; when it's all done, on its own on the right;
+        the counts under it; one bar for all of it."""
+        now = time.time() if now is None else now
         f = self.f
         rr = pygame.Rect(ACT_HEAD)
         card(c, rr)
@@ -646,18 +675,23 @@ class DownloadsScreen(ListScreen):
         run = getattr(self, "_run", "")
         if run:                                    # a big run: how far along, and what's left by platform
             parts = [run] + [p for p in parts if not p.endswith("in the queue")]
-        line = " · ".join(parts)
-        if parts:
-            w = min(int(measure(f.small, line)) + 1, rr.width // 2)
-            marquee(c, f.small, line, (rr.right - 20 - w, rr.top + 20), theme.DIM, maxw=w, bg=theme.PANEL,
+        right = rr.right - 20
+        when = self.steady_time(self.time_line(o), now)
+        if when:
+            label, value = when
+            w = int(measure(f.h2, value)) + 1
+            text(c, f.h2, value, (right - w, rr.top + 10), theme.TEXT)
+            lw = min(int(measure(f.small, label)) + 1, rr.width // 4)
+            text(c, f.small, label, (right - w - 12 - lw, rr.top + 20), theme.DIM, maxw=lw)
+            right -= w + 12 + lw + 24
+        line, col = self.steady(self.state_line(o), now)
+        text(c, f.h2, line, (rr.left + 20, rr.top + 10), col, maxw=right - rr.left - 20)
+        counts = " · ".join(parts)
+        if counts:
+            marquee(c, f.small, counts, (rr.left + 20, rr.top + 46), theme.DIM, maxw=rr.width - 40, bg=theme.PANEL,
                     slot="activity-head")
-            cr = pygame.Rect(rr.right - 20 - w, rr.top + 20, w, 20)
-        else:
-            cr = pygame.Rect(rr.right - 20, 0, 0, 0)
-        line, col = self.steady(self.headline(o), time.time() if now is None else now)
-        text(c, f.h2, line, (rr.left + 20, rr.top + 12), col, maxw=cr.left - 40 - rr.left)
         if o["live"] or o["convs"]:
-            progress_bar(c, (rr.left + 20, rr.bottom - 20, rr.width - 40, 8), o["frac"],
+            progress_bar(c, (rr.left + 20, rr.bottom - 18, rr.width - 40, 8), o["frac"],
                          theme.AMBER if col == theme.AMBER else theme.ACCENT)
 
     def draw(self, c):

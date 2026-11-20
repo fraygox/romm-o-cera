@@ -353,17 +353,18 @@ before starting a game (a system with missing BIOS files), it asks then too.
 
 ### Activity: downloads and compressing
 
-**Select** opens it from anywhere (Home's Activity pill too). The line on top says
-when everything is done (downloads at the pace the queue has kept over the last
-minute, the time between small files included, or at their transfer speed for
-the first few seconds; plus the running
-conversion and the ones queued behind it), with one bar for all of it.
-When that can't be told yet it says what's going on instead (Downloading,
-Unpacking, Downloads wait for space, Compressing waits for space), and once
-nothing is left, how many downloads failed, if any. It changes only once the new
-state has lasted a couple of seconds, so fast downloads don't make it flicker;
-a pause or a wait for space shows at once. The pace is measured from the start
-of the queue even while Activity is closed, so it has a time as soon as you open it.
+**Select** opens it from anywhere (Home's Activity pill too). The card on top says
+what's going on on the left (Downloading, Unpacking, Compressing, Downloads wait
+for space, Compressing waits for space; once nothing is left, All done or how
+many downloads failed), and on its own on the right when everything is done
+(downloads at the pace the queue has kept over the last minute, the time between
+small files included, or at their transfer speed for the first few seconds; plus
+the running conversion and the ones queued behind it). Under them: how many are
+in the queue and compressing, and one bar for all of it. What's going on changes
+only once the new state has lasted a couple of seconds, so fast downloads don't
+make it flicker; a pause or a wait for space shows at once. The pace is measured
+from the start of the queue even while Activity is closed, so it has a time as
+soon as you open it.
 Downloads are on the left, what this box is compressing on the right;
 **left/right** moves between them.
 

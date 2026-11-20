@@ -218,7 +218,7 @@ def test_the_pace_is_measured_with_activity_closed_so_it_opens_with_a_time(rb, a
     scr = _screen(rb, app)
     o = scr.outlook(clock[0])
     assert o["dl_secs"] == pytest.approx(12, rel=0.25)
-    assert scr.steady(scr.headline(o), clock[0])[0].startswith(("Downloads done in", "Everything's done in"))
+    assert scr.time_line(o)[0] in ("Downloads done in", "Everything's done in")
 
 
 def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
@@ -244,6 +244,26 @@ def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
     paused = ("Downloads are paused: {X} Actions resumes them", rb.theme.AMBER)
     assert scr.steady(paused, t + 12) == paused                               # needs you: at once
     assert scr.steady(("Downloading", T), t + 12.1) == ("Downloading", T)     # and gone at once
+
+
+def test_the_card_on_top_keeps_the_time_apart_from_whats_going_on(rb, app):
+    """#6: what's going on on the left (never a time), when it's all done on its own on the right,
+    which doesn't blink out for a moment without one; paused: no time."""
+    _convs(since=60.0, pct=50.0, queued=1)
+    j = _job(app, "Lorem (USA)", rommlib.Job.DOWNLOADING, 100 * MB, 700 * MB, speed=10 * MB)
+    scr = _screen(rb, app)
+    o = scr.outlook()
+    assert scr.state_line(o) == ("Downloading", rb.TEXT)
+    assert scr.time_line(o) == ("Everything's done in", "about 4 min")
+    j.state = rommlib.Job.EXTRACTING                          # no time can be told for a moment
+    o = scr.outlook()
+    assert scr.state_line(o) == ("Unpacking", rb.TEXT) and scr.time_line(o) is None
+    assert scr.steady_time(None, scr.time_shown[1] + 1)[1] == "about 4 min"   # kept a moment
+    assert scr.steady_time(None, scr.time_shown[1] + 3) is None              # then gone
+    j.state = rommlib.Job.DOWNLOADING
+    app.downloader.hold = True
+    o = scr.outlook()
+    assert scr.time_line(o) is None and scr.state_line(o)[1] == rb.AMBER
 
 
 def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
