@@ -31,8 +31,8 @@ The rows that aren't a setting do something when you press A:
 The other rows are settings, each explained in the panel when it's selected
 and listed with its key under [`config.json`](#configjson): among them
 **Confirm button** and **Button labels** (Controller), **Download speed
-limit**, **Download speed while playing** and **Popup when downloads finish**
-(Downloads), **Sounds** and
+limit**, **Download speed while playing**, **Popup when downloads finish** (in
+EmulationStation, after you leave) and **Popups in the app** (Downloads), **Sounds** and
 **Cover cache limit** (This app).
 
 **Metadata**
@@ -135,6 +135,7 @@ seven, six or four. It takes effect at once.
 | `menu_music_cap_gb` | `10` | the most space those tracks take (GB); `0` = no limit |
 | `extract_parallel` | `true` | start the next download while the last one is extracted (`false` for slow storage) |
 | `notify` | `true` | EmulationStation popup when background downloads finish or fail (a full drive or a refused token gets a message box either way) |
+| `notify_app` | `true` | the app's popup as each download finishes ("Ready: …"); a failed download, or one that needs you, still shows |
 | `manuals` | `true` | fetch the game's manual PDF from RomM into `roms/<system>/manuals/` |
 | `es_image` | `screenshot` | EmulationStation's big picture for a game: `screenshot` (RomM's screenshot, the cover when it has none) or `boxart` (the cover); the small one is the box art either way |
 | `es_video_mb` | `50` | the game's video clip from RomM, up to this many MB (`0`: no videos); a bigger one is left out and noted in `media-skipped.json`, so Fill in game info stops asking for it until the limit allows it |

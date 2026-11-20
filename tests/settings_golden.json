@@ -1309,6 +1309,69 @@
    ],
    "wake": 0
   },
+  "bare/defaults/notifyapp/left": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/notifyapp/ok": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
+  "bare/defaults/notifyapp/right": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": null,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [
+    [
+     "config.json can't be read: this change is not saved (Settings, Reset settings)",
+     "AMBER"
+    ]
+   ],
+   "wake": 0
+  },
   "bare/defaults/overlap/left": {
    "bg": 0,
    "cfg": {
@@ -3839,6 +3902,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/changed/notifyapp/left": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/notifyapp/ok": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/changed/notifyapp/right": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/changed/overlap/left": {
    "bg": 0,
    "cfg": {
@@ -6128,6 +6239,54 @@
    "toasts": [],
    "wake": 0
   },
+  "full/defaults/notifyapp/left": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/notifyapp/ok": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/defaults/notifyapp/right": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/defaults/overlap/left": {
    "bg": 0,
    "cfg": {
@@ -8379,6 +8538,51 @@
    "toasts": [],
    "wake": 0
   },
+  "full/odd/notifyapp/left": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/notifyapp/ok": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "full/odd/notifyapp/right": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "full/odd/overlap/left": {
    "bg": 0,
    "cfg": {
@@ -10605,6 +10809,54 @@
    "bg": 0,
    "cfg": {
     "notify": true
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/notifyapp/left": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/notifyapp/ok": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/changed/notifyapp/right": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
    },
    "gone": [],
    "modal": null,
@@ -12930,6 +13182,54 @@
    "toasts": [],
    "wake": 0
   },
+  "tools/defaults/notifyapp/left": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/notifyapp/ok": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
+  "tools/defaults/notifyapp/right": {
+   "bg": 0,
+   "cfg": {
+    "notify_app": false
+   },
+   "gone": [],
+   "modal": null,
+   "prune": [],
+   "pushed": [],
+   "reconnect": false,
+   "saved": "cfg",
+   "sfx": [],
+   "sfx_level": [],
+   "toasts": [],
+   "wake": 0
+  },
   "tools/defaults/overlap/left": {
    "bg": 0,
    "cfg": {
@@ -14240,6 +14540,7 @@
   "keepfree": "Downloads and conversions never leave less than this free. One that doesn't fit waits for room; smaller ones keep going.",
   "manuals": "Brings each game's PDF manual from RomM; it opens from the game's menu in EmulationStation.",
   "notify": "A popup in EmulationStation when background downloads finish.",
+  "notifyapp": "A popup in RomM-o-Cera as each download finishes. Off, Activity and the top bar still show how downloads are going, and a download that fails or needs you still says so.",
   "overlap": "The next game downloads while one unpacks. Turn it off on slow storage (SD cards, USB sticks).",
   "pair": "Sign in without typing the token: in RomM open Profile, Client API tokens, press Pair, and type the 8-character code here within a minute. Give each box its own token.",
   "ps3decrypt": "Decrypts PS3 discs with the disc keys of games you own: put them in bios/ps3keys or RomM's PS3 firmware (none come with the app). A wrong key is never used.",
@@ -14627,6 +14928,24 @@
    ]
   ],
   "notify": [
+   [
+    "A",
+    "Change"
+   ],
+   [
+    "LEFT RIGHT",
+    "Choose"
+   ],
+   [
+    "L R",
+    "Section"
+   ],
+   [
+    "B",
+    "Back"
+   ]
+  ],
+  "notifyapp": [
    [
     "A",
     "Change"
@@ -15182,6 +15501,12 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
+   ],
+   [
     "arcade",
     "Arcade games go to",
     "roms/mame",
@@ -15512,6 +15837,12 @@
     "Popup when downloads finish",
     "On",
     "In EmulationStation, after you exit"
+   ],
+   [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
    ],
    [
     "arcade",
@@ -15846,6 +16177,12 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
+   ],
+   [
     "arcade",
     "Arcade games go to",
     "roms/fbneo",
@@ -16178,6 +16515,12 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
+   ],
+   [
     "arcade",
     "Arcade games go to",
     "roms/mame",
@@ -16502,6 +16845,12 @@
     "Popup when downloads finish",
     "On",
     "In EmulationStation, after you exit"
+   ],
+   [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
    ],
    [
     "arcade",
@@ -16830,6 +17179,12 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
+   ],
+   [
     "arcade",
     "Arcade games go to",
     "roms/fbneo",
@@ -17156,6 +17511,12 @@
     "In EmulationStation, after you exit"
    ],
    [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
+   ],
+   [
     "arcade",
     "Arcade games go to",
     "roms/mame",
@@ -17480,6 +17841,12 @@
     "Popup when downloads finish",
     "On",
     "In EmulationStation, after you exit"
+   ],
+   [
+    "notifyapp",
+    "Popups in the app",
+    "On",
+    "As downloads finish; problems always show"
    ],
    [
     "arcade",

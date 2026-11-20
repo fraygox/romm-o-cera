@@ -1333,8 +1333,11 @@ class App:
         self.dl_rate = meter
         meter.rate(self.downloader.jobs, going and not self.downloader.hold, time.time())
         big = waiting >= DownloadsScreen.RUN_SHOWN       # (as Activity's header tells a big run)
+        quiet = not rommlib.config_value(self.cfg, "notify_app")   # Settings: no "Ready" popups
         for j in ready:
-            if big:
+            if quiet:
+                pass                                                     # Activity still lists it
+            elif big:
                 self._ready_n = getattr(self, "_ready_n", 0) + 1          # told together, below
             else:
                 self.toast_ready(j)

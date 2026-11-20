@@ -178,6 +178,11 @@ SETTINGS = (
             row="notify", label="Popup when downloads finish", sub="In EmulationStation, after you exit",
             kind="onoff",
             help="A popup in EmulationStation when background downloads finish."),
+    Setting("notify_app", True,         # the app's "Ready: …" popups as downloads finish (failures always show)
+            row="notifyapp", label="Popups in the app", sub="As downloads finish; problems always show",
+            kind="onoff",
+            help="A popup in RomM-o-Cera as each download finishes. Off, Activity and the top bar still show how "
+                 "downloads are going, and a download that fails or needs you still says so."),
     Setting("manuals", True,            # fetch the game's manual (PDF) from RomM for ES's manual viewer
             row="manuals", label="Download manuals", sub="PDFs from RomM, in the game's menu in ES",
             kind="onoff", effects=("downloader",),

@@ -337,3 +337,19 @@ def test_a_stopped_task_leaves_the_queue_and_can_be_queued_again(isolated, monke
     assert [r["result"] for r in res] == ["stopped"] and res[0]["retry"]["mode"] == "createcd"
     assert not os.path.exists(os.path.join(rommlib.DATA_DIR, "chd-stop"))
     assert os.path.exists(os.path.join(rommlib.ROMS_ROOT, "psx", "Game 0 (USA).cue"))    # the original stays
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_popups_in_the_app_can_be_turned_off_but_a_failure_still_shows(rb, app, on):
+    """Settings, Popups in the app (#9): off, a finished download says nothing (Activity lists it);
+    one that failed still says so."""
+    app.cfg["notify_app"] = on
+    app.toasts = []
+    ok = _job(app, "Lorem (USA)", rommlib.Job.DONE, 700 * MB, 700 * MB)
+    ok.message = "Ready to play"
+    bad = _job(app, "Ipsum (USA)", rommlib.Job.FAILED)
+    bad.message = "Checksum doesn't match RomM after 2 tries"
+    app.tick_downloads()
+    said = [t[0] for t in app.toasts]
+    assert any(s.startswith("Failed: Ipsum (USA)") for s in said)
+    assert any(s.startswith(("Ready: Lorem", "Downloaded: Lorem")) for s in said) == on

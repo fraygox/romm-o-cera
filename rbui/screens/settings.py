@@ -110,6 +110,7 @@ class SettingsScreen(Screen):
             table("speedall"),
             table("speed"),
             table("notify"),
+            table("notifyapp"),
             ("arcade", "Arcade games go to", "roms/" + arcade, "fbneo (forgiving) or mame (exact sets)"),
             sec("Metadata"),
             table("esimage"),
