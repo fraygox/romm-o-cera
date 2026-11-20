@@ -110,3 +110,18 @@ def test_a_wux_of_a_cut_short_image_is_replaced_by_a_fresh_download(box, monkeyp
     assert int.from_bytes(open(out, "rb").read()[0x10:0x18], "little") == 0x20000
     log = open(rommlib.LOG_PATH).read()
     assert "replacing %s: made from a cut-short image" % os.path.basename(out) in log
+
+
+def test_background_workers_start_at_low_priority(monkeypatch):
+    """After you leave, downloads, unpacks, compression and the hand-off to ES give way to ES's
+    menus and the games (#11): the worker starts under nice, its children inherit it."""
+    import shutil
+    import subprocess
+    got = []
+    monkeypatch.setattr(shutil, "which", lambda n: "/usr/bin/nice" if n == "nice" else None)
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **k: got.append(argv))
+    assert rommlib.spawn_detached("rb_dl.py", "/usr/bin/python3")
+    assert got[-1][:4] == ["/usr/bin/nice", "-n", str(rommlib.WORKER_NICE), "/usr/bin/python3"]
+    assert got[-1][4].endswith("rb_dl.py") and rommlib.WORKER_NICE >= 10
+    monkeypatch.setattr(shutil, "which", lambda n: None)        # no nice: it still starts
+    assert rommlib.spawn_detached("rb_dl.py", "/usr/bin/python3") and got[-1][0] == "/usr/bin/python3"

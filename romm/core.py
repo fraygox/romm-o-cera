@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -360,12 +361,20 @@ def read_queue():
     return dict(data, held=held, jobs=list(jobs.values()), history=history[-keep:])
 
 
+WORKER_NICE = 10        # background work gives way to ES, the games and the app (chdman: 19)
+
+
 def spawn_detached(script, python=None):
     """Start one of the app's scripts (rb_chd.py, rb_dl.py, rb_finalize.py)
     in its own session with no stdio, so it outlives its parent. They're
-    flock'd: a second one exits at once. Returns False (logged) if it can't."""
+    flock'd: a second one exits at once. Returns False (logged) if it can't.
+    It runs at nice WORKER_NICE, and so does all it starts (7z, chdman: +19 caps
+    at 19): after you leave, downloads, unpacks, compression and the hand-off to
+    ES give way to ES's menus and the games."""
+    nice = shutil.which("nice")
     try:
-        subprocess.Popen([python or sys.executable, os.path.join(rommlib.APP_DIR, script)], start_new_session=True,
+        subprocess.Popen(([nice, "-n", str(WORKER_NICE)] if nice else []) +
+                         [python or sys.executable, os.path.join(rommlib.APP_DIR, script)], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          close_fds=True)
         return True

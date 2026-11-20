@@ -298,7 +298,9 @@ read in the background; **B** stops it. **Compare again** is in the X menu.
   size"), so a broken server can't fill the drive.
 - They **keep going after you exit** and while you play (optionally
   speed-capped while a game runs), with a popup in EmulationStation when
-  they're done. If they're stuck on something only you can fix (the drive
+  they're done. That background work (downloads, unpacking, compressing, and
+  handing game info to EmulationStation) runs at low priority, so
+  EmulationStation's menus and your games come first. If they're stuck on something only you can fix (the drive
   is full, or RomM no longer accepts the box's token), EmulationStation
   shows a message box once you're back in its menus.
 - Closing the app, or updating it, stops an unpack in progress: it's picked up
