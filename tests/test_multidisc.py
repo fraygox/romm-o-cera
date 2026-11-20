@@ -448,6 +448,21 @@ def test_pause_all_ends_when_the_last_download_finishes_and_a_refused_token_stil
         d.close()
 
 
+def test_a_pause_all_saved_with_nothing_left_ends_on_the_next_start(isolated):
+    """The sweep: a box that hit #8 before the fix kept {"held": true, "jobs": []}; started again,
+    nothing is waiting, so the next game you queue downloads instead of waiting on that pause."""
+    os.makedirs(os.path.dirname(rommlib.QUEUE_PATH), exist_ok=True)
+    with open(rommlib.QUEUE_PATH, "w") as f:
+        json.dump({"held": True, "jobs": [], "history": []}, f)
+    cfg = dict(rommlib.DEFAULT_CONFIG, url="http://127.0.0.1:9", token="x")
+    d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
+    try:
+        d.resume()
+        assert not d.hold and rommlib.read_queue()["held"] is False
+    finally:
+        d.close()
+
+
 @pytest.mark.parametrize("stop,go", [("hold_all", "release_all"), ("pause_job", "resume_job")])
 def test_resumed_before_the_transfer_stopped_still_finishes(isolated, stop, go):
     """Pause then Resume before the worker has noticed the pause: the job

@@ -605,6 +605,7 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             f["deep"] = True
         if io_error:
             f["io_error"] = True
+        f["sig"] = finding_sig(path)       # the file as read: one replaced before the check ends drops out
         findings.append(f)
 
     def verified(system, path, rom):
@@ -996,10 +997,20 @@ def audit_path():
     return os.path.join(_core.DATA_DIR, "audit-last.json")     # follows DATA_DIR (tests re-point it)
 
 
+def finding_sig(path):
+    """[size, mtime] of a finding's file, None when it's missing: a finding whose file
+    has changed since drops out on load."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return [st.st_size, int(st.st_mtime)]
+
+
 def save_audit(findings, stats, deep):
     """Keep the last finished check, so On this box can show it later. Each
-    finding remembers its file's size and mtime: a file changed since (fixed,
-    replaced) drops out on load. A quick check keeps the last full check's
+    finding remembers its file's size and mtime as the check found it (else now): a
+    file changed since (fixed, replaced, even before the check ended) drops out on load. A quick check keeps the last full check's
     findings that only a full check makes ("deep": checksums, chdman verify…)
     while their file is unchanged and the quick check found nothing else
     there; each one carried over keeps "full_time", when that full check ran."""
@@ -1014,14 +1025,7 @@ def save_audit(findings, stats, deep):
                 when = f.get("full_time") or prev_time
                 if f.get("deep") and f["path"] not in seen and isinstance(when, (int, float)):
                     findings.append(dict(f, full_time=when))
-    out = []
-    for f in findings:
-        try:
-            st = os.stat(f["path"])
-            sig = [st.st_size, int(st.st_mtime)]
-        except OSError:
-            sig = None
-        out.append(dict(f, sig=sig))
+    out = [f if "sig" in f else dict(f, sig=finding_sig(f["path"])) for f in findings]
     os.makedirs(_core.DATA_DIR, exist_ok=True)
     _core.atomic_write_json(audit_path(), {"time": now, "deep": bool(deep), "v": AUDIT_FORMAT, "stats": stats,
                                            "findings": out})

@@ -125,3 +125,10 @@ def test_background_workers_start_at_low_priority(monkeypatch):
     assert got[-1][4].endswith("rb_dl.py") and rommlib.WORKER_NICE >= 10
     monkeypatch.setattr(shutil, "which", lambda n: None)        # no nice: it still starts
     assert rommlib.spawn_detached("rb_dl.py", "/usr/bin/python3") and got[-1][0] == "/usr/bin/python3"
+    monkeypatch.setattr(shutil, "which", lambda n: "/usr/bin/nice" if n == "nice" else None)
+    import os
+    monkeypatch.setattr(os, "nice", lambda inc: 10)              # a worker starting another: already low
+    assert rommlib.spawn_detached("rb_chd.py", "/usr/bin/python3") and got[-1][0] == "/usr/bin/python3"
+    monkeypatch.setattr(os, "nice", lambda inc: 4)               # (somewhere between: only the rest)
+    assert rommlib.spawn_detached("rb_chd.py", "/usr/bin/python3")
+    assert got[-1][:3] == ["/usr/bin/nice", "-n", str(rommlib.WORKER_NICE - 4)]

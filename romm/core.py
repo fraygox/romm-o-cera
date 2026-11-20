@@ -372,8 +372,9 @@ def spawn_detached(script, python=None):
     at 19): after you leave, downloads, unpacks, compression and the hand-off to
     ES give way to ES's menus and the games."""
     nice = shutil.which("nice")
+    step = WORKER_NICE - os.nice(0)       # (nice adds: a worker starting another keeps it at WORKER_NICE)
     try:
-        subprocess.Popen(([nice, "-n", str(WORKER_NICE)] if nice else []) +
+        subprocess.Popen(([nice, "-n", str(step)] if nice and step > 0 else []) +
                          [python or sys.executable, os.path.join(rommlib.APP_DIR, script)], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          close_fds=True)

@@ -1171,3 +1171,21 @@ def test_a_missing_track_is_one_finding_not_two(isolated, no_es):
     _put("psx", "%s/%s.bin" % (stem, stem), b"b" * 20)
     got, _ = _run(api, {"psx": [1]})
     assert {k: f["problem"] for k, f in got.items()} == {stem + ".cue": "Missing file: %s.cue" % stem}
+
+
+def test_a_file_replaced_before_the_check_ends_drops_out_of_it(isolated):
+    """The sweep: a quick check reads a broken file, its download again replaces it before the
+    check is saved; the finding keeps the file as the check found it, so it drops out on load
+    instead of offering the fresh copy as broken."""
+    a = os.path.join(rommlib.ROMS_ROOT, "gba", "Cart (USA).gba")
+    os.makedirs(os.path.dirname(a), exist_ok=True)
+    with open(a, "wb") as f:
+        f.write(b"bad")
+    found = {"system": "gba", "path": a, "severity": "damaged", "problem": "Checksum differs", "rom": None,
+             "sig": rommlib.finding_sig(a)}                       # as audit's add() records it
+    with open(a, "wb") as f:
+        f.write(b"RomM's copy, longer")                        # the download again landed
+    rommlib.save_audit([found], {"checked": 1}, False)
+    assert rommlib.load_audit()["findings"] == []
+    rommlib.save_audit([dict(found, sig=rommlib.finding_sig(a))], {"checked": 1}, False)
+    assert len(rommlib.load_audit()["findings"]) == 1          # (one it found as it is: kept)

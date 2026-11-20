@@ -386,6 +386,7 @@ class Job:
         self.group = group            # multi-disc set: {"id", "base", "rom_ids"}
         self.state = Job.QUEUED
         self.done_bytes = 0
+        self.got = 0                  # bytes it took from the network this session, never less (a resume's .part isn't)
         self.total_bytes = rom.get("fs_size_bytes") or 0
         self.speed = 0.0
         self.last_data = 0.0          # when the transfer last got anything (stalled: none for STALLED_AFTER s)
@@ -1242,7 +1243,7 @@ class Downloader:
                     if j.state == Job.QUEUED:
                         j.state, j.message = Job.PAUSED, "Paused"
                 n += 1
-        if n:
+        if self._unhold_if_empty() or n:  # (a Pause all saved with nothing left: an older version's)
             self.save_queue()            # once, whole: never a partly re-added queue on disk
         return n
 
@@ -1564,6 +1565,7 @@ class Downloader:
                             r.close()
                             raise OutsideHours()
                         j.done_bytes += len(chunk)
+                        j.got += len(chunk)          # (only what came over the network: Activity's pace)
                         dt = time.time() - t0
                         if dt >= 1.0:
                             j.speed = (j.done_bytes - b0) / dt
