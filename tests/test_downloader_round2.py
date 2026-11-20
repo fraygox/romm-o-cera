@@ -756,9 +756,34 @@ def test_deleting_many_games_shows_how_far_along_it_is_and_always_stops_saying_i
     assert scr2.state_line(scr2.outlook()) == ("Deleting 2 of 4 games", rb.TEXT)
     app.draw()                                                                 # the top bar and the card draw it
     t = 1000.0
-    scr2.shown = scr2.coming = None
+    scr2.shown = None
     assert scr2.steady(scr2.state_line(scr2.outlook()), t)[0] == "Deleting 2 of 4 games"
     app.work["n"] = 3
     assert scr2.steady(scr2.state_line(scr2.outlook()), t + 0.1)[0] == "Deleting 3 of 4 games"   # counts at once
     app.work = None                                                            # over: the card says so at once
     assert scr2.steady(scr2.state_line(scr2.outlook()), t + 0.2)[0] != "Deleting 3 of 4 games"
+    # the batch's thread steps or ends it between reading the line and drawing it (the sweep);
+    # a new one shows once "Nothing running" has had its 2 s
+    app.work = {"verb": "Deleting", "n": 5, "total": 1200, "what": "game"}
+    said = scr2.state_line(scr2.outlook())
+    app.work["n"] = 6
+    assert scr2.steady(said, t + 3)[0] == "Deleting 5 of 1,200 games"
+    assert scr2.steady(scr2.state_line(scr2.outlook()), t + 3.1)[0] == "Deleting 6 of 1,200 games"
+    said = scr2.state_line(scr2.outlook())
+    app.work = None
+    scr2.steady(said, t + 3.2)
+    assert scr2.steady(scr2.state_line(scr2.outlook()), t + 3.3)[0] != "Deleting 6 of 1,200 games"
+
+    class Flips(type(app)):                      # the top bar: there when looked at, gone a moment later
+        reads = 0
+
+        @property
+        def work(self):
+            Flips.reads += 1
+            return {"verb": "Deleting", "n": 1, "total": 2, "what": "game"} if Flips.reads == 1 else None
+
+        @work.setter
+        def work(self, v):
+            pass
+    app.__class__ = Flips
+    app.draw()

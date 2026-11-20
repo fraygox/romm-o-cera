@@ -42,18 +42,26 @@ class RateMeter:
     between two small files, nor jump with each one's burst. Kept on the app, which measures
     every frame (App.tick_downloads): Activity has the pace as soon as it opens."""
 
+    GAP = 5.0                 # seconds between two looks past which the clock jumped (or the app stood still)
+
     def __init__(self):
         self.seen, self.total, self.marks = {}, 0, []
+        self.last = None          # (when, going, what it said): the app and Activity both ask, once a frame
 
     def rate(self, jobs, going, now):
         """Bytes a second over the window, or None until it has RATE_MIN seconds of downloading.
-        going: something downloads (not paused, nor all of it on hold)."""
-        if not going:                              # stopped: what comes next is measured afresh
-            self.seen, self.total, self.marks = {}, 0, []
-            return None
+        going: something downloads (not paused, nor all of it on hold). Counts only what came
+        over the network (Job.got): a resumed .part or a file already here isn't speed."""
+        if self.last and self.last[1] == going and 0 <= now - self.last[0] < 0.05:
+            return self.last[2]                    # asked again this frame: no second look at every job
+        if not going or (self.marks and not 0 <= now - self.marks[-1][0] < self.GAP):
+            self.seen, self.total, self.marks = {}, 0, []    # stopped, or the clock jumped: afresh
+            if not going:
+                self.last = (now, going, None)
+                return None
         seen, fresh = {}, not self.marks
         for j in jobs:
-            b = j.done_bytes or 0
+            b = getattr(j, "got", 0) or 0
             # one queued since counts from nothing: a small file can come and finish between two looks
             was = self.seen.get(j, b if fresh else 0)
             if b > was:
@@ -65,9 +73,9 @@ class RateMeter:
         while len(self.marks) > 2 and now - self.marks[1][0] >= RATE_WINDOW:
             self.marks.pop(0)
         t0, b0 = self.marks[0]
-        if now - t0 < RATE_MIN or self.total <= b0:
-            return None
-        return (self.total - b0) / (now - t0)
+        pace = None if now - t0 < RATE_MIN or self.total <= b0 else (self.total - b0) / (now - t0)
+        self.last = (now, going, pace)
+        return pace
 
 
 class DownloadsScreen(ListScreen):
@@ -87,7 +95,8 @@ class DownloadsScreen(ListScreen):
         self.sel = self.scroll = 0
         self.convs, self.held, self.conv_at = [], False, 0.0
         self.speed, self.speed_at = None, 0.0
-        self.shown = self.coming = None      # the headline on screen, and one waiting to replace it
+        self.shown = None                    # the headline on screen: (kind, line, colour, when last said)
+        self.work_said = None                # the batch's line, as state_line last said it
         self.time_shown = None               # (label, time, when) last drawn on the right
         self.refresh()
         if not self.view():
@@ -614,34 +623,34 @@ class DownloadsScreen(ListScreen):
         return "Waiting to compress", theme.DIM
 
     def steady(self, said, now):
-        """The headline to draw: a new one replaces what's shown once it has lasted LABEL_HOLD
-        seconds, so fast downloads (Downloading, Checking downloads, Downloading…) and the moment
-        between two conversions ("All done") don't flicker. Its time ticking down is the same
-        line; one that needs you (amber, red: paused, waiting for space, failed) comes and goes at once."""
+        """The headline to draw: what's shown stays while it keeps being said, and gives way to the
+        newest line once it hasn't been for LABEL_HOLD seconds, so fast downloads (Downloading,
+        Checking downloads, Downloading…) and the moment between two conversions ("All done")
+        don't flicker. Its time ticking down, or a batch's count going up, is the same line; one
+        that needs you (amber, red: paused, waiting for space, failed) comes and goes at once."""
         line, col = said
         kind = "time" if line.startswith(("Everything's done in", "Downloads done in")) else line
-        w = getattr(self.app, "work", None)
-        if w and line == work_label(w):
-            kind = "work"                        # its count going up is the same line
+        if self.work_said is not None and line == self.work_said:
+            kind = "work"                        # (state_line said it: the batch, as read once)
         urgent = (theme.AMBER, theme.RED)
         over = self.shown is not None and self.shown[0] == "work" and kind != "work"    # the batch ended: at once
-        if self.shown is None or kind == self.shown[0] or col in urgent or self.shown[2] in urgent or over:
-            self.shown, self.coming = (kind, line, col), None
-            return line, col
-        if self.coming is None or self.coming[0] != kind:
-            self.coming = (kind, now)
-        if now - self.coming[1] >= LABEL_HOLD:
-            self.shown, self.coming = (kind, line, col), None
+        if self.shown is None or kind == self.shown[0] or col in urgent or self.shown[2] in urgent or over \
+                or now - self.shown[3] >= LABEL_HOLD or now < self.shown[3]:
+            self.shown = (kind, line, col, now)
             return line, col
         return self.shown[1], self.shown[2]
 
     def state_line(self, o):
         """(what's going on, its colour): the line on top without the time, which stands apart. A batch
-        in the background (deleting many games, #10) comes first: it's what's going on right now."""
-        w = getattr(self.app, "work", None)
-        if w:
-            return work_label(w), theme.TEXT
-        return self.headline(dict(o, secs=None, dl_secs=None))
+        in the background (deleting many games, #10) comes first, unless something needs you: it's
+        what's going on right now."""
+        w = getattr(self.app, "work", None)      # (read once: the batch's thread changes it any time)
+        said = self.headline(dict(o, secs=None, dl_secs=None))
+        self.work_said = None
+        if w and said[1] not in (theme.AMBER, theme.RED):
+            self.work_said = work_label(w)
+            return self.work_said, theme.TEXT
+        return said
 
     def time_line(self, o):
         """("Everything's done in" / "Downloads done in", "about 6 min"), or None when it can't be told."""
@@ -688,8 +697,8 @@ class DownloadsScreen(ListScreen):
         when = self.steady_time(self.time_line(o), now)
         if when:
             label, value = when
-            w = int(measure(f.h2, value)) + 1
-            text(c, f.h2, value, (right - w, rr.top + 10), theme.TEXT)
+            w = min(int(measure(f.h2, value)) + 1, rr.width // 4)
+            text(c, f.h2, value, (right - w, rr.top + 10), theme.TEXT, maxw=w)
             lw = min(int(measure(f.small, label)) + 1, rr.width // 4)
             text(c, f.small, label, (right - w - 12 - lw, rr.top + 20), theme.DIM, maxw=lw)
             right -= w + 12 + lw + 24

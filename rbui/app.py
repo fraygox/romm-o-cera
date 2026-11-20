@@ -1449,16 +1449,17 @@ class App:
         dot = theme.GREEN if label.startswith("Online") else (theme.AMBER if label.startswith("Conn") else theme.RED)
         r = text(c, self.fonts.small, label, (rx, 33), theme.DIM, "midright")
         circle(c, dot, (r.left - 12, 33), 5)
-        rx = r.left - 30
-        if getattr(self, "work", None):          # deleting many games: how far along, beside the queue
-            r = text(c, self.fonts.small, work_label(self.work), (rx, 33), theme.BLUE, "midright")
-            rx = r.left - (24 if n else 0)
+        rx, gap = r.left - 30, 0                  # gap: between the pill below and a label left of it
+        work = getattr(self, "work", None)       # (read once: the batch's thread ends it any time)
+        if work:                                 # deleting many games: how far along, beside the queue
+            r = text(c, self.fonts.small, work_label(work), (rx, 33), theme.BLUE, "midright")
+            rx, gap = r.left - (24 if n else 0), 24
         if n:
             busy = rommlib.Job.DOWNLOADING
             j = next((j for j in self.downloader.jobs if j.state == busy), None)
             label = "{:,} in queue".format(n) + (", %s/s" % human_size(j.speed) if j and j.speed and not j.stalled() else "")
             r = text(c, self.fonts.small, label, (rx, 33), theme.BLUE, "midright")
-            rx = r.left
+            rx, gap = r.left, 26
         if self.player.active() and self.player.current():      # what's playing: a tap opens its list
             on = self.player.state == "playing"
             cur = self.player.current()
@@ -1466,7 +1467,7 @@ class App:
             tw = min(200, int(measure(self.fonts.small, title)) + 1)
             ww = min(190, int(measure(self.fonts.small, where)) + 1) if where and where != title else 0
             w = 32 + tw + (10 + ww if ww else 0) + 14
-            pill = pygame.Rect(rx - (26 if n else 0) - w, 17, w, 32)      # a pill: it's a button
+            pill = pygame.Rect(rx - gap - w, 17, w, 32)      # a pill: it's a button
             rrect(c, theme.PANEL_HI, pill, 16)
             play_mark(c, theme.ACCENT_HI if on else theme.DIM, (pill.left + 18, 33), paused=self.player.state == "paused")
             tr = text(c, self.fonts.small, title, (pill.left + 32, 33), theme.TEXT if on else theme.DIM, "midleft", maxw=tw)

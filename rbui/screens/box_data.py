@@ -297,7 +297,8 @@ def work_end(app):
 
 def work_label(w):
     """'Deleting 12 of 40 games'."""
-    return "%s %d of %s" % (w["verb"], w["n"], plural(w["total"], w["what"]))
+    n, total = w["n"], w["total"]
+    return "{} {:,} of {:,} {}".format(w["verb"], n, total, w["what"] if total == 1 else w["what"] + "s")
 
 
 # a finished conversion's state, as every screen says it

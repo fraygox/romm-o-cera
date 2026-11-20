@@ -49,7 +49,7 @@ def _convs(since=60.0, pct=50.0, queued=1, results=True):
 def _job(app, name, state, done=0, total=700 * MB, speed=0.0):
     J = rommlib.Job
     j = J({"id": abs(hash(name)) % 10000, "name": name, "fs_name": name + ".zip", "fs_size_bytes": total}, "psx")
-    j.state, j.done_bytes, j.total_bytes, j.speed = state, done, total, speed
+    j.state, j.done_bytes, j.total_bytes, j.speed, j.got = state, done, total, speed, done
     app.downloader.jobs.append(j)
     return j
 
@@ -179,10 +179,10 @@ def test_the_time_left_keeps_the_queues_pace_with_many_small_files(rb, app):
     scr = _screen(rb, app)
     t, said = time.time(), []
     for k, j in enumerate(files[:30]):
-        j.state, j.done_bytes, j.speed = J.DOWNLOADING, MB // 2, 10 * MB       # its burst
+        j.state, j.done_bytes, j.got, j.speed = J.DOWNLOADING, MB // 2, MB // 2, 10 * MB    # its burst
         o_burst = scr.outlook(t)
         t += 0.5
-        j.state, j.done_bytes, j.speed = J.DONE, MB, 0.0                      # between two files
+        j.state, j.done_bytes, j.got, j.speed = J.DONE, MB, MB, 0.0          # between two files
         o_gap = scr.outlook(t)
         t += 0.5
         if k >= 7:
@@ -211,7 +211,7 @@ def test_the_pace_is_measured_with_activity_closed_so_it_opens_with_a_time(rb, a
     files = [_job(app, "Cart %02d" % i, J.QUEUED, 0, MB) for i in range(20)]
     for j in files[:8]:                                       # 1 MB a second, Activity not open
         app.tick_downloads()
-        j.state, j.done_bytes = J.DONE, MB
+        j.state, j.done_bytes, j.got = J.DONE, MB, MB
         clock[0] += 0.5
         app.tick_downloads()
         clock[0] += 0.5
@@ -219,6 +219,29 @@ def test_the_pace_is_measured_with_activity_closed_so_it_opens_with_a_time(rb, a
     o = scr.outlook(clock[0])
     assert o["dl_secs"] == pytest.approx(12, rel=0.25)
     assert scr.time_line(o)[0] in ("Downloads done in", "Everything's done in")
+
+
+def test_a_resumed_download_or_a_jumping_clock_doesnt_make_up_a_pace(rb, app):
+    """The sweep: a download resumed from a 3 GB .part (done_bytes back to 0, then 3 GB at once)
+    isn't 3 GB downloaded in a frame; nor is a clock set forward (NTP on a box with no clock
+    battery) hours of downloading. Either way the time left stays what the pace says."""
+    J = rommlib.Job
+    big = _job(app, "Big", J.DOWNLOADING, 0, 4096 * MB, MB)
+    other = _job(app, "Other", J.DOWNLOADING, 0, 4096 * MB, MB)
+    meter, t = rb.RateMeter(), 1000.0
+    for k in range(20):                                       # 1 MB/s, from the other one
+        other.done_bytes += MB // 2
+        other.got += MB // 2
+        meter.rate(app.downloader.jobs, True, t)
+        t += 0.5
+    assert meter.rate(app.downloader.jobs, True, t) == pytest.approx(MB, rel=0.1)
+    big.done_bytes = 0                                        # it resumes: the .part counts as done...
+    meter.rate(app.downloader.jobs, True, t + 0.1)
+    big.done_bytes = 3072 * MB                                # ...but none of it came just now
+    assert meter.rate(app.downloader.jobs, True, t + 0.2) == pytest.approx(MB, rel=0.15)
+    other.got += MB // 2
+    assert meter.rate(app.downloader.jobs, True, t + 0.2 + 3600 * 24) is None   # the clock jumped: afresh
+    assert meter.marks and meter.total == 0
 
 
 def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
@@ -229,13 +252,14 @@ def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
     scr = _screen(rb, app)
     T, D = rb.theme.TEXT, rb.theme.DIM
     t = 1000.0
-    scr.shown = scr.coming = None
+    scr.shown = None
     assert scr.steady(("Downloading", T), t) == ("Downloading", T)
     for k in range(6):                                        # flips every half second
         said = ("Checking downloads", T) if k % 2 == 0 else ("Downloading", T)
         assert scr.steady(said, t + 0.5 * k) == ("Downloading", T)
-    assert scr.steady(("Unpacking", T), t + 5) == ("Downloading", T)
-    assert scr.steady(("Unpacking", T), t + 7.1) == ("Unpacking", T)          # it lasted: shown
+    assert scr.steady(("Unpacking", T), t + 3.5) == ("Downloading", T)
+    assert scr.steady(("Unpacking", T), t + 4.6) == ("Unpacking", T)          # Downloading ended 2 s ago
+    assert scr.steady(("Unpacking", T), t + 7) == ("Unpacking", T)
     assert scr.steady(("Everything's done in 20 s", T), t + 8) == ("Unpacking", T)
     assert scr.steady(("Everything's done in 19 s", T), t + 10.5) == ("Everything's done in 19 s", T)
     assert scr.steady(("Everything's done in 18 s", T), t + 10.6) == ("Everything's done in 18 s", T)
@@ -244,6 +268,22 @@ def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
     paused = ("Downloads are paused: {X} Actions resumes them", rb.theme.AMBER)
     assert scr.steady(paused, t + 12) == paused                               # needs you: at once
     assert scr.steady(("Downloading", T), t + 12.1) == ("Downloading", T)     # and gone at once
+
+
+def test_a_line_no_longer_said_gives_way_even_while_two_others_flicker(rb, app):
+    """The sweep: "Waiting to download" on screen, then small files flick between Downloading
+    (1.5 s) and Checking downloads (0.5 s): neither lasts 2 s in a row, but the old line went."""
+    scr = _screen(rb, app)
+    T, D = rb.theme.TEXT, rb.theme.DIM
+    t = 1000.0
+    scr.shown = None
+    scr.steady(("Waiting to download", D), t)
+    got = None
+    for i in range(1, 200):                                   # 20 s, a frame every 0.1 s
+        line = "Downloading" if (i % 20) < 15 else "Checking downloads"
+        got = scr.steady((line, T), t + 0.1 * i)
+    assert got[0] != "Waiting to download"
+    assert got[0] == "Downloading"                            # and it holds the one that keeps coming back
 
 
 def test_the_card_on_top_keeps_the_time_apart_from_whats_going_on(rb, app):
