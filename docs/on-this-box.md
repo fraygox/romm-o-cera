@@ -15,7 +15,9 @@ newest first instead), with the cover and details from RomM beside the list,
 as in a game list. **A** opens the same menu as a game on the box in a game list:
 **Play now** ([Browsing and downloading](browsing-and-downloading.md#play-now)), **Delete**, **Download again** and **More like this** (while RomM's record
 can't be fetched, only Delete). To delete several at once, pick them (X ›
-Pick several, see [Controls](controls.md#picking-several)). Any game it
+Pick several, see [Controls](controls.md#picking-several)). While they go,
+the top bar ("Deleting 12 of 40 games") and Activity's card say how far along
+it is, from any screen; one batch runs at a time. Any game it
 downloaded can also be deleted from its game list. A game put on the box
 another way (copied over by hand, say) is marked ✓ and plays too, and so is
 one the app downloaded whose file something else replaced, cut short or
@@ -258,7 +260,8 @@ To do several at once, pick them as in any list (X › **Pick several files**
 or **Pick all**, then **A** picks; see
 [Controls](controls.md#picking-several)). The X Actions menu then offers **Unpack**
 for every picked archive or **Delete** for all of them, each after one
-confirmation. They're done one after another; one that can't be (a damaged
+confirmation. They're done one after another, counted in the top bar and
+Activity as they go; one that can't be (a damaged
 archive, say) is left as it is and named at the end, and the rest go on.
 
 Skipped: media folders, `gamelist.xml`, hidden and unfinished files, notes,

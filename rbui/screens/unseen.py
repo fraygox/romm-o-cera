@@ -7,7 +7,7 @@ from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import circle, text
 from rbui.screens.base import ListScreen
-from rbui.screens.box_data import plural
+from rbui.screens.box_data import plural, work_begin, work_end, work_step
 from rbui.modals import ActionMenu, Confirm
 from rbui.widgets.layout import Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width, split
 
@@ -102,25 +102,31 @@ class UnseenScreen(ListScreen):
         noted and the rest go on."""
         app = self.app
         verb = {"unpack": "Unpacking", "delete": "Deleting"}[what]
+        if not work_begin(app, verb, len(todo), "file"):
+            return
         self.busy = True
 
         def run():
             done, failed, freed, tasks = 0, [], 0, False
-            for n, it in enumerate(todo, 1):
-                self.progress = "%s %d of %d…" % (verb, n, len(todo))
-                if not os.path.lexists(it["path"]):
-                    done += 1                       # went with a sheet picked before it
-                    continue
-                try:
-                    if what == "unpack":
-                        tasks = bool(rommlib.unpack_unseen(app.downloader, it)[1]) or tasks
-                    else:
-                        freed += rommlib.delete_unseen(it, app.library)[1]
-                    done += 1
-                except Exception as e:              # a damaged archive is noted, the rest go on
-                    why = str(e) if isinstance(e, rommlib.RommError) else "can't be read (%s)" % (
-                        e.strerror if isinstance(e, OSError) and e.strerror else e.__class__.__name__)
-                    failed.append((os.path.basename(it["path"]), why))
+            try:
+                for n, it in enumerate(todo, 1):
+                    self.progress = "%s %d of %d…" % (verb, n, len(todo))
+                    work_step(app, n)
+                    if not os.path.lexists(it["path"]):
+                        done += 1                       # went with a sheet picked before it
+                        continue
+                    try:
+                        if what == "unpack":
+                            tasks = bool(rommlib.unpack_unseen(app.downloader, it)[1]) or tasks
+                        else:
+                            freed += rommlib.delete_unseen(it, app.library)[1]
+                        done += 1
+                    except Exception as e:              # a damaged archive is noted, the rest go on
+                        why = str(e) if isinstance(e, rommlib.RommError) else "can't be read (%s)" % (
+                            e.strerror if isinstance(e, OSError) and e.strerror else e.__class__.__name__)
+                        failed.append((os.path.basename(it["path"]), why))
+            finally:
+                work_end(app)                           # the top bar and Activity stop saying it
             return done, failed, freed, tasks
 
         def ok(res):

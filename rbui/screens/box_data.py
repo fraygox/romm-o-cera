@@ -269,6 +269,37 @@ def plural(n, word, many=None):
     return "%d %s" % (n, word if n == 1 else (many or word + "s"))
 
 
+# ---- a batch running in the background (deleting many games), shown in the top bar and Activity (#10)
+
+def work_begin(app, verb, total, what="game"):
+    """Start a batch ("Deleting", 40 games): False, said in a popup, while another one runs (one
+    at a time: the top bar and Activity show one)."""
+    w = getattr(app, "work", None)
+    if w:
+        said = work_label(w)
+        app.toast("Still %s: wait for it to finish" % (said[:1].lower() + said[1:]), theme.AMBER)
+        return False
+    app.work = {"verb": verb, "n": 0, "total": total, "what": what}
+    return True
+
+
+def work_step(app, n):
+    """The batch is on its nth."""
+    w = getattr(app, "work", None)
+    if w:
+        w["n"] = n
+
+
+def work_end(app):
+    """The batch is over, however it ended (call it in a finally)."""
+    app.work = None
+
+
+def work_label(w):
+    """'Deleting 12 of 40 games'."""
+    return "%s %d of %s" % (w["verb"], w["n"], plural(w["total"], w["what"]))
+
+
 # a finished conversion's state, as every screen says it
 RESULT_LABELS = {"ok": "Done", "failed": "Failed", "skipped": "Skipped", "waiting": "Waiting", "stopped": "Stopped"}
 

@@ -720,3 +720,45 @@ def test_deleting_installed_games_counts_one_whose_record_lags(app, rb, monkeypa
         assert said[-1].startswith("Deleted 1 of 1 game — 2.0 GB freed")
         assert "Lorem: deleted, but installed.json can't be updated now" in said[-1]
         assert said[-1].count("Lorem") == 1
+
+
+@pytest.mark.parametrize("breaks", [False, True])
+def test_deleting_many_games_shows_how_far_along_it_is_and_always_stops_saying_it(app, rb, monkeypatch, breaks):
+    """#10: while many games go, the top bar and Activity say "Deleting 2 of 4 games" (app.work); a
+    second delete waits for it; when it ends (even on an error nothing expected) it's gone."""
+    from rbui.screens.installed import InstalledScreen
+    monkeypatch.setattr(InstalledScreen, "load", lambda self: None)
+    scr = InstalledScreen(app)
+    said, seen = [], []
+    app.toast = lambda msg, color=None, tap=None: said.append(msg)
+    monkeypatch.setattr(app, "space_freed", lambda: None)
+
+    def uninstall(rom, system):
+        seen.append(rb.work_label(app.work))
+        if breaks and rom["id"] == 3:
+            raise RuntimeError("something nobody expected")
+        return [], 1 << 20
+    monkeypatch.setattr(app.library, "uninstall", uninstall)
+    items = [{"id": i, "name": "Game %d" % i, "system": "psx", "size": 1 << 20} for i in range(1, 5)]
+    scr.ask_delete_many(items)
+    app.work = {"verb": "Deleting", "n": 1, "total": 9, "what": "game"}          # another one running
+    app.modal.action("ok")
+    assert seen == [] and said[-1] == "Still deleting 1 of 9 games: wait for it to finish"
+    app.work = None
+    scr.ask_delete_many(items)
+    app.modal.action("ok")
+    assert seen[:3] == ["Deleting 1 of 4 games", "Deleting 2 of 4 games", "Deleting 3 of 4 games"]
+    assert app.work is None                                                    # over, either way
+    app.work = {"verb": "Deleting", "n": 2, "total": 4, "what": "game"}
+    app.push(rb.Screen(app))
+    scr2 = rb.DownloadsScreen(app)
+    app.push(scr2)
+    assert scr2.state_line(scr2.outlook()) == ("Deleting 2 of 4 games", rb.TEXT)
+    app.draw()                                                                 # the top bar and the card draw it
+    t = 1000.0
+    scr2.shown = scr2.coming = None
+    assert scr2.steady(scr2.state_line(scr2.outlook()), t)[0] == "Deleting 2 of 4 games"
+    app.work["n"] = 3
+    assert scr2.steady(scr2.state_line(scr2.outlook()), t + 0.1)[0] == "Deleting 3 of 4 games"   # counts at once
+    app.work = None                                                            # over: the card says so at once
+    assert scr2.steady(scr2.state_line(scr2.outlook()), t + 0.2)[0] != "Deleting 3 of 4 games"

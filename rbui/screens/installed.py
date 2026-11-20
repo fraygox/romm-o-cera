@@ -11,6 +11,7 @@ from rbui.screens.base import letter_of, ListScreen
 from rbui.screens.game import GameScreen
 from rbui.screens.games import GAME_LIST, GAME_PANEL, GameListScreen
 from rbui.screens.box_data import (RESULT_LABELS, conversion_rows, conversion_status, installed_games, plural,
+                                   work_begin, work_end, work_step,
                                    reason, result_line, room_note)
 from rbui.modals import ActionMenu, Confirm, ManageMenu, playlists_note
 from rbui.widgets.layout import Panel, ROWS_TOP, hint_actions, list_head, list_row, split
@@ -112,18 +113,22 @@ class InstalledScreen(ListScreen):
 
         def run():
             freed, gone, why = 0, 0, []
-            for it in items:                     # one that can't go (being compressed, a busy file) doesn't stop the rest
-                try:
-                    if it.get("group"):
-                        freed += lib.uninstall_group(it["group"], it["system"])[1]
-                    else:
-                        freed += lib.uninstall({"id": it["id"], "name": it["name"]}, it["system"])[1]
-                    gone += 1
-                except (rommlib.RommError, OSError) as e:
-                    freed += getattr(e, "freed", 0) or 0
-                    went, note = delete_outcome(it["name"], e)
-                    gone += went
-                    why.append(note)
+            try:
+                for n, it in enumerate(items, 1):  # one that can't go (being compressed, a busy file) doesn't stop the rest
+                    work_step(app, n)
+                    try:
+                        if it.get("group"):
+                            freed += lib.uninstall_group(it["group"], it["system"])[1]
+                        else:
+                            freed += lib.uninstall({"id": it["id"], "name": it["name"]}, it["system"])[1]
+                        gone += 1
+                    except (rommlib.RommError, OSError) as e:
+                        freed += getattr(e, "freed", 0) or 0
+                        went, note = delete_outcome(it["name"], e)
+                        gone += went
+                        why.append(note)
+            finally:
+                work_end(app)                    # the top bar and Activity stop saying it, however it ended
             return freed, gone, why
 
         def done(res):
@@ -142,7 +147,8 @@ class InstalledScreen(ListScreen):
         app.modal = Confirm(app, "Delete %s?" % plural(len(items), "game"),
                             "Frees about %s. Every file and disc of them goes from roms/; saves and states are "
                             "kept." % human_size(size), "Delete %d" % len(items),
-                            lambda: app.bg(run, done, lambda e: (app.toast(str(e), theme.RED), self.load())), danger=True)
+                            lambda: work_begin(app, "Deleting", len(items)) and
+                            app.bg(run, done, lambda e: (app.toast(str(e), theme.RED), self.load())), danger=True)
 
     def ask_delete(self, it):
         app = self.app

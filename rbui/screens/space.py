@@ -8,7 +8,8 @@ from rbui import pads, theme
 from rbui.theme import H, W
 from rbui.draw import circle, focus_box, hline, rrect, scroll_text, text
 from rbui.screens.base import letter_of, ListScreen
-from rbui.screens.box_data import disk_space, pending_roms, plural, space_bar, space_parts, storage_by_system
+from rbui.screens.box_data import (disk_space, pending_roms, plural, space_bar, space_parts, storage_by_system,
+                                   work_begin, work_end, work_step)
 from rbui.screens.installed import _lastplayed_label, delete_outcome
 from rbui.modals import Confirm
 from rbui.widgets.layout import Panel, ROWS_TOP, bubble_at, hint_actions, list_head, list_row, need_width, split
@@ -228,15 +229,19 @@ class FreeUpScreen(ListScreen):
 
         def run():
             freed, gone, why = 0, 0, []
-            for g in todo:                       # one that can't go (a busy file, installed.json) doesn't stop the rest
-                try:
-                    freed += rommlib.delete_game(g["system"], g["path"], app.library, pins=pins[g["path"]])[1]
-                    gone += 1
-                except (rommlib.RommError, OSError) as e:     # its files went and only installed.json lags: deleted
-                    freed += getattr(e, "freed", 0) or 0
-                    went, note = delete_outcome(g["name"], e)
-                    gone += went
-                    why.append(note)
+            try:
+                for n, g in enumerate(todo, 1):  # one that can't go (a busy file, installed.json) doesn't stop the rest
+                    work_step(app, n)
+                    try:
+                        freed += rommlib.delete_game(g["system"], g["path"], app.library, pins=pins[g["path"]])[1]
+                        gone += 1
+                    except (rommlib.RommError, OSError) as e:     # its files went and only installed.json lags: deleted
+                        freed += getattr(e, "freed", 0) or 0
+                        went, note = delete_outcome(g["name"], e)
+                        gone += went
+                        why.append(note)
+            finally:
+                work_end(app)                    # the top bar and Activity stop saying it, however it ended
             return freed, gone, why
 
         def done(res):
@@ -273,7 +278,8 @@ class FreeUpScreen(ListScreen):
                             "for the others only their game file, its sheet's tracks or a playlist go. Saves, states, "
                             "screenshots and anything else are kept.%s EmulationStation drops them from its lists "
                             "when you leave RomM-o-Cera." % (human_size(size), named), "Delete %d" % len(todo),
-                            lambda: (setattr(self, "busy", True), app.bg(run, done, err)), danger=True)
+                            lambda: work_begin(app, "Deleting", len(todo)) and (setattr(self, "busy", True),
+                                                                             app.bg(run, done, err)), danger=True)
 
     def pick_entries(self, games):
         return [("Delete %d picked" % len(games), "Frees about %s" % human_size(sum(g["size"] for g in games)),

@@ -16,6 +16,7 @@ from rbui.sfx import Sfx, SOUND_FOR
 from rbui.player import Player, track_title
 from rbui.input import Input
 from rbui.screens.base import ListScreen
+from rbui.screens.box_data import work_label
 from rbui.screens.home import HomeScreen
 from rbui.screens.downloads import DownloadsScreen, RateMeter
 from rbui.screens.jukebox import JukeboxScreen, TracksScreen
@@ -218,6 +219,7 @@ class App:
         self.unmapped = []
         self.stack = []
         self.toasts = []
+        self.work = None                 # a batch in the background (deleting many games): box_data.work_begin
         self.modal = None
         self.events_from_threads = []
         self.lock = threading.Lock()
@@ -1448,6 +1450,9 @@ class App:
         r = text(c, self.fonts.small, label, (rx, 33), theme.DIM, "midright")
         circle(c, dot, (r.left - 12, 33), 5)
         rx = r.left - 30
+        if getattr(self, "work", None):          # deleting many games: how far along, beside the queue
+            r = text(c, self.fonts.small, work_label(self.work), (rx, 33), theme.BLUE, "midright")
+            rx = r.left - (24 if n else 0)
         if n:
             busy = rommlib.Job.DOWNLOADING
             j = next((j for j in self.downloader.jobs if j.state == busy), None)

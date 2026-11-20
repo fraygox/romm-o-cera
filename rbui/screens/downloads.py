@@ -9,6 +9,7 @@ from rbui import pads, theme
 from rbui.draw import card, circle, installed_mark, marquee, measure, progress_bar, state_stripe, text
 from rbui.screens.base import ListScreen
 from rbui.screens.box_data import (RESULT_LABELS, conversion_left, conversion_rows, conversion_status, plural,
+                                   work_label,
                                    result_line, time_left)
 from rbui.screens.compress import CompressScreen
 from rbui.screens.installed import ConversionsScreen
@@ -619,8 +620,12 @@ class DownloadsScreen(ListScreen):
         line; one that needs you (amber, red: paused, waiting for space, failed) comes and goes at once."""
         line, col = said
         kind = "time" if line.startswith(("Everything's done in", "Downloads done in")) else line
+        w = getattr(self.app, "work", None)
+        if w and line == work_label(w):
+            kind = "work"                        # its count going up is the same line
         urgent = (theme.AMBER, theme.RED)
-        if self.shown is None or kind == self.shown[0] or col in urgent or self.shown[2] in urgent:
+        over = self.shown is not None and self.shown[0] == "work" and kind != "work"    # the batch ended: at once
+        if self.shown is None or kind == self.shown[0] or col in urgent or self.shown[2] in urgent or over:
             self.shown, self.coming = (kind, line, col), None
             return line, col
         if self.coming is None or self.coming[0] != kind:
@@ -631,7 +636,11 @@ class DownloadsScreen(ListScreen):
         return self.shown[1], self.shown[2]
 
     def state_line(self, o):
-        """(what's going on, its colour): the line on top without the time, which stands apart."""
+        """(what's going on, its colour): the line on top without the time, which stands apart. A batch
+        in the background (deleting many games, #10) comes first: it's what's going on right now."""
+        w = getattr(self.app, "work", None)
+        if w:
+            return work_label(w), theme.TEXT
         return self.headline(dict(o, secs=None, dl_secs=None))
 
     def time_line(self, o):
@@ -690,9 +699,12 @@ class DownloadsScreen(ListScreen):
         if counts:
             marquee(c, f.small, counts, (rr.left + 20, rr.top + 46), theme.DIM, maxw=rr.width - 40, bg=theme.PANEL,
                     slot="activity-head")
+        w = getattr(self.app, "work", None)
         if o["live"] or o["convs"]:
             progress_bar(c, (rr.left + 20, rr.bottom - 18, rr.width - 40, 8), o["frac"],
                          theme.AMBER if col == theme.AMBER else theme.ACCENT)
+        elif w and w["total"]:                   # only the batch: its bar
+            progress_bar(c, (rr.left + 20, rr.bottom - 18, rr.width - 40, 8), w["n"] / w["total"], theme.ACCENT)
 
     def draw(self, c):
         now = time.time()
