@@ -206,7 +206,9 @@ saves move to the new name and playlists follow. A game downloaded again
 replaces the copy the app put on the box (say the CHD it compressed the game
 to), not just the file named in the finding. Its row says **queued** while the
 download waits or runs; if the download fails, the row says **failed** and the
-panel says why, and it can be downloaded again.
+panel says why, and it can be downloaded again. Once it's done the row says
+**downloaded** until the next check, which shows the game as it is then: if it's
+broken again, it can be downloaded again.
 
 A folder with no game file in it (only a manual, notes or pictures) isn't a
 game: Check games doesn't flag it and the app doesn't count it as on the box.

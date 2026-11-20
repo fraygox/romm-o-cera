@@ -120,6 +120,13 @@ class QueuedAgain:
             return getattr(j, "message", "") or "It didn't finish"
         return None
 
+    def forget_finished(self):
+        """A newer check came in: what it finds is the game as it is now, so a download that
+        already finished or failed says nothing about it (one still waiting or running stays)."""
+        for path, j in list(self.jobs.items()):
+            if j is not None and getattr(j, "state", None) in (rommlib.Job.DONE, rommlib.Job.FAILED, rommlib.Job.CANCELLED):
+                del self.jobs[path]
+
 
 class AuditScreen(ListScreen):
     """Check what's on the box against RomM; damaged games can be downloaded
@@ -443,7 +450,10 @@ class CheckScreen(AuditScreen):
         self.unseen = None                 # files ES can't see (counted in the background)
 
     def enter(self):
+        before = self.last
         self.last = rommlib.load_audit()
+        if (before or {}).get("time") != (self.last or {}).get("time"):
+            self.queued.forget_finished()      # a check since: a game broken again can be downloaded again
         self.findings = self.order(self.last["findings"]) if self.last else []
         self.stats = (self.last or {}).get("stats") or {}
         self.clamp()

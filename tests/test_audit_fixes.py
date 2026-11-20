@@ -197,6 +197,37 @@ def test_check_games_says_which_check_found_what(isolated, rb, monkeypatch):
     assert "Nothing wrong found" in seen and "Every game here looks right" not in seen
 
 
+def test_a_game_broken_again_after_its_download_again_can_be_downloaded_again(isolated, rb, monkeypatch):
+    """Download again finished, then a newer check finds the file broken again: the row is a fresh
+    finding (no "downloaded" chip), and Download again is back. One still downloading stays queued."""
+    import types
+    app = _app(rb, monkeypatch)
+    a = _put("psx", "Alpha (USA).cue", b"FILE \"Alpha (USA).bin\" BINARY\n")
+    b = _put("psx", "Beta (USA).chd", b"b" * 10)
+    rom = {"id": 1, "fs_name": "Alpha (USA).zip"}
+    found = [{"system": "psx", "path": a, "severity": "damaged", "problem": "Missing track file", "rom": dict(rom)},
+             {"system": "psx", "path": b, "severity": "damaged", "problem": "Incomplete disc image",
+              "rom": {"id": 2, "fs_name": "Beta (USA).chd"}}]
+    rommlib.save_audit(found, {"checked": 2}, False)
+    ck = rb.CheckScreen(app)
+    app.push(ck)
+    jobs = [types.SimpleNamespace(state=rommlib.Job.DONE), types.SimpleNamespace(state=rommlib.Job.QUEUED)]
+    monkeypatch.setattr(ck, "replaced", lambda f: None)
+    monkeypatch.setattr(app.downloader, "enqueue", lambda *a, **k: jobs.pop(0))
+    fa, fb = ([f for f in ck.findings if f["path"] == p][0] for p in (a, b))
+    ck.redownload(fa)
+    ck.redownload(fb)
+    assert ck.queued.tag(a) == "downloaded" and a in ck.queued
+    ck.enter()                                           # back with no new check: still says downloaded
+    assert ck.queued.tag(a) == "downloaded"
+    rommlib.save_audit(found, {"checked": 2}, False)     # a newer check: both still broken
+    ck.enter()
+    fa = [f for f in ck.findings if f["path"] == a][0]
+    assert a not in ck.queued and ck.queued.done(a) is False and ck.pickable(fa)
+    assert "Downloaded again" not in _drawn(rb, monkeypatch, ck)
+    assert b in ck.queued                                # its download hasn't run yet
+
+
 # ------------------------------------------------------------ 4. what wasn't verified is said
 
 def test_check_games_shows_what_it_couldnt_verify_or_match(isolated, rb, monkeypatch):
