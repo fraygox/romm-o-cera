@@ -22,7 +22,8 @@ ACT_HEAD = pygame.Rect(CONTENT.left, CONTENT.top, CONTENT.width, 76)       # the
 ACT_BODY = pygame.Rect(CONTENT.left, ACT_HEAD.bottom + 16, CONTENT.width, CONTENT.bottom - ACT_HEAD.bottom - 16)
 SPEED_TAU = 5.0             # seconds: the headline's speed is smoothed over about this long
 RATE_WINDOW = 60.0          # seconds: once it has RATE_MIN of them, the bytes that came in over this long
-RATE_MIN = 5.0              # set the pace (many small files: the time between them counts too)
+LABEL_HOLD = 2.0            # seconds a new headline must last before it replaces the one shown
+RATE_MIN = 3.0              # set the pace (many small files: the time between them counts too)
 RESULT_COLOURS = {"ok": "GREEN", "failed": "RED", "stopped": "AMBER", "skipped": "AMBER", "waiting": "AMBER"}
 PAUSED_WHY = {"hold": "paused by you", "game": "paused while you play", "es": "paused while ES is busy"}
 
@@ -37,8 +38,8 @@ def sentence(msg):
 class RateMeter:
     """How fast the queue really goes: the bytes downloads add, over the time they took,
     the last RATE_WINDOW seconds of it. Unlike the transfer speed it doesn't drop to nothing
-    between two small files, nor jump with each one's burst. Kept on the app, so it goes on
-    measuring while Activity is closed."""
+    between two small files, nor jump with each one's burst. Kept on the app, which measures
+    every frame (App.tick_downloads): Activity has the pace as soon as it opens."""
 
     def __init__(self):
         self.seen, self.total, self.marks = {}, 0, []
@@ -85,6 +86,7 @@ class DownloadsScreen(ListScreen):
         self.sel = self.scroll = 0
         self.convs, self.held, self.conv_at = [], False, 0.0
         self.speed, self.speed_at = None, 0.0
+        self.shown = self.coming = None      # the headline on screen, and one waiting to replace it
         self.refresh()
         if not self.view():
             self.focus = "panel"
@@ -609,7 +611,25 @@ class DownloadsScreen(ListScreen):
             return "Compressing waits for space", theme.AMBER
         return "Waiting to compress", theme.DIM
 
-    def draw_head(self, c, o):
+    def steady(self, said, now):
+        """The headline to draw: a new one replaces what's shown once it has lasted LABEL_HOLD
+        seconds, so fast downloads (Downloading, Checking downloads, Downloading…) and the moment
+        between two conversions ("All done") don't flicker. Its time ticking down is the same
+        line; one that needs you (amber, red: paused, waiting for space, failed) comes and goes at once."""
+        line, col = said
+        kind = "time" if line.startswith(("Everything's done in", "Downloads done in")) else line
+        urgent = (theme.AMBER, theme.RED)
+        if self.shown is None or kind == self.shown[0] or col in urgent or self.shown[2] in urgent:
+            self.shown, self.coming = (kind, line, col), None
+            return line, col
+        if self.coming is None or self.coming[0] != kind:
+            self.coming = (kind, now)
+        if now - self.coming[1] >= LABEL_HOLD:
+            self.shown, self.coming = (kind, line, col), None
+            return line, col
+        return self.shown[1], self.shown[2]
+
+    def draw_head(self, c, o, now=None):
         f = self.f
         rr = pygame.Rect(ACT_HEAD)
         card(c, rr)
@@ -634,7 +654,7 @@ class DownloadsScreen(ListScreen):
             cr = pygame.Rect(rr.right - 20 - w, rr.top + 20, w, 20)
         else:
             cr = pygame.Rect(rr.right - 20, 0, 0, 0)
-        line, col = self.headline(o)
+        line, col = self.steady(self.headline(o), time.time() if now is None else now)
         text(c, f.h2, line, (rr.left + 20, rr.top + 12), col, maxw=cr.left - 40 - rr.left)
         if o["live"] or o["convs"]:
             progress_bar(c, (rr.left + 20, rr.bottom - 20, rr.width - 40, 8), o["frac"],
@@ -649,7 +669,7 @@ class DownloadsScreen(ListScreen):
             self.follow(jobs)
             if not jobs and self.focus == "list":
                 self.focus = "panel"
-            self.draw_head(c, self.outlook(now))
+            self.draw_head(c, self.outlook(now), now)
             lst, pan = split(None, ACT_BODY)
             self.draw_list(c, lst, jobs)
             self.draw_panel(c, pan)

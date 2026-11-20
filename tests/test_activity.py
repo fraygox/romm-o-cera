@@ -201,6 +201,51 @@ def test_the_time_left_keeps_the_queues_pace_with_many_small_files(rb, app):
     assert app.dl_rate.marks == []
 
 
+def test_the_pace_is_measured_with_activity_closed_so_it_opens_with_a_time(rb, app, monkeypatch):
+    """Small files that each finish in under a second have no speed of their own; the app
+    measures the queue's pace every frame wherever you are, so Activity opened in the middle
+    of the batch says when it's done at once (#4)."""
+    J = rommlib.Job
+    clock = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    files = [_job(app, "Cart %02d" % i, J.QUEUED, 0, MB) for i in range(20)]
+    for j in files[:8]:                                       # 1 MB a second, Activity not open
+        app.tick_downloads()
+        j.state, j.done_bytes = J.DONE, MB
+        clock[0] += 0.5
+        app.tick_downloads()
+        clock[0] += 0.5
+    scr = _screen(rb, app)
+    o = scr.outlook(clock[0])
+    assert o["dl_secs"] == pytest.approx(12, rel=0.25)
+    assert scr.steady(scr.headline(o), clock[0])[0].startswith(("Downloads done in", "Everything's done in"))
+
+
+def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
+    """A new headline replaces the one shown once it has lasted 2 s (#5): fast files going
+    Downloading, Checking downloads, Downloading… stay "Downloading"; a moment of "All done"
+    between two conversions doesn't show; the time ticking down changes at once, and so does
+    anything that needs you (paused), both ways."""
+    scr = _screen(rb, app)
+    T, D = rb.theme.TEXT, rb.theme.DIM
+    t = 1000.0
+    scr.shown = scr.coming = None
+    assert scr.steady(("Downloading", T), t) == ("Downloading", T)
+    for k in range(6):                                        # flips every half second
+        said = ("Checking downloads", T) if k % 2 == 0 else ("Downloading", T)
+        assert scr.steady(said, t + 0.5 * k) == ("Downloading", T)
+    assert scr.steady(("Unpacking", T), t + 5) == ("Downloading", T)
+    assert scr.steady(("Unpacking", T), t + 7.1) == ("Unpacking", T)          # it lasted: shown
+    assert scr.steady(("Everything's done in 20 s", T), t + 8) == ("Unpacking", T)
+    assert scr.steady(("Everything's done in 19 s", T), t + 10.5) == ("Everything's done in 19 s", T)
+    assert scr.steady(("Everything's done in 18 s", T), t + 10.6) == ("Everything's done in 18 s", T)
+    assert scr.steady(("All done", D), t + 11) == ("Everything's done in 18 s", T)
+    assert scr.steady(("Compressing", T), t + 11.5) == ("Everything's done in 18 s", T)
+    paused = ("Downloads are paused: {X} Actions resumes them", rb.theme.AMBER)
+    assert scr.steady(paused, t + 12) == paused                               # needs you: at once
+    assert scr.steady(("Downloading", T), t + 12.1) == ("Downloading", T)     # and gone at once
+
+
 def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
     """All of it is downloaded, so nothing is left over the speed: that isn't "done in 1 s"
     while the file is still being unpacked or checked."""

@@ -17,7 +17,7 @@ from rbui.player import Player, track_title
 from rbui.input import Input
 from rbui.screens.base import ListScreen
 from rbui.screens.home import HomeScreen
-from rbui.screens.downloads import DownloadsScreen
+from rbui.screens.downloads import DownloadsScreen, RateMeter
 from rbui.screens.jukebox import JukeboxScreen, TracksScreen
 from rbui.screens.whatsnew import notes_at_start, WhatsNewScreen
 from rbui.screens.welcome import WelcomeScreen, welcome_due, welcome_on_rejected
@@ -1318,15 +1318,20 @@ class App:
 
     def tick_downloads(self):
         J = rommlib.Job                              # once: every frame looks at every job
-        waiting, ready, failed = 0, [], []
+        waiting, going, ready, failed = 0, False, [], []
         for j in self.downloader.jobs:
             st = j.state
             if j.active or st == J.PAUSED:
                 waiting += 1
+                going = going or j.active
             elif (st == J.DONE or st == J.FAILED) and not getattr(j, "_announced", False) \
                     and not getattr(j, "restored", False):  # (restored: an earlier session's, from the saved history)
                 j._announced = True
                 (ready if st == J.DONE else failed).append(j)
+        # the queue's pace, measured from its start wherever you are: Activity has it when opened
+        meter = getattr(self, "dl_rate", None) or RateMeter()
+        self.dl_rate = meter
+        meter.rate(self.downloader.jobs, going and not self.downloader.hold, time.time())
         big = waiting >= DownloadsScreen.RUN_SHOWN       # (as Activity's header tells a big run)
         for j in ready:
             if big:
