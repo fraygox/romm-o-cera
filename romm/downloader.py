@@ -883,6 +883,17 @@ class Downloader:
             self.cv.notify_all()
         self.save_queue()
 
+    def _unhold_if_empty(self):
+        """Pause all paused the downloads there were: once none is left waiting or paused
+        (cancelled, removed, cleared or finished), the next ones you queue start. The hold
+        RomM's refusal put on (hold_why) stays until the box is paired again."""
+        with self.cv:
+            if self.hold and not self.hold_why and not any(j.active or j.state == Job.PAUSED for j in self.jobs):
+                self.hold = False
+                _core.log("QUEUE empty: Pause all is off")
+                return True
+        return False
+
     def force_job(self, job):
         """Download this one now, outside the download hours."""
         with self.cv:
@@ -981,6 +992,7 @@ class Downloader:
         self._stop_unpacks([job])
         if drop:
             self._drop_parts(job)
+        self._unhold_if_empty()
         self.save_queue()
 
     def remove(self, job):
@@ -994,6 +1006,7 @@ class Downloader:
                 self.jobs.remove(job)
         if drop:
             self._drop_parts(job)
+        self._unhold_if_empty()
         self.save_queue()
 
     def clear_finished(self):
@@ -1001,7 +1014,7 @@ class Downloader:
             n = len(self.jobs)
             self.jobs = [j for j in self.jobs if j.active or j.state == Job.PAUSED]
             n -= len(self.jobs)
-        if n:
+        if self._unhold_if_empty() or n:
             self.save_queue()              # the history on disk goes too
         return n
 
@@ -1389,6 +1402,7 @@ class Downloader:
             j.rom = {k: j.rom[k] for k in self.HISTORY_KEYS if k in j.rom}
             j._saved = None                   # (it held the whole record)
             j.__dict__.pop("_pend", None)
+            self._unhold_if_empty()           # (a "Download now" while paused, the last one)
         self.save_queue()
 
     # -- archive listings for the space forecast -----------------------------

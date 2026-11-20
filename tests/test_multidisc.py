@@ -404,6 +404,50 @@ def test_queue_reorder_pause_and_persist(isolated):
     assert not d2.hold and not rommlib.read_queue()["held"]
 
 
+@pytest.mark.parametrize("empty", ["cancel", "remove"])
+def test_pause_all_ends_once_nothing_is_left_to_download(isolated, empty):
+    """Pause all, then the queue emptied (cancelled and cleared, or removed): the next downloads
+    start instead of waiting on a pause nothing shows (#8). While one is still paused it holds."""
+    cfg = dict(rommlib.DEFAULT_CONFIG, url="http://127.0.0.1:9", token="x")
+    d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
+    try:
+        d.hold_all()
+        a, b, c = (d.enqueue(r, "gba") for r in _carts(3))
+        d.pause_job(c)                                 # paused by hand
+        for j in (a, b):
+            d.cancel_job(j) if empty == "cancel" else d.remove(j)
+        assert d.hold                                  # c is still paused: Pause all still holds it
+        d.cancel_job(c)
+        if empty == "cancel":
+            assert d.clear_finished() == 3
+        else:
+            d.remove(c)
+        assert d.jobs == [] and not d.hold and rommlib.read_queue()["held"] is False
+        n = d.enqueue(_carts(4)[3], "gba")
+        deadline = time.time() + 5
+        while n.state == rommlib.Job.QUEUED and not n.message and time.time() < deadline:
+            time.sleep(0.05)                           # the worker takes it (it fails: no server here)
+        assert n.state != rommlib.Job.QUEUED or n.message
+    finally:
+        d.close()
+
+
+def test_pause_all_ends_when_the_last_download_finishes_and_a_refused_token_still_holds(isolated):
+    cfg = dict(rommlib.DEFAULT_CONFIG, url="http://127.0.0.1:9", token="x")
+    d = rommlib.Downloader(rommlib.Api.from_config(cfg), rommlib.Library(), cfg)
+    try:
+        d.hold_all()
+        j = d.enqueue(_carts(1)[0], "gba")
+        j.state = rommlib.Job.DONE                     # "Download now" while paused, and it's in
+        d._settled(j)
+        assert not d.hold
+        d.hold, d.hold_why = True, rommlib.AUTH_HOLD   # RomM turned the token away: that hold stays
+        d.clear_finished()
+        assert d.hold
+    finally:
+        d.close()
+
+
 @pytest.mark.parametrize("stop,go", [("hold_all", "release_all"), ("pause_job", "resume_job")])
 def test_resumed_before_the_transfer_stopped_still_finishes(isolated, stop, go):
     """Pause then Resume before the worker has noticed the pause: the job

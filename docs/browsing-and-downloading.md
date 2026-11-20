@@ -370,7 +370,8 @@ On the left, the queue comes first, in the order it
 runs, then finished downloads, newest first. **A** on a download gives its
 options: move it to the top, up or down, Download now (outside the download
 hours), pause, resume, cancel, retry, or remove it from the list. The **X**
-menu pauses or resumes everything, retries every failed download at once,
+menu pauses or resumes everything (a pause of everything ends by itself once
+nothing is left waiting or paused, so the next downloads you queue start), retries every failed download at once,
 runs a full [check](on-this-box.md#check-games) of the platforms the downloads
 went to (reading every file against RomM's checksums), and clears finished
 ones (so does **Y**). With 20 or more waiting, the line on top also says how
