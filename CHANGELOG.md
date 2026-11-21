@@ -3,6 +3,16 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.15.1 (2026-11-21)
+
+Activity's bar fills up over the whole run
+
+Thanks to @plasmadice for reporting these (#12).
+
+### Fixes
+- **fix:** Activity's bar on top fills up over the whole run instead of following the one file downloading, and says how far along it is in % at its end. Games the run already finished stay counted until nothing is left to download, so **Clear finished** doesn't set it back (#12).
+- **fix:** Activity's time on top is one size ("Everything's done in about 6 min") and no longer shifts as it ticks down (#12).
+
 ## v0.15.0 (2026-11-21)
 
 Download whole platforms and any number of games at once, with an Activity that keeps up
