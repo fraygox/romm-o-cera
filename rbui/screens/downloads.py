@@ -98,6 +98,7 @@ class DownloadsScreen(ListScreen):
         self.shown = None                    # the headline on screen: (kind, line, colour, when last said)
         self.work_said = None                # the batch's line, as state_line last said it
         self.time_shown = None               # (label, time, when) last drawn on the right
+        self.time_w = (None, 0)              # (label, width): the time's room, kept while it's said
         self.refresh()
         if not self.view():
             self.focus = "panel"
@@ -557,8 +558,9 @@ class DownloadsScreen(ListScreen):
         J = rommlib.Job
         now = time.time() if now is None else now
         live = [j for j in self.app.downloader.jobs if j.active or j.state == J.PAUSED]
-        total = sum(max(j.total_bytes or j.rom.get("fs_size_bytes") or 0, j.done_bytes) for j in live)
-        done = sum(j.done_bytes for j in live)
+        fin = getattr(self.app, "run_done", 0) if live else 0      # what this run already finished
+        total = fin + sum(max(j.total_bytes or j.rom.get("fs_size_bytes") or 0, j.done_bytes) for j in live)
+        done = fin + sum(j.done_bytes for j in live)
         speed = self.smoothed(sum(j.speed for j in live if j.state == J.DOWNLOADING and not j.stalled(now)), now)
         d = self.app.downloader
         meter = getattr(self.app, "dl_rate", None) or RateMeter()
@@ -696,12 +698,19 @@ class DownloadsScreen(ListScreen):
         right = rr.right - 20
         when = self.steady_time(self.time_line(o), now)
         if when:
+            # one size for both (#12); it starts where the widest time so far did, so a time
+            # ticking down (19 s, 18 s: digits differ in width) only changes the end of it
             label, value = when
-            w = min(int(measure(f.h2, value)) + 1, rr.width // 4)
-            text(c, f.h2, value, (right - w, rr.top + 10), theme.TEXT, maxw=w)
-            lw = min(int(measure(f.small, label)) + 1, rr.width // 4)
-            text(c, f.small, label, (right - w - 12 - lw, rr.top + 20), theme.DIM, maxw=lw)
-            right -= w + 12 + lw + 24
+            lw = int(measure(f.h2, label + " ")) + 1
+            w = min(lw + int(measure(f.h2, value)) + 1, rr.width // 2)
+            if self.time_w[0] == label:
+                w = max(w, self.time_w[1])
+            self.time_w = (label, w)
+            text(c, f.h2, label, (right - w, rr.top + 10), theme.DIM, maxw=w)
+            text(c, f.h2, value, (right - w + lw, rr.top + 10), theme.TEXT, maxw=max(0, w - lw))
+            right -= w + 24
+        else:
+            self.time_w = (None, 0)
         line, col = self.steady(self.state_line(o), now)
         text(c, f.h2, line, (rr.left + 20, rr.top + 10), col, maxw=right - rr.left - 20)
         counts = " · ".join(parts)
@@ -709,11 +718,13 @@ class DownloadsScreen(ListScreen):
             marquee(c, f.small, counts, (rr.left + 20, rr.top + 46), theme.DIM, maxw=rr.width - 40, bg=theme.PANEL,
                     slot="activity-head")
         w = getattr(self.app, "work", None)
-        if o["live"] or o["convs"]:
-            progress_bar(c, (rr.left + 20, rr.bottom - 18, rr.width - 40, 8), o["frac"],
-                         theme.AMBER if col == theme.AMBER else theme.ACCENT)
-        elif w and w["total"]:                   # only the batch: its bar
-            progress_bar(c, (rr.left + 20, rr.bottom - 18, rr.width - 40, 8), w["n"] / w["total"], theme.ACCENT)
+        frac = o["frac"] if o["live"] or o["convs"] else w["n"] / w["total"] if w and w["total"] else None
+        if frac is not None:                     # the queue's bar (only a batch: its own), how far, in %
+            pct = "%.1f%%" % (frac * 100) if frac < 0.1 else "%d%%" % min(100, frac * 100)   # a big run's start moves too
+            pw = int(measure(f.small, "100%")) + 1
+            text(c, f.small, pct, (rr.right - 20 - int(measure(f.small, pct)) - 1, rr.bottom - 26), theme.DIM)
+            progress_bar(c, (rr.left + 20, rr.bottom - 18, rr.width - 52 - pw, 8), frac,
+                         theme.AMBER if col == theme.AMBER and (o["live"] or o["convs"]) else theme.ACCENT)
 
     def draw(self, c):
         now = time.time()

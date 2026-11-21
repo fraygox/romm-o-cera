@@ -306,6 +306,48 @@ def test_the_card_on_top_keeps_the_time_apart_from_whats_going_on(rb, app):
     assert scr.time_line(o) is None and scr.state_line(o)[1] == rb.AMBER
 
 
+def test_the_bar_on_top_counts_what_this_run_already_finished(rb, app):
+    """#12: a finished download leaves the queue but stays in the bar, so on a big run it fills
+    up instead of following the one file downloading; Clear finished doesn't set it back, and
+    a run that's over starts the next one from nothing."""
+    J = rommlib.Job
+    jobs = [_job(app, "Cart %02d" % i, J.QUEUED, 0, MB) for i in range(4)]
+    app.tick_downloads()
+    for j in jobs[:2]:
+        j.state, j.done_bytes, j.got = J.DONE, MB, MB
+    app.tick_downloads()
+    scr = _screen(rb, app)
+    assert scr.outlook()["frac"] == pytest.approx(0.5)
+    scr.clear_finished()
+    app.tick_downloads()
+    assert scr.outlook()["frac"] == pytest.approx(0.5)
+    for j in jobs[2:]:
+        j.state, j.done_bytes, j.got = J.DONE, MB, MB
+    app.tick_downloads()
+    assert app.run_done == 0                                # nothing left: the next run starts afresh
+    _job(app, "Cart new", J.QUEUED, 0, MB)
+    app.tick_downloads()
+    assert scr.outlook()["frac"] == 0
+
+
+def test_the_time_on_top_keeps_its_place_as_it_ticks_down(rb, app, monkeypatch):
+    """#12: the time is one size, and starts where the widest one so far did: 19 s to 18 s
+    (digits differ in width) doesn't move the words before it."""
+    scr = _screen(rb, app)
+    o = scr.outlook()
+    said = {"v": ("Everything's done in", "about 1 h 20 min")}
+    monkeypatch.setattr(scr, "time_line", lambda o: said["v"])
+    scr.draw_head(app.canvas, o)
+    wide = scr.time_w[1]
+    said["v"] = ("Everything's done in", "18 s")
+    scr.draw_head(app.canvas, o)
+    assert scr.time_w == ("Everything's done in", wide)
+    said["v"] = None
+    scr.time_shown = None
+    scr.draw_head(app.canvas, o)
+    assert scr.time_w == (None, 0)                          # gone: the next time starts from its own width
+
+
 def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
     """All of it is downloaded, so nothing is left over the speed: that isn't "done in 1 s"
     while the file is still being unpacked or checked."""

@@ -360,7 +360,9 @@ many downloads failed), and on its own on the right when everything is done
 (downloads at the pace the queue has kept over the last minute, the time between
 small files included, or at their transfer speed for the first few seconds; plus
 the running conversion and the ones queued behind it). Under them: how many are
-in the queue and compressing, and one bar for all of it. What's going on changes
+in the queue and compressing, and one bar for all of it, with how far along it
+is in % at its end: games this run already finished stay in it until nothing is
+left to download, so on a big run it fills up. What's going on changes
 only once the new state has lasted a couple of seconds, so fast downloads don't
 make it flicker; a pause or a wait for space shows at once. The pace is measured
 from the start of the queue even while Activity is closed, so it has a time as

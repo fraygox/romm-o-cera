@@ -1330,6 +1330,10 @@ class App:
                     and not getattr(j, "restored", False):  # (restored: an earlier session's, from the saved history)
                 j._announced = True
                 (ready if st == J.DONE else failed).append(j)
+        # what this run has finished, for Activity's bar: a finished download leaves the queue, its
+        # bytes stay counted till nothing is left to download (Clear finished doesn't set it back)
+        self.run_done = 0 if not waiting else getattr(self, "run_done", 0) + \
+            sum(max(j.total_bytes or j.rom.get("fs_size_bytes") or 0, j.done_bytes) for j in ready)
         # the queue's pace, measured from its start wherever you are: Activity has it when opened
         meter = getattr(self, "dl_rate", None) or RateMeter()
         self.dl_rate = meter
