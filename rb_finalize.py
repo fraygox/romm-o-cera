@@ -212,6 +212,7 @@ class GameLists:
 
     def __init__(self, esapi):
         self.esapi, self.got, self.xml = esapi, {}, {}
+        self.added = {}          # {system: paths}: the games this batch's /addgames listed (new to ES)
 
     def get(self, system):
         """{path: game} as ES lists the system, or None (EsError when ES can't be asked)."""
@@ -1188,6 +1189,7 @@ def add_games(esapi, entries, es, lists=None):
         if st == 201:                               # a system ES hadn't loaded: it reloads by itself
             rommlib.log("finalize: %d game(s) added to ES (%s, new system; ES reloads)" % (len(new), system))
             lists.drop()
+            lists.added.setdefault(system, set()).update(p for p in new if p in paths)    # loaded now: BulkEs too
             return wait_listed(esapi, entries, es, lists=lists)    # the reload lists the rest too
         listed = (lists.get(system) or {}) if st == 200 else {}
         if st != 200 or any(p not in listed for p in paths):
@@ -1195,7 +1197,186 @@ def add_games(esapi, entries, es, lists=None):
                 system, "HTTP %d" % st if st else "no answer"))
             return False
         rommlib.log("finalize: %d game(s) added to ES (%s)" % (len(new), system))
+        lists.added.setdefault(system, set()).update(p for p in new if p in paths)
     return True
+
+
+VERSION_FILE = "/usr/share/batocera/batocera.version"
+BULK_FROM = 44           # Batocera whose ES takes game info and media in /addgames (43.1's rejects every body)
+BULK_CHUNK = 500         # games a call: each one makes ES rebuild the list on screen once
+NOTIFY_FROM = 20         # a batch this big says in ES that it's under way, and when it's done
+MEDIA_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "video/mp4": ".mp4",
+             "video/avi": ".avi", "video/mkv": ".mkv", "video/webm": ".webm", "application/pdf": ".pdf",
+             "application/cbz": ".cbz"}
+
+
+def batocera_major():
+    """Batocera's major version ("43.1 2025/..." -> 43), 0 when it can't be read."""
+    try:
+        with open(VERSION_FILE) as f:
+            return int(f.read().split()[0].split(".")[0])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _media_name(tag, ext):
+    """(folder, ES's file name suffix) for a media tag, or None for an extension ES refuses
+    for it (HttpApi::ImportMedia)."""
+    if tag == "video":
+        ok, d = (".mp4", ".avi", ".mkv", ".webm"), "videos"
+    elif tag in ("manual", "magazine"):
+        ok, d = (".pdf", ".cbz"), "manuals" if tag == "manual" else "images"
+    elif tag == "map":
+        ok, d = (".jpg", ".png", ".gif", ".pdf", ".cbz"), "images"
+    else:
+        ok, d = (".jpg", ".png", ".gif"), "images"
+    return (d, {"thumbnail": "thumb", "boxart": "box"}.get(tag, tag)) if ext in ok else None
+
+
+class BulkEs:
+    """EsApi for a batch's games that /addgames just listed, on a Batocera whose ES takes
+    a body there (44 and later). Each game's info or media sent one at a time makes ES
+    rebuild the list on screen (a grid view redraws every cover): thousands of times for a
+    big download, with ES sluggish all along (#11). Here apply() keeps each game's info,
+    and its media goes where ES would write it (images/<stem>-thumb.png...); flush() then
+    hands it all over in one /addgames per system (BULK_CHUNK games a call). What ES
+    didn't take goes one at a time after all."""
+
+    def __init__(self, esapi, lists):
+        self.esapi, self.lists = esapi, lists
+        self.info = {}           # {(system, path): {field: text}}
+        self.media = {}          # {(system, path): {tag: "./images/<stem>-thumb.png"...}}
+        self.wrote = {}          # {(system, path): [files written here]}
+        self._ids = {}
+
+    def __getattr__(self, name):
+        return getattr(self.esapi, name)
+
+    def _path(self, system, gid):
+        if system not in self._ids:
+            self._ids[system] = {str(g.get("id")): p for p, g in (self.lists.get(system) or {}).items()}
+        return self._ids[system].get(str(gid))
+
+    def set_meta(self, system, gid, fields):
+        path = self._path(system, gid)
+        if path is None:
+            return self.esapi.set_meta(system, gid, fields)
+        self.info.setdefault((system, path), {}).update((k, str(v)) for k, v in fields.items())
+        return True
+
+    def set_media(self, system, gid, tag, data, ctype):
+        path = self._path(system, gid)
+        name = _media_name(tag, MEDIA_EXT.get(ctype))
+        if path is None or name is None:
+            return False if name is None else self.esapi.set_media(system, gid, tag, data, ctype)
+        sysdir = os.path.join(rommlib.ROMS_ROOT, system)
+        d = os.path.join(sysdir, name[0])
+        f = os.path.join(d, "%s-%s%s" % (os.path.splitext(os.path.basename(path))[0], name[1], MEDIA_EXT[ctype]))
+        if os.path.lexists(f):                   # never over anything there (upload_media checked: a race)
+            return False
+        try:
+            os.makedirs(rommlib.DATA_DIR, exist_ok=True)
+            with open(bulk_journal(), "a") as j:     # first: a kill from here on is undone (undo_bulk)
+                j.write(json.dumps({"system": system, "path": path, "tag": tag, "file": f}) + "\n")
+        except OSError:
+            return False
+        tmp = f + ".part"
+        try:
+            os.makedirs(d, exist_ok=True)
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, f)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            return False
+        self.wrote.setdefault((system, path), []).append(f)
+        self.media.setdefault((system, path), {})[tag] = "./" + os.path.relpath(f, sysdir)
+        self.info.setdefault((system, path), {})
+        return True
+
+    def flush(self):
+        """Hand ES what was kept. Returns the paths ES doesn't list after all (their files
+        written here are removed again, so the next run sends them as usual)."""
+        lost, by = set(), {}
+        for (system, path), info in self.info.items():
+            by.setdefault(system, {})[path] = dict(info, **self.media.get((system, path), {}))
+        for system, games in sorted(by.items()):
+            paths = sorted(games)
+            for i in range(0, len(paths), BULK_CHUNK):
+                part = {p: games[p] for p in paths[i:i + BULK_CHUNK]}
+                try:
+                    st = self.esapi.add_games(system, part)
+                except (ValueError, UnicodeError):
+                    st = None
+                rommlib.log("finalize: game info for %d game(s) to ES in one go (%s: %s)" % (
+                    len(part), system, "HTTP %s" % st if st else "no answer"))
+            self.lists.drop(system)
+            listed = self.lists.get(system)
+            if listed is None:       # not known what ES took: the batch again later (undo_bulk sorts the files)
+                raise rommlib.EsError("/systems/%s/games" % system, None, "couldn't read the list after /addgames")
+            slow = 0
+            for p in paths:
+                g = listed.get(p)
+                if g is None:
+                    lost.add(p)
+                    for f in self.wrote.get((system, p), ()):
+                        try:
+                            os.remove(f)
+                        except OSError:
+                            pass
+                    continue
+                text = {k: v for k, v in self.info[(system, p)].items() if not EsApi.same(g.get(k, ""), v)}
+                media = {k: v for k, v in self.media.get((system, p), {}).items() if not g.get(k)}
+                if text or media:                 # what the one call didn't set: one at a time after all
+                    slow += 1
+                    self.esapi.set_meta(system, g["id"], text)
+                    for tag, rel_path in media.items():
+                        upload_file(self.esapi, system, g["id"], tag, os.path.join(rommlib.ROMS_ROOT, system, rel_path))
+            if slow:
+                rommlib.log("finalize: %d game(s) of %s sent one at a time after all" % (slow, system))
+        try:
+            os.remove(bulk_journal())
+        except OSError:
+            pass
+        return lost
+
+
+def bulk_journal():
+    return os.path.join(rommlib.DATA_DIR, "finalize-bulk.jsonl")
+
+
+def undo_bulk(lists):
+    """A hand-off killed between writing media for BulkEs and ES taking it left files ES
+    doesn't name (upload_media would then take them for someone else's and never send
+    them): each one whose game ES doesn't show that media for goes again."""
+    try:
+        with open(bulk_journal(), errors="replace") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    except (OSError, ValueError):
+        rows = []
+    for r in rows:
+        try:
+            g = (lists.get(r["system"]) or {}).get(r["path"])
+            if not (g or {}).get(r["tag"]) and os.path.isfile(r["file"]):
+                os.remove(r["file"])
+        except (KeyError, TypeError, OSError):
+            pass
+    try:
+        os.remove(bulk_journal())
+    except OSError:
+        pass
+
+
+def _bulk_entry(e, es, added):
+    """A plain download whose game /addgames just listed (BulkEs): not a rename, a hide, a
+    removal or an entry that only fills gaps."""
+    if any(k in e for k in ("rename", "hide", "remove")) or e.get("fill") or "paths" not in e:
+        return False
+    prim = _primary(e, es)
+    return prim is not None and prim in added.get(e["system"], ())
 
 
 def renamed(esapi, e, es, lists=None):
@@ -1447,6 +1628,8 @@ def process(entries, api=None, es=None, esapi=None, cfg=None, bad=None):
         e.pop("_wait", None)
         e.pop("_media", None)
     route_renames(entries)
+    if os.path.exists(bulk_journal()):
+        undo_bulk(lists)
     if bad is None:
         carry = snapshot_renames(entries, esapi, lists)
         listed = add_games(esapi, entries, es, lists)
@@ -1466,7 +1649,20 @@ def process(entries, api=None, es=None, esapi=None, cfg=None, bad=None):
         out = []
         _each(batch, lambda e: out.extend(apply([e], api, es, esapi, carry, cfg, fresh=False, lists=lists)), bad)
         return out
-    left = hand(entries)
+    if bad is None and listed is True and lists.added and batocera_major() >= BULK_FROM:
+        fresh = [e for e in entries if _bulk_entry(e, es, lists.added)]
+        ids = {id(e) for e in fresh}
+        bulk = BulkEs(esapi, lists)
+        left = apply(fresh, api, es, bulk, carry, cfg, lists=lists)
+        lost = bulk.flush()
+        held = {id(e) for e in left}
+        for e in fresh:                       # a game ES didn't list after all: as any unlisted one
+            if id(e) not in held and _primary(e, es) in lost:
+                e["_left"] = "unlisted"
+                left.append(e)
+        left += hand([e for e in entries if id(e) not in ids])
+    else:
+        left = hand(entries)
     late = [e for e in left if e.get("_left") == "unlisted"]
     if not listed and late and getattr(listed, "loading", False):
         # a slow full reload (a big library) still going when wait_listed gave up: once more
@@ -1763,6 +1959,9 @@ def drain(retry_deferred=True):
             if game_running():      # re-check right before reloading ES
                 raise GameStarted("game started")
             bad = []
+            told = len(entries) >= NOTIFY_FROM and rommlib.es_notify(
+                "RomM-o-Cera is updating {:,} games in EmulationStation. Game lists may redraw "
+                "and menus may be slow until it's done.".format(len(entries)))
             if _fails() >= ISOLATE_AFTER:
                 rommlib.log("finalize: the batch failed %d times; its entries one at a time" % _fails())
                 left, bad = isolate(entries, api, cfg)
@@ -1770,6 +1969,10 @@ def drain(retry_deferred=True):
                 left = process(entries, api, cfg=cfg)
             keep = _spend(left, time.time())
             outcome = json.dumps({"left": keep, "bad": bad})
+            if told:
+                n = len(entries) - len(left) - len(bad)
+                rommlib.es_notify("RomM-o-Cera is done updating EmulationStation: {:,} games{}.".format(
+                    n, ", {:,} more next time".format(len(entries) - n) if n < len(entries) else ""))
         except Exception as e:
             # keep the batch (.work stays, in front of anything new) and retry later
             failures += 1

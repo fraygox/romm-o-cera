@@ -475,6 +475,15 @@ doesn't reload every system for them. Batocera 43.1's EmulationStation can't
 add games this way (a bug fixed after it), so there it reloads its lists as
 before, as it does everywhere after games are compressed or deleted.
 
+EmulationStation redraws the list on screen each time a game's info or one of
+its images changes. On Batocera 44 and later, new downloads go to it with
+their info and images all at once (a few hundred games a time), so a whole
+platform is a handful of redraws. Batocera 43.1 takes them one game and one
+image at a time: after a big download, lists can redraw over and over and
+menus feel slow until it's done, which can take several minutes for a
+thousand games. Either way, a batch of 20 games or more pops up in
+EmulationStation when it starts and when it's done.
+
 RomM-o-Cera stays out of EmulationStation's way: game info waits until ES is
 idle, and background compression pauses while a game runs and while ES
 scrapes, installs, computes RetroAchievements hashes or updates Batocera
