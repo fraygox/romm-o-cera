@@ -3,6 +3,19 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.15.2 (2026-11-21)
+
+EmulationStation keeps up after a big download
+
+Thanks to @plasmadice for reporting this, with a video and a log that showed what was going on (#11).
+
+### Fixes
+- **fix:** After a big download, EmulationStation no longer lags while RomM-o-Cera hands it the new games' info and images, on Batocera 44 and later. EmulationStation redraws the list on screen each time a game's info or one of its images changes; new games now go to it all at once (a few hundred a time) instead of one game and one image at a time. On a test box with Batocera 44, a whole platform of 1,240 games was in EmulationStation with its info and images 47 seconds after leaving RomM-o-Cera (#11).
+- **fix:** A batch of 20 games or more handed to EmulationStation pops up there when it starts ("Game lists may redraw and menus may be slow until it's done") and when it's done, on every Batocera (#11).
+
+### Known limits
+- Batocera 43.1's EmulationStation can't take game info all at once (a bug fixed in Batocera 44), so there it still goes one game and one image at a time: after a big download, lists can redraw over and over and menus feel slow until it's done, which can take several minutes for a thousand games. The popup says when it's done.
+
 ## v0.15.1 (2026-11-21)
 
 Activity's bar fills up over the whole run
