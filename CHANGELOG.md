@@ -3,6 +3,46 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.15.0 (2026-11-21)
+
+Download whole platforms and any number of games at once, with an Activity that keeps up
+
+Thanks to @plasmadice, who asked for downloads of any size and whole platforms at once (#1, #2), then tested them and reported most of the fixes and changes below (#3–#11).
+
+### Features
+- **feat:** Download any number of games at once. **Download every game in this list**, a collection's **Download the rest** and **Download my backlog** no longer stop at 1,000. RomM-o-Cera lists them first, with how far it has got (B stops it), then one dialog shows how many games, the download size, the room disc games need while they unpack, and a bar of the space on this box: the queue already waiting, these games and the keep-free space. It counts space the way Activity does.
+- **feat:** Download whole platforms. On Platforms, **X › Pick several platforms**: each card shows RomM's size for it, A picks, Y picks all, and X downloads the selected platforms, one after another. Multi-disc games stay together, and discs already here join their set.
+- **feat:** Whole platforms download only when every game fits. When they don't, the dialog offers **Free up space**, opened with enough games already picked to make the room, and counts again when you come back. Any other list that doesn't fit offers the games that fit, all of them (the rest wait for room), or Free up space.
+- **feat:** Activity during a big download says how far along it is ("12 of 4,411 done") and what's left by platform, and tells you about finished games together every few seconds instead of one toast per game. Its X menu retries every failed download at once and runs a full check of the platforms the downloads went to.
+- **feat:** Activity's card on top shows what's going on at the left and when everything is done at the right ("Everything's done in about 12 min"), with the counts under them (#6).
+- **feat:** **Popups in the app** (Settings › Downloads, on by default): turn it off and the app no longer pops up as downloads finish. Activity and the top bar still show them, and problems still pop up (#9).
+- **feat:** Deleting many games at once (from **Games from RomM**, **Free up space** or **Games ES can't see**) shows how far along it is in the top bar ("Deleting 12 of 40 games") and on Activity's card, from any screen. One batch runs at a time (#10).
+
+### Fixes
+- **fix:** Activity's time left follows the pace the queue really keeps over the last minute, so with many small downloads it shows up after a few seconds and holds steady instead of jumping with each file. The pace is measured while Activity is closed too, so the time is there as soon as you open it (#4, #7).
+- **fix:** Activity's line on top holds steady while fast downloads change state, instead of flickering between them (#5).
+- **fix:** **Pause all** ends once nothing is left to download, so games you queue after cancelling or clearing the rest start downloading. One an earlier version left on with nothing queued ends when the app starts (#8).
+- **fix:** Check games forgets a missing file once its game is deleted, and a check with no games left on the box clears the last result (#3).
+- **fix:** Check games lists a disc's missing track once, under its cue or gdi, instead of twice.
+- **fix:** Check games lets a game be downloaded again when a later check finds it broken again after its last download.
+- **fix:** Check games no longer lists a game as broken when its download again replaced it while the check ran.
+
+### Under the hood
+- **perf:** Queueing thousands of games takes under a second (4,000 games: from 12 minutes and 11 GB of writes to 0.3 s and 4 MB).
+- **perf:** The download queue and the list of games RomM-o-Cera downloaded (`installed.json`) are saved as small changes beside each file, instead of rewriting the whole file for every game. On a big download that is a few MB written instead of gigabytes.
+- **perf:** Activity and game lists stay smooth with thousands of downloads queued, and a big queue no longer grows the app's memory as games finish.
+- **perf:** Background work after you leave the app (downloads, unpacking, compressing, and handing game info to EmulationStation) runs at low priority, so EmulationStation's menus and your games come first (#11).
+
+### Upgrading
+- Nothing to do. The first change after updating saves both files as before, then keeps a small change log beside each (`installed.json.changes`, `download-queue.json.changes`).
+- **Going back to v0.14.0 or earlier:** use **Settings › Updates › Go back to the previous version**, which saves both files whole first. If you install an older version by hand after RomM-o-Cera or a background download was stopped abruptly (a power cut, a crash), that version can miss the latest changes. Games downloaded since then still play and show as on this box, but it no longer knows it downloaded them, so it won't delete them for you. Downloads that had finished may also queue again. Going back to an older version any other way isn't supported.
+- On Platforms, **X** opens Actions; **Game night** is its first entry.
+
+### Known limits
+- Platform sizes on the Platforms cards come from RomM 5.4 and later; with an older RomM the cards show the game count only.
+- Before a queued disc game downloads, RomM-o-Cera reads its zip's contents from RomM in the background, one game at a time, so the space it needs is exact. Queueing a whole disc platform makes that a few small requests per game.
+- Deleting thousands of games takes a while, longest on an SD card: each game is written to disk before the next, so a power cut mid-way never leaves EmulationStation listing a game that's gone.
+
 ## v0.14.0 (2026-11-12)
 
 Music: your RomM soundtracks, played in the app or as EmulationStation's menu music
