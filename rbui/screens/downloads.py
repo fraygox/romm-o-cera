@@ -761,9 +761,14 @@ class DownloadsScreen(ListScreen):
         list_head(c, f, lst, "Downloads", note, ncol, color=theme.TEXT if on_list else theme.DIM)
         y0 = lst.top + 44
         if not jobs:
-            text(c, f.h3, "No downloads yet", (lst.centerx, y0 + 120), theme.DIM, "center")
-            text(c, f.body, "Pick a game and press {A} to download it here.", (lst.centerx, y0 + 160),
-                 theme.FAINT, "center", maxw=lst.width - 40)
+            w = getattr(self.app, "work", None)     # (read once: the batch's thread ends it any time)
+            if w:                                   # a batch has no rows here: the card follows it (#13)
+                head = "Nothing downloading"
+                body = "%s %ss shows in the card above. Downloads show here." % (w["verb"], w["what"])
+            else:
+                head, body = "No downloads yet", "Pick a game and press {A} to download it here."
+            text(c, f.h3, head, (lst.centerx, y0 + 120), theme.DIM, "center")
+            text(c, f.body, body, (lst.centerx, y0 + 160), theme.FAINT, "center", maxw=lst.width - 40)
             return
         self.sel = min(self.sel, len(jobs) - 1)
         over = len(jobs) > self.ROWS
