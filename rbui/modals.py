@@ -492,7 +492,11 @@ class BulkDownload:
         self.unknown = free is None             # can't tell (a share that's away): no fit to judge, as before
         if self.unknown:
             free = 1 << 62
-        self.space = rommlib.bulk_space(pick, list(d.jobs), free, rommlib.keep_free_bytes(app.cfg),
+        # a paused (or failed) row of one of these is the same download queued again, not one more:
+        # counted once, with them, not also as the queue they join
+        ids = {r["id"] for r, _ in pick}
+        queue = [j for j in list(d.jobs) if j.rom.get("id") not in ids]
+        self.space = rommlib.bulk_space(pick, queue, free, rommlib.keep_free_bytes(app.cfg),
                                         app.cfg, rommlib.chd_enabled(app.cfg))
         # bigger than the whole drive (with what's queued and the keep-free space): no deleting makes room
         drive = rommlib.disk_bytes()

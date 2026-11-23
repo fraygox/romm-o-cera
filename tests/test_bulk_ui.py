@@ -251,3 +251,22 @@ def test_free_up_space_picks_nothing_when_every_game_here_is_not_enough(app, rb,
     fu = rb.FreeUpScreen(app, free_gb=700)
     app.push(fu)
     assert not fu.picks and "not the 700 GB" in toasts[-1]
+
+
+def test_paused_games_queued_again_are_counted_once(app, rb, monkeypatch):
+    """A platform paused partway, then downloaded whole again: its paused games were counted as the
+    queue and again as what the download adds, and it asked to free space it didn't need."""
+    roms = _roms(app, 1)
+    _free(monkeypatch, 4000)
+    sp = rb.BulkDownload(app, "x", roms=roms, whole=True).space
+    _free(monkeypatch, (sp["need"] * 1.5 + sp["keep"]) / GB)      # room for it once, not twice
+    fresh = rb.BulkDownload(app, "x", roms=roms, whole=True)
+    assert fresh.space["fits"]
+    for r, sy in fresh.items:                     # every one queued, then paused
+        j = J(r, sy)
+        j.state = J.PAUSED
+        app.downloader.jobs.append(j)
+    again = rb.BulkDownload(app, "x", roms=roms, whole=True)
+    assert again.space["fits"] and again.space["queue"] == 0
+    assert [o[0] for o in again.options()] == ["Download {:,}".format(len(again.items))]
+
