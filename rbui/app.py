@@ -621,6 +621,9 @@ class App:
         if not system:
             self.toast("No Batocera system for this platform", theme.RED)
             return
+        if rommlib.gone(rom):
+            self.toast("RomM has no file for %s any more (missing from its library)" % rom_title(rom), theme.RED)
+            return
         self.downloader.enqueue(rom, system, replace=replace, pins=pins, **({'group': group} if group else {}))
         self.toast("Queued: %s" % rom_title(rom) + self.hours_note(),
                    theme.AMBER if self.downloader.hold else theme.GREEN)
@@ -749,7 +752,8 @@ class App:
                 rommlib.log("adopt %s: %s" % (r.get("id"), e))
                 unrecorded = e
                 continue
-            entries.append((r, system, group))
+            if not rommlib.gone(r):                 # RomM has no file for it any more: never queued
+                entries.append((r, system, group))
         return entries, unrecorded
 
     def queue_set(self, group, items, system):
@@ -833,7 +837,7 @@ class App:
         entries, unrecorded, sets, whole_sets = [], None, 0, []
         for group, members in groups:
             if not group:
-                entries += [(r, sy, None) for r, sy in members]
+                entries += [(r, sy, None) for r, sy in members if not rommlib.gone(r)]
                 continue
             sets += 1
             got, bad = App.set_entries(lib, dl, group, members, active)

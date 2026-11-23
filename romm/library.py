@@ -1682,6 +1682,8 @@ def find_disc_set(api, rom):
         d = disc_info(name)
         if not d or d[0].lower() != base or r.get("platform_id") != pid:
             continue
+        if r.get("missing_from_fs") is True:
+            continue                     # RomM has no file for that disc any more: told as one it lacks
         same_style = tag_style(name) == style
         if d[1] not in discs or (same_style and not discs[d[1]][1]):
             discs[d[1]] = (r, same_style)

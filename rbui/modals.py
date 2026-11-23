@@ -434,7 +434,7 @@ class BulkDownload:
         whole platforms the disc games here too (their sets are put together from the listing)."""
         app = self.app
         sy = app.system_for(r)
-        return bool(sy) and (not app.library.is_installed(r, sy)
+        return bool(sy) and not rommlib.gone(r) and (not app.library.is_installed(r, sy)
                              or self.whole and bool(rommlib.disc_info(r.get("fs_name_no_ext") or "")))
 
     def _list(self):
@@ -714,6 +714,10 @@ class BulkDownload:
                        None if stop or label == "OK" else "Back", lambda: self.action("back"), glyph=glyph)
 
 
+GONE_SAYS = ("RomM has no file for this game any more: it's marked missing from RomM's library. "
+             "Once the file is back there and RomM has scanned again, it downloads as usual.")
+
+
 class DownloadConfirm(Confirm):
     """Download one game. A disc of a multi-disc set first looks the set up in
     RomM, then offers all discs (one ES entry via an .m3u) or just this one."""
@@ -731,6 +735,9 @@ class DownloadConfirm(Confirm):
             return
         if st[0] == "active":
             super().__init__(app, name, already_queued(st[1]) + ".", "OK", lambda: None)
+            return
+        if rommlib.gone(rom):
+            super().__init__(app, name, GONE_SAYS, "OK", lambda: None)
             return
         self.app = app
         self._rom, self._replace, self._group = rom, replace, group

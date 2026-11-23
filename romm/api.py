@@ -203,7 +203,8 @@ class Api:
         arguments when no filter narrows that list, so RomM can pick (a RomM
         without /api/roms/random falls back to page()). A list of up to 250
         is read whole, so the pick is never a skipped one while one is left."""
-        ok = keep or (lambda r: True)
+        def ok(r):          # (RomM's random pick can be a game it has no file for any more)
+            return not gone(r) and (keep is None or keep(r))
         if scope is not None:
             try:
                 for _ in range(tries):
@@ -334,7 +335,7 @@ class Api:
     def similar(self, rom_id, limit=30):
         """RomM's similar games, as plain rom dicts (best match first)."""
         out = self.get("/api/roms/%d/similar" % rom_id, {"limit": limit})
-        return [x["rom"] for x in out if isinstance(x, dict) and x.get("rom")]
+        return [x["rom"] for x in out if isinstance(x, dict) and x.get("rom") and not gone(x["rom"])]
 
     def recommendations(self, limit=50):
         """RomM's Recommended for you (5.4 and newer), best first:
@@ -350,7 +351,7 @@ class Api:
                 return None
             raise
         return [x for x in got if isinstance(x, dict) and isinstance(x.get("rom"), dict)
-                and x["rom"].get("id")] if isinstance(got, list) else []
+                and x["rom"].get("id") and not gone(x["rom"])] if isinstance(got, list) else []
 
     def all_tags(self):
         """Every filename tag in the library (for the "hide prototypes…" filter)."""
@@ -548,6 +549,12 @@ def party_values(counts, n):
 # ----------------------------------------------------- recommendations
 
 REASON_WORDS = {"igdb": "Similar on IGDB", "top_rated": "Highly rated"}    # facets without a value of their own
+
+
+def gone(rom):
+    """RomM still lists the game, but its file has left RomM's library (missing_from_fs): a
+    download of it can only fail ("has no file to download")."""
+    return isinstance(rom, dict) and rom.get("missing_from_fs") is True
 
 
 def recommendation_why(item):
