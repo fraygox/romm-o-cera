@@ -19,11 +19,11 @@ class Sfx:
         "done": ((523, 659, 784, 1046), 70, 0.12, "sine"),
         "reveal": ((659, 784, 988, 1319), 34, 0.12, "sine"),
     }
-    LEVEL = {"normal": 1.0, "quiet": 0.4, "off": 0.0}
+    LEVEL = {"normal": 1.0, "quiet": 0.4, "clicks": 1.0, "off": 0.0}
 
     def __init__(self, level="normal"):
         self.sounds, self.channels = {}, {}
-        self.level = self.LEVEL.get(level, 1.0)
+        self.set_level(level)
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(44100, -16, 2, 512)
@@ -63,10 +63,11 @@ class Sfx:
 
     def set_level(self, level):
         self.level = self.LEVEL.get(level, 1.0)
+        self.popups = level != "clicks"        # Clicks only: a popup's chime stays quiet
 
-    def play(self, name):
+    def play(self, name, popup=False):
         snd = self.sounds.get(name)
-        if not snd or not self.level:
+        if not snd or not self.level or (popup and not self.popups):
             return
         try:
             snd.set_volume(self.level)

@@ -4257,7 +4257,7 @@
   "full/changed/sounds/ok": {
    "bg": 0,
    "cfg": {
-    "sounds": "off"
+    "sounds": "clicks"
    },
    "gone": [],
    "modal": null,
@@ -4269,7 +4269,7 @@
     "toggle"
    ],
    "sfx_level": [
-    "off"
+    "clicks"
    ],
    "toasts": [],
    "wake": 0
@@ -4277,7 +4277,7 @@
   "full/changed/sounds/right": {
    "bg": 0,
    "cfg": {
-    "sounds": "off"
+    "sounds": "clicks"
    },
    "gone": [],
    "modal": null,
@@ -4289,7 +4289,7 @@
     "toggle"
    ],
    "sfx_level": [
-    "off"
+    "clicks"
    ],
    "toasts": [],
    "wake": 0
@@ -11188,7 +11188,7 @@
   "tools/changed/sounds/ok": {
    "bg": 0,
    "cfg": {
-    "sounds": "off"
+    "sounds": "clicks"
    },
    "gone": [],
    "modal": null,
@@ -11200,7 +11200,7 @@
     "toggle"
    ],
    "sfx_level": [
-    "off"
+    "clicks"
    ],
    "toasts": [],
    "wake": 0
@@ -11208,7 +11208,7 @@
   "tools/changed/sounds/right": {
    "bg": 0,
    "cfg": {
-    "sounds": "off"
+    "sounds": "clicks"
    },
    "gone": [],
    "modal": null,
@@ -11220,7 +11220,7 @@
     "toggle"
    ],
    "sfx_level": [
-    "off"
+    "clicks"
    ],
    "toasts": [],
    "wake": 0
@@ -14548,7 +14548,7 @@
   "resetcfg": "Puts every setting back to its default, server and token included. The old file is kept as config.json.bad-…, so nothing is lost.",
   "rollback": "Swaps the previous version back in and restarts the app. The current one is kept, so this can be undone too.",
   "rvz": "Turns GameCube, Wii and Triforce images into RVZ, usually 30-60% smaller and lossless; the original is deleted once the copy is verified. Downloads dolphin-tool (about 8 MB) once.",
-  "sounds": "Clicks and chimes while you browse.",
+  "sounds": "Clicks as you browse, and chimes when a popup says a download is ready, queued or failed. Clicks only keeps the clicks; popups still show, without a sound.",
   "speed": "Caps background downloads while a game runs, so online play and streaming stay smooth.",
   "speedall": "Caps downloads at this speed, in the app and in the background, so they don't take the whole connection.",
   "squashfs": "Packs Xbox games into squashfs, usually 15-45% smaller, which Batocera opens at launch. Lossless, verified before the original is deleted. Full disc images need Make Xbox images bootable.",

@@ -32,7 +32,9 @@ The other rows are settings, each explained in the panel when it's selected
 and listed with its key under [`config.json`](#configjson): among them
 **Confirm button** and **Button labels** (Controller), **Download speed
 limit**, **Download speed while playing**, **Popup when downloads finish** (in
-EmulationStation, after you leave) and **Popups in the app** (Downloads), **Sounds** and
+EmulationStation, after you leave) and **Popups in the app** (Downloads), **Sounds**
+(On, Quiet, Clicks only or Off; Clicks only keeps the clicks as you browse and
+silences the chime a popup makes when a download is ready, queued or failed) and
 **Cover cache limit** (This app).
 
 **Metadata**
@@ -160,7 +162,7 @@ seven, six or four. It takes effect at once.
 | `theme_custom_tint` | `225` | the hue the Custom theme's backgrounds and greys lean toward, `0`–`359` |
 | `theme_custom_strength` | `30` | how far they lean: `0` (neutral grey) to `100` |
 | `theme_custom_mode` | `dark` | the Custom theme's mode: `dark`, `oled` (pure black) or `light` |
-| `sounds` | `normal` | UI sounds: `normal`, `quiet` or `off` |
+| `sounds` | `normal` | UI sounds: `normal`, `quiet`, `clicks` (Clicks only: the clicks as you browse, no chime when a popup shows) or `off` |
 | `collection_tiles` | `medium` | the Collections screen's mosaic size: `small` (six a shelf, seven a wall row), `medium` (five and six) or `large` (four and four) |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |

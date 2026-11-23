@@ -277,11 +277,11 @@ class App:
             extra = draw.MARQUEE_WAIT + over / draw.MARQUEE_SPEED if over > 0 else 0
             self.toasts.append([msg, color, now + (6 if tap else 3.5) + extra, 1, tap])
         if color == theme.RED:
-            self.sfx.play("deny")
+            self.sfx.play("deny", popup=True)
         elif msg.startswith("Ready"):
-            self.sfx.play("done")
+            self.sfx.play("done", popup=True)
         elif msg.startswith("Queued"):
-            self.sfx.play("queued")
+            self.sfx.play("queued", popup=True)
 
     # ---- data
     def load_platforms(self):

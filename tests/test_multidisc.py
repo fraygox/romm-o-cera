@@ -730,3 +730,33 @@ def test_fill_in_info_for_games_already_here(isolated, mock_url, fake_es):
     # run again: Lorem Odyssey is now complete; Ipsum Saga only lacks what RomM can't give
     _, st2 = rommlib.plan_info(api, "psx", [pid], es)
     assert st2["complete"] >= 1
+
+
+def test_clicks_only_silences_popup_chimes_but_not_clicks(isolated, rb, monkeypatch):
+    """#14: Sounds, Clicks only: a popup's chime stays quiet, a button press still clicks."""
+    import pygame
+    monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ROMM_TOKEN", "x")
+    pygame.init()
+    app = rb.App(None, headless=True)
+    app.bg = lambda fn, done=None, err=None: None       # no network
+    app.push(rb.HomeScreen(app))
+    played = []
+    app.sfx.sounds = {k: type("S", (), {"set_volume": lambda self, v: None})() for k in rb.Sfx.SPEC}
+    app.sfx.channels = {k: type("C", (), {"play": lambda self, s, k=k: played.append(k)})() for k in rb.Sfx.SPEC}
+    for level, chimes in (("normal", True), ("clicks", False)):
+        app.cfg["sounds"] = level
+        app.sfx.set_level(level)
+        played.clear()
+        app.toast("Ready: Some game", rb.theme.GREEN)
+        app.toast("Queued: Other game", rb.theme.GREEN)
+        app.toast("Failed: A game — gone", rb.theme.RED)
+        assert played == (["done", "queued", "deny"] if chimes else [])
+        app.dispatch("back")
+        assert played[-1:] == ["back"]
+
+
+def test_clicks_only_from_the_start(rb):
+    sfx = rb.Sfx("clicks")
+    assert sfx.level == 1.0 and not sfx.popups
+    assert rb.Sfx("normal").popups and rb.Sfx("quiet").popups

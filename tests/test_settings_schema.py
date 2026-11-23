@@ -331,7 +331,7 @@ def _effective(cfg):
         out["conv_" + c.mode] = c.enabled(cfg, sorted(c.systems)[0])
     for k in ("swap_ab", "check_updates", "extract_parallel", "background_downloads", "notify", "manuals"):
         out["on_" + k] = bool(cfg[k])
-    out["sfx"] = {"normal": 1.0, "quiet": 0.4, "off": 0.0}.get(cfg["sounds"], 1.0)     # Sfx.LEVEL
+    out["sfx"] = {"normal": 1.0, "quiet": 0.4, "clicks": 1.0, "off": 0.0}.get(cfg["sounds"], 1.0)   # Sfx.LEVEL
     out["speed"] = float(cfg["speed_while_playing"] or 0)                             # rb_dl's cap
     out["platform_map"] = dict(cfg["platform_map"] or {})
     out["video_max"], out["es_image"] = rommlib.es_video_max(cfg), cfg["es_image"]

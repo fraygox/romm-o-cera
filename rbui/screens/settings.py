@@ -186,7 +186,8 @@ class SettingsScreen(Screen):
         "keepfree": lambda cfg: "%d GB" % float(cfg["keep_free_gb"]) if cfg["keep_free_gb"] else "Nothing (fill the disk)",
         "speedall": lambda cfg: "%g MB/s" % float(cfg["download_speed"]) if cfg["download_speed"] else "No limit",
         "speed": lambda cfg: "%g MB/s" % float(cfg["speed_while_playing"]) if cfg["speed_while_playing"] else "No limit",
-        "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(cfg["sounds"], "On"),
+        "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "clicks": "Clicks only", "off": "Off"}.get(
+            cfg["sounds"], "On"),
         "colltiles": lambda cfg: {"small": "Small", "medium": "Medium", "large": "Large"}.get(
             cfg["collection_tiles"], "Medium"),
         "channel": lambda cfg: {"stable": "Stable", "nightly": "Nightly"}.get(cfg["update_channel"], "Stable"),

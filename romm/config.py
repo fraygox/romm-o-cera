@@ -211,11 +211,12 @@ SETTINGS = (
             kind="onoff", effects=("downloader",),
             help="Tells EmulationStation the game's region (its flag), languages and series, from RomM's "
                  "file-name tags and metadata."),
-    Setting("sounds", "normal",         # UI sounds: normal | quiet | off
+    Setting("sounds", "normal",         # UI sounds: normal | quiet | clicks (no popup chimes) | off
             row="sounds", label="Sounds", sub="Clicks and chimes in this app",
-            kind="choice", choices=("normal", "quiet", "off"), effects=("sounds",),
-            valid=lambda v: v in ("normal", "quiet", "off"),
-            help="Clicks and chimes while you browse."),
+            kind="choice", choices=("normal", "quiet", "clicks", "off"), effects=("sounds",),
+            valid=lambda v: v in ("normal", "quiet", "clicks", "off"),
+            help="Clicks as you browse, and chimes when a popup says a download is ready, queued or failed. "
+                 "Clicks only keeps the clicks; popups still show, without a sound."),
     Setting("collection_tiles", "medium",   # Collections' mosaics: small (six a shelf) | medium (five) | large (four)
             row="colltiles", label="Collections tile size", sub="How many mosaics a shelf shows",
             kind="choice", choices=("small", "medium", "large"),
