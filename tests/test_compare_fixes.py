@@ -408,7 +408,7 @@ def test_a_renamed_copy_never_takes_a_game_already_here(isolated):
 
 
 @pytest.mark.parametrize("ours", [False, True])
-def test_a_chd_that_isnt_a_whole_one_never_matches(isolated, ours):
+def test_a_chd_that_isnt_a_whole_one_never_matches(isolated, rb, ours):
     """Random bytes named like RomM's game (.chd), or the app's own CHD cut short: Compare said
     "Matches RomM (compressed)" while Check games called it damaged."""
     sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
@@ -421,6 +421,9 @@ def test_a_chd_that_isnt_a_whole_one_never_matches(isolated, ours):
         lib.mark(rom, "psx", [chd])
     it = rommlib.compare_games([rom], lib.snapshot(), rommlib.local_games("psx"), "psx")["items"][0]
     assert it["status"] == "differs"
+    # its size against RomM's zip says nothing: the panel says what's wrong with it
+    said = rb.compare.say(it, recorded=ours)
+    assert said.startswith("This CHD isn't a whole one") and "size" not in said
 
 
 def test_a_folder_of_notes_or_of_another_game_named_like_romms_never_matches(isolated):
@@ -441,3 +444,14 @@ def test_a_folders_dots_arent_its_format(isolated):
     rom = _rom(1, "Breaker 1.1 (USA).zip")
     _touch(os.path.join(sysdir, "Breaker 1.1 (USA)", "Breaker 1.1 (USA).cue"))
     assert rommlib.box_copy(rommlib.Library(), rom, "psx")["format"] == "folder"
+
+
+def test_a_broken_chd_beside_its_cue_and_bin_is_named_as_the_chd(isolated, rb):
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "psx")
+    os.makedirs(sysdir, exist_ok=True)
+    open(os.path.join(sysdir, "Copper (USA).chd"), "wb").write(os.urandom(3000))
+    _touch(os.path.join(sysdir, "Copper (USA).bin"))
+    open(os.path.join(sysdir, "Copper (USA).cue"), "w").write('FILE "Copper (USA).bin" BINARY\n')
+    it = rommlib.compare_games([_rom(1, "Copper (USA).zip")], {}, rommlib.local_games("psx"), "psx")["items"][0]
+    assert it["status"] == "differs"
+    assert rb.compare.say(it).startswith("This CHD isn't a whole one")

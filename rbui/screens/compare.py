@@ -107,6 +107,14 @@ def say(it, recorded=False):
                 "RomM has a different copy under the same name.") + (
             " Getting it replaces the file here; saves are kept." if r else shared)
     if st == rommlib.DIFFERS:
+        main = it.get("path") or ""        # the file ES lists (a CHD before the .cue/.bin beside it)
+        if main.lower().endswith(".m3u"):
+            main = next((p for p in it.get("paths") or () if not p.lower().endswith(".m3u")), main)
+        if main and rom and rommlib.path_format(main) != rommlib.rom_format(rom):
+            # compressed from RomM's file, but not a whole one (compare's _bad_conversion): its size says nothing
+            return ("This %s isn't a whole one: it may have been cut short or damaged, so the game may not "
+                    "start." % rommlib.path_format(main)) + (" Getting RomM's replaces the file here; saves are "
+                                                             "kept." if replaceable(it) else shared)
         return ("This copy isn't the size of RomM's file: it may have been cut short or changed since it "
                 "was downloaded." if recorded else
                 "RomM has a copy under the same name at another size. It may be the older one, or this "
