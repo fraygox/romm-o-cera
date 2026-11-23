@@ -479,7 +479,7 @@ class DownloadsScreen(ListScreen):
             return "Queued", theme.DIM
         if j.state == J.DONE:
             if not self.still_here(j):
-                return "Deleted since", theme.FAINT
+                return "Deleted", theme.FAINT        # (#13: "Deleted since" read as cut short)
             if ", but " in (j.message or ""):            # in and playable; a step after it didn't go through
                 return "Ready to play", theme.AMBER
             if self.chd_state(j) in ("queued", "compressing") and rommlib.needed_to_play(getattr(j, "chd_mode", None)):

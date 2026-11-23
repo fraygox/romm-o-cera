@@ -417,7 +417,7 @@ def test_activity_says_what_didnt_go_through_for_a_finished_game(isolated, rb, m
     j.message = ""
     assert scr.status(j) == ("Ready to play", rb.theme.GREEN)                    # cached for now
     scr._here.clear()
-    assert scr.status(j) == ("Deleted since", rb.theme.FAINT)
+    assert scr.status(j) == ("Deleted", rb.theme.FAINT)
 
 
 def test_a_package_disc_isnt_ready_until_its_set_up(isolated, rb, monkeypatch):
