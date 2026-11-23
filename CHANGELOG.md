@@ -3,6 +3,15 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.15.3 (2026-11-22)
+
+Activity's time on top reads as one steady line
+
+Thanks to @plasmadice for reporting this (#12).
+
+### Fixes
+- **fix:** Activity's time on top is one line in one colour: "Done in 40 s", "Done in 6 min", "Done in 1 h 20 min". It no longer switches between "Everything's done in" and "Downloads done in" while small files are checked, and it no longer disappears for a moment when a conversion starts: it keeps counting down. While compressing is paused, it counts only the downloads (#12).
+
 ## v0.15.2 (2026-11-21)
 
 EmulationStation keeps up after a big download
