@@ -215,15 +215,36 @@ def _same_game_name(name, stem):
     return low.startswith(stem) and bool(_PART_OF_GAME.match(low[len(stem):]))
 
 
-def their_files(paths, system, owned=()):
+def _sheet_refs(sysdir):
+    """{file: the sheets and playlists in sysdir that name it} (normalised paths)."""
+    shared = {}
+    for dp, dns, fns in os.walk(sysdir):
+        dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS]
+        for n in fns:
+            q = os.path.join(dp, n)
+            low = n.lower()
+            try:
+                refs = _es.m3u_paths(q) if low.endswith(".m3u") else \
+                    _discs.sheet_sources(q) if low.endswith((".cue", ".gdi")) else ()
+            except OSError:
+                refs = ()
+            for r in refs:
+                shared.setdefault(os.path.normpath(r), set()).add(os.path.normpath(q))
+    return shared
+
+
+def their_files(paths, system, owned=(), refs=None):
     """The exact files of a game put on the box another way, for a confirm to list and an
     explicit delete or replace to take: a file, and the tracks its .cue/.gdi names; a playlist
     alone (never the discs it lists: those are games or files of their own); in a plain folder
     the files named like it and the tracks their sheets name; a folder game ("Game.ps3") whole.
-    Never a file one of the app's own games holds (owned), nor anything else in a folder (notes,
-    saves, patches, cheats, another game). Normalised paths, inside roms/<system>."""
+    Never a file one of the app's own games holds (owned: normalised, as Library.owned() gives
+    them), nor anything else in a folder (notes, saves, patches, cheats, another game).
+    Normalised paths, inside roms/<system>. refs: a dict kept across the calls of one listing or
+    confirm, so many games read roms/<system>'s sheets and playlists once, not once each."""
     sysdir = os.path.join(_core.ROMS_ROOT, system)
-    owned = {os.path.normpath(o) for o in owned}
+    if not isinstance(owned, (set, frozenset)):
+        owned = {os.path.normpath(o) for o in owned}
     out = []
 
     def add(q):
@@ -237,19 +258,11 @@ def their_files(paths, system, owned=()):
         """t is named by a sheet or playlist in roms/<system> other than sheet: another game's."""
         nonlocal shared
         if shared is None:
-            shared = {}
-            for dp, dns, fns in os.walk(sysdir):
-                dns[:] = [d for d in dns if d not in _core.MEDIA_DIRS]
-                for n in fns:
-                    q = os.path.join(dp, n)
-                    low = n.lower()
-                    try:
-                        refs = _es.m3u_paths(q) if low.endswith(".m3u") else \
-                            _discs.sheet_sources(q) if low.endswith((".cue", ".gdi")) else ()
-                    except OSError:
-                        refs = ()
-                    for r in refs:
-                        shared.setdefault(os.path.normpath(r), set()).add(os.path.normpath(q))
+            shared = refs.get(system) if refs is not None else None
+            if shared is None:
+                shared = _sheet_refs(sysdir)
+                if refs is not None:
+                    refs[system] = shared
         return bool(shared.get(os.path.normpath(t), set()) - {os.path.normpath(sheet or "")})
 
     def _users_of(t):
@@ -1094,9 +1107,10 @@ class Library:
         """still_pinned(), for es.delete_game (es can't import this module)."""
         return still_pinned(f, pins)
 
-    def their_files_at(self, paths, system):
-        """their_files() of the given paths (a game ES lists, picked in Free up space)."""
-        return their_files(paths, system, self.owned())
+    def their_files_at(self, paths, system, owned=None, refs=None):
+        """their_files() of the given paths (a game ES lists, picked in Free up space). For many
+        games at once, pass owned (self.owned(), taken once) and a refs dict kept across them."""
+        return their_files(paths, system, self.owned() if owned is None else owned, refs)
 
     def their_files(self, rom, system):
         """their_files() of a game found on the box by its name (not the app's download)."""

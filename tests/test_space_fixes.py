@@ -66,3 +66,38 @@ def test_delete_leftovers_says_how_many_were_kept(isolated):
              {"path": gone, "kind": "Partial download", "size": 70}]
     res = rommlib.delete_leftovers(items)
     assert (int(res), res.removed, res.kept) == (70, 1, 1) and os.path.exists(keep) and not os.path.exists(gone)
+
+
+def test_free_up_space_reads_the_box_once_for_many_games_not_once_each(isolated, monkeypatch):
+    """Picking hundreds of games put here another way froze the screen when the confirm opened:
+    each game re-read every file the app downloaded and every sheet in its system (#13)."""
+    from romm import library as _library
+    d = os.path.join(rommlib.ROMS_ROOT, "fbneo")
+    games = _games(*[("fbneo", _w(os.path.join(d, "a%03d.zip" % i), b"x")) for i in range(40)])
+    lib = rommlib.Library()
+    calls = {"owned": 0, "sheets": 0}
+    real_owned, real_refs = lib.owned, _library._sheet_refs
+
+    def owned():
+        calls["owned"] += 1
+        return real_owned()
+
+    def refs(sysdir):
+        calls["sheets"] += 1
+        return real_refs(sysdir)
+    monkeypatch.setattr(lib, "owned", owned)
+    monkeypatch.setattr(_library, "_sheet_refs", refs)
+    monkeypatch.setattr(rommlib, "es_game_list", lambda systems=None: [dict(g) for g in games])
+    listed = freeable_games(lib)
+    assert len(listed) == 40 and calls == {"owned": 1, "sheets": 1}
+
+    calls.update(owned=0, sheets=0)
+    app = types.SimpleNamespace(library=lib, modal=None, toast=lambda *a, **k: None, bg=lambda *a, **k: None)
+    scr = FreeUpScreen.__new__(FreeUpScreen)
+    scr.app = app
+    for g in listed:
+        g["ours"] = False
+    scr.picked = lambda: listed
+    scr.delete_marked()
+    assert "Not downloaded by RomM-o-Cera (40)" in app.modal.body
+    assert calls == {"owned": 1, "sheets": 1}

@@ -131,11 +131,12 @@ def freeable_games(library, systems=None):
     ours = library.owned()                        # as it wrote them: a file put in one's place isn't
     games = rommlib.es_game_list(systems)
     games = [g for g in games if g["system"] not in rommlib.UNSEEN_CATCH_ALL]   # launchers, not game files
+    refs = {}                                     # each system's sheets and playlists, read once
     for g in games:
         g["ours"] = library.owns(g["path"], ours)
         # what deleting it takes: the app's own files, or exactly a game's own put here another way
         files = [p for p in rommlib.game_files(g["path"]) if library.owns(p, ours)] if g["ours"] else \
-            library.their_files_at([g["path"]], g["system"])
+            library.their_files_at([g["path"]], g["system"], ours, refs)
         g["size"] = sum(rommlib.path_size(p) for p in files)
     return [g for g in games if g["size"]]
 
@@ -267,9 +268,10 @@ class FreeUpScreen(ListScreen):
             self.load()
         theirs = [g for g in todo if not g.get("ours", True)]
         names = []
+        ours, refs = (app.library.owned(), {}) if theirs else (None, None)   # once, not once a game (#13)
         for g in theirs:                         # name what goes for games put here another way
             base = os.path.join(rommlib.ROMS_ROOT, g["system"])
-            for f in app.library.their_files_at([g["path"]], g["system"]):
+            for f in app.library.their_files_at([g["path"]], g["system"], ours, refs):
                 names.append(os.path.relpath(f, base))
         named = ""
         if names:
