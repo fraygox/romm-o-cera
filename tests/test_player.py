@@ -615,7 +615,9 @@ def test_the_real_mixer_plays_a_fetched_track_through_and_moves_on(app, rb, monk
         scr = album(app, rb)
         scr.action("x")
         pl = app.player
-        assert pl.state == "playing" and pygame.mixer.music.get_busy()
+        # (not get_busy(): the mock's track is a fifth of a second, and on a loaded runner it can be
+        # over already; that it played through to the next one is checked below)
+        assert pl.state == "playing"
         first = pl.current()
         until = time.time() + 10                                      # the mock's tracks are a fifth of a second
         while pl.current() is first and pl.active() and time.time() < until:
