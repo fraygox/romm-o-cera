@@ -295,7 +295,7 @@ class OnThisBoxScreen(Screen):
                 yy += 30
         if self.leftovers:
             n = sum(i["size"] for i in self.leftovers)
-            self.foot(c, p, "%s of leftovers from interrupted downloads" % human_size(n) if n else
+            self.foot(c, p, "%s of leftovers to clean up" % human_size(n) if n else
                       "%s to clean up" % plural(len(self.leftovers), "empty leftover"), theme.AMBER)
         elif self.leftovers is not None:
             self.foot(c, p, "No leftovers to clean up.")
