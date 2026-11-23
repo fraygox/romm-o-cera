@@ -62,6 +62,8 @@ leave): **up/down** brings one back.
 Across the top: who's playing tonight (**Anyone, 2, 3 or 4 players**, changed
 with **left/right** or a tap) and **Only what's on this box**, switched in
 **X Actions**. Both roll again when they change and stay set until you exit.
+Only what's on this box counts every game its list ticks as on the box, the
+ones you copied over yourself (named as in RomM) too.
 The line at the bottom left says what it's rolling from ("Rolling from 1,234
 games in PlayStation, for 2+ players").
 

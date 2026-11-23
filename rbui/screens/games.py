@@ -501,7 +501,8 @@ class GameListScreen(ListScreen):
         whole = self.platform and not filtered and not col
         return Scope(where, query=lambda off, lim, n: self._query(off, lim, players=n),
                      random=None if filtered else {"platform_ids": pids, "collection": col},
-                     systems={self.platform["_system"]} if whole else None)
+                     systems={self.platform["_system"]} if whole else None,
+                     pids=[self.platform["id"]] if whole else None)
 
     def game_night(self):
         self.app.push(GameNightScreen(self.app, self.night_scope()))

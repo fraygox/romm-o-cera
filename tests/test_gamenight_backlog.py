@@ -238,3 +238,60 @@ def test_new_rules_drop_the_games_rolled_under_the_old_ones(live, rb, monkeypatc
     assert gn.current() is None and gn.why == "empty"
     gn.toggle_here()
     assert gn.current() is None
+
+
+def test_only_whats_on_the_box_counts_games_copied_over_by_hand(live, rb):
+    """Games put on the box another way (named as in RomM, no install record) are on the box
+    to their game pages; Game night's "only what's on this box" said there were none."""
+    app = live
+    psx = _platform(app, "psx")
+    roms = app.api.roms(platform_ids=[psx["id"]], limit=5)["items"][:2]
+    for r in roms:
+        p = os.path.join(rommlib.ROMS_ROOT, "psx", r["fs_name"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "wb").write(b"x")
+    assert all(app.library.is_installed(r, "psx") for r in roms) and not app.library.snapshot()
+    scope = rb.Scope.platform(app, psx)
+    rom, why, pool = rb.gamenight.roll(app, scope, here=True)
+    assert why is None and pool == 2 and rom["id"] in {r["id"] for r in roms}
+    assert rb.gamenight.roll(app, rb.Scope.library(app), here=True)[2] == 2
+
+
+def test_only_whats_on_the_box_keeps_to_the_platform(live, rb):
+    """Two RomM platforms going to one Batocera folder: Game night from one never rolls the
+    other's game that's on the box."""
+    app = live
+    psx = _platform(app, "psx")
+    _install(app, app.api.roms(platform_ids=[psx["id"]], limit=1)["items"])
+    other = dict(psx, id=9999, name="Another PlayStation", display_name="Another PlayStation")
+    app.platforms.append(other)
+    try:
+        assert rb.gamenight.roll(app, rb.Scope.platform(app, other), here=True) == (None, "empty", 0)
+        assert rb.gamenight.roll(app, rb.Scope.platform(app, psx), here=True)[2] == 1
+    finally:
+        app.platforms.remove(other)
+
+
+def test_only_whats_on_the_box_from_a_platforms_game_list(live, rb):
+    app = live
+    psx = _platform(app, "psx")
+    roms = app.api.roms(platform_ids=[psx["id"]], limit=5)["items"][:3]
+    _install(app, roms)
+    gl = rb.GameListScreen(app, "PlayStation", platform=psx)
+    rom, why, pool = rb.gamenight.roll(app, gl.night_scope(), here=True)
+    assert why is None and pool == 3 and rom["id"] in {r["id"] for r in roms}
+
+
+def test_only_whats_on_the_box_when_romm_cant_list_a_platform(live, rb, monkeypatch):
+    """RomM failing to list a platform: its downloaded games still roll, and it's asked again."""
+    app = live
+    psx = _platform(app, "psx")
+    roms = app.api.roms(platform_ids=[psx["id"]], limit=5)["items"][:2]
+    _install(app, roms)
+
+    def down(*a, **k):
+        raise rommlib.RommError("RomM is busy")
+    monkeypatch.setattr(app.api, "roms_all", down)
+    scope = rb.Scope.platform(app, psx)
+    rom, why, pool = rb.gamenight.roll(app, scope, here=True)
+    assert why is None and pool == 2 and scope.box is None

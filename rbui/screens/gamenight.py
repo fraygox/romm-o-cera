@@ -1,5 +1,6 @@
 """Game night: Surprise me as a screen. Who's playing, whether only the box's games count, the
 pick big, and the rolls you passed on down the left (this visit only)."""
+import os
 import random
 
 import pygame
@@ -27,9 +28,10 @@ class Scope:
     whole platforms (None with whole: every one), so "only what's on this box" can roll from
     the box's own records."""
 
-    def __init__(self, where, query=None, random=None, pool=None, systems=None, whole=False):
+    def __init__(self, where, query=None, random=None, pool=None, systems=None, whole=False, pids=None):
         self.where, self.query, self.random, self.pool = where, query, random, pool
-        self.systems, self.whole = systems, whole
+        self.systems, self.whole, self.pids = systems, whole, pids
+        self.box = None             # (what the box held when it was listed, the ids on it): box_pool
 
     @classmethod
     def library(cls, app):
@@ -42,7 +44,7 @@ class Scope:
     def platform(cls, app, p):
         return cls(p.get("display_name") or p["name"], query=lambda off, lim, n: app.api.roms(
             platform_ids=[p["id"]], offset=off, limit=lim, player_counts=party_counts(app, n)),
-            random={"platform_ids": [p["id"]]}, systems={p["_system"]})
+            random={"platform_ids": [p["id"]]}, systems={p["_system"]}, pids=[p["id"]])
 
     @classmethod
     def collection(cls, app, it):
@@ -66,22 +68,50 @@ def players_ok(rom, players):
     return not players or rommlib.max_players((rom.get("metadatum") or {}).get("player_count")) >= players
 
 
-def box_ids(library, systems=None):
-    """Ids of the games this box got from RomM (its install records) in these systems (None:
-    any), one per disc set."""
-    out, sets = [], set()
-    for rid, rec in library.snapshot().items():
-        if systems is not None and rec.get("system") not in systems:
+def box_pool(app, scope):
+    """Ids of the scope's RomM games that are on this box, by the rule its game lists tick them
+    (Library.is_installed: an install record, or a game file by RomM's name, so games copied
+    over by hand count too), one per disc set the app downloaded. Listed from RomM a platform
+    at a time (so a platform's are its own, never another platform's sharing its folder), only
+    for platforms whose folder holds a game, and again only once the box has changed."""
+    lib = app.library
+    plats = [p for p in app.platforms if p.get("_system") and (scope.whole or p["id"] in (scope.pids or ()))]
+    recs = lib.snapshot()
+    sig = [len(recs)]
+    for p in plats:
+        try:
+            sig.append(os.stat(os.path.join(rommlib.ROMS_ROOT, p["_system"])).st_mtime_ns)
+        except OSError:
+            sig.append(None)
+    if scope.box is not None and scope.box[0] == sig:
+        return scope.box[1]
+    ids, whole = [], True
+    for p in plats:
+        system = p["_system"]
+        try:
+            any_game = any(rommlib.is_game_name(n, system) for n in os.listdir(os.path.join(rommlib.ROMS_ROOT, system)))
+        except OSError:
+            any_game = False
+        if not any_game:
             continue
-        g = (rec.get("group") or {}).get("id")
+        try:
+            got = app.api.roms_all(platform_ids=[p["id"]], keep=lambda r, s=system: lib.is_installed(r, s),
+                                   fields=("id",))
+            ids += [r["id"] for r in got or []]
+        except rommlib.RommError:          # RomM couldn't list it now: the games the app downloaded there
+            whole = False
+            ids += [int(rid) for rid, rec in recs.items() if isinstance(rec, dict) and rec.get("system") == system
+                    and str(rid).isdigit() and int(rid) not in ids]
+    out, sets = [], set()
+    for rid in ids:
+        rec = recs.get(str(rid))
+        g = (rec.get("group") or {}).get("id") if isinstance(rec, dict) else None
         if g:
             if g in sets:
                 continue
             sets.add(g)
-        try:
-            out.append(int(rid))
-        except ValueError:
-            pass
+        out.append(rid)
+    scope.box = (sig, out) if whole else None          # (a platform that failed: asked again next roll)
     return out
 
 
@@ -102,7 +132,7 @@ def roll(app, scope, players=0, here=False, avoid=()):
         fresh = [r for r in got if r["id"] not in avoid] or [r for r in got if r["id"] != last] or got
         return (random.choice(fresh), None, len(got)) if got else (None, "empty", 0)
     if here and (scope.whole or scope.systems):
-        ids = box_ids(app.library, None if scope.whole else scope.systems)
+        ids = box_pool(app, scope)
         order = random.sample(ids, len(ids))
         order.sort(key=lambda i: (i in avoid, i == last))
         for rid in order[:TRIES]:
