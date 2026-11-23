@@ -895,6 +895,14 @@ class Downloader:
                 return True
         return False
 
+    def _unhold_soon(self):
+        """_unhold_if_empty now, or once at the end of one_save(): checked after each of 4,000
+        cancels it read every job each time, and froze the screen for seconds."""
+        if getattr(self, "_deferred", 0):
+            self._unhold_due = True
+        else:
+            self._unhold_if_empty()
+
     def force_job(self, job):
         """Download this one now, outside the download hours."""
         with self.cv:
@@ -993,7 +1001,7 @@ class Downloader:
         self._stop_unpacks([job])
         if drop:
             self._drop_parts(job)
-        self._unhold_if_empty()
+        self._unhold_soon()
         self.save_queue()
 
     def remove(self, job):
@@ -1007,7 +1015,7 @@ class Downloader:
                 self.jobs.remove(job)
         if drop:
             self._drop_parts(job)
-        self._unhold_if_empty()
+        self._unhold_soon()
         self.save_queue()
 
     def clear_finished(self):
@@ -1030,6 +1038,9 @@ class Downloader:
         finally:
             self._deferred -= 1
             if not self._deferred:
+                if getattr(self, "_unhold_due", False):
+                    self._unhold_due = False
+                    self._unhold_if_empty()
                 self.save_queue()
 
     def save_queue(self):
