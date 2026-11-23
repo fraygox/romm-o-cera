@@ -1100,13 +1100,27 @@ def moved_to(e):
     if e.get("rom_id") is None:
         return None
     try:
-        rec = rommlib.Library().snapshot().get(str(e["rom_id"])) or {}
+        rec = _library().snapshot().get(str(e["rom_id"])) or {}
     except Exception:                          # installed.json can't be read: nothing to follow
         return None
     if rec.get("system") not in (None, e["system"]) or not _same_game(rec, e):
         return None
     here = [p for p in rec.get("paths") or [] if isinstance(p, str) and os.path.exists(p)]
     return here if here and here != paths else None
+
+
+_LIB = {}
+
+
+def _library():
+    """One Library for the run: it reads installed.json again only when the file changes
+    (a conversion's rename), not once per game, which took a minute for a batch with
+    hundreds of games deleted since they were downloaded."""
+    key = rommlib.DATA_DIR                 # (another data folder: tests) a Library of its own
+    if key not in _LIB:
+        _LIB.clear()
+        _LIB[key] = rommlib.Library()
+    return _LIB[key]
 
 
 def _stem(p):

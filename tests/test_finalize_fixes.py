@@ -929,3 +929,39 @@ def test_media_tries_are_spent_by_the_hour_not_by_the_run():
     assert e["_tries"] == 2
     rb_finalize._spend([e], now + rb_finalize.MEDIA_TRY_GAP + 1)    # not for media: a try a run
     assert e["_tries"] == 3
+
+
+# ------------------------------------------------------------ games deleted before finalize ran
+
+def test_games_deleted_since_their_download_dont_read_installed_json_once_each(isolated, monkeypatch):
+    """A platform downloaded, then hundreds of its games deleted in Free up space before the app
+    closed: finalize reads installed.json once, not once per gone game (a minute on a big library)."""
+    from romm import library as _library
+    lib = rommlib.Library()
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "nes")
+    os.makedirs(sysdir)
+    entries = []
+    for i in range(60):
+        p = os.path.join(sysdir, "g%03d.zip" % i)
+        with open(p, "wb") as f:
+            f.write(b"x")
+        lib.mark({"id": i, "name": "g%d" % i, "fs_name": "g%03d.zip" % i}, "nes", [p])
+        entries.append({"system": "nes", "paths": [p], "rom_id": i, "name": "g%d" % i})
+    for e in entries[:50]:
+        os.remove(e["paths"][0])
+    reads = [0]
+    real = _library._read_state
+
+    def counted():
+        reads[0] += 1
+        return real()
+    monkeypatch.setattr(_library, "_read_state", counted)
+    assert all(rb_finalize.moved_to(e) is None for e in entries[:50])
+    assert reads[0] <= 1, reads
+    # a conversion since (installed.json changed): its new files are still followed
+    chd = os.path.join(sysdir, "g055.chd")
+    with open(chd, "wb") as f:
+        f.write(b"converted")
+    os.remove(entries[55]["paths"][0])
+    lib.mark({"id": 55, "name": "g55", "fs_name": "g055.zip"}, "nes", [chd])
+    assert rb_finalize.moved_to(entries[55]) == [chd]
