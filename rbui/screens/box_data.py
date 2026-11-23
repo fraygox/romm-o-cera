@@ -48,7 +48,8 @@ def storage_by_system(lib):
         sysdir = os.path.join(rommlib.ROMS_ROOT, system)
         if not os.path.isdir(sysdir) or os.path.islink(sysdir):
             continue
-        row = {"system": system, "ours": 0, "other": 0, "media": 0}
+        # a hidden folder (a copy's leftover, .Trash) is no system: counted, but not listed as one (#13)
+        row = {"system": system, "ours": 0, "other": 0, "media": 0, "hidden": system.startswith(".")}
         for dp, dns, fns in os.walk(sysdir):
             rel = os.path.relpath(dp, sysdir)
             media = rel != "." and rel.split(os.sep)[0] in rommlib.MEDIA_DIRS

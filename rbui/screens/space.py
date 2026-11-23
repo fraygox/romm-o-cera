@@ -39,7 +39,8 @@ class SpaceScreen(ListScreen):
                lambda e: setattr(self, "leftovers", []))
 
     def _loaded(self, rows):
-        self.rows = rows
+        self.all_rows = rows                     # the bar counts every folder; the list, the systems
+        self.rows = [r for r in rows if not r.get("hidden")]
         self.clamp()
 
     def crumbs(self):
@@ -78,7 +79,7 @@ class SpaceScreen(ListScreen):
         if self.rows is None:
             text(c, self.f.h2, "Measuring every system…", (W // 2, H // 2), theme.DIM, "center")
             return
-        space_bar(c, self.f, (56, 128, W - 112, 26), space_parts(self.rows, total, free), total, free, keep, cols=3)
+        space_bar(c, self.f, (56, 128, W - 112, 26), space_parts(getattr(self, "all_rows", None) or self.rows, total, free), total, free, keep, cols=3)
         lo = self.leftovers
         subs = ["Every game on the box, least played first",
                 "Looking…" if lo is None else "Nothing to clean up" if not lo else

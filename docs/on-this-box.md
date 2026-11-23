@@ -84,8 +84,12 @@ for downloads.
   `game.zip` and `game.chd` belong together). Partial downloads still queued
   are kept so they can resume. **A** deletes one, **Y** all of them, and the
   X Actions menu the ones you pick; each asks first.
-- **By system**: where the space went in each system, in the same colours as
-  the bar. Pick a system to free up space in just that one.
+- **By system**: where the space went in each folder in `roms`, in the same
+  colours as the bar. Hidden folders (names starting with a dot) aren't
+  systems, so they aren't listed, but the bar counts their space. Pick a system to free up space in
+  just that one: it lists the games EmulationStation shows there, so a file
+  EmulationStation hides or doesn't list, or a folder that isn't a system, has
+  nothing to offer there.
 
 ## Compress games already here
 
