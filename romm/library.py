@@ -675,6 +675,11 @@ class _Touched(dict):
         self[k] = default
         return default
 
+    def peek(self):
+        """The records as they are, to look at only: neither copied nor marked touched. Reach
+        one through [k] to change it."""
+        return dict.items(self)
+
     def values(self):
         self._all()
         return dict.values(self)
@@ -1077,12 +1082,30 @@ class Library:
         self._stems[system] = (sig, recheck, stems)
         return stems
 
-    def owned(self):
+    def owned(self, near=None):
         """Every path the app wrote and that's still as it wrote it, normalised: a record's
-        files (owned_files), or for a record from before files were recorded, its paths."""
+        files (owned_files), or for a record from before files were recorded, its paths.
+        near: only those of records with a path or file that is one of these paths, inside one
+        or holds one (everything that bears on deleting them), so a delete checks its own
+        records' files, not every file the app ever wrote (a batch of thousands, #13)."""
+        qs = None if near is None else {os.path.normpath(p) for p in near}
+        ups, under = set(), tuple(q + os.sep for q in qs or ())     # the folders holding one; inside one
+        for q in qs or ():
+            d = os.path.dirname(q)
+            while d not in ups and d != os.path.dirname(d):
+                ups.add(d)
+                d = os.path.dirname(d)
+
+        def bears(r):
+            files = r.get("files")
+            for c in list(r.get("paths") or []) + (list(files) if isinstance(files, dict) else []):
+                c = os.path.normpath(c) if isinstance(c, str) else ""
+                if c and (c in qs or c in ups or c.startswith(under)):
+                    return True
+            return False
         out = set()
         for r in self.snapshot().values():
-            if not isinstance(r, dict):
+            if not isinstance(r, dict) or (qs is not None and not bears(r)):
                 continue
             of = owned_files(r)
             out |= of if of is not None else {os.path.normpath(q) for q in r.get("paths") or []}
@@ -1407,7 +1430,7 @@ class Library:
                 raise NotDownloadedHere("%s %s" % (rom.get("name") or rom.get("fs_name"), NOT_OURS))
             return [], 0
         self._refuse_busy(paths)
-        owned = self.owned()
+        owned = self.owned(near=paths)           # (all that bears on these paths: the same, inside, holding)
         if paths:
             # only what the app wrote, as it wrote it: a file put at the same path since, or added
             # to the game's folder (a patch, a cheat, another game), is the owner's
@@ -1438,12 +1461,13 @@ class Library:
 
         def drop(inst):
             # the playlist can take other discs' files with it: their records follow what's on disk
-            for oid, other in list(inst.items()):
+            for oid, other in list(inst.peek()):  # (a look: only the records it changes are copied)
                 if oid == rid or not isinstance(other, dict):
                     continue
                 ops = other.get("paths") or []
                 if not any(p in gone_set for p in ops):
                     continue
+                other = inst[oid]
                 if any(os.path.lexists(p) for p in ops if p not in gone_set):
                     other["paths"] = [p for p in ops if p not in gone_set]
                 else:

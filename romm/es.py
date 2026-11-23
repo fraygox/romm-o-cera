@@ -344,7 +344,9 @@ def delete_game(system, path, library=None, pins=None):
     if library is not None:
         # only files the app downloaded (its records, or inside a folder it downloaded): a playlist's
         # disc, a track or a sheet of someone else's stays, whatever lists it
-        ours = library.owned()               # as the app wrote them (a file put there since isn't)
+        # as the app wrote them (a file put there since isn't); only the records that bear on this
+        # game, so a batch of thousands doesn't check every file the app wrote for each one (#13)
+        ours = library.owned(near=[path] + files)
         if library.owns(path, ours):
             # the app's own game: its files that are still as it wrote them
             files = [p for p in files if any(os.path.normpath(p) == o or os.path.normpath(p).startswith(o + os.sep)
@@ -352,7 +354,8 @@ def delete_game(system, path, library=None, pins=None):
         else:
             # put here another way, and picked to delete: exactly its own files (a playlist alone,
             # never the discs it lists; a sheet with its tracks), as the confirm said
-            files = library.their_files_at([path], system)
+            # (what it takes is these files, inside its folder, or the "._" beside one, never the app's)
+            files = library.their_files_at([path], system, library.owned(near=[path] + files))
     if pins is not None and library is not None:
         # (picked in a confirm: only files still as they were when it opened)
         files = [p for p in files if library.still_pinned(p, pins)]
@@ -389,10 +392,20 @@ def delete_game(system, path, library=None, pins=None):
     if library is not None and gone:
         done = {os.path.normpath(p) for p in gone}
 
+        ups = set()                          # the folders holding what went (a folder download's record)
+        for q in done:
+            d = os.path.dirname(q)
+            while d not in ups and d != os.path.dirname(d):
+                ups.add(d)
+                d = os.path.dirname(d)
+
         def drop(inst):
-            for rid, rec in list(inst.items()):
-                paths = [os.path.normpath(x) for x in rec.get("paths", [])]
-                if paths and all(x in done or not os.path.exists(x) for x in paths):
+            # the records of what went, or of a folder it was in (a look first: only those are
+            # reached, not every record, #13); each goes once none of its paths is left
+            for rid, rec in list(inst.peek()):
+                paths = [os.path.normpath(x) for x in rec.get("paths", [])] if isinstance(rec, dict) else []
+                if any(x in done or x in ups for x in paths) and \
+                        all(x in done or not os.path.exists(x) for x in paths):
                     inst.pop(rid, None)
         try:
             library.update(drop)
