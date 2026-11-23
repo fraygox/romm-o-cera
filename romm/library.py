@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -296,7 +297,23 @@ def their_files(paths, system, owned=(), refs=None):
     mine = set(out)
     out[:] = [q for q in out if q.lower().endswith((".cue", ".gdi", ".m3u")) or not (
         others_use(q, None) and _users_of(q) - mine)]
+    for q in list(out):              # the "._" file a Mac copy leaves beside each one is its, and goes with it
+        mac = os.path.join(os.path.dirname(q), "._" + os.path.basename(q))
+        if _apple_double(mac):
+            add(mac)
     return out
+
+
+def _apple_double(p):
+    """p is a macOS "._" file (AppleDouble: what a Mac writes beside a file it copies to a share
+    that can't keep its extra info), by its first bytes, not only its name."""
+    try:
+        if not stat.S_ISREG(os.lstat(p).st_mode):
+            return False
+        with open(p, "rb") as f:
+            return f.read(4) == b"\x00\x05\x16\x07"
+    except OSError:
+        return False
 
 
 def pin_files(files):

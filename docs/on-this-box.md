@@ -57,7 +57,8 @@ for downloads.
   deletes them in one go, after asking: for a game the app downloaded, only the
   files its download wrote; for one put here another way, the same files
   Delete would list for it (a playlist alone, never the discs it lists), and
-  the confirm names them. Saves and states are kept.
+  the confirm names them. A game copied from a Mac takes the `._` file the Mac
+  wrote beside it (`._Game.zip`) too. Saves and states are kept.
 - **Clean up leftovers**: partial files and empty folders (empty, or holding
   only files the system makes by itself, like `Thumbs.db` or `.DS_Store`; a
   folder with a manual, cover, save or any other file of yours is never one) that interrupted

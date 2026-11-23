@@ -93,3 +93,16 @@ def test_free_up_space_deleting_a_folder_download_drops_its_record(isolated):
     rommlib.delete_game("psx", files[0], lib)
     assert not os.path.exists(folder) and "7" not in lib.snapshot()
 
+
+def test_a_copied_games_mac_file_the_app_wrote_stays(isolated):
+    """A "._" file one of the app's records holds is the app's: never taken with a copied game."""
+    lib, sysdir = _library_of(1)
+    theirs = os.path.join(sysdir, "copied.zip")
+    with open(theirs, "wb") as f:
+        f.write(b"theirs")
+    mac = os.path.join(sysdir, "._copied.zip")
+    with open(mac, "wb") as f:
+        f.write(b"\x00\x05\x16\x07" + b"\x00" * 60)
+    lib.mark({"id": 50, "name": "odd", "fs_name": "._copied.zip"}, "nes", [mac])
+    rommlib.delete_game("nes", theirs, lib)
+    assert not os.path.exists(theirs) and os.path.exists(mac)

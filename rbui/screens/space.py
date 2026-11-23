@@ -271,7 +271,9 @@ class FreeUpScreen(ListScreen):
         ours, refs = (app.library.owned(), {}) if theirs else (None, None)   # once, not once a game (#13)
         for g in theirs:                         # name what goes for games put here another way
             base = os.path.join(rommlib.ROMS_ROOT, g["system"])
-            for f in app.library.their_files_at([g["path"]], g["system"], ours, refs):
+            mine = app.library.their_files_at([g["path"]], g["system"], ours, refs)
+            pins[g["path"]].update(rommlib.pin_files([f for f in mine if f not in pins[g["path"]]]))
+            for f in mine:                       # (pinned too: a "._" beside one is named, and only as it is now)
                 names.append(os.path.relpath(f, base))
         named = ""
         if names:

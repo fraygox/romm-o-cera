@@ -355,7 +355,8 @@ def delete_game(system, path, library=None, pins=None):
             # put here another way, and picked to delete: exactly its own files (a playlist alone,
             # never the discs it lists; a sheet with its tracks), as the confirm said
             # (what it takes is these files, inside its folder, or the "._" beside one, never the app's)
-            files = library.their_files_at([path], system, library.owned(near=[path] + files))
+            near = [path] + files + [os.path.join(os.path.dirname(f), "._" + os.path.basename(f)) for f in files]
+            files = library.their_files_at([path], system, library.owned(near=near))
     if pins is not None and library is not None:
         # (picked in a confirm: only files still as they were when it opened)
         files = [p for p in files if library.still_pinned(p, pins)]

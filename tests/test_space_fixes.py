@@ -101,3 +101,23 @@ def test_free_up_space_reads_the_box_once_for_many_games_not_once_each(isolated,
     scr.delete_marked()
     assert "Not downloaded by RomM-o-Cera (40)" in app.modal.body
     assert calls == {"owned": 1, "sheets": 1}
+
+
+def test_a_macs_file_changed_while_the_question_is_open_stays(isolated, monkeypatch):
+    d = os.path.join(rommlib.ROMS_ROOT, "fbneo")
+    game = _w(os.path.join(d, "Game.zip"), b"zip")
+    mac = _w(os.path.join(d, "._Game.zip"), b"\x00\x05\x16\x07" + b"\x00" * 60)
+    ran = []
+    app = types.SimpleNamespace(library=rommlib.Library(), modal=None, toast=lambda *a, **k: None,
+                                bg=lambda run, done, err: ran.append(run()), work=None, space_freed=lambda: None)
+    scr = FreeUpScreen.__new__(FreeUpScreen)
+    scr.app, scr.busy = app, False
+    g = _games(("fbneo", game))
+    g[0].update(ours=False, size=3)
+    scr.picked = lambda: g
+    scr.delete_marked()
+    assert "._Game.zip" in app.modal.body
+    with open(mac, "ab") as f:                                 # changed while the question was up
+        f.write(b"more")
+    app.modal.on_ok()
+    assert ran and not os.path.exists(game) and os.path.exists(mac)

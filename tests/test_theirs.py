@@ -156,3 +156,27 @@ def test_a_file_swapped_while_the_delete_confirm_is_open_stays(isolated):
     assert open(p, "rb").read() == b"y" * 50
     rommlib.delete_game("psx", p, lib, pins=pins)        # Free up space: the same
     assert os.path.exists(p)
+
+
+def test_a_mac_copys_dot_underscore_file_goes_with_its_game(isolated):
+    """A Mac copying games to the share writes "._Game.zip" beside each; deleting the game left
+    it behind for good, where nothing offered it again (#13)."""
+    d = os.path.join(rommlib.ROMS_ROOT, "fbneo")
+    os.makedirs(d)
+    game = os.path.join(d, "Game.zip")
+    with open(game, "wb") as f:
+        f.write(b"zip")
+    mac = os.path.join(d, "._Game.zip")
+    with open(mac, "wb") as f:
+        f.write(b"\x00\x05\x16\x07" + b"\x00" * 60)
+    lookalike = os.path.join(d, "._Other.zip")               # named like one, but not a Mac's
+    with open(lookalike, "wb") as f:
+        f.write(b"mine")
+    other = os.path.join(d, "Other.zip")
+    with open(other, "wb") as f:
+        f.write(b"zip")
+    lib = rommlib.Library()
+    assert sorted(lib.their_files_at([game], "fbneo")) == sorted([game, mac])
+    assert lib.their_files_at([other], "fbneo") == [other]
+    rommlib.delete_game("fbneo", game, lib)
+    assert not os.path.exists(game) and not os.path.exists(mac) and os.path.exists(lookalike)
