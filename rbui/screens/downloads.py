@@ -97,8 +97,9 @@ class DownloadsScreen(ListScreen):
         self.speed, self.speed_at = None, 0.0
         self.shown = None                    # the headline on screen: (kind, line, colour, when last said)
         self.work_said = None                # the batch's line, as state_line last said it
-        self.time_shown = None               # (label, time, when) last drawn on the right
-        self.time_w = (None, 0)              # (label, width): the time's room, kept while it's said
+        self.time_shown = None               # (line, when) last drawn on the right
+        self.time_est = None                 # (secs, when): the last time for all of it
+        self.time_w = 0                      # the time's room, kept while it's said
         self.refresh()
         if not self.view():
             self.focus = "panel"
@@ -570,12 +571,13 @@ class DownloadsScreen(ListScreen):
         dl = 0.0 if total <= done else (total - done) / speed if speed else None
         if any(j.state == J.PAUSED or (j.state == J.QUEUED and getattr(j, "short_space", 0)) for j in live):
             dl = None            # one is on hold (paused, no room for it): when it all ends can't be told
-        # unpacking and checking a file take time nothing here can tell
-        after = any(j.state in (J.EXTRACTING, J.VERIFYING) for j in live)
+        # unpacking and checking a file take time nothing here can tell: while more is downloading
+        # it hides in that, but once all of it is here there's nothing left to count (#12)
+        after = dl == 0 and any(j.state in (J.EXTRACTING, J.VERIFYING) for j in live)
         run, queue = self.running(), self.queued()
         convs = ([run] if run else []) + queue
         ctotal = sum(r["size"] for r in convs)
-        cdone, cv = 0, 0.0 if not convs else None
+        cdone, cv = 0, 0.0 if not convs or self.held else None    # paused: it waits for you, not the clock
         if run and not self.held:
             pct = ((run.get("cur") or {}).get("pct") or 0) / 100.0
             cdone = run["size"] * pct
@@ -603,10 +605,6 @@ class DownloadsScreen(ListScreen):
             return ("All done" if d.jobs else "Nothing running"), theme.DIM
         if not o["live"] and self.held:
             return "Compressing is paused", theme.AMBER
-        if o["secs"] is not None:
-            return "Everything's done in %s" % time_left(o["secs"]), theme.TEXT
-        if o["live"] and o["dl_secs"]:                # 0: all of it is here, a step after it runs
-            return "Downloads done in %s" % time_left(o["dl_secs"]), theme.TEXT
         if o["live"]:
             states = {j.state for j in d.jobs}
             if J.DOWNLOADING in states:
@@ -628,10 +626,10 @@ class DownloadsScreen(ListScreen):
         """The headline to draw: what's shown stays while it keeps being said, and gives way to the
         newest line once it hasn't been for LABEL_HOLD seconds, so fast downloads (Downloading,
         Checking downloads, Downloading…) and the moment between two conversions ("All done")
-        don't flicker. Its time ticking down, or a batch's count going up, is the same line; one
+        don't flicker. A batch's count going up is the same line; one
         that needs you (amber, red: paused, waiting for space, failed) comes and goes at once."""
         line, col = said
-        kind = "time" if line.startswith(("Everything's done in", "Downloads done in")) else line
+        kind = line
         if self.work_said is not None and line == self.work_said:
             kind = "work"                        # (state_line said it: the batch, as read once)
         urgent = (theme.AMBER, theme.RED)
@@ -647,22 +645,35 @@ class DownloadsScreen(ListScreen):
         in the background (deleting many games, #10) comes first, unless something needs you: it's
         what's going on right now."""
         w = getattr(self.app, "work", None)      # (read once: the batch's thread changes it any time)
-        said = self.headline(dict(o, secs=None, dl_secs=None))
+        said = self.headline(o)
         self.work_said = None
         if w and said[1] not in (theme.AMBER, theme.RED):
             self.work_said = work_label(w)
             return self.work_said, theme.TEXT
         return said
 
-    def time_line(self, o):
-        """("Everything's done in" / "Downloads done in", "about 6 min"), or None when it can't be told."""
+    def time_line(self, o, now=None):
+        """"Done in 6 min": when what's running ends, one line in one colour (#12), or None when it
+        can't be told. Paused compressing isn't counted (it waits for you). While downloads run
+        and a conversion can't be told yet (just started, or waiting its turn), the last time for
+        all of it keeps counting down, never below the downloads' own; with none yet, the
+        downloads' time: the line stays put instead of blinking out or changing its words."""
+        now = time.time() if now is None else now
         if self.app.downloader.hold and self.app.downloader.pending_count():
             return None
-        if o["secs"] is not None and (o["live"] or o["convs"]):
-            return "Everything's done in", time_left(o["secs"])
-        if o["live"] and o["dl_secs"]:
-            return "Downloads done in", time_left(o["dl_secs"])
-        return None
+        if not o["live"] and (self.held or not o["convs"]):
+            return None
+        secs = o["secs"]
+        if secs is not None:
+            self.time_est = (secs, now)
+        elif o["live"] and o["dl_secs"]:
+            last = self.time_est
+            secs = max(o["dl_secs"], last[0] - (now - last[1])) if last else o["dl_secs"]
+        else:
+            self.time_est = None
+        if not secs:                                 # None: can't be told; 0: a step after it runs
+            return None
+        return "Done in %s" % time_left(secs, about=False)
 
     def steady_time(self, said, now):
         """The time to draw: a moment without one (a file being checked) keeps the last for
@@ -696,21 +707,16 @@ class DownloadsScreen(ListScreen):
         if run:                                    # a big run: how far along, and what's left by platform
             parts = [run] + [p for p in parts if not p.endswith("in the queue")]
         right = rr.right - 20
-        when = self.steady_time(self.time_line(o), now)
+        when = self.steady_time(self.time_line(o, now), now)
         if when:
-            # one size for both (#12); it starts where the widest time so far did, so a time
-            # ticking down (19 s, 18 s: digits differ in width) only changes the end of it
-            label, value = when
-            lw = int(measure(f.h2, label + " ")) + 1
-            w = min(lw + int(measure(f.h2, value)) + 1, rr.width // 2)
-            if self.time_w[0] == label:
-                w = max(w, self.time_w[1])
-            self.time_w = (label, w)
-            text(c, f.h2, label, (right - w, rr.top + 10), theme.DIM, maxw=w)
-            text(c, f.h2, value, (right - w + lw, rr.top + 10), theme.TEXT, maxw=max(0, w - lw))
+            # it starts where the widest time so far did, so a time ticking down (19 s, 18 s:
+            # digits differ in width) only changes the end of it (#12)
+            w = max(min(int(measure(f.h2, when)) + 1, rr.width // 2), self.time_w)
+            self.time_w = w
+            text(c, f.h2, when, (right - w, rr.top + 10), theme.TEXT, maxw=w)
             right -= w + 24
         else:
-            self.time_w = (None, 0)
+            self.time_w = 0
         line, col = self.steady(self.state_line(o), now)
         text(c, f.h2, line, (rr.left + 20, rr.top + 10), col, maxw=right - rr.left - 20)
         counts = " · ".join(parts)

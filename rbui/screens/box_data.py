@@ -160,13 +160,15 @@ def conversion_left(r):
     return el * (100 - pct) / pct
 
 
-def time_left(secs):
-    """A duration as said on screen: "40 s", "about 7 min", "about 1 h 20 min"."""
+def time_left(secs, about=True):
+    """A duration as said on screen: "40 s", "about 7 min", "about 1 h 20 min" ("7 min" without
+    about, where the line already says it's a guess and the word coming and going would move it)."""
     secs = max(0, int(round(secs)))
     if secs < 60:
         return "%d s" % max(1, secs)
     mins = max(1, round(secs / 60))
-    return "about %d min" % mins if mins < 60 else "about %d h %d min" % divmod(mins, 60)
+    said = "%d min" % mins if mins < 60 else "%d h %d min" % divmod(mins, 60)
+    return "about " + said if about else said
 
 
 def conversion_status(r):
@@ -178,7 +180,7 @@ def conversion_status(r):
         st += " %d%%" % pct
         left = conversion_left(r)
         if left is not None:
-            st += " · %s left" % time_left(left)         # as the Activity headline counts it
+            st += " · %s left" % time_left(left)         # counted as the time on Activity's card is
     return st, (pct or 0) / 100.0
 
 

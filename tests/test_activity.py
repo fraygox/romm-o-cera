@@ -163,7 +163,7 @@ def test_the_line_on_top_adds_downloads_and_conversions(rb, app):
     o = scr.outlook(now)
     assert o["live"] == 1 and o["convs"] == 2
     assert o["dl_secs"] == pytest.approx(60.0) and o["secs"] == pytest.approx(60 + 60 + 120, abs=2)
-    assert scr.headline(o) == ("Everything's done in about 4 min", rb.TEXT)
+    assert scr.time_line(o) == "Done in 4 min"
     app.downloader.jobs[0].speed = 20 * MB                     # a burst: the estimate eases toward it
     o = scr.outlook(now + 5)
     assert scr.speed == pytest.approx(10 * MB + 10 * MB * (1 - 2.718281828 ** -1), rel=1e-3)
@@ -189,8 +189,8 @@ def test_the_time_left_keeps_the_queues_pace_with_many_small_files(rb, app):
             left = 40 - k - 1                                                  # MB, at 1 MB/s
             for o in (o_burst, o_gap):
                 assert o["dl_secs"] is not None and o["dl_secs"] == pytest.approx(left, rel=0.2)
-            said.append(scr.headline(o_gap)[0])
-    assert all(x.startswith("Downloads done in") or x.startswith("Everything's done in") for x in said)
+            said.append(scr.time_line(o_gap))
+    assert all(x and x.startswith("Done in ") for x in said)
     # one queued and finished between two looks (a small file, no speed of its own): its bytes count
     late = _job(app, "Cart late", J.DONE, MB, MB)
     before = app.dl_rate.total
@@ -218,7 +218,7 @@ def test_the_pace_is_measured_with_activity_closed_so_it_opens_with_a_time(rb, a
     scr = _screen(rb, app)
     o = scr.outlook(clock[0])
     assert o["dl_secs"] == pytest.approx(12, rel=0.25)
-    assert scr.time_line(o)[0] in ("Downloads done in", "Everything's done in")
+    assert scr.time_line(o).startswith("Done in ")
 
 
 def test_a_resumed_download_or_a_jumping_clock_doesnt_make_up_a_pace(rb, app):
@@ -247,8 +247,7 @@ def test_a_resumed_download_or_a_jumping_clock_doesnt_make_up_a_pace(rb, app):
 def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
     """A new headline replaces the one shown once it has lasted 2 s (#5): fast files going
     Downloading, Checking downloads, Downloading… stay "Downloading"; a moment of "All done"
-    between two conversions doesn't show; the time ticking down changes at once, and so does
-    anything that needs you (paused), both ways."""
+    between two conversions doesn't show; anything that needs you (paused), both ways."""
     scr = _screen(rb, app)
     T, D = rb.theme.TEXT, rb.theme.DIM
     t = 1000.0
@@ -260,11 +259,10 @@ def test_the_line_on_top_holds_steady_while_states_flicker(rb, app):
     assert scr.steady(("Unpacking", T), t + 3.5) == ("Downloading", T)
     assert scr.steady(("Unpacking", T), t + 4.6) == ("Unpacking", T)          # Downloading ended 2 s ago
     assert scr.steady(("Unpacking", T), t + 7) == ("Unpacking", T)
-    assert scr.steady(("Everything's done in 20 s", T), t + 8) == ("Unpacking", T)
-    assert scr.steady(("Everything's done in 19 s", T), t + 10.5) == ("Everything's done in 19 s", T)
-    assert scr.steady(("Everything's done in 18 s", T), t + 10.6) == ("Everything's done in 18 s", T)
-    assert scr.steady(("All done", D), t + 11) == ("Everything's done in 18 s", T)
-    assert scr.steady(("Compressing", T), t + 11.5) == ("Everything's done in 18 s", T)
+    assert scr.steady(("Compressing", T), t + 8) == ("Unpacking", T)
+    assert scr.steady(("Compressing", T), t + 10.5) == ("Compressing", T)
+    assert scr.steady(("All done", D), t + 11) == ("Compressing", T)
+    assert scr.steady(("Compressing", T), t + 11.5) == ("Compressing", T)
     paused = ("Downloads are paused: {X} Actions resumes them", rb.theme.AMBER)
     assert scr.steady(paused, t + 12) == paused                               # needs you: at once
     assert scr.steady(("Downloading", T), t + 12.1) == ("Downloading", T)     # and gone at once
@@ -294,11 +292,11 @@ def test_the_card_on_top_keeps_the_time_apart_from_whats_going_on(rb, app):
     scr = _screen(rb, app)
     o = scr.outlook()
     assert scr.state_line(o) == ("Downloading", rb.TEXT)
-    assert scr.time_line(o) == ("Everything's done in", "about 4 min")
+    assert scr.time_line(o) == "Done in 4 min"
     j.state = rommlib.Job.EXTRACTING                          # no time can be told for a moment
     o = scr.outlook()
     assert scr.state_line(o) == ("Unpacking", rb.TEXT) and scr.time_line(o) is None
-    assert scr.steady_time(None, scr.time_shown[1] + 1)[1] == "about 4 min"   # kept a moment
+    assert scr.steady_time(None, scr.time_shown[1] + 1) == "Done in 4 min"   # kept a moment
     assert scr.steady_time(None, scr.time_shown[1] + 3) is None              # then gone
     j.state = rommlib.Job.DOWNLOADING
     app.downloader.hold = True
@@ -331,21 +329,58 @@ def test_the_bar_on_top_counts_what_this_run_already_finished(rb, app):
 
 
 def test_the_time_on_top_keeps_its_place_as_it_ticks_down(rb, app, monkeypatch):
-    """#12: the time is one size, and starts where the widest one so far did: 19 s to 18 s
+    """#12: the time is one line in one colour, and starts where the widest one so far did: 19 s to 18 s
     (digits differ in width) doesn't move the words before it."""
     scr = _screen(rb, app)
     o = scr.outlook()
-    said = {"v": ("Everything's done in", "about 1 h 20 min")}
-    monkeypatch.setattr(scr, "time_line", lambda o: said["v"])
+    said = {"v": "Done in 1 h 20 min"}
+    monkeypatch.setattr(scr, "time_line", lambda o, now=None: said["v"])
     scr.draw_head(app.canvas, o)
-    wide = scr.time_w[1]
-    said["v"] = ("Everything's done in", "18 s")
+    wide = scr.time_w
+    said["v"] = "Done in 18 s"
     scr.draw_head(app.canvas, o)
-    assert scr.time_w == ("Everything's done in", wide)
+    assert scr.time_w == wide
     said["v"] = None
     scr.time_shown = None
     scr.draw_head(app.canvas, o)
-    assert scr.time_w == (None, 0)                          # gone: the next time starts from its own width
+    assert scr.time_w == 0                                  # gone: the next time starts from its own width
+
+
+def test_the_time_on_top_is_one_line_that_doesnt_flip_while_small_files_are_checked(rb, app, monkeypatch):
+    """#12: a file being checked while more downloads keeps the time for all of it, instead of
+    flipping to the downloads' time and back; compressing paused leaves the line as it is; and
+    it's said one way however long ("Done in 40 s", "Done in 4 min"), never "about"."""
+    _convs(since=60.0, pct=50.0, queued=1)
+    _job(app, "Lorem (USA)", rommlib.Job.DOWNLOADING, 100 * MB, 700 * MB, speed=10 * MB)
+    small = _job(app, "Cart", rommlib.Job.VERIFYING, MB, MB)
+    scr = _screen(rb, app)
+    assert scr.time_line(scr.outlook()) == "Done in 4 min"
+    small.state = rommlib.Job.DONE
+    assert scr.time_line(scr.outlook()) == "Done in 4 min"
+    scr.held = True                                           # compressing paused: the downloads alone
+    assert scr.time_line(scr.outlook()) == "Done in 1 min"
+    app.downloader.jobs.clear()
+    assert scr.time_line(scr.outlook()) is None               # only paused compressing left: no time
+    scr.held = False
+    _job(app, "Ipsum (USA)", rommlib.Job.DOWNLOADING, 600 * MB, 700 * MB, speed=10 * MB)
+    o = scr.outlook()
+    assert scr.time_line(o).startswith("Done in ") and "about" not in scr.time_line(o)
+
+
+def test_the_time_on_top_doesnt_blink_out_while_a_conversion_starts(rb, app):
+    """A conversion just started (too early to tell) or one waiting its turn: the last time for
+    all of it keeps counting down while downloads run, never below theirs; none yet: theirs."""
+    _convs(since=60.0, pct=50.0, queued=1)
+    _job(app, "Lorem (USA)", rommlib.Job.DOWNLOADING, 100 * MB, 700 * MB, speed=10 * MB)
+    scr = _screen(rb, app)
+    t = time.time()
+    assert scr.time_line(scr.outlook(t), t) == "Done in 4 min"
+    _convs(since=1.0, pct=1.0, queued=1)                      # the next one starts: can't be told yet
+    scr.refresh()
+    o = scr.outlook(t + 60)
+    assert o["secs"] is None and scr.time_line(o, t + 60) == "Done in 3 min"
+    scr2 = _screen(rb, app)                                   # opened just now: nothing to go on
+    assert scr2.time_line(o, t + 60) == "Done in %s" % rb.time_left(o["dl_secs"], about=False)
 
 
 def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
@@ -354,11 +389,11 @@ def test_the_line_on_top_gives_no_time_while_a_download_unpacks(rb, app):
     j = _job(app, "Lorem (USA)", rommlib.Job.EXTRACTING, 700 * MB, 700 * MB)
     scr = _screen(rb, app)
     o = scr.outlook()
-    assert o["secs"] is None and scr.headline(o) == ("Unpacking", rb.TEXT)
+    assert o["secs"] is None and scr.time_line(o) is None and scr.headline(o) == ("Unpacking", rb.TEXT)
     j.state = rommlib.Job.VERIFYING
     assert scr.headline(scr.outlook()) == ("Checking downloads", rb.TEXT)
     _job(app, "Ipsum (USA)", rommlib.Job.DOWNLOADING, 100 * MB, 700 * MB, speed=10 * MB)
-    assert scr.headline(scr.outlook()) == ("Downloads done in about 1 min", rb.TEXT)
+    assert scr.time_line(scr.outlook()) == "Done in 1 min"   # (more is downloading: the check hides in it)
 
 
 def test_the_line_on_top_when_it_cant_tell(rb, app):
@@ -382,6 +417,7 @@ def test_failed_rows_say_why_under_the_name(rb, app):
                                         (4800, "about 1 h 20 min")])
 def test_time_left(rb, secs, said):
     assert rb.time_left(secs) == said
+    assert rb.time_left(secs, about=False) == said.replace("about ", "")
 
 
 # ------------------------------------------------------------------ the worker's side
