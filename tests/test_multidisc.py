@@ -760,3 +760,12 @@ def test_clicks_only_from_the_start(rb):
     sfx = rb.Sfx("clicks")
     assert sfx.level == 1.0 and not sfx.popups
     assert rb.Sfx("normal").popups and rb.Sfx("quiet").popups
+
+
+def test_the_es_popup_counts_a_big_run_with_separators():
+    import rb_dl
+    n = rb_dl.Notes({"notify": True})
+    n.ready = ["G%d" % i for i in range(1243)]
+    n.failed = ["F%d" % i for i in range(1004)]
+    assert n.text() == ("RomM-o-Cera: 1,243 games ready: G0, G1, G2 +1,240 more; "
+                        "1,004 failed: F0, F1, F2 +1,001 more")

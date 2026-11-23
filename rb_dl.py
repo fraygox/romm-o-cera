@@ -97,13 +97,13 @@ class Notes:
 
     def text(self):
         def names(xs):
-            return ", ".join(xs[:3]) + (" +%d more" % (len(xs) - 3) if len(xs) > 3 else "")
+            return ", ".join(xs[:3]) + (" +{:,} more".format(len(xs) - 3) if len(xs) > 3 else "")
         parts = []
         if self.ready:
-            parts.append("%d game%s ready: %s" % (len(self.ready), "" if len(self.ready) == 1 else "s",
-                                                  names(self.ready)))
+            parts.append("{:,} game{} ready: {}".format(len(self.ready), "" if len(self.ready) == 1 else "s",
+                                                       names(self.ready)))
         if self.failed:
-            parts.append("%d failed: %s" % (len(self.failed), names(self.failed)))
+            parts.append("{:,} failed: {}".format(len(self.failed), names(self.failed)))
         return "RomM-o-Cera: " + "; ".join(parts)
 
     def flush(self, force=False):
