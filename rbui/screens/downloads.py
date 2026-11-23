@@ -294,7 +294,7 @@ class DownloadsScreen(ListScreen):
         systems = sorted({j.system for j in list(d.jobs) if j.state == J.DONE and not j.restored})
         if systems:
             names = [app.system_name(sy) for sy in systems]
-            e.append(("Check the games on %s" % (names[0] if len(names) == 1 else "these %d platforms" % len(names)),
+            e.append(("Check the games on %s" % (names[0] if len(names) == 1 else "these {:,} platforms".format(len(names))),
                       "Every file there read against RomM's checksums again" +
                       (": " + ", ".join(names) if len(names) > 1 else ""),
                       lambda: app.push(AuditScreen(app, deep=True, systems=systems))))
@@ -306,7 +306,7 @@ class DownloadsScreen(ListScreen):
     def clear_finished(self):
         n = self.app.downloader.clear_finished()
         if n:
-            self.app.toast("Cleared %d finished" % n)
+            self.app.toast("Cleared {:,} finished".format(n))
 
     def each(self, fn, todo, msg):
         """An action on several downloads: fn for each, picking ends, a toast says how many (msg)."""
@@ -333,19 +333,19 @@ class DownloadsScreen(ListScreen):
         cancel = each(d.cancel_job, stop, "Cancelled %s")
         e = []
         if live:
-            e.append(("Pause %d" % len(live), "Keeps their partial files", each(d.pause_job, live, "Paused %s")))
+            e.append(("Pause {:,}".format(len(live)), "Keeps their partial files", each(d.pause_job, live, "Paused %s")))
         if paused:
-            e.append(("Resume %d" % len(paused), "", each(d.resume_job, paused, "Resumed %s")))
+            e.append(("Resume {:,}".format(len(paused)), "", each(d.resume_job, paused, "Resumed %s")))
         if stop:
-            e.append(("Cancel %d" % len(stop), "Their partial files are deleted", lambda: setattr(app, "modal", Confirm(
+            e.append(("Cancel {:,}".format(len(stop)), "Their partial files are deleted", lambda: setattr(app, "modal", Confirm(
                 app, "Cancel %s?" % plural(len(stop), "download"),
                 "Their partial files are deleted; finished downloads in the pick stay as they are.",
-                "Cancel %d" % len(stop), cancel, danger=True))))
+                "Cancel {:,}".format(len(stop)), cancel, danger=True))))
         if again:
-            e.append(("Retry %d" % len(again), "Failed and cancelled ones download again",
+            e.append(("Retry {:,}".format(len(again)), "Failed and cancelled ones download again",
                       each(d.resume_job, again, "Queued %s again")))
         if over:
-            e.append(("Remove %d from the list" % len(over), "Finished games stay on the box",
+            e.append(("Remove {:,} from the list".format(len(over)), "Finished games stay on the box",
                       each(d.remove, over, "Removed %s from the list")))
         return e
 
@@ -455,7 +455,7 @@ class DownloadsScreen(ListScreen):
             frac = (j.done_bytes / j.total_bytes) if j.total_bytes else 0
             gone = getattr(j, "stalled", lambda: 0)()
             if gone:                              # the old speed and time left would be a guess
-                return "Stalled: nothing from RomM for %d s" % gone, theme.AMBER
+                return "Stalled: nothing from RomM for {:,} s".format(int(gone)), theme.AMBER
             if not j.speed:
                 return "%d%%" % (frac * 100), theme.BLUE
             st = "%s/s" % human_size(j.speed)
@@ -697,12 +697,12 @@ class DownloadsScreen(ListScreen):
         queued = self.app.downloader.active_count()          # as the header counts them
         P = rommlib.Job.PAUSED
         paused = sum(1 for j in jobs if j.state == P)
-        parts = (["%d in the queue" % queued] if queued else []) + (["%d paused" % paused] if paused else []) + \
-            (["%d compressing" % o["convs"]] if o["convs"] and o.get("running", True) else
-             ["%d to compress" % o["convs"]] if o["convs"] else [])       # none running: they only wait
+        parts = (["{:,} in the queue".format(queued)] if queued else []) + (["{:,} paused".format(paused)] if paused else []) + \
+            (["{:,} compressing".format(o["convs"])] if o["convs"] and o.get("running", True) else
+             ["{:,} to compress".format(o["convs"])] if o["convs"] else [])       # none running: they only wait
         n = self.pick_count()
         if n:
-            parts.append("%d picked" % n)
+            parts.append("{:,} picked".format(n))
         run = getattr(self, "_run", "")
         if run:                                    # a big run: how far along, and what's left by platform
             parts = [run] + [p for p in parts if not p.endswith("in the queue")]
@@ -829,7 +829,7 @@ class DownloadsScreen(ListScreen):
                        on=on, tap=tap)
         more = len(self.queued()) - sum(1 for it in items if it["kind"] == "queued")
         if more > 0:
-            p.label("+%d more waiting · {L2 R2} Conversions" % more)
+            p.label("+{:,} more waiting · {{L2 R2}} Conversions".format(more))
         if len(items) == 1:
             p.space(4)
             p.prose("Nothing compressing. Disc games are compressed here after they download, while nothing "

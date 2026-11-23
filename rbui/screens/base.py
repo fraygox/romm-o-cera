@@ -167,7 +167,7 @@ class ListScreen(Screen):
         own = list(own)
         if self.picking or self.PICK_ALWAYS:
             n = self.pick_count()
-            own = [("A", "Pick"), ("X", "Act on %d" % n if n else pads.ACTIONS)] + \
+            own = [("A", "Pick"), ("X", "Act on {:,}".format(n) if n else pads.ACTIONS)] + \
                 [h for h in own if h[0] not in ("A", "X")]
             if not self.PICK_ALWAYS:
                 back = "Stop picking"
@@ -272,7 +272,7 @@ class ListScreen(Screen):
 
     def menu_title(self):
         n = self.pick_count()
-        return "%d picked" % n if n else (self.crumbs() or [""])[-1]
+        return "{:,} picked".format(n) if n else (self.crumbs() or [""])[-1]
 
     def menu_entries(self):
         """What to do with the picks, the whole-list actions, picking itself,

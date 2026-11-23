@@ -114,7 +114,7 @@ class OnThisBoxScreen(Screen):
                 if len(offer) == 1:
                     n = len(offer[0]["offers"])
                     return "%s is missing %s RomM has" % (offer[0]["name"], plural(n, "file")), theme.ACCENT_HI
-                return "%d systems are missing files RomM has" % len(offer), theme.ACCENT_HI
+                return "{:,} systems are missing files RomM has".format(len(offer)), theme.ACCENT_HI
             if gone:
                 return "%s missing files, not in RomM" % plural(len(gone), "system"), theme.AMBER
             return "All %s complete" % plural(len(here), "system"), None
@@ -128,10 +128,10 @@ class OnThisBoxScreen(Screen):
                 k = not_fully_checked(a.get("stats"))
                 if not a.get("deep"):
                     return "Nothing wrong found on %s (quick check)" % when, None
-                return ("Nothing wrong found on %s · %d not fully checked" % (when, k) if k else
+                return ("Nothing wrong found on {} · {:,} not fully checked".format(when, k) if k else
                         "All good on %s" % when), None
-            bits = (["%d damaged" % dmg] if dmg else []) + (["%d can't be read" % unread] if unread else []) + \
-                (["%d differ from RomM" % dif] if dif else [])
+            bits = (["{:,} damaged".format(dmg)] if dmg else []) + (["{:,} can't be read".format(unread)] if unread else []) + \
+                (["{:,} differ from RomM".format(dif)] if dif else [])
             return ", ".join(bits), theme.RED if dmg or unread else theme.AMBER
         if key == "compress":
             if self.compress is None:
@@ -144,9 +144,9 @@ class OnThisBoxScreen(Screen):
             run = next((r for r in self.convs if r["kind"] == "running"), None)
             nq = sum(1 for r in self.convs if r["kind"] == "queued")
             if run:
-                return "Converting" + (", %d waiting" % nq if nq else ""), theme.BLUE
+                return "Converting" + (", {:,} waiting".format(nq) if nq else ""), theme.BLUE
             if nq:
-                return "%d waiting for a quiet moment" % nq, None
+                return "{:,} waiting for a quiet moment".format(nq), None
             failed = [r for r in self.convs if r["kind"] == "failed"]
             if failed:
                 return "%s failed: retry from here" % plural(len(failed), "conversion"), theme.RED
@@ -165,22 +165,22 @@ class OnThisBoxScreen(Screen):
             return (plural(len(ok), "game") if ok else ""), None
         if key == "bios":
             offer = sum(len(r["offers"]) for r in (self.bios or []) if r.get("here"))
-            return ("Fetch %d" % offer, theme.ACCENT_HI) if offer else ("", None)
+            return ("Fetch {:,}".format(offer), theme.ACCENT_HI) if offer else ("", None)
         if key == "check":
             dmg, unread, dif = check_counts((self.audit or {}).get("findings", []))
             if dmg:
-                return "%d damaged" % dmg, theme.RED
+                return "{:,} damaged".format(dmg), theme.RED
             if unread:
-                return "%d can't be read" % unread, theme.RED
+                return "{:,} can't be read".format(unread), theme.RED
             if dif:
-                return "%d differ" % dif, theme.AMBER
+                return "{:,} differ".format(dif), theme.AMBER
             return "", None
         if key == "conv":
             run = next((r for r in self.convs if r["kind"] == "running"), None)
             if run:
                 return "%d%%" % (conversion_status(run)[1] * 100), theme.BLUE
             failed = sum(1 for r in self.convs if r["kind"] == "failed")
-            return ("%d failed" % failed, theme.RED) if failed else ("", None)
+            return ("{:,} failed".format(failed), theme.RED) if failed else ("", None)
         return "", None
 
     def summary(self):
@@ -209,7 +209,7 @@ class OnThisBoxScreen(Screen):
         total, free, keep = disk_space(self.app.cfg)
         run = sum(1 for r in self.convs if r["kind"] == "running")
         meta = ("%s free of %s" % (human_size(free), human_size(total)) if total else "") + \
-            (" · %d converting" % run if run else "")
+            (" · {:,} converting".format(run) if run else "")
         mr = text(c, self.f.small, meta, (hr.right - 20, hr.top + 20), theme.DIM, "topright", maxw=hr.width // 2)
         text(c, self.f.h2, line, (hr.left + 20, hr.top + 12), col, maxw=mr.left - 40 - hr.left)
         if total and self.storage is not None:
@@ -267,7 +267,7 @@ class OnThisBoxScreen(Screen):
             text(c, self.f.small, human_size(g["size"]), (p.right - 28, yy + 3), theme.DIM, "topright")
             yy += 44
         if len(self.games) > 7:
-            text(c, self.f.small, "and %d more" % (len(self.games) - 7), (x, yy), theme.FAINT)
+            text(c, self.f.small, "and {:,} more".format((len(self.games) - 7)), (x, yy), theme.FAINT)
         self.foot(c, p, "Delete any of them; saves and states are kept.")
 
     def panel_space(self, c, p):
@@ -317,7 +317,7 @@ class OnThisBoxScreen(Screen):
             yy += 64
         others = len(self.bios) - len(here)
         more = (["%s more" % plural(len(here) - 6, "system")] if len(here) > 6 else []) + \
-            (["%d without games here" % others] if others else [])
+            (["{:,} without games here".format(others)] if others else [])
         if more:
             text(c, self.f.small, "Also: " + ", ".join(more), (x, yy), theme.FAINT)
         if any(r["offers"] for r in here):
@@ -346,7 +346,7 @@ class OnThisBoxScreen(Screen):
                 yy += 82
             st = a.get("stats") or {}
             more = len(a["findings"]) - 3
-            line = ("and %d more. " % more if more > 0 else "") + \
+            line = ("and {:,} more. ".format(more) if more > 0 else "") + \
                 "%d checked, %d matched to RomM." % (st.get("checked", 0), st.get("matched", 0))
             text(c, self.f.body, line, (x, yy + 4), theme.GREEN if not a["findings"] else theme.DIM)
             yy += 40

@@ -145,7 +145,7 @@ class BacklogScreen(ListScreen):
         if p is None:
             e.append(("Download my backlog", "Working out what fits…", None))
         elif p["todo"]:
-            e.append(("Download my backlog", "%d games, %s" % (len(p["todo"]), human_size(
+            e.append(("Download my backlog", "{:,} games, {}".format(len(p["todo"]), human_size(
                 p["fit_bytes"] + p["wait_bytes"])), self.download_all))
         e.append(("Free up space", "Pick games on this box to delete", lambda: app.push(FreeUpScreen(app))))
         e.append(("Reload from RomM", "", self.load))
@@ -236,7 +236,7 @@ class BacklogScreen(ListScreen):
             return self.draw_game(pn, rom)
         total = p["fit_bytes"] + p["wait_bytes"]
         nf, nw = len(todo) - len(p["wait"]), len(p["wait"])
-        pn.figure(human_size(total), "%d game%s not on this box yet" % (len(todo), "" if len(todo) == 1 else "s"))
+        pn.figure(human_size(total), "{:,} game{} not on this box yet".format(len(todo), "" if len(todo) == 1 else "s"))
         share = p["fit_bytes"] / total if total else (1.0 if not nw else 0.0)
         pn.bar([(share, theme.ACCENT), (1 - share, theme.AMBER)] if nw else [(1.0, theme.ACCENT)])
         keep = rommlib.keep_free_bytes(self.app.cfg) or rommlib.space_margin(total)
@@ -248,9 +248,9 @@ class BacklogScreen(ListScreen):
         legend.append((None, "%s free after the queue" % human_size(max(0, p["free"]))))
         legend.append((None, "Keeping %s free (Settings)" % human_size(keep)))
         pn.legend(legend)
-        pn.verb("Download %d" % len(todo), "go", human_size(total), glyph="Y", fn=self.download_all, foot=False)
+        pn.verb("Download {:,}".format(len(todo)), "go", human_size(total), glyph="Y", fn=self.download_all, foot=False)
         if nw:
-            note = ("%d start now; the other %d wait for room." % (nf, nw)) if nf else "All of them wait for room."
+            note = ("{:,} start now; the other {:,} wait for room.".format(nf, nw)) if nf else "All of them wait for room."
             note += " {X} %s has Free up space." % pads.ACTIONS
         else:
             note = "Queued in your backlog's order."

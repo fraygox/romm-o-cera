@@ -165,7 +165,7 @@ def compress_confirm(app, title, cands, done):
                         "%s, %s to work through: this can take hours. It runs in the background, pauses "
                         "while you play, and each original goes only after its copy checks out."
                         % (plural(len(cands), "game"), human_size(size)),
-                        "Compress %d" % len(cands), lambda: compress_queue(app, cands, done))
+                        "Compress {:,}".format(len(cands)), lambda: compress_queue(app, cands, done))
 
 
 def compress_queue(app, cands, done=None):
@@ -324,7 +324,7 @@ class CompressScreen(ListScreen):
                    theme.FAINT, theme.DIM)
             shown += 1
         if shown < len(games):
-            text(c, self.f.small, "and %d more" % (len(games) - shown), (p.x, p.y), theme.FAINT)
+            text(c, self.f.small, "and {:,} more".format(len(games) - shown), (p.x, p.y), theme.FAINT)
 
 
 class CantConvertScreen(ListScreen):
@@ -425,7 +425,7 @@ class CompressSystemScreen(ListScreen):
         return self.list_hints(("A", "Compress this one"), ("X", pads.ACTIONS))
 
     def list_actions(self):
-        return [("Compress all %d" % len(self.cands), "%s · asks first: it can take hours" % human_size(
+        return [("Compress all {:,}".format(len(self.cands)), "%s · asks first: it can take hours" % human_size(
             sum(x["size"] for x in self.cands)), lambda: compress_confirm(
                 self.app, "Compress all %s here?" % plural(len(self.cands), "%s game" % self.app.system_name(self.system)),
                 list(self.cands), self.enter))]
@@ -435,7 +435,7 @@ class CompressSystemScreen(ListScreen):
             self.picks.clear()
             self.picking = False
             self.enter()
-        return [("Compress %d picked" % len(cands), human_size(sum(x["size"] for x in cands)),
+        return [("Compress {:,} picked".format(len(cands)), human_size(sum(x["size"] for x in cands)),
                  lambda: compress_confirm(self.app, "Compress %s?" % plural(len(cands), "picked game"),
                                           cands, done))]
 

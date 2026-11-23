@@ -82,7 +82,7 @@ class UnseenScreen(ListScreen):
         app.modal = Confirm(app, "Unpack %s?" % plural(len(arcs), "archive"),
                             "Each is unpacked into its own system folder (%s) as after a download, compressed if "
                             "that's on, and deleted once it's out. One that can't be unpacked is left as it is."
-                            % ", ".join(systems), "Unpack %d" % len(arcs), lambda: self.run_many("unpack", arcs))
+                            % ", ".join(systems), "Unpack {:,}".format(len(arcs)), lambda: self.run_many("unpack", arcs))
 
     def ask_delete_many(self, todo):
         app = self.app
@@ -95,7 +95,7 @@ class UnseenScreen(ListScreen):
         app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "file"),
                             "Deletes %s (%s)%s. Saves and states stay. This can't be undone."
                             % (plural(len(todo), "file"), human_size(size), also),
-                            "Delete %d" % len(todo), lambda: self.run_many("delete", todo), danger=True)
+                            "Delete {:,}".format(len(todo)), lambda: self.run_many("delete", todo), danger=True)
 
     def run_many(self, what, todo):
         """Unpack or delete the picked files one after another; a failure is
@@ -110,7 +110,7 @@ class UnseenScreen(ListScreen):
             done, failed, freed, tasks = 0, [], 0, False
             try:
                 for n, it in enumerate(todo, 1):
-                    self.progress = "%s %d of %d…" % (verb, n, len(todo))
+                    self.progress = "{} {:,} of {:,}…".format(verb, n, len(todo))
                     if not work_step(app, n):    # the app is closing: stop between two
                         break
                     if not os.path.lexists(it["path"]):
@@ -138,11 +138,11 @@ class UnseenScreen(ListScreen):
             if tasks and not app.headless:
                 app.spawn_helper("rb_chd.py")          # flock'd: no-op if already running
             if what == "unpack":
-                msg = "Unpacked %d%s" % (done, ", compressing in the background" if tasks else "")
+                msg = "Unpacked {:,}{}".format(done, ", compressing in the background" if tasks else "")
             else:
-                msg = "Deleted %d, freed %s" % (done, human_size(freed))
+                msg = "Deleted {:,}, freed {}".format(done, human_size(freed))
             if failed:
-                msg += " — %d couldn't be: %s (%s)" % (len(failed), failed[0][0], failed[0][1])
+                msg += " — {:,} couldn't be: {} ({})".format(len(failed), failed[0][0], failed[0][1])
                 rommlib.log("UNSEEN %s failed: %s" % (what, failed))
             self._done(msg, theme.AMBER if failed else theme.GREEN)
 
@@ -182,7 +182,7 @@ class UnseenScreen(ListScreen):
                 return
             parts = ["%s (%s)" % (os.path.basename(m) or m, human_size(sz)) if sz is not None else m
                      for m, sz in members[:3]]
-            more = " and %d more" % (len(members) - 3) if len(members) > 3 else ""
+            more = " and {:,} more".format((len(members) - 3)) if len(members) > 3 else ""
             app.modal = Confirm(app, "Unpack %s?" % name,
                                 "Inside: %s%s. Unpacked into roms/%s/ as after a download (compressed "
                                 "if that's on); the archive is deleted once it's out."
@@ -254,7 +254,7 @@ class UnseenScreen(ListScreen):
         lst, pan = split(need_width(self.f, [row(it) for it in self.items[:200]], mark=True))
         self.BUBBLE_AT = bubble_at(lst)
         picked = self.picked()
-        note = "%d picked, %s" % (len(picked), human_size(sum(i["size"] for i in picked))) if picked else \
+        note = "{:,} picked, %s".format(len(picked)) % (human_size(sum(i["size"] for i in picked))) if picked else \
             "in %s" % plural(n_sys, "system")
         list_head(c, self.f, lst, "%s ES can't see" % plural(len(self.items), "file"), self.progress or note,
                   theme.AMBER if self.progress else None)

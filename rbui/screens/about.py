@@ -138,7 +138,7 @@ class CreditsScreen(ListScreen):
 
     def draw(self, c):
         lst, pan = split(need_width(self.f, [(name, what, lic) for name, what, lic, _, _ in CREDITS]))
-        list_head(c, self.f, lst, "Made with", "%d projects" % len(CREDITS))
+        list_head(c, self.f, lst, "Made with", "{:,} projects".format(len(CREDITS)))
         for i, r, on in self.row_rects(ROWS_TOP, x=lst.left, w=lst.width):
             name, what, lic, _, _ = CREDITS[i]
             list_row(c, self.f, r, on, name, what, lic, theme.ACCENT_HI, slot="credit")

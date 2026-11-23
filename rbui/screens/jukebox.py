@@ -191,7 +191,7 @@ class AlbumFocus:
             sub = it.get("about") or it.get("kind") or "Every soundtrack in RomM, in a new order each time"
         p.title(it.get("title") or it["name"], sub=sub, sub_color=theme.FAINT, center=True)
         p.y -= 6
-        by = artists[0] if len(artists) == 1 else "%d artists" % len(artists) if artists else it.get("artist")
+        by = artists[0] if len(artists) == 1 else "{:,} artists".format(len(artists)) if artists else it.get("artist")
         if by:
             p.pair("By", by)
         if count:
@@ -1023,7 +1023,7 @@ class TracksScreen(ListScreen):
         if self.many:
             sub = "%d soundtracks" % self.about["games"]
         else:
-            sub = artists[0] if len(artists) == 1 else "%d artists" % len(artists) if artists else ""
+            sub = artists[0] if len(artists) == 1 else "{:,} artists".format(len(artists)) if artists else ""
         p.title(self.title, sub=sub, sub_color=theme.DIM, center=True)
         p.y -= 6
         p.pair("Length", "%s · %s" % (plural_tracks(len(rows)), minutes(self.about["seconds"])))

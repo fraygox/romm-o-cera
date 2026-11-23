@@ -166,7 +166,7 @@ class Rest:
 
 def plural_games(jobs):
     """"1 game" / "3 games": what the closing wait names (a count, never a name that could overflow)."""
-    return "1 game" if len(jobs) == 1 else "%d games" % len(jobs)
+    return "1 game" if len(jobs) == 1 else "{:,} games".format(len(jobs))
 
 
 class App:
@@ -664,7 +664,7 @@ class App:
         if work:
             body += " " + work_note(work)
         if n:
-            what = "%d download%s" % (n, "s" if n > 1 else "")
+            what = "{:,} download{}".format(n, "s" if n > 1 else "")
             if self.cfg["background_downloads"]:
                 body += " %s still running keep%s going in the background while you play." % (
                     what, "s" if n == 1 else "")
@@ -767,7 +767,7 @@ class App:
         group = self.make_group(rom, discs)
         n = self.queue_set(group, [(r, system) for _, r in discs], system)
         if n:
-            self.toast("Queued %d disc%s: %s" % (n, "" if n == 1 else "s", group["title"]), theme.GREEN)
+            self.toast("Queued {:,} disc{}: {}".format(n, "" if n == 1 else "s", group["title"]), theme.GREEN)
             self.space_check()
 
     def expand_sets(self, items, pool=None):
@@ -937,9 +937,9 @@ class App:
         if work:                                    # it runs in the app: closing stops it (#13)
             said.append(work_note(work))
         if n and not self.cfg["background_downloads"]:
-            said.append("%d download%s still running. They're paused and resume "
+            said.append("{:,} download{} still running. They're paused and resume "
                         "next time you open RomM-o-Cera (or turn on \"Keep "
-                        "downloading after exit\" in Settings)." % (n, "s" if n > 1 else ""))
+                        "downloading after exit\" in Settings).".format(n, "s" if n > 1 else ""))
         if said:
             self.modal = Confirm(self, "Quit %s?" % APP_NAME, " ".join(said), "Quit",
                                  lambda: self.after_batch(self._quit), danger=True)
@@ -1000,9 +1000,10 @@ class App:
         if not self.headless and rommlib.conversions_pending():
             self.spawn_helper("rb_chd.py")        # discs left waiting last time (flock'd: no-op if running)
         if n and self.downloader.hold:
-            self.toast("%d download%s waiting — paused (Activity, {X} Actions resumes)" % (n, "" if n == 1 else "s"), theme.AMBER)
+            self.toast("{:,} download{} waiting — paused (Activity, {{X}} Actions resumes)".format(n, "" if n == 1 else "s"),
+                       theme.AMBER)
         elif n:
-            self.toast("Resumed %d download%s%s" % (n, "" if n == 1 else "s",
+            self.toast("Resumed {:,} download{}{}".format(n, "" if n == 1 else "s",
                                                     " from the background" if was_running else ""), theme.BLUE)
 
     def _notice(self, title, sub):

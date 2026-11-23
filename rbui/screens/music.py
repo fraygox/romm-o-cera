@@ -469,7 +469,7 @@ class MusicPickScreen(ListScreen):
         lst, pan = split()
         rows = self.listed()
         n = self.pick_count()
-        list_head(c, f, lst, self.title, "" if self.single else "%d picked" % n if n else "None picked: any will do")
+        list_head(c, f, lst, self.title, "" if self.single else "{:,} picked".format(n) if n else "None picked: any will do")
         if self.draw_load_error(c, ROWS_TOP + 8):
             return
         if self.items is None:

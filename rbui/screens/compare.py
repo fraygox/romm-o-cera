@@ -93,7 +93,7 @@ def say(it, recorded=False):
     if st == rommlib.NEWER:
         n, r = len(targets(it)), len(replaceable(it))
         if n > 1 or (n == 1 and len(parts_of(it)) > 1):
-            head = "RomM has a newer copy of %s of this set's discs." % (("%d" % n) if n > 1 else "one")
+            head = "RomM has a newer copy of %s of this set's discs." % (("{:,}".format(n)) if n > 1 else "one")
             if not r:
                 return head + (" Their files here are shared with other discs, so there's nothing of their own "
                                "to replace." if n > 1 else shared.replace("another game", "other discs"))

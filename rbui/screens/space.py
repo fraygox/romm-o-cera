@@ -252,8 +252,8 @@ class FreeUpScreen(ListScreen):
             self.busy = False
             self.picks.clear()
             if why:
-                more = " (and %d more)" % (len(why) - 1) if len(why) > 1 else ""
-                app.toast("Deleted %d of %s — %s freed. %s%s" % (gone, plural(len(todo), "game"), human_size(freed),
+                more = " (and {:,} more)".format(len(why) - 1) if len(why) > 1 else ""
+                app.toast("Deleted {:,} of %s — %s freed. %s%s".format(gone) % (plural(len(todo), "game"), human_size(freed),
                                                                  why[0], more), theme.AMBER)
             else:
                 app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(todo), "game"), human_size(freed)),
@@ -278,17 +278,17 @@ class FreeUpScreen(ListScreen):
         named = ""
         if names:
             named = " Not downloaded by RomM-o-Cera (%d): %s%s." % (
-                len(theirs), ", ".join(names[:8]), " and %d more" % (len(names) - 8) if len(names) > 8 else "")
+                len(theirs), ", ".join(names[:8]), " and {:,} more".format(len(names) - 8) if len(names) > 8 else "")
         app.modal = Confirm(app, "Delete %s?" % plural(len(todo), "game"),
                             "Frees about %s. Games RomM-o-Cera downloaded lose the files it wrote; "
                             "for the others only their game file, its sheet's tracks or a playlist go. Saves, states, "
                             "screenshots and anything else are kept.%s EmulationStation drops them from its lists "
-                            "when you leave RomM-o-Cera." % (human_size(size), named), "Delete %d" % len(todo),
+                            "when you leave RomM-o-Cera." % (human_size(size), named), "Delete {:,}".format(len(todo)),
                             lambda: work_begin(app, "Deleting", len(todo)) and (setattr(self, "busy", True),
                                                                              app.bg(run, done, err)), danger=True)
 
     def pick_entries(self, games):
-        return [("Delete %d picked" % len(games), "Frees about %s" % human_size(sum(g["size"] for g in games)),
+        return [("Delete {:,} picked".format(len(games)), "Frees about %s" % human_size(sum(g["size"] for g in games)),
                  self.delete_marked)]
 
     def list_actions(self):
@@ -300,7 +300,7 @@ class FreeUpScreen(ListScreen):
 
     def menu_title(self):
         n = self.pick_count()
-        return "Free up space" + (" · %d picked" % n if n else "")
+        return "Free up space" + (" · {:,} picked".format(n) if n else "")
 
     def cycle_sort(self, step=1):
         keys = [k for k, _ in self.SORTS]
@@ -350,7 +350,7 @@ class FreeUpScreen(ListScreen):
             list_row(c, self.f, r, on, *row(g), mark=lambda ctr, g=g: self.draw_pick(c, g, ctr), slot="freeup")
         g = self.items[self.sel]
         p = Panel(c, self.f, pan, app=self.app, key=self.sel, slot="freeup-panel")
-        p.foot("%d picked: frees %s" % (n, human_size(size)) if n else "Nothing picked yet",
+        p.foot("{:,} picked: frees %s".format(n) % human_size(size) if n else "Nothing picked yet",
                theme.TEXT if n else theme.FAINT)
         p.actions(hint_actions(self))
         p.title(g["name"], "roms/" + g["system"])
@@ -401,21 +401,21 @@ class LeftoversScreen(ListScreen):
         return "other"
 
     def list_actions(self):
-        return [("Delete all %d" % len(self.items), "%s, after you confirm" % human_size(
+        return [("Delete all {:,}".format(len(self.items)), "%s, after you confirm" % human_size(
             sum(i["size"] for i in self.items)), self.ask_delete_all)]
 
     def pick_entries(self, items):
-        return [("Delete %d picked" % len(items), "%s, after you confirm" % human_size(sum(i["size"] for i in items)),
+        return [("Delete {:,} picked".format(len(items)), "%s, after you confirm" % human_size(sum(i["size"] for i in items)),
                  lambda: setattr(self.app, "modal", Confirm(
                      self.app, "Delete %s?" % plural(len(items), "leftover"),
                      "Frees %s. Partial downloads that are still queued or paused are not listed and are kept."
-                     % human_size(sum(i["size"] for i in items)), "Delete %d" % len(items),
+                     % human_size(sum(i["size"] for i in items)), "Delete {:,}".format(len(items)),
                      lambda: self.remove(items), danger=True)))]
 
     def ask_delete_all(self):
         tot = sum(i["size"] for i in self.items)
         copies = sum(1 for i in self.items if i.get("note"))
-        self.app.modal = Confirm(self.app, ("Delete all %d leftovers?" % len(self.items)) if len(self.items) > 1 else "Delete the leftover?",
+        self.app.modal = Confirm(self.app, ("Delete all {:,} leftovers?".format(len(self.items))) if len(self.items) > 1 else "Delete the leftover?",
                                  "Frees %s.%s Partial downloads that are still queued or paused are not "
                                  "listed and are kept." % (human_size(tot), (
                                      " Includes %s of games already here converted; the converted ones "
@@ -430,9 +430,9 @@ class LeftoversScreen(ListScreen):
             self.picks.clear()
             self.picking = False
             kept = getattr(freed, "kept", 0)
-            app.toast("Cleaned up %d — %s freed%s" % (
-                getattr(freed, "removed", len(items)), human_size(freed),
-                "; %d kept: they changed since the list was made" % kept if kept else ""),
+            app.toast("Cleaned up {:,} — {}{}".format(
+                getattr(freed, "removed", len(items)), human_size(freed) + " freed",
+                "; {:,} kept: they changed since the list was made".format(kept) if kept else ""),
                 theme.AMBER if kept else theme.GREEN)
             app.space_freed()
             self.load()

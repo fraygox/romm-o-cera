@@ -151,3 +151,13 @@ def test_a_folders_games_with_es_not_answering_is_an_error_not_no_games(isolated
         pass
     monkeypatch.setattr(_es, "_es_json", lambda path, timeout=10: [] if path == "/systems" else down(path))
     assert rommlib.es_game_list(["mame_backup"]) == []          # ES answers, just not for this folder
+
+
+def test_big_counts_read_like_the_batch_line_on_top(isolated):
+    """The top bar said "Deleting 118 of 2,259 games" while the question said "Delete 2259 games?"."""
+    from rbui.screens.box_data import plural, work_label
+    assert plural(2259, "game") == "2,259 games" and plural(1, "game") == "1 game"
+    assert work_label({"verb": "Deleting", "n": 118, "total": 2259, "what": "game"}) == "Deleting 118 of 2,259 games"
+    scr = FreeUpScreen.__new__(FreeUpScreen)
+    games = [{"size": 1}] * 2259
+    assert scr.pick_entries(games)[0][0] == "Delete 2,259 picked"

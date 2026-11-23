@@ -614,4 +614,4 @@ class CollectionScreen(Screen):
         if st.get("roms"):
             plats = {app.platform_by_id.get(r.get("platform_id"), {}).get("display_name") or
                      r.get("platform_display_name") or "" for r in st["roms"]}
-            p.pair("Platforms", next(iter(plats)) if len(plats) == 1 else "%d platforms" % len(plats))
+            p.pair("Platforms", next(iter(plats)) if len(plats) == 1 else "{:,} platforms".format(len(plats)))

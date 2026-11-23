@@ -154,14 +154,14 @@ def media_note(media):
 
 
 def plural_files(n):
-    return "%d file%s" % (n, "" if n == 1 else "s")
+    return "{:,} file%s".format(n) % ("" if n == 1 else "s")
 
 
 def files_list(files, system):
     """The files a confirm names, relative to roms/<system>: all of them, up to 8, then how many more."""
     sysdir = os.path.join(rommlib.ROMS_ROOT, system)
     names = [os.path.relpath(f, sysdir) for f in files]
-    return ", ".join(names[:8]) + (" and %d more" % (len(names) - 8) if len(names) > 8 else "")
+    return ", ".join(names[:8]) + (" and {:,} more".format(len(names) - 8) if len(names) > 8 else "")
 
 
 def playlists_note(system, paths):
@@ -207,7 +207,7 @@ class ManageMenu(ActionMenu):
                                     lambda: app.uninstall_group(group, system, title, then), danger=True)
             super().__init__(app, title, [
                 app.play_entry(rom, system, title),
-                ("Delete all %d discs" % n, "Frees %s" % human_size(gsize), delete_set if allp else None),
+                ("Delete all {:,} discs".format(n), "Frees %s" % human_size(gsize), delete_set if allp else None),
                 ("Download this disc again", "Replaces this disc only", lambda: app.start_download(rom, group=group)),
             ])
             return
@@ -375,22 +375,22 @@ class InfoDialog(Confirm):
                              % (st["on_box"], st["matched"]))
             self.ok_label, self.on_ok = "OK", lambda: None
             return
-        self.title = "Fill in info for %d game%s?" % (len(self.plan), "" if len(self.plan) == 1 else "s")
-        self.body = ("%d games here, %d found in RomM, %d already complete. Only what's missing is added: "
+        self.title = "Fill in info for {:,} game{}?".format(len(self.plan), "" if len(self.plan) == 1 else "s")
+        self.body = ("{:,} games here, {:,} found in RomM, {:,} already complete. Only what's missing is added: "
                      "info, and art where there's no file yet; art already on the box is never replaced. "
                      "Saved when you leave RomM-o-Cera."
-                     % (st["on_box"], st["matched"], st["complete"])) + self._waiting(st)
-        self.ok_label = "Fill in %d" % len(self.plan)
+                     .format(st["on_box"], st["matched"], st["complete"])) + self._waiting(st)
+        self.ok_label = "Fill in {:,}".format(len(self.plan))
         self.on_ok = self._queue
 
     @staticmethod
     def _waiting(st):
         n = st.get("waiting", 0)
-        return (" %d more %s already waiting to be saved when you leave." % (n, "is" if n == 1 else "are")) if n else ""
+        return (" {:,} more {} already waiting to be saved when you leave.".format(n, "is" if n == 1 else "are")) if n else ""
 
     def _queue(self):
         rommlib.queue_info(self.plan)
-        self.app.toast("Game info queued for %d games — saved when you leave RomM-o-Cera" % len(self.plan),
+        self.app.toast("Game info queued for {:,} games — saved when you leave RomM-o-Cera".format(len(self.plan)),
                        theme.GREEN)
 
     def action(self, a):
@@ -789,8 +789,8 @@ class DownloadConfirm(Confirm):
         sub = "%s · %s" % (human_size(size), "one entry in EmulationStation" if m3u
                            else "each disc listed separately")
         if here:
-            sub += " · %d already here" % len(here)
-        entries = [("Download all %d discs" % len(discs), sub, lambda: app.download_set(rom, discs))]
+            sub += " · {:,} already here".format(len(here))
+        entries = [("Download all {:,} discs".format(len(discs)), sub, lambda: app.download_set(rom, discs))]
         if missing:
             entries.append(("Disc %s not in RomM" % ", ".join(map(str, missing)),
                             "The set looks incomplete", None))

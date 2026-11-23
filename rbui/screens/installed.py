@@ -104,7 +104,7 @@ class InstalledScreen(ListScreen):
 
     def pick_entries(self, items):
         size = sum(i["size"] for i in items)
-        return [("Delete %d picked" % len(items), "Frees %s, after you confirm" % human_size(size),
+        return [("Delete {:,} picked".format(len(items)), "Frees %s, after you confirm" % human_size(size),
                  lambda: self.ask_delete_many(items))]
 
     def ask_delete_many(self, items):
@@ -137,8 +137,8 @@ class InstalledScreen(ListScreen):
             self.picks.clear()
             self.picking = False
             if why:
-                more = " (and %d more)" % (len(why) - 1) if len(why) > 1 else ""
-                app.toast("Deleted %d of %s — %s freed. %s%s" % (gone, plural(len(items), "game"), human_size(freed),
+                more = " (and {:,} more)".format(len(why) - 1) if len(why) > 1 else ""
+                app.toast("Deleted {:,} of %s — %s freed. %s%s".format(gone) % (plural(len(items), "game"), human_size(freed),
                                                                  why[0], more), theme.AMBER)
             else:
                 app.toast("Deleted %s — %s freed. Saves are kept." % (plural(len(items), "game"), human_size(freed)),
@@ -147,7 +147,7 @@ class InstalledScreen(ListScreen):
             self.load()
         app.modal = Confirm(app, "Delete %s?" % plural(len(items), "game"),
                             "Frees about %s. Every file and disc of them goes from roms/; saves and states are "
-                            "kept." % human_size(size), "Delete %d" % len(items),
+                            "kept." % human_size(size), "Delete {:,}".format(len(items)),
                             lambda: work_begin(app, "Deleting", len(items)) and
                             app.bg(run, done, lambda e: (app.toast(str(e), theme.RED), self.load())), danger=True)
 
@@ -222,7 +222,7 @@ class InstalledScreen(ListScreen):
                                       human_size(sum(i["size"] for i in self.items)), free)
         n = self.pick_count()
         if n:
-            head += " · %d picked" % n
+            head += " · {:,} picked".format(n)
         list_head(c, self.f, GAME_LIST, head, dict(self.SORTS)[self.sort])
         for i, r, on in self.row_rects(ROWS_TOP, x=lx, w=lw):
             it = self.items[i]

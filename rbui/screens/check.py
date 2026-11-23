@@ -237,7 +237,7 @@ class AuditScreen(ListScreen):
         dmg = sum(1 for f in todo if f["severity"] == "damaged")
         sub = ", ".join(x for x in ("%d damaged" % dmg if dmg else "",
                                     "%d differ from RomM" % (len(todo) - dmg) if len(todo) > dmg else "") if x)
-        return [("Download %d again" % len(todo), sub, (lambda: self.redownload_many(
+        return [("Download {:,} again".format(len(todo)), sub, (lambda: self.redownload_many(
             todo, "Download %s again?" % plural(len({f["rom"]["id"] for f in todo}), "picked game"),
             "RomM's copies replace the ones on the box (saves are kept), the ones that only differ "
             "from RomM too." + self.by_name_note(todo) + self.theirs_note(todo))) if todo else None)]
@@ -364,7 +364,7 @@ class AuditScreen(ListScreen):
             self.picks.clear()
             self.picking = False
             app.toast("Queued %s" % plural(len(uniq), "game"), theme.GREEN)
-        app.modal = Confirm(app, title, body, "Download %d" % len(uniq), go)
+        app.modal = Confirm(app, title, body, "Download {:,}".format(len(uniq)), go)
 
     def draw(self, c):
         if self.findings is None:

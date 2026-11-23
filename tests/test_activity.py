@@ -471,3 +471,10 @@ def test_popups_in_the_app_can_be_turned_off_but_a_failure_still_shows(rb, app, 
     said = [t[0] for t in app.toasts]
     assert any(s.startswith("Failed: Ipsum (USA)") for s in said)
     assert any(s.startswith(("Ready: Lorem", "Downloaded: Lorem")) for s in said) == on
+
+
+def test_a_stalled_download_says_whole_seconds(rb, app):
+    j = _job(app, "Slow", rommlib.Job.DOWNLOADING, done=MB, speed=0.0)
+    j.last_data = time.time() - 42.7
+    scr = _screen(rb, app)
+    assert scr.status(j)[0] == "Stalled: nothing from RomM for 42 s"

@@ -220,7 +220,7 @@ class HomeScreen(Screen):
         playing = self.lists.get("playing") or {}
         if playing.get("items"):
             n = max(playing["total"], len(playing["items"]))
-            out.append(("playing", "Playing", "%d marked in RomM" % n, playing["items"]))
+            out.append(("playing", "Playing", "{:,} marked in RomM".format(n), playing["items"]))
         recs = app.recs or []
         if recs:
             seeds = list(dict.fromkeys(s for _, _, s in recs if s))
@@ -240,7 +240,7 @@ class HomeScreen(Screen):
                 (["%s to download" % human_size(fetch)] if fetch else [])
             out.append(("backlog", "Backlog", " · ".join(note), items))
         if self.colls:
-            out.append(("collections", "Collections", "%d in RomM" % len(self.colls), self.colls))
+            out.append(("collections", "Collections", "{:,} in RomM".format(len(self.colls)), self.colls))
         return out
 
     def focused(self):
@@ -402,7 +402,7 @@ class HomeScreen(Screen):
     def draw_rail(self, c, key):
         n = self.app.downloader.active_count()
         self.set_rail()                            # (RomM's jukebox total arrives after Home opens)
-        labels = [label + (" · %d" % n if k == "downloads" and n else "") for k, label, _ in self.RAIL]
+        labels = [label + (" · {:,}".format(n) if k == "downloads" and n else "") for k, label, _ in self.RAIL]
         self.rail_rects = pill_row(c, self.f.body, labels, HOME_COLUMN.left, HOME_COLUMN.right, self.RAIL_Y,
                                    focus=self.rail_i if key == "rail" else None, app=self.app, on_tap=self.tap_rail)
 
@@ -475,7 +475,7 @@ class HomeScreen(Screen):
         app = self.app
         if key == "search":
             return [("Across every platform", "{:,} games".format(sum(p["rom_count"] for p in app.platforms))),
-                    ("Platforms", "%d" % len(app.platforms))]
+                    ("Platforms", "{:,}".format(len(app.platforms)))]
         if key == "platforms":
             return [(p.get("display_name") or p["name"], "{:,}".format(p["rom_count"]))
                     for p in sorted(app.platforms, key=lambda p: -p["rom_count"])]
@@ -673,7 +673,7 @@ class PlatformScreen(Screen):
         n = len(plats)
         scopes = [(p.get("display_name") or p["name"], {"platform_ids": [p["id"]]}, p.get("rom_count") or 0)
                   for p in plats]
-        self.app.bulk_download("Download %d platform%s?" % (n, "" if n == 1 else "s"), scopes, whole=True,
+        self.app.bulk_download("Download {:,} platform{}?".format(n, "" if n == 1 else "s"), scopes, whole=True,
                                after=self.stop_picking,
                                what="Every game not on this box yet, one platform after another.")
 

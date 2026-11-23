@@ -269,7 +269,7 @@ def bios_pill(it):
 
 
 def plural(n, word, many=None):
-    return "%d %s" % (n, word if n == 1 else (many or word + "s"))
+    return "{:,} %s".format(n) % (word if n == 1 else (many or word + "s"))
 
 
 # ---- a batch running in the background (deleting many games), shown in the top bar and Activity (#10)

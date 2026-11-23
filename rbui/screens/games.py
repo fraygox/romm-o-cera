@@ -424,7 +424,7 @@ class GameListScreen(ListScreen):
 
     def pick_entries(self, roms):
         size = sum(r.get("fs_size_bytes") or 0 for r in roms)
-        return [("Download %d picked" % len(roms), human_size(size), self._download_marked)]
+        return [("Download {:,} picked".format(len(roms)), human_size(size), self._download_marked)]
 
     def list_actions(self):
         """Actions first (they close the menu); list_controls() change the
@@ -629,7 +629,7 @@ class GameListScreen(ListScreen):
                 "Couldn't load" if self.load_error else "No games found"
         flt = [lab for on, lab in ((self.regions, self.REGION_CHOICES[self.region_i][1]),
                                    (self.players, "%d+ players" % self.players),
-                                   (self.picks, "%d picked" % len(self.picks))) if on]
+                                   (self.picks, "{:,} picked".format(len(self.picks)))) if on]
         if flt:
             cnt = ", ".join(flt + [cnt])
         title = self.title if not self.search else 'Results for "%s"' % self.search
@@ -766,7 +766,7 @@ class GameListScreen(ListScreen):
         if system and self.picking and st != "installed":           # A picks here
             on = self.pick_key(rom) in self.picks
             verb_button(c, self.f, ar, "Unpick" if on else "Pick", "quiet" if on else "go",
-                        "%d picked" % self.pick_count())
+                        "{:,} picked".format(self.pick_count()))
             return
         verb_button(c, self.f, ar, glyph="", **game_verb(app, rom, (st, j), play="On this box",
                                                          play_detail="roms/%s" % system,
