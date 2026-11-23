@@ -448,6 +448,7 @@ class CheckScreen(AuditScreen):
         self.last = None
         self.findings, self.stats = [], {}
         self.unseen = None                 # files ES can't see (counted in the background)
+        self.unseen_err = None             # why that count failed
 
     def enter(self):
         before = self.last
@@ -458,8 +459,11 @@ class CheckScreen(AuditScreen):
         self.stats = (self.last or {}).get("stats") or {}
         self.clamp()
         es = self.app.downloader.es
-        self.app.bg(lambda: len(rommlib.find_unseen(es)), lambda n: setattr(self, "unseen", n),
-                    lambda e: setattr(self, "unseen", None))
+        self.unseen_err = None
+
+        def failed(e):                     # not "Looking…" for good: say so (opening the row says why)
+            self.unseen, self.unseen_err = None, e
+        self.app.bg(lambda: len(rommlib.find_unseen(es)), lambda n: setattr(self, "unseen", n), failed)
 
     def listed(self):
         return ([] if self.last else [CHECK]) + list(self.findings) + [DOOR] + ([NOTES] if self.notes() else [])
@@ -583,6 +587,8 @@ class CheckScreen(AuditScreen):
                 n = self.unseen
                 st_, col = ("%s" % plural(n, "file"), theme.AMBER) if n else (("None", theme.GREEN) if n == 0
                                                                               else ("", None))
+                if self.unseen_err is not None:
+                    st_, col = "Couldn't look", theme.AMBER
                 list_row(c, self.f, r, on, rows[i][0], rows[i][1], st_, col, slot="check-door", chevron=True,
                          box=theme.BG2)
                 continue
@@ -601,8 +607,11 @@ class CheckScreen(AuditScreen):
         p.actions(hint_actions(self))
         if it is DOOR:
             n = self.unseen
-            p.title("Games ES can't see", "Looking…" if n is None else plural(n, "file") if n else
-                    "ES sees every game file here", theme.AMBER if n else theme.GREEN if n == 0 else None)
+            if self.unseen_err is not None:
+                p.title("Games ES can't see", "Couldn't look through the games folder", theme.AMBER)
+            else:
+                p.title("Games ES can't see", "Looking…" if n is None else plural(n, "file") if n else
+                        "ES sees every game file here", theme.AMBER if n else theme.GREEN if n == 0 else None)
             p.prose("Archives in a system that doesn't take them, and games in another system's folder. "
                     "Unpack them, move them where they belong, or delete them.", lines=4)
             return

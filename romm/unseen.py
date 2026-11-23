@@ -108,8 +108,11 @@ def find_unseen(es, cancel=None):
             for n in names:
                 if n.lower().endswith((".cue", ".gdi", ".m3u")):
                     p = os.path.join(dp, n)
-                    srcs = [os.path.normpath(q) for q in
-                            (_es.m3u_paths(p) if n.lower().endswith(".m3u") else _discs.sheet_sources(p))]
+                    try:                         # a link to a drive not mounted, or deleted meanwhile
+                        srcs = [os.path.normpath(q) for q in
+                                (_es.m3u_paths(p) if n.lower().endswith(".m3u") else _discs.sheet_sources(p))]
+                    except OSError:
+                        srcs = []
                     sheets[n] = srcs
                     refs.update(srcs)
             stems = {os.path.splitext(n)[0].lower() for n in listed}

@@ -453,3 +453,25 @@ def test_system_names_come_from_es_then_the_table(monkeypatch, tmp_path):
     assert rommlib.system_name("psx") == "Sony PlayStation"
     assert rommlib.system_name("ps2") == "PlayStation 2"
     assert rommlib.system_name("odd-folder") == "odd-folder"
+
+
+def test_a_playlist_linked_to_a_drive_not_mounted_doesnt_stop_the_scan(isolated):
+    """A dangling .m3u link stopped the whole scan (FileNotFoundError), and Check games' row
+    said "Looking…" for good."""
+    _zip("ps2/Lorem Racer.zip", {"Lorem Racer.iso": b"i" * 64})
+    os.makedirs(os.path.join(rommlib.ROMS_ROOT, "psx"), exist_ok=True)
+    os.symlink("/nonexistent/Copper.m3u", os.path.join(rommlib.ROMS_ROOT, "psx", "Copper.m3u"))
+    found = _by_name(rommlib.find_unseen(ES))
+    assert "ps2/Lorem Racer.zip" in found and "psx/Copper.m3u" not in found
+
+
+def test_check_games_says_it_couldnt_look_instead_of_looking_for_good(ui, rb, monkeypatch):
+    def boom(es, cancel=None):                               # (App.bg hands any error on as this)
+        raise rommlib.RommError("Error (FileNotFoundError)")
+    monkeypatch.setattr(rommlib, "find_unseen", boom)
+    app = ui
+    ck = rb.CheckScreen(app)
+    app.push(ck)
+    assert ck.unseen is None and ck.unseen_err is not None
+    ck.action("down")
+    ck.draw(app.canvas)                                       # row and panel: "Couldn't look"
