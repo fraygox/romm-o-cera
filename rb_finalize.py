@@ -903,18 +903,38 @@ def _converting(paths):
     except OSError:
         return False
     want = [os.path.normpath(p) for p in paths]
-    for n in names:
-        try:
-            with open(os.path.join(rommlib.CHD_QUEUE_DIR, n)) as f:
-                srcs = json.load(f).get("sources") or []
-        except (OSError, ValueError, AttributeError):
-            continue
+    for srcs in _task_sources(names).values():
         for s in srcs:
-            s = os.path.normpath(str(s))
             if any(s == p or s.startswith(p.rstrip(os.sep) + os.sep) or p.startswith(s.rstrip(os.sep) + os.sep)
                    for p in want):
                 return True
     return False
+
+
+_TASKS = {}
+
+
+def _task_sources(names):
+    """{task file: its sources}, each queued conversion read once: a task is never written
+    again under its name (moved to the front of the queue, it gets a new one). A whole PS3
+    platform waiting for its conversions read every task again for each of its games."""
+    key = rommlib.CHD_QUEUE_DIR
+    if _TASKS.get("dir") != key:
+        _TASKS.clear()
+        _TASKS.update(dir=key, read={})
+    read = _TASKS["read"]
+    for n in set(read) - set(names):                  # done since
+        del read[n]
+    for n in names:
+        if n in read:
+            continue
+        try:
+            with open(os.path.join(key, n)) as f:
+                srcs = json.load(f).get("sources") or []
+        except (OSError, ValueError, AttributeError):
+            continue                                  # (being written now: read next time)
+        read[n] = [os.path.normpath(str(s)) for s in srcs] if isinstance(srcs, list) else []
+    return read
 
 
 def _has_media(e, cfg):

@@ -965,3 +965,37 @@ def test_games_deleted_since_their_download_dont_read_installed_json_once_each(i
     os.remove(entries[55]["paths"][0])
     lib.mark({"id": 55, "name": "g55", "fs_name": "g055.zip"}, "nes", [chd])
     assert rb_finalize.moved_to(entries[55]) == [chd]
+
+
+def test_a_platform_waiting_for_its_conversions_reads_each_queued_task_once(isolated, monkeypatch):
+    """Hundreds of PS3 downloads waiting to become .ps3 folders: each game asked whether it's
+    being converted, and every queued task was read again for each one."""
+    sysdir = os.path.join(rommlib.ROMS_ROOT, "ps3")
+    os.makedirs(sysdir)
+    os.makedirs(rommlib.CHD_QUEUE_DIR)
+    zips = []
+    for i in range(40):
+        z = os.path.join(sysdir, "G%02d.zip" % i)
+        open(z, "wb").close()
+        zips.append(z)
+        with open(os.path.join(rommlib.CHD_QUEUE_DIR, "%04d.json" % i), "w") as f:
+            json.dump({"mode": "ps3", "system": "ps3", "sources": [z]}, f)
+    reads = [0]
+    real = json.load
+
+    def load(f, *a, **k):
+        reads[0] += 1
+        return real(f, *a, **k)
+    monkeypatch.setattr(rb_finalize.json, "load", load)
+    assert all(rb_finalize._converting([z]) for z in zips)
+    assert reads[0] <= 40, reads
+    # one finished, one queued since, one moved to the front: seen as they are now
+    os.remove(os.path.join(rommlib.CHD_QUEUE_DIR, "0003.json"))
+    assert not rb_finalize._converting([zips[3]])
+    late = os.path.join(sysdir, "Late.zip")
+    with open(os.path.join(rommlib.CHD_QUEUE_DIR, "0100.json"), "w") as f:
+        json.dump({"mode": "ps3", "system": "ps3", "sources": [late]}, f)
+    assert rb_finalize._converting([late])
+    os.replace(os.path.join(rommlib.CHD_QUEUE_DIR, "0005.json"),
+               os.path.join(rommlib.CHD_QUEUE_DIR, "0000000000000-0005.json"))
+    assert rb_finalize._converting([zips[5]])
