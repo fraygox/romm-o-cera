@@ -3,6 +3,39 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.15.4 (2026-11-23)
+
+Clicks only for sounds, and smoother deleting and big runs
+
+Thanks to @plasmadice for suggesting Clicks only (#14) and for the report on deleting and freeing up space (#13) that led to most of the fixes below.
+
+### Features
+- **feat:** Settings › This app › Sounds has a Clicks only choice. The clicks as you browse stay, and popups show without a chime when a download is ready, queued or failed, so a big run no longer rings every few seconds (#14).
+
+### Fixes
+- **fix:** Quitting or Play now while many games are being deleted asks first, then stops after the game it's on, so none is left half deleted (#13).
+- **fix:** While many games are being deleted, Activity's empty list says the card on top follows them instead of "No downloads yet" (#13).
+- **fix:** A game Activity downloaded and you deleted since says "Deleted" (#13).
+- **fix:** On this box › Space no longer lists hidden folders in roms (a copy's leftovers) as systems with nothing to free in them; the bar still counts their space (#13).
+- **fix:** Space › a folder with no games EmulationStation lists (one that isn't a Batocera system, say) says why there's nothing to delete and where to reach it from a PC, instead of only "No games found" (#13).
+- **fix:** Free up space no longer freezes for seconds when you delete hundreds of picked games, and its list loads faster on a box with many games.
+- **fix:** Deleting a game copied from a Mac also deletes the "._" file the Mac wrote beside it, and Clean up leftovers offers the ones left beside games deleted before, as Leftover Mac file.
+- **fix:** On this box and Space say how much there is to clean up, not that it's all "from interrupted downloads" (copies of converted games and a Mac's leftover files aren't).
+- **fix:** In a big run, failed downloads are told together every few seconds ("12 downloads failed"), as finished ones are, not as a red popup and sound each.
+- **fix:** Activity's "12 of 4,411 done" counts only this run's games, so a platform queued after another finished no longer starts at "1,600 of 3,600 done" with the bar at 0%.
+- **fix:** Queueing games while Pause all is on says they wait paused, in amber, instead of "Queued" in green while nothing starts.
+- **fix:** Downloading a platform again whose games are paused no longer counts their space twice and asks you to free up space it doesn't need.
+- **fix:** Cancelling thousands of downloads at once while Pause all is on no longer freezes the screen for seconds.
+- **fix:** Counts of a thousand or more read "2,259" everywhere, as the line on top does, not "2259" in the questions, picks and popups.
+
+### Performance
+- **perf:** Deleting many games at once no longer slows down the more games RomM-o-Cera has downloaded.
+- **perf:** Closing the app after deleting hundreds of games you downloaded in the same session no longer keeps EmulationStation's game info update busy for a minute or more.
+- **perf:** A PS3 platform waiting for its conversions no longer keeps EmulationStation's game info update busy re-reading the conversion queue for every game.
+
+### Documentation
+- **docs:** Reporting a problem has a form on GitHub that asks for the version, Batocera's version, what happened, the log and screenshots, and the page says what to send about deleting and freeing up space.
+
 ## v0.15.3 (2026-11-22)
 
 Activity's time on top reads as one steady line
