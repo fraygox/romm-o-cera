@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: What to send with a report
+    url: https://fraygox.github.io/romm-o-cera/reporting-a-problem/
+    about: Where to find the version and the log, and what helps for each kind of problem.

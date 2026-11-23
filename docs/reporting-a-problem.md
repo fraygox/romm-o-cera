@@ -1,8 +1,9 @@
 # Reporting a problem
 
-File it at <https://github.com/fraygox/romm-o-cera/issues>. Three things make
-a report answerable: what you did and what happened, the version, and the
-app's log.
+File it with the [problem form](https://github.com/fraygox/romm-o-cera/issues/new?template=problem.yml):
+it asks for what this page describes. Three things make a report answerable:
+what you did and what happened, the version, and the app's log. One problem
+per report is easiest to follow and to close when it's fixed.
 
 ## The version
 
@@ -75,6 +76,18 @@ Send the log from after it went wrong, with the game's system and file type
 (`.zip`, `.chd`, `.iso`…), and what Activity or the game's page said. For a
 game that downloads but won't start in its emulator, say whether it starts
 when you copy the same file to the box by hand.
+
+## Deleting games or freeing up space
+
+Send the log, which system (folder) it was, and the list of the files in that
+folder after it went wrong, so it's clear what was left and why. Over SSH:
+
+```sh
+ssh root@batocera 'ls -laR /userdata/roms/fbneo' > fbneo-files.txt   # the folder's name in place of fbneo
+```
+
+Or open `\\BATOCERA\share\roms\` from a PC and take a screenshot of the
+folder. The file names name your games: remove what you don't want public.
 
 ## A screen that looks wrong
 

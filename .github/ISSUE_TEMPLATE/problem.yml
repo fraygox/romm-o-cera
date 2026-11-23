@@ -1,0 +1,40 @@
+name: Report a problem
+description: Something doesn't work or looks wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. [Reporting a problem](https://fraygox.github.io/romm-o-cera/reporting-a-problem/) says where to find each of these, and what helps for controllers, downloads, deleting and screens. One problem per report is easiest to follow and to close when it's fixed.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: In the bottom right corner of every screen. Copy all of it, a nightly's date and commit too.
+      placeholder: v0.15.3, or v0.15.3+n20261123.0625.1c8ee0a
+    validations:
+      required: true
+  - type: input
+    id: batocera
+    attributes:
+      label: Batocera version
+      description: The last line of EmulationStation's main menu.
+      placeholder: "43.1"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Steps that make it happen again help most.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        `romm-browser.log` from `/userdata/system/romm-browser/` on the box, copied after the problem happened ([how to get it](https://fraygox.github.io/romm-o-cera/reporting-a-problem/#the-log)). Drag the file here, or paste the lines from around when it happened. Read it over first: it names your games and their files. Never post `config.json`: it holds your RomM token.
+  - type: textarea
+    id: shots
+    attributes:
+      label: Screenshots or video
+      description: Drag them here. For a screen that looks wrong, say your screen's resolution and the theme too.
