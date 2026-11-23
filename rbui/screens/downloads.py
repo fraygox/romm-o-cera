@@ -148,6 +148,8 @@ class DownloadsScreen(ListScreen):
         n = sum(left.values())
         if n < self.RUN_SHOWN:
             return ""
+        if hasattr(app, "run_n"):                # this run's own (tick_downloads), not an earlier run's rows
+            done = app.run_n
         out = "{:,} of {:,} done".format(done, done + n)
         if len(left) > 1:
             out += " · " + ", ".join("{:,} {}".format(k, app.system_name(sy))

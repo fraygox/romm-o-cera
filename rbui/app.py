@@ -1365,6 +1365,9 @@ class App:
         # bytes stay counted till nothing is left to download (Clear finished doesn't set it back)
         self.run_done = 0 if not waiting else getattr(self, "run_done", 0) + \
             sum(max(j.total_bytes or j.rom.get("fs_size_bytes") or 0, j.done_bytes) for j in ready)
+        # and how many games it finished, for its "12 of 4,411 done": counted from the same start, so
+        # the rows of a run that ended (still listed) aren't done games of the next one
+        self.run_n = 0 if not waiting else getattr(self, "run_n", 0) + len(ready)
         # the queue's pace, measured from its start wherever you are: Activity has it when opened
         meter = getattr(self, "dl_rate", None) or RateMeter()
         self.dl_rate = meter

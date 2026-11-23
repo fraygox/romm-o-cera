@@ -478,3 +478,22 @@ def test_a_stalled_download_says_whole_seconds(rb, app):
     j.last_data = time.time() - 42.7
     scr = _screen(rb, app)
     assert scr.status(j)[0] == "Stalled: nothing from RomM for 42 s"
+
+
+def test_a_second_big_run_counts_only_its_own_games_done(rb, app):
+    """NES 1,600 finished and still listed, then SNES 2,000 queued: the header said "1,600 of
+    3,600 done" while the bar said 0% (found following #13)."""
+    J = rommlib.Job
+    for i in range(30):
+        j = _job(app, "Old %d" % i, J.DONE, total=MB)
+        j.id = j.rom["id"] = 10000 + i
+    app.tick_downloads()                         # the first run is over
+    for i in range(25):
+        j = _job(app, "New %d" % i, J.QUEUED, total=MB)
+        j.id = j.rom["id"] = 20000 + i
+    app.tick_downloads()
+    scr = _screen(rb, app)
+    assert scr.run_counts(app.downloader.jobs).startswith("0 of 25 done")
+    app.downloader.jobs[-1].state = J.DONE
+    app.tick_downloads()
+    assert scr.run_counts(app.downloader.jobs).startswith("1 of 25 done")
