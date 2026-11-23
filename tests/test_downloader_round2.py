@@ -787,3 +787,74 @@ def test_deleting_many_games_shows_how_far_along_it_is_and_always_stops_saying_i
             pass
     app.__class__ = Flips
     app.draw()
+
+
+def test_a_batch_says_so_where_downloads_are_listed_and_before_quitting(app, rb, monkeypatch):
+    """#13: a batch delete has no rows in Activity, so with no downloads the list says where it
+    is followed, not "No downloads yet"; it runs in the app, so quitting asks first, and then
+    waits for it to stop after the game it's on: never one left half deleted."""
+    import rbui.screens.downloads as dl
+    app.downloader.jobs.clear()
+    drawn = []
+    real = dl.text
+    monkeypatch.setattr(dl, "text", lambda c, f, s, *a, **k: (drawn.append(s), real(c, f, s, *a, **k))[1])
+    scr = rb.DownloadsScreen(app)
+    app.push(scr)
+    app.work = {"verb": "Deleting", "n": 2, "total": 40, "what": "game"}
+    app.draw()
+    assert "Nothing downloading" in drawn and "No downloads yet" not in drawn
+    assert "Deleting games shows in the card above. Downloads show here." in drawn
+    quit = []
+    monkeypatch.setattr(app, "_quit", lambda: quit.append(1))
+    app.request_quit()
+    assert quit == [] and "Still deleting 2 of 40 games: it stops after the game it's on" in app.modal.body
+    app.request_quit()                                        # asked twice: quit, once the batch stops
+    w = app.work
+    assert quit == [] and w["stop"]
+    assert rb.work_step(app, 3) is False and w["n"] == 2      # the batch's loop: stop before the next one
+    app.idle_check()
+    assert quit == []                                         # still on the one it was on
+    app.work = None                                           # its finally: work_end
+    app.idle_check()
+    assert quit == [1] and app.when_idle is None
+    app.modal, app.work, drawn[:] = None, None, []
+    app.draw()
+    assert "No downloads yet" in drawn
+    app.request_quit()
+    assert quit == [1, 1]                                     # nothing running: no question
+
+
+def test_space_skips_hidden_folders_in_roms(isolated, rb):
+    """#13: a copy's leftover (".ArchiveServiceTemp…") in roms isn't a system: EmulationStation
+    skips it, so Space doesn't list it as one with nothing to free in it."""
+    from rbui.screens.box_data import storage_by_system
+    for d in (".ArchiveServiceTemp.sb-x", "psx"):
+        os.makedirs(os.path.join(rommlib.ROMS_ROOT, d), exist_ok=True)
+        with open(os.path.join(rommlib.ROMS_ROOT, d, "a.bin"), "wb") as f:
+            f.write(b"x" * 1000)
+    from types import SimpleNamespace
+    rows = storage_by_system(SimpleNamespace(snapshot=lambda: {}))
+    assert [r["system"] for r in rows if not r["hidden"]] == ["psx"]
+    assert sum(r["other"] for r in rows) == 2000              # the bar still counts it, not as Batocera
+    app_rows = rb.SpaceScreen.__new__(rb.SpaceScreen)
+    app_rows._loaded = rb.SpaceScreen._loaded.__get__(app_rows)
+    app_rows.clamp = lambda: None
+    app_rows._loaded(rows)
+    assert [r["system"] for r in app_rows.rows] == ["psx"] and len(app_rows.all_rows) == 2
+
+
+def test_play_now_during_a_batch_waits_for_it_to_stop(app, rb, monkeypatch):
+    """#13: Play now closes the app too: during a batch it says so, and the game starts once the
+    batch has stopped after the one it's on."""
+    played = []
+    monkeypatch.setattr(app, "_play", lambda path, system, title: played.append(title))
+    monkeypatch.setattr(rommlib, "bios_all_missing", lambda system: [])
+    app.downloader.jobs.clear()
+    app.work = {"verb": "Deleting", "n": 5, "total": 40, "what": "game"}
+    app.play_now("/userdata/roms/nes/Lorem.nes", "nes", "Lorem")
+    assert played == [] and "it stops after the game it's on" in app.modal.body
+    app.modal.action("ok")
+    assert played == [] and app.work["stop"]
+    app.work = None
+    app.idle_check()
+    assert played == ["Lorem"]

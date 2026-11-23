@@ -17,7 +17,9 @@ as in a game list. **A** opens the same menu as a game on the box in a game list
 can't be fetched, only Delete). To delete several at once, pick them (X ›
 Pick several, see [Controls](controls.md#picking-several)). While they go,
 the top bar ("Deleting 12 of 40 games") and Activity's card say how far along
-it is, from any screen; one batch runs at a time. Any game it
+it is, from any screen; one batch runs at a time. It runs in the app, so
+quitting (or **Play now**) asks first, then stops it after the game it's on
+and closes: the games not reached yet stay on the box. Any game it
 downloaded can also be deleted from its game list. A game put on the box
 another way (copied over by hand, say) is marked ✓ and plays too, and so is
 one the app downloaded whose file something else replaced, cut short or

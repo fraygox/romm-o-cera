@@ -232,7 +232,8 @@ class FreeUpScreen(ListScreen):
             freed, gone, why = 0, 0, []
             try:
                 for n, g in enumerate(todo, 1):  # one that can't go (a busy file, installed.json) doesn't stop the rest
-                    work_step(app, n)
+                    if not work_step(app, n):    # the app is closing: stop between two
+                        break
                     try:
                         freed += rommlib.delete_game(g["system"], g["path"], app.library, pins=pins[g["path"]])[1]
                         gone += 1

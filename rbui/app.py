@@ -16,7 +16,7 @@ from rbui.sfx import Sfx, SOUND_FOR
 from rbui.player import Player, track_title
 from rbui.input import Input
 from rbui.screens.base import ListScreen
-from rbui.screens.box_data import work_label
+from rbui.screens.box_data import work_label, work_note
 from rbui.screens.home import HomeScreen
 from rbui.screens.downloads import DownloadsScreen, RateMeter
 from rbui.screens.jukebox import JukeboxScreen, TracksScreen
@@ -220,6 +220,7 @@ class App:
         self.stack = []
         self.toasts = []
         self.work = None                 # a batch in the background (deleting many games): box_data.work_begin
+        self.when_idle = None            # what waits for that batch to stop (closing the app): after_batch
         self.modal = None
         self.events_from_threads = []
         self.lock = threading.Lock()
@@ -656,16 +657,22 @@ class App:
             return
         d = self.downloader
         n = 0 if d.hold else d.active_count()
-        if not n:
+        work = self.work                            # (read once: the batch's thread ends it any time)
+        if not n and not work:
             return self._play(path, system, title)
-        what = "%d download%s" % (n, "s" if n > 1 else "")
-        if self.cfg["background_downloads"]:
-            body = "%s closes and %s starts. %s still running keep%s going in the background while you play." % (
-                APP_NAME, title, what, "s" if n == 1 else "")
-        else:
-            body = "%s closes and %s starts. %s still running %s paused and resume next time you open %s." % (
-                APP_NAME, title, what, "is" if n == 1 else "are", APP_NAME)
-        self.modal = Confirm(self, "Play %s now?" % title, body, "Play now", lambda: self._play(path, system, title))
+        body = "%s closes and %s starts." % (APP_NAME, title)
+        if work:
+            body += " " + work_note(work)
+        if n:
+            what = "%d download%s" % (n, "s" if n > 1 else "")
+            if self.cfg["background_downloads"]:
+                body += " %s still running keep%s going in the background while you play." % (
+                    what, "s" if n == 1 else "")
+            else:
+                body += " %s still running %s paused and resume next time you open %s." % (
+                    what, "is" if n == 1 else "are", APP_NAME)
+        self.modal = Confirm(self, "Play %s now?" % title, body, "Play now",
+                             lambda: self.after_batch(lambda: self._play(path, system, title)))
 
     def _play(self, path, system, title):
         python = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else None
@@ -923,20 +930,42 @@ class App:
             self.toast("Finishing the update first: %s closes by itself in a moment" % APP_NAME)
             return
         if getattr(self.modal, "is_quit", False):
-            return self._quit()                     # asked twice: quit
+            return self.after_batch(self._quit)     # asked twice: quit
         n = self.downloader.active_count()
+        work = self.work                            # (read once: the batch's thread ends it any time)
+        said = []
+        if work:                                    # it runs in the app: closing stops it (#13)
+            said.append(work_note(work))
         if n and not self.cfg["background_downloads"]:
-            self.modal = Confirm(self, "Quit %s?" % APP_NAME,
-                                 "%d download%s still running. They're paused and resume "
-                                 "next time you open RomM-o-Cera (or turn on \"Keep "
-                                 "downloading after exit\" in Settings)." % (n, "s" if n > 1 else ""),
-                                 "Quit", self._quit, danger=True)
+            said.append("%d download%s still running. They're paused and resume "
+                        "next time you open RomM-o-Cera (or turn on \"Keep "
+                        "downloading after exit\" in Settings)." % (n, "s" if n > 1 else ""))
+        if said:
+            self.modal = Confirm(self, "Quit %s?" % APP_NAME, " ".join(said), "Quit",
+                                 lambda: self.after_batch(self._quit), danger=True)
             self.modal.is_quit = True
         else:
             self._quit()
 
     def _quit(self):
         self.running = False
+
+    def after_batch(self, fn):
+        """fn now, or once a batch running in the app (deleting many games) has stopped after
+        the one it's on: closing never leaves a game half deleted (#13)."""
+        w = self.work
+        if not w:
+            return fn()
+        w["stop"] = True
+        self.when_idle = fn
+        self.toast("Stopping after the %s it's on…" % w["what"])
+
+    def idle_check(self):
+        """Each frame: run what waited for the batch to stop."""
+        fn = getattr(self, "when_idle", None)
+        if fn and not self.work:
+            self.when_idle = None
+            fn()
 
     # ---- main loop
     def _update_found(self, tag):
@@ -1157,6 +1186,7 @@ class App:
             for a in actions:
                 self.dispatch(a)
             self.tick_downloads()
+            self.idle_check()
             self.show_waiting()
             self.player.tick()
             self.draw()

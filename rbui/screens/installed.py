@@ -115,7 +115,8 @@ class InstalledScreen(ListScreen):
             freed, gone, why = 0, 0, []
             try:
                 for n, it in enumerate(items, 1):  # one that can't go (being compressed, a busy file) doesn't stop the rest
-                    work_step(app, n)
+                    if not work_step(app, n):    # the app is closing: stop between two
+                        break
                     try:
                         if it.get("group"):
                             freed += lib.uninstall_group(it["group"], it["system"])[1]

@@ -111,7 +111,8 @@ class UnseenScreen(ListScreen):
             try:
                 for n, it in enumerate(todo, 1):
                     self.progress = "%s %d of %d…" % (verb, n, len(todo))
-                    work_step(app, n)
+                    if not work_step(app, n):    # the app is closing: stop between two
+                        break
                     if not os.path.lexists(it["path"]):
                         done += 1                       # went with a sheet picked before it
                         continue

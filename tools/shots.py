@@ -892,6 +892,11 @@ SCENES = [
                                    app.push(rb.ConversionsScreen(app)))),
     ("downloads-cancel", paused_cancel),
     ("downloads-empty", lambda: (app.downloader.jobs.clear(), no_conversions(), app.push(rb.DownloadsScreen(app)))),
+    ("downloads-deleting", lambda: (app.downloader.jobs.clear(), no_conversions(),
+                                    setattr(app, "work", {"verb": "Deleting", "n": 118, "total": 2259, "what": "game"}),
+                                    app.push(rb.DownloadsScreen(app)))),
+    ("quit-deleting", lambda: (setattr(app, "work", {"verb": "Deleting", "n": 118, "total": 2259, "what": "game"}),
+                               app.request_quit())),
     ("settings", lambda: app.push(rb.SettingsScreen(app))),
     ("settings-pair", lambda: app.push(settings_at("pair"))),
     ("pair-code", lambda: (app.push(settings_at("pair")), app.stack[-1].pair(),
@@ -1036,6 +1041,7 @@ def reset():
     app.stack[0].focus = None
     rb.apply_theme(app.theme_key())          # a theme a picker scene previewed
     app.modal = None
+    app.work = None                               # the batch scenes' state
     app.toasts = []
     app._after = None
     app.downloader.hold = True

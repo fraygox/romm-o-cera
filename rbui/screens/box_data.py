@@ -287,10 +287,21 @@ def work_begin(app, verb, total, what="game"):
 
 
 def work_step(app, n):
-    """The batch is on its nth."""
+    """The batch is on its nth: False once it's been asked to stop (the app is closing), so it
+    stops between two, never halfway through one (#13)."""
     w = getattr(app, "work", None)
     if w:
+        if w.get("stop"):
+            return False
         w["n"] = n
+    return True
+
+
+def work_note(w):
+    """What closing the app does to a batch, said before it closes (#13)."""
+    label = work_label(w)
+    return "Still %s: it stops after the %s it's on, and the rest stay as they are." % (
+        label[:1].lower() + label[1:], w["what"])
 
 
 def work_end(app):
