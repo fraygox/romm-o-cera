@@ -93,7 +93,8 @@ for downloads.
   systems, so they aren't listed, but the bar counts their space. Pick a system to free up space in
   just that one: it lists the games EmulationStation shows there, so a file
   EmulationStation hides or doesn't list, or a folder that isn't a system, has
-  nothing to offer there.
+  nothing to offer there. A folder with no games EmulationStation lists says so,
+  and where to reach it from a PC (`\\BATOCERA\share\roms\<folder>`).
 
 ## Compress games already here
 

@@ -121,3 +121,33 @@ def test_a_macs_file_changed_while_the_question_is_open_stays(isolated, monkeypa
         f.write(b"more")
     app.modal.on_ok()
     assert ran and not os.path.exists(game) and os.path.exists(mac)
+
+
+def test_a_folder_with_no_games_es_lists_says_why_not_just_no_games_found(isolated, monkeypatch):
+    """Space › mame_backup (not a Batocera system) opened on "No games found." and nothing else (#13)."""
+    import pygame
+    seen = []
+    import rbui.screens.space as space
+    monkeypatch.setattr(space, "scroll_text", lambda c, f, s, *a, **k: seen.append(s))
+    monkeypatch.setattr(space, "text", lambda *a, **k: None)
+    scr = FreeUpScreen.__new__(FreeUpScreen)
+    scr.app, scr.systems, scr.items, scr.busy, scr.load_error = types.SimpleNamespace(), ["mame_backup"], [], False, None
+    scr.f = types.SimpleNamespace(h3=None, body=None)
+    scr.draw(pygame.Surface((10, 10)))
+    assert seen and "roms/mame_backup" in seen[0] and "\\\\BATOCERA\\share\\roms\\mame_backup" in seen[0]
+
+
+def test_a_folders_games_with_es_not_answering_is_an_error_not_no_games(isolated, monkeypatch):
+    """The empty state says ES lists no games there: only when ES answered (else the load error)."""
+    from romm import es as _es
+
+    def down(path, timeout=10):
+        raise OSError("connection refused")
+    monkeypatch.setattr(_es, "_es_json", down)
+    try:
+        rommlib.es_game_list(["nes"])
+        assert False, "should raise"
+    except rommlib.RommError:
+        pass
+    monkeypatch.setattr(_es, "_es_json", lambda path, timeout=10: [] if path == "/systems" else down(path))
+    assert rommlib.es_game_list(["mame_backup"]) == []          # ES answers, just not for this folder

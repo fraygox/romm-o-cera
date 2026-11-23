@@ -171,17 +171,20 @@ def es_game_list(systems=None):
             systems = [x["name"] for x in _es_json("/systems") or []
                        if x.get("gamesystem") == "true" and x.get("collection") != "true"
                        and int(x.get("totalGames") or 0) > 0]
-        out = []
+        out, missed = [], 0
         for sysname in systems:
             try:
                 games = _es_json("/systems/%s/games" % urllib.parse.quote(sysname)) or []
             except Exception:
+                missed += 1
                 continue
             for g in games:
                 if g.get("hidden") == "true" or not g.get("path", "").startswith(_core.ROMS_ROOT + "/"):
                     continue
                 out.append(dict(_played(g), system=sysname, path=g["path"], name=g.get("name") or
                                 os.path.splitext(os.path.basename(g["path"]))[0]))
+        if systems and missed == len(systems):
+            _es_json("/systems")      # none answered: ES itself down raises (not "no games here")
         return out
     except _core.RommError:
         raise

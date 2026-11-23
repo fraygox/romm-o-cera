@@ -975,6 +975,8 @@ SCENES = [
     ("free-up", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)), app.push(rb.FreeUpScreen(app)))),
     ("free-up-menu", lambda: (app.push(rb.FreeUpScreen(app)),
                               setattr(app, "_after", lambda: app.stack[-1].open_menu()))),
+    ("free-up-none", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)),
+                              app.push(rb.FreeUpScreen(app, ["mame_backup"])))),
     ("leftovers", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.SpaceScreen(app)), app.push(rb.LeftoversScreen(app)))),
     ("bios", lambda: (app.push(rb.OnThisBoxScreen(app)), app.push(rb.BiosScreen(app)))),
     ("compare", lambda: compare_at()),

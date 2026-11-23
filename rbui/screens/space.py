@@ -329,7 +329,16 @@ class FreeUpScreen(ListScreen):
         head = "%s · %s free" % (plural(len(self.items), "game"), human_size(free))
         if not self.items:
             text(c, self.f.h3, head, (56, 86), theme.TEXT)
-            text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
+            if self.systems and len(self.systems) == 1:
+                # one folder (Space › a row): what's in it isn't a game EmulationStation lists, so
+                # there's nothing to pick here, and the reason, not a dead end (#13)
+                d = self.systems[0]
+                scroll_text(c, self.f.body, "EmulationStation lists no games in roms/%s, and only games it lists "
+                            "can be deleted here. A folder that isn't a Batocera system, and files it doesn't show "
+                            "(BIOS files, a copy's leftovers), are yours to move or delete from a PC: \\\\BATOCERA\\share\\roms\\%s." % (d, d),
+                            (56, 124, W - 112, 5 * 26), theme.DIM, bg=theme.BG, line_h=26, slot="freeup-none")
+            else:
+                text(c, self.f.body, "No games found.", (56, 130), theme.DIM)
             return
         row = lambda g: (g["name"], "%s · %s" % (self.app.system_name(g["system"]), _lastplayed_label(g["lastplayed"])),  # noqa: E731
                          human_size(g["size"]))
