@@ -382,3 +382,16 @@ def test_the_check_screen_names_the_missing_tools(isolated, rb, monkeypatch):
     scr = rb.AuditScreen(app, deep=True)
     app.push(scr)
     assert "3 games not verified (missing dolphin-tool, unsquashfs)" in _drawn(rb, monkeypatch, scr)
+
+
+@pytest.mark.parametrize("name", ["Copper Lighthouse (USA).nds", "Copper Lighthouse (USA).3ds"])
+def test_a_trimmed_cart_image_differs_and_isnt_called_damaged(isolated, name):
+    """DS and 3DS images are commonly kept trimmed (padding cut off): smaller than RomM's, and
+    they play. They were "damaged", and Download all damaged again replaced them."""
+    system = "nds" if name.endswith(".nds") else "3ds"
+    _put(system, name, b"\0" * 3000)
+    found, _ = _check(system, [(name, [_iso_rec(name, 8192)])])
+    assert found == [(name, "differs", "Smaller than RomM's copy: 3 KB vs 8 KB (trimmed or incomplete)")]
+    gba = "Copper Lighthouse (USA).gba"                   # a cart that's never trimmed: still cut short
+    _put("gba", gba, b"\0" * 3000)
+    assert _check("gba", [(gba, [_iso_rec(gba, 8192)])])[0][0][1] == "damaged"

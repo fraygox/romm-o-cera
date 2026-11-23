@@ -16,6 +16,10 @@ from . import (core as _core, discs as _discs, es as _es, api as _api, convert a
                downloader as _downloader, leftovers as _leftovers)
 
 
+# images commonly kept trimmed (their padding cut off), which play as they are
+TRIMMABLE = (".iso", ".xiso", ".nds", ".3ds", ".cci", ".xci")
+
+
 def _guess_unpacked(detail, system):
     """An archive RomM listed no member sizes for: a Wii U disc image's fixed
     size, else the rough unpacking estimate."""
@@ -853,10 +857,10 @@ def audit(api, platforms_by_system, deep=False, progress=None, cancel=None, chdm
             size, need = os.path.getsize(fp), f.get("file_size_bytes")
             if need and size != need:
                 small = size < need
-                # a smaller .iso is usually a trimmed image (plays); a short
-                # track is a broken copy; a cart 16/512/1024 bytes off is the
-                # same ROM with or without a copier header
-                trimmed = small and fp.lower().endswith((".iso", ".xiso"))
+                # a smaller .iso, or DS/3DS cart image, is usually a trimmed one (its
+                # padding cut: plays); a short track is a broken copy; a cart 16/512/1024 bytes
+                # off is the same ROM with or without a copier header
+                trimmed = small and fp.lower().endswith(TRIMMABLE)
                 header = abs(need - size) in HEADER_SIZES and \
                     not fp.lower().endswith(TRACK_EXTS + tuple(_core.DISC_EXTS) + (".xiso",))
                 if header:

@@ -235,7 +235,8 @@ only the files it brought.
 
 Red findings are certain (a part the game needs to boot is missing); amber
 ones are worth a look (some complete discs list dummy files past their end;
-a trimmed image is smaller than RomM's copy).
+a trimmed image, an ISO or a DS or 3DS cart with its padding cut off,
+is smaller than RomM's copy and still plays).
 
 ### Games ES can't see
 
