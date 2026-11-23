@@ -620,7 +620,8 @@ class App:
             self.toast("No Batocera system for this platform", theme.RED)
             return
         self.downloader.enqueue(rom, system, replace=replace, pins=pins, **({'group': group} if group else {}))
-        self.toast("Queued: %s" % rom_title(rom) + self.hours_note(), theme.GREEN)
+        self.toast("Queued: %s" % rom_title(rom) + self.hours_note(),
+                   theme.AMBER if self.downloader.hold else theme.GREEN)
         self.space_check()
 
     # ---- Play now: quit, and a waiter has EmulationStation start the game
@@ -694,6 +695,10 @@ class App:
                        theme.AMBER)
 
     def hours_note(self):
+        """What keeps what was just queued from starting now, said after "Queued …": Pause all
+        (the queue stays paused for them too), or the download hours."""
+        if getattr(self.downloader, "hold", False):
+            return " — paused (Activity, {X} Actions resumes)"
         if rommlib.in_download_hours(self.cfg):
             return ""
         return " — downloads run %s" % rommlib.hours_label(self.cfg["download_hours"])
@@ -883,8 +888,8 @@ class App:
                           theme.GREEN if made else theme.AMBER)
                 return
             app.toast("Queued {:,} download{}{}".format(n, "" if n == 1 else "s",
-                      (", %d multi-disc set%s kept together" % (sets, "" if sets == 1 else "s"))
-                      if sets else "") + app.hours_note(), theme.GREEN)
+                      (", {:,} multi-disc set{} kept together".format(sets, "" if sets == 1 else "s"))
+                      if sets else "") + app.hours_note(), theme.AMBER if app.downloader.hold else theme.GREEN)
             app.space_check()
         app.bg(lambda: app.queue_bulk(chosen, pool), queued)
 

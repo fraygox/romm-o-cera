@@ -270,3 +270,13 @@ def test_paused_games_queued_again_are_counted_once(app, rb, monkeypatch):
     assert again.space["fits"] and again.space["queue"] == 0
     assert [o[0] for o in again.options()] == ["Download {:,}".format(len(again.items))]
 
+
+def test_queueing_under_pause_all_says_they_wait_paused(app, rb, monkeypatch):
+    """Pause all on with games still waiting: "Queued 30 downloads" in green, and none started."""
+    said = []
+    monkeypatch.setattr(app, "toast", lambda msg, col=None: said.append((msg, col)))
+    app.downloader.jobs.append(J({"id": 999999, "name": "W", "fs_name": "W.zip"}, "nes"))
+    app.downloader.hold = True
+    app.bulk_go([(r, "nes") for r in _roms(app, 1)[:30]])
+    msg, col = said[-1]
+    assert msg.startswith("Queued 30 downloads") and "paused" in msg and col == rb.theme.AMBER
