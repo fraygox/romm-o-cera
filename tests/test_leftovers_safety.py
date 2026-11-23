@@ -404,3 +404,49 @@ def test_a_killed_compressions_cue_copy_is_not_listed_nor_holds_tracks(isolated)
     open(os.path.join(d, rommlib.CHDMAN_CUE + "123-Sit (USA).cue"), "w").write(CUE % "Sit (USA).bin")
     found = {os.path.basename(i["path"]) for i in rommlib.find_leftovers(chd_busy=False)}
     assert found == {"Sit (USA).cue", "Sit (USA).bin"}
+
+
+def test_a_macs_dot_underscore_file_is_offered_only_once_its_own_file_is_gone(isolated):
+    """Deletes before the "._" file went with its game left one per game, and nothing offered them (#13)."""
+    d = os.path.join(rommlib.ROMS_ROOT, "fbneo")
+    os.makedirs(d)
+    old = time.time() - 2 * leftovers.PART_FRESH
+
+    def put(name, data):
+        p = os.path.join(d, name)
+        with open(p, "wb") as f:
+            f.write(data)
+        os.utime(p, (old, old))
+        return p
+    mac = b"\x00\x05\x16\x07" + b"\x00" * 60
+    orphan = put("._Gone.zip", mac)
+    put("Here.zip", b"zip")
+    put("._Here.zip", mac)                                   # its file is still here: kept
+    put("._Notes.txt", b"not a Mac's")                       # named like one, but isn't: kept
+    got = [(it["kind"], it["path"]) for it in rommlib.find_leftovers()]
+    assert got == [("Leftover Mac file", orphan)]
+
+
+def test_a_folder_holding_only_a_macs_file_is_offered_once_whole(isolated):
+    d = os.path.join(rommlib.ROMS_ROOT, "psx", "Game")
+    os.makedirs(d)
+    old = time.time() - 2 * leftovers.PART_FRESH
+    p = os.path.join(d, "._Game.bin")
+    with open(p, "wb") as f:
+        f.write(b"\x00\x05\x16\x07" + b"\x00" * 60)
+    os.utime(p, (old, old))
+    got = [(it["kind"], it["path"]) for it in rommlib.find_leftovers()]
+    assert got == [("Empty folder", d)]
+
+
+def test_a_macs_file_inside_a_folder_game_is_never_offered(isolated):
+    d = os.path.join(rommlib.ROMS_ROOT, "ps3", "Game.ps3", "PS3_GAME")
+    os.makedirs(d)
+    with open(os.path.join(d, "PARAM.SFO"), "wb") as f:
+        f.write(b"sfo")
+    old = time.time() - 2 * leftovers.PART_FRESH
+    p = os.path.join(d, "._ICON0.PNG")
+    with open(p, "wb") as f:
+        f.write(b"\x00\x05\x16\x07" + b"\x00" * 60)
+    os.utime(p, (old, old))
+    assert [it for it in rommlib.find_leftovers() if it["kind"] == "Leftover Mac file"] == []

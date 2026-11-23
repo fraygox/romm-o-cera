@@ -299,12 +299,12 @@ def their_files(paths, system, owned=(), refs=None):
         others_use(q, None) and _users_of(q) - mine)]
     for q in list(out):              # the "._" file a Mac copy leaves beside each one is its, and goes with it
         mac = os.path.join(os.path.dirname(q), "._" + os.path.basename(q))
-        if _apple_double(mac):
+        if apple_double(mac):
             add(mac)
     return out
 
 
-def _apple_double(p):
+def apple_double(p):
     """p is a macOS "._" file (AppleDouble: what a Mac writes beside a file it copies to a share
     that can't keep its extra info), by its first bytes, not only its name."""
     try:

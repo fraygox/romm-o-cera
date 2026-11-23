@@ -494,6 +494,9 @@ class LeftoversScreen(ListScreen):
                                  "went). It won't play, and unpacking or downloading that game again starts over.",
                                  "It frees the space. Nothing you can play changes."),
            "Temporary file": ("A temporary file a download or an unpack left behind.", "It frees the space."),
+           "Leftover Mac file": ("A \"._\" file a Mac wrote beside a file it copied here. The file it went "
+                                 "with is gone, deleted or moved.", "It frees the space. Nothing you can play "
+                                 "changes."),
            "RomM-o-Cera scratch": ("Scratch space an interrupted download or unpack left behind.",
                                    "It frees the space.")}
 

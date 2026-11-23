@@ -64,7 +64,8 @@ for downloads.
   folder with a manual, cover, save or any other file of yours is never one) that interrupted
   downloads or conversions left behind (including a half-made `.ps3` game
   folder, or a game left part-unpacked when the app closed or the power
-  went: **Unfinished unpack**; a partial download only when it's one of the app's own downloads, and
+  went: **Unfinished unpack**; the `._` file a Mac wrote beside a file that's gone since: **Leftover
+  Mac file**; a partial download only when it's one of the app's own downloads, and
   any partial file only once it's been unchanged for an hour), and **copies of games already here
   converted**, whatever put them here: an archive, image
   or loose tracks next to the same game's `.chd`, `.rvz`, `.iso.squashfs`,

@@ -697,6 +697,11 @@ def find_leftovers(pending_roms=(), chd_busy=None):
         # copies only where a converter works (arcade sets keep game.zip beside game.chd)
         copies = bool(_convert.converters_for(system)) and sure
         cands, refs = {}, {}                     # copies offered once no playlist or sheet still needs them
+        def empty_folder(dp, sysdir=sysdir, system=system):
+            """dp is offered whole as an "Empty folder" leftover."""
+            return dp != sysdir and not kept(dp) and system not in _library.FOLDER_GAME_SYSTEMS \
+                and _leftover_folder(sysdir, dp) and os_junk_only(dp) is not None
+
         for dp, dns, fns in os.walk(sysdir, topdown=False):
             parts = os.path.relpath(dp, sysdir).split(os.sep)
             if any(part.startswith(UNPACK_STAGE) for part in parts):
@@ -756,6 +761,12 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                     kind = "Partial download"
                 elif low.endswith(".tmp") and fn.startswith("."):
                     kind = "Temporary file"
+                elif fn.startswith("._") and fn[2:].lower() not in here and _library.apple_double(p) \
+                        and not (dp != sysdir and system in _library.FOLDER_GAME_SYSTEMS) \
+                        and not empty_folder(dp):
+                    # a Mac's "._" file whose own file is gone (#13); never inside a folder game, and not
+                    # twice: a folder holding only such files is offered whole, as an empty folder
+                    kind = "Leftover Mac file"
                 else:
                     continue
                 if kept(p):
@@ -768,11 +779,9 @@ def find_leftovers(pending_roms=(), chd_busy=None):
                     out.append({"path": p, "kind": kind, "size": os.path.getsize(p)})
                 except OSError:
                     pass
-            if dp != sysdir and not kept(dp) and system not in _library.FOLDER_GAME_SYSTEMS \
-                    and _leftover_folder(sysdir, dp):
+            if empty_folder(dp):
                 junk = os_junk_only(dp)
-                if junk is not None:
-                    out.append({"path": dp, "kind": "Empty folder", "size": sum(junk.values())})
+                out.append({"path": dp, "kind": "Empty folder", "size": sum(junk.values())})
         if copies:
             out += _copy_unreferenced(cands, refs).values()
     tmp = _core.tmp_dir()
