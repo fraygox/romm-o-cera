@@ -2,7 +2,12 @@
 
 ## Finding games
 
-- **Platforms**: only those with a Batocera system. Each card shows how many
+- **Platforms**: only those with a Batocera system. RomM's own folder names
+  (`ps1`, `genesis`, `arcade`, or its short ones: `ngc`, `tg16`, `acpc`...) and
+  Batocera's (`psx`, `megadrive`, `fbneo`...)
+  both work, as does a folder bound to a platform in RomM's `config.yml`. A
+  platform no Batocera system plays isn't listed; the log names it, and
+  `platform_map` ([Settings](settings.md#configjson)) can send it to a system. Each card shows how many
   games RomM has and how many of them are already on the box (green: the
   games its list ticks ✓). **Y** searches the platform under the cursor; **X Actions** has
   Game night from it and **Pick several platforms**, to download whole platforms at once (see

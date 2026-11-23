@@ -66,6 +66,37 @@ GAME_EXTS_FALLBACK = {"pico8": frozenset({".p8", ".png"}), "voxatron": frozenset
 _ES_EXTS = {}          # es_systems.cfg in use -> {system: extensions ES lists}, read once
 
 
+def platform_system(plat, overrides=None):
+    """The roms/<system> a RomM platform's games go to, or None (hidden: no Batocera system
+    plays it). By RomM's folder name (fs_slug): Settings' platform_map (None there hides it),
+    PLATFORM_MAP, a folder named like one of Batocera's own systems (RomM takes "psx",
+    "megadrive", "fbneo"... as they are, so a library copied from a Batocera share keeps
+    them); then by RomM's own slug for the platform the same three ways (a folder bound to a
+    platform in RomM's config.yml)."""
+    fs, slug = plat.get("fs_slug"), plat.get("slug")
+    try:
+        over = dict(overrides or {})      # (an older config.json may hold a list of pairs)
+    except (TypeError, ValueError):
+        over = {}
+    systems = _es_systems()
+    for name in (fs, slug):
+        if isinstance(name, str) and name:
+            if name in over:
+                return over[name] or None
+            if name in _core.PLATFORM_MAP:
+                return _core.PLATFORM_MAP[name]
+            if name in systems:
+                return name
+    return None
+
+
+def _es_systems():
+    src = os.environ.get("ROMM_BROWSER_ES_SYSTEMS", "")
+    if src not in _ES_EXTS:
+        _ES_EXTS[src] = _es.load_es_systems()
+    return _ES_EXTS[src]
+
+
 def lists_playlists(system):
     """True unless ES's list for system is known and takes no .m3u."""
     exts = _system_exts(system)
@@ -76,10 +107,7 @@ def _system_exts(system):
     """The extensions ES lists for a system (lowercased), or None when unknown."""
     if not system:
         return None
-    src = os.environ.get("ROMM_BROWSER_ES_SYSTEMS", "")
-    if src not in _ES_EXTS:
-        _ES_EXTS[src] = _es.load_es_systems()
-    return _ES_EXTS[src].get(system) or GAME_EXTS_FALLBACK.get(system)
+    return _es_systems().get(system) or GAME_EXTS_FALLBACK.get(system)
 
 
 def is_game_name(name, system=None):

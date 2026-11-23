@@ -73,6 +73,23 @@ PLATFORM_MAP = {
     "virtualboy": "virtualboy", "vsmile": "vsmile", "wii": "wii", "wiiu": "wiiu",
     "wonderswan": "wswan", "wonderswan-color": "wswanc", "xbox": "xbox",
     "xbox360": "xbox360", "zxs": "zxspectrum",
+    # RomM's own slugs for platforms Batocera names otherwise: a folder named by its slug, or
+    # bound to it in RomM's config.yml (platform_system tries the slug when the folder isn't known)
+    "acpc": "amstradcpc", "dc": "dreamcast", "tg16": "pcengine", "ngc": "gamecube", "sms": "mastersystem",
+    "famicom": "nes", "sfam": "snes", "neogeoaes": "neogeo", "neogeomvs": "neogeo", "segacd32": "sega32x",
+    "acorn-archimedes": "archimedes", "acorn-electron": "electron", "amstrad-gx4000": "gx4000",
+    "appleii": "apple2", "apple-iigs": "apple2gs", "atari8bit": "atari800", "atari-xegs": "xegs",
+    "c-plus-4": "cplus4", "vic-20": "c20", "colecoadam": "adam", "commander-x16": "commanderx16",
+    "fm-7": "fm7", "interton-vc-4000": "vc4000", "vc-4000": "vc4000", "msx2plus": "msx2+",
+    "msx-turbo": "msxturbor", "oric": "oricatmos", "atmos": "oricatmos", "pc-8800-series": "pc88",
+    "rpg-maker": "easyrpg", "sam-coupe": "samcoupe", "super-acan": "supracan", "thomson-mo5": "thomson",
+    "thomson-to": "thomson", "ti-994a": "ti99", "ti-99": "ti99", "tic-80": "tic80",
+    "trs-80-color-computer": "coco", "tomy-tutor": "tutor", "wasm-4": "wasm4", "pico-8": "pico8",
+    "epoch-super-cassette-vision": "scv", "epoch-cassette-vision": "cassettevision",
+    "adventure-vision": "advision", "arcadia-2001": "arcadia", "creativision": "crvision",
+    "camputers-lynx": "camplynx", "colour-genie": "cgenie", "videopac-g7400": "videopacplus",
+    "casio-loopy": "loopy", "casio-pv-1000": "pv1000", "sharp-mz-80k7008001500": "mz700", "pdp-1": "pdp1",
+    "super-vision-8000": "sv8000",
 }
 
 # Disc images: an archive holding any of these is always extracted, even when

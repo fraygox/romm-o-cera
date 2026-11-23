@@ -290,15 +290,17 @@ class App:
         def done(plats):
             if gen != self.conn_gen:
                 return                        # the previous server's answer
-            mp = dict(rommlib.PLATFORM_MAP)
-            mp.update(self.cfg["platform_map"] or {})
+            over = self.cfg["platform_map"] or {}
             self.platforms, self.unmapped = [], []
             for p in plats:
-                system = mp.get(p["fs_slug"])
+                system = rommlib.platform_system(p, over)
                 p["_system"] = system
                 if not p.get("rom_count"):
                     continue
                 (self.platforms if system else self.unmapped).append(p)
+            if self.unmapped:                 # (support: why a platform isn't listed)
+                rommlib.log("platforms with no Batocera system, not listed: %s" % ", ".join(
+                    sorted("%s (%s)" % (p["fs_slug"], p.get("slug")) for p in self.unmapped)))
             self.platforms.sort(key=lambda p: (p.get("display_name") or p["name"]).lower())
             self.platform_by_id = {p["id"]: p for p in self.platforms}
             self.status = "Online"
