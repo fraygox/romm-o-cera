@@ -280,3 +280,22 @@ def test_queueing_under_pause_all_says_they_wait_paused(app, rb, monkeypatch):
     app.bulk_go([(r, "nes") for r in _roms(app, 1)[:30]])
     msg, col = said[-1]
     assert msg.startswith("Queued 30 downloads") and "paused" in msg and col == rb.theme.AMBER
+
+
+def test_a_big_run_says_failures_together_not_a_red_popup_each(app, rb):
+    """Missing files on RomM failing dozens in a row: a red popup (and sound) each, one after another."""
+    def job(k, st):
+        j = J({"id": 8000 + k, "name": "G%d" % k, "fs_name": "G%d.zip" % k, "fs_size_bytes": 1}, "nes")
+        j.state, j.message = st, "Not found on RomM"
+        return j
+    toasts = []
+    app.toast = lambda msg, *a, **k: toasts.append(msg)
+    app.downloader.jobs.extend([job(k, J.QUEUED) for k in range(30)] + [job(100 + k, J.FAILED) for k in range(12)])
+    app.tick_downloads()
+    assert toasts == ["12 downloads failed · {SELECT} Activity, {X} Actions retries them"]
+    app.downloader.jobs.append(job(300, J.FAILED))
+    app.tick_downloads()                                         # within the 8 s: held, then told together
+    assert len(toasts) == 1
+    app.downloader.jobs[:] = [job(400, J.FAILED)]                # a short queue: by name, as before
+    app.tick_downloads()
+    assert toasts[-2:] == ["Failed: G300 — Not found on RomM", "Failed: G400 — Not found on RomM"]

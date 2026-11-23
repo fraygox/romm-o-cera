@@ -1392,14 +1392,32 @@ class App:
                 self.spawn_helper("rb_chd.py")   # flock'd: no-op if already running
             if j.system in self.TOOL_SYSTEMS:
                 self.fetch_tools({j.system})     # a first Wii U game: its converter's tool
-        for j in failed:
-            self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)
         n, now = getattr(self, "_ready_n", 0), time.time()
-        if n and (not big or now - getattr(self, "_ready_at", 0) >= self.READY_EVERY):
+        due = not big or now - getattr(self, "_ready_at", 0) >= self.READY_EVERY
+        if not big:
+            self._told_failed(now)                  # the ones held back first, then these by name
+        for j in failed:
+            if big:                     # told together, as the ready ones are: not a red popup each
+                self._failed_n = getattr(self, "_failed_n", 0) + 1
+                self._failed_one = self._failed_one if self._failed_n > 1 else j
+            else:
+                self.toast("Failed: %s — %s" % (j.label, j.message), theme.RED)
+        if n and due:
             self._ready_n, self._ready_at = 0, now
             self.toast("Ready: {:,} more game{} · {{SELECT}} Activity lists them".format(n, "" if n == 1 else "s"),
                        theme.GREEN)
+        if due:
+            self._told_failed(now)
         self.watch_conversions()
+
+    def _told_failed(self, now):
+        """Say the failures a big run held back (tick_downloads): one by name, more as a count."""
+        nf = getattr(self, "_failed_n", 0)
+        if nf:
+            self._failed_n, self._ready_at = 0, now
+            j = self._failed_one
+            self.toast("Failed: %s — %s" % (j.label, j.message) if nf == 1 else
+                       "{:,} downloads failed · {{SELECT}} Activity, {{X}} Actions retries them".format(nf), theme.RED)
 
     CONV_WATCH = 10.0           # seconds between looks for a conversion worker that died mid-task
 
