@@ -71,9 +71,10 @@ def players_ok(rom, players):
 def box_pool(app, scope):
     """Ids of the scope's RomM games that are on this box, by the rule its game lists tick them
     (Library.is_installed: an install record, or a game file by RomM's name, so games copied
-    over by hand count too), one per disc set the app downloaded. Listed from RomM a platform
-    at a time (so a platform's are its own, never another platform's sharing its folder), only
-    for platforms whose folder holds a game, and again only once the box has changed."""
+    over by hand count too), one per disc set the app downloaded. A platform at a time, so a
+    platform's are its own, never another platform's sharing its folder. RomM is asked only for
+    a platform whose folder holds a game the app didn't download (platform_names), and the box
+    is looked at again only once it changed."""
     lib = app.library
     plats = [p for p in app.platforms if p.get("_system") and (scope.whole or p["id"] in (scope.pids or ()))]
     recs = lib.snapshot()
@@ -83,25 +84,37 @@ def box_pool(app, scope):
             sig.append(os.stat(os.path.join(rommlib.ROMS_ROOT, p["_system"])).st_mtime_ns)
         except OSError:
             sig.append(None)
+        sig.append(p.get("rom_count"))
     if scope.box is not None and scope.box[0] == sig:
         return scope.box[1]
+    sharing = {}
+    for p in app.platforms:
+        if p.get("_system"):
+            sharing[p["_system"]] = sharing.get(p["_system"], 0) + 1
     ids, whole = [], True
     for p in plats:
         system = p["_system"]
+        folder = os.path.join(rommlib.ROMS_ROOT, system)
         try:
-            any_game = any(rommlib.is_game_name(n, system) for n in os.listdir(os.path.join(rommlib.ROMS_ROOT, system)))
+            games = {n.lower() for n in os.listdir(folder) if rommlib.is_game_name(n, system)}
         except OSError:
-            any_game = False
-        if not any_game:
+            games = set()
+        if not games:
+            continue
+        mine = [(rid, rec) for rid, rec in recs.items() if isinstance(rec, dict) and rec.get("system") == system
+                and str(rid).isdigit()]
+        theirs = {os.path.basename(q).lower() for _, rec in mine for q in rec.get("paths") or []
+                  if os.path.dirname(os.path.normpath(q)) == os.path.normpath(folder)}
+        if sharing.get(system) == 1 and games <= theirs:       # every game here is one the app downloaded
+            ids += [int(rid) for rid, rec in mine if lib.is_installed({"id": int(rid)}, system)]
             continue
         try:
-            got = app.api.roms_all(platform_ids=[p["id"]], keep=lambda r, s=system: lib.is_installed(r, s),
-                                   fields=("id",))
-            ids += [r["id"] for r in got or []]
+            names = platform_names(app, p)
         except rommlib.RommError:          # RomM couldn't list it now: the games the app downloaded there
             whole = False
-            ids += [int(rid) for rid, rec in recs.items() if isinstance(rec, dict) and rec.get("system") == system
-                    and str(rid).isdigit() and int(rid) not in ids]
+            ids += [int(rid) for rid, _ in mine if int(rid) not in ids]
+            continue
+        ids += [r["id"] for r in names if lib.is_installed(r, system)]
     out, sets = [], set()
     for rid in ids:
         rec = recs.get(str(rid))
@@ -113,6 +126,19 @@ def box_pool(app, scope):
         out.append(rid)
     scope.box = (sig, out) if whole else None          # (a platform that failed: asked again next roll)
     return out
+
+
+def platform_names(app, p):
+    """A platform's games as RomM names their files ({id, fs_name, fs_name_no_ext}), kept for
+    the session: a download, a delete or a copy changes the box, not RomM. Listed again once
+    RomM's count of the platform's games changes. Raises RommError."""
+    kept = app.__dict__.setdefault("night_names", {})
+    got = kept.get(p["id"])
+    if got is not None and got[0] == p.get("rom_count"):
+        return got[1]
+    names = app.api.roms_all(platform_ids=[p["id"]], fields=("id", "fs_name", "fs_name_no_ext")) or []
+    kept[p["id"]] = (p.get("rom_count"), names)
+    return names
 
 
 def roll(app, scope, players=0, here=False, avoid=()):

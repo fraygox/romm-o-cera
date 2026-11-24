@@ -288,6 +288,7 @@ def test_only_whats_on_the_box_when_romm_cant_list_a_platform(live, rb, monkeypa
     psx = _platform(app, "psx")
     roms = app.api.roms(platform_ids=[psx["id"]], limit=5)["items"][:2]
     _install(app, roms)
+    open(os.path.join(rommlib.ROMS_ROOT, "psx", "copied over.chd"), "wb").write(b"x")   # so RomM is asked
 
     def down(*a, **k):
         raise rommlib.RommError("RomM is busy")
@@ -295,3 +296,51 @@ def test_only_whats_on_the_box_when_romm_cant_list_a_platform(live, rb, monkeypa
     scope = rb.Scope.platform(app, psx)
     rom, why, pool = rb.gamenight.roll(app, scope, here=True)
     assert why is None and pool == 2 and scope.box is None
+
+
+def _count_listings(app, monkeypatch):
+    asked = []
+    real = app.api.roms_all
+
+    def roms_all(*a, **k):
+        asked.append(k.get("platform_ids"))
+        return real(*a, **k)
+    monkeypatch.setattr(app.api, "roms_all", roms_all)
+    return asked
+
+
+def test_only_whats_on_the_box_asks_romm_nothing_when_the_app_downloaded_every_game_here(live, rb, monkeypatch):
+    """A folder holding only games the app downloaded rolls from its records: listing RomM's
+    whole platform took a long while on a big library."""
+    app = live
+    psx = _platform(app, "psx")
+    roms = app.api.roms(platform_ids=[psx["id"]], limit=5)["items"][:3]
+    _install(app, roms)
+    asked = _count_listings(app, monkeypatch)
+    scope = rb.Scope.platform(app, psx)
+    rom, why, pool = rb.gamenight.roll(app, scope, here=True)
+    assert why is None and pool == 3 and asked == []
+    assert rb.gamenight.roll(app, rb.Scope.library(app), here=True)[2] == 3 and asked == []
+    os.remove(app.library.snapshot()[str(roms[0]["id"])]["paths"][0])          # deleted from ES
+    assert rb.gamenight.roll(app, scope, here=True)[2] == 2 and asked == []
+
+
+def test_only_whats_on_the_box_lists_a_platform_once_however_the_box_changes(live, rb, monkeypatch):
+    """A game copied over by hand needs RomM's names, listed once a session: a download or a
+    delete since changes the box, not RomM, so the next roll doesn't list it all again."""
+    app = live
+    psx = _platform(app, "psx")
+    roms = app.api.roms(platform_ids=[psx["id"]], limit=5)["items"][:4]
+    os.makedirs(os.path.join(rommlib.ROMS_ROOT, "psx"), exist_ok=True)
+    open(os.path.join(rommlib.ROMS_ROOT, "psx", roms[0]["fs_name"]), "wb").write(b"x")
+    asked = _count_listings(app, monkeypatch)
+    scope = rb.Scope.platform(app, psx)
+    assert rb.gamenight.roll(app, scope, here=True)[2] == 1 and len(asked) == 1
+    _install(app, roms[1:3])                                     # downloads since
+    assert rb.gamenight.roll(app, scope, here=True)[2] == 3 and len(asked) == 1
+    assert rb.gamenight.roll(app, rb.Scope.library(app), here=True)[2] == 3 and len(asked) == 1
+    psx["rom_count"] = (psx.get("rom_count") or 0) + 1           # RomM's platform changed: listed again
+    try:
+        assert rb.gamenight.roll(app, scope, here=True)[2] == 3 and len(asked) == 2
+    finally:
+        psx["rom_count"] -= 1
