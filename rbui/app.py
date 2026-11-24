@@ -191,7 +191,7 @@ class App:
         self.targets, self.modal_from, self.ptr = [], 0, None
         self.last_tap = (0.0, None, (0, 0))     # the last tap that acted: when, on what, where
         self.tapped, self.ptr_later = False, []    # a tap acted since the last frame; events held back
-        self.sfx = Sfx(self.cfg["sounds"] if screen is not None else "off")
+        self.sfx = Sfx(*((self.cfg["sounds"], self.cfg["popup_sounds"]) if screen is not None else ("off", "off")))
         self.input = Input(self.cfg["swap_ab"])
         self.log_pads()
         self.make_custom_theme()

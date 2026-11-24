@@ -141,6 +141,7 @@ class SettingsScreen(Screen):
             table("themeauto"),
             table("colltiles"),
             table("sounds"),
+            table("popupsounds"),
             table("cachelimit"),
             ("cache", "Clear cover cache",
              human_size(self.cache_bytes) if self.cache_bytes is not None else "…",
@@ -186,8 +187,8 @@ class SettingsScreen(Screen):
         "keepfree": lambda cfg: "%d GB" % float(cfg["keep_free_gb"]) if cfg["keep_free_gb"] else "Nothing (fill the disk)",
         "speedall": lambda cfg: "%g MB/s" % float(cfg["download_speed"]) if cfg["download_speed"] else "No limit",
         "speed": lambda cfg: "%g MB/s" % float(cfg["speed_while_playing"]) if cfg["speed_while_playing"] else "No limit",
-        "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "clicks": "Clicks only", "off": "Off"}.get(
-            cfg["sounds"], "On"),
+        "sounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(cfg["sounds"], "On"),
+        "popupsounds": lambda cfg: {"normal": "On", "quiet": "Quiet", "off": "Off"}.get(cfg["popup_sounds"], "On"),
         "colltiles": lambda cfg: {"small": "Small", "medium": "Medium", "large": "Large"}.get(
             cfg["collection_tiles"], "Medium"),
         "channel": lambda cfg: {"stable": "Stable", "nightly": "Nightly"}.get(cfg["update_channel"], "Stable"),
@@ -205,6 +206,10 @@ class SettingsScreen(Screen):
     def _sounds(self, app):
         app.sfx.set_level(app.cfg["sounds"])
         app.sfx.play("toggle")
+
+    def _popup_sounds(self, app):
+        app.sfx.set_popup_level(app.cfg["popup_sounds"])
+        app.sfx.play("done", popup=True)        # how a popup will sound now
 
     def _cache_limit(self, app):
         lim = rommlib.cache_limit_bytes(app.cfg)
@@ -235,6 +240,7 @@ class SettingsScreen(Screen):
         "downloader": lambda screen, app: setattr(app.downloader, "cfg", app.cfg),
         "wake": _wake,
         "sounds": _sounds,
+        "popup_sounds": _popup_sounds,
         "cache_limit": _cache_limit,
         "update_channel": _update_channel,
         "check_updates": _check_updates,

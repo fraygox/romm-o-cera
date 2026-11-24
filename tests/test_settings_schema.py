@@ -87,7 +87,10 @@ class _Sfx:
     def set_level(self, lv):
         self.rec["sfx_level"].append(lv)
 
-    def play(self, name):
+    def set_popup_level(self, lv):
+        self.rec["sfx_level"].append(["popup", lv])
+
+    def play(self, name, popup=False):
         self.rec["sfx"].append(name)
 
 
@@ -251,6 +254,7 @@ DEFAULTS_LITERAL = [
     ("download_speed", 0), ("speed_while_playing", 0), ("notify", True), ("notify_app", True), ("manuals", True),
     ("es_image", "screenshot"),
     ("es_video_mb", 50), ("es_extra_art", True), ("es_tags", True), ("sounds", "normal"),
+    ("popup_sounds", "normal"),
     ("collection_tiles", "medium"), ("theme", "default"), ("update_channel", "stable"),
     ("theme_auto", False),
     ("theme_custom_accent", 195), ("theme_custom_tint", 225), ("theme_custom_strength", 30),
@@ -331,7 +335,7 @@ def _effective(cfg):
         out["conv_" + c.mode] = c.enabled(cfg, sorted(c.systems)[0])
     for k in ("swap_ab", "check_updates", "extract_parallel", "background_downloads", "notify", "manuals"):
         out["on_" + k] = bool(cfg[k])
-    out["sfx"] = {"normal": 1.0, "quiet": 0.4, "clicks": 1.0, "off": 0.0}.get(cfg["sounds"], 1.0)   # Sfx.LEVEL
+    out["sfx"] = {"normal": 1.0, "quiet": 0.4, "off": 0.0}.get(cfg["sounds"], 1.0)   # Sfx.LEVEL
     out["speed"] = float(cfg["speed_while_playing"] or 0)                             # rb_dl's cap
     out["platform_map"] = dict(cfg["platform_map"] or {})
     out["video_max"], out["es_image"] = rommlib.es_video_max(cfg), cfg["es_image"]

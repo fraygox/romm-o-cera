@@ -211,12 +211,17 @@ SETTINGS = (
             kind="onoff", effects=("downloader",),
             help="Tells EmulationStation the game's region (its flag), languages and series, from RomM's "
                  "file-name tags and metadata."),
-    Setting("sounds", "normal",         # UI sounds: normal | quiet | clicks (no popup chimes) | off
-            row="sounds", label="Sounds", sub="Clicks and chimes in this app",
-            kind="choice", choices=("normal", "quiet", "clicks", "off"), effects=("sounds",),
-            valid=lambda v: v in ("normal", "quiet", "clicks", "off"),
-            help="Clicks as you browse, and chimes when a popup says a download is ready, queued or failed. "
-                 "Clicks only keeps the clicks; popups still show, without a sound."),
+    Setting("sounds", "normal",         # clicks as you browse: normal | quiet | off
+            row="sounds", label="Sounds", sub="Clicks as you browse",
+            kind="choice", choices=("normal", "quiet", "off"), effects=("sounds",),
+            valid=lambda v: v in ("normal", "quiet", "off"),
+            help="The clicks as you move around and press buttons. Popup sounds, below, has the chimes."),
+    Setting("popup_sounds", "normal",   # a popup's chime (download ready, queued, failed): normal | quiet | off
+            row="popupsounds", label="Popup sounds", sub="Chimes when a popup shows",
+            kind="choice", choices=("normal", "quiet", "off"), effects=("popup_sounds",),
+            valid=lambda v: v in ("normal", "quiet", "off"),
+            help="The chime a popup makes when a download is ready, queued or failed. Off keeps the popups, "
+                 "without a sound."),
     Setting("collection_tiles", "medium",   # Collections' mosaics: small (six a shelf) | medium (five) | large (four)
             row="colltiles", label="Collections tile size", sub="How many mosaics a shelf shows",
             kind="choice", choices=("small", "medium", "large"),
@@ -440,6 +445,9 @@ def _migrate_config(data):
             if new not in data:
                 data[new] = v
                 log_once("renamed " + old, "config.json: %s is now %s" % (old, new))
+    if data.get("sounds") == "clicks":      # v0.15.4's Clicks only: the clicks on, the chimes off
+        data["sounds"] = "normal"
+        data.setdefault("popup_sounds", "off")
     return data
 
 

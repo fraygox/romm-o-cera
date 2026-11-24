@@ -33,8 +33,8 @@ and listed with its key under [`config.json`](#configjson): among them
 **Confirm button** and **Button labels** (Controller), **Download speed
 limit**, **Download speed while playing**, **Popup when downloads finish** (in
 EmulationStation, after you leave) and **Popups in the app** (Downloads), **Sounds**
-(On, Quiet, Clicks only or Off; Clicks only keeps the clicks as you browse and
-silences the chime a popup makes when a download is ready, queued or failed) and
+(the clicks as you browse) and **Popup sounds** (the chime a popup makes when a
+download is ready, queued or failed), each On, Quiet or Off on its own, and
 **Cover cache limit** (This app).
 
 **Metadata**
@@ -162,7 +162,8 @@ seven, six or four. It takes effect at once.
 | `theme_custom_tint` | `225` | the hue the Custom theme's backgrounds and greys lean toward, `0`–`359` |
 | `theme_custom_strength` | `30` | how far they lean: `0` (neutral grey) to `100` |
 | `theme_custom_mode` | `dark` | the Custom theme's mode: `dark`, `oled` (pure black) or `light` |
-| `sounds` | `normal` | UI sounds: `normal`, `quiet`, `clicks` (Clicks only: the clicks as you browse, no chime when a popup shows) or `off` |
+| `sounds` | `normal` | the clicks as you browse: `normal`, `quiet` or `off` (v0.15.4's `clicks` loads as `normal`, with `popup_sounds` `off`) |
+| `popup_sounds` | `normal` | the chime a popup makes when a download is ready, queued or failed: `normal`, `quiet` or `off` (the popups still show) |
 | `collection_tiles` | `medium` | the Collections screen's mosaic size: `small` (six a shelf, seven a wall row), `medium` (five and six) or `large` (four and four) |
 | `cache_limit_mb` | `1024` | cover cache cap in MB; least recently used covers are removed first (`0` = no cap) |
 | `platform_map` | `{}` | override the target system per RomM platform slug, e.g. `{"arcade": "mame", "msx": null}` (`null` hides it) |

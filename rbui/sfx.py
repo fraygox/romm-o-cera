@@ -19,11 +19,12 @@ class Sfx:
         "done": ((523, 659, 784, 1046), 70, 0.12, "sine"),
         "reveal": ((659, 784, 988, 1319), 34, 0.12, "sine"),
     }
-    LEVEL = {"normal": 1.0, "quiet": 0.4, "clicks": 1.0, "off": 0.0}
+    LEVEL = {"normal": 1.0, "quiet": 0.4, "off": 0.0}
 
-    def __init__(self, level="normal"):
+    def __init__(self, level="normal", popup_level="normal"):
         self.sounds, self.channels = {}, {}
         self.set_level(level)
+        self.set_popup_level(popup_level)
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(44100, -16, 2, 512)
@@ -62,15 +63,20 @@ class Sfx:
         return buf
 
     def set_level(self, level):
+        """The clicks as you browse (Sounds)."""
         self.level = self.LEVEL.get(level, 1.0)
-        self.popups = level != "clicks"        # Clicks only: a popup's chime stays quiet
+
+    def set_popup_level(self, level):
+        """A popup's chime (Popup sounds), apart from the clicks."""
+        self.popup_level = self.LEVEL.get(level, 1.0)
 
     def play(self, name, popup=False):
         snd = self.sounds.get(name)
-        if not snd or not self.level or (popup and not self.popups):
+        level = self.popup_level if popup else self.level
+        if not snd or not level:
             return
         try:
-            snd.set_volume(self.level)
+            snd.set_volume(level)
             self.channels[name].play(snd)        # one channel per sound: repeats restart, never pile up
         except Exception:
             pass

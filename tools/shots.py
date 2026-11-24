@@ -906,7 +906,7 @@ SCENES = [
     ("settings-hub-metadata", lambda: app.push(settings_at("§", 3))),
     ("settings-compression", lambda: app.push(settings_at("rvz"))),
     ("settings-app", lambda: app.push(settings_at("credits"))),
-    ("settings-sounds", lambda: (app.cfg.__setitem__("sounds", "clicks"), app.push(settings_at("sounds")))),
+    ("settings-sounds", lambda: (app.cfg.update(sounds="quiet", popup_sounds="off"), app.push(settings_at("popupsounds")))),
     ("rvz-confirm", lambda: (app.push(settings_at("rvz")), app.stack[-1]._toggle_tool("rvz"))),
     ("credits", lambda: app.push(rb.CreditsScreen(app))),
     ("settings-docs", lambda: app.push(settings_at("docs"))),
@@ -1051,7 +1051,7 @@ def reset():
     app.cfg["keep_free_gb"] = KEEP_FREE
     app.cfg["collection_tiles"] = "medium"
     app.cfg["menu_music"] = False                 # the Music scenes' state
-    app.cfg["sounds"] = "normal"                  # settings-sounds' Clicks only
+    app.cfg["sounds"] = app.cfg["popup_sounds"] = "normal"    # settings-sounds' Quiet and Off
     for p in (rommlib.music_state_path(), rommlib.music_sources_path()):
         if os.path.exists(p):
             os.remove(p)

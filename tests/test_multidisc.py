@@ -732,8 +732,8 @@ def test_fill_in_info_for_games_already_here(isolated, mock_url, fake_es):
     assert st2["complete"] >= 1
 
 
-def test_clicks_only_silences_popup_chimes_but_not_clicks(isolated, rb, monkeypatch):
-    """#14: Sounds, Clicks only: a popup's chime stays quiet, a button press still clicks."""
+def test_popup_sounds_are_set_apart_from_the_clicks(isolated, rb, monkeypatch):
+    """#14: Sounds sets the clicks, Popup sounds a popup's chime, each on its own."""
     import pygame
     monkeypatch.setenv("ROMM_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("ROMM_TOKEN", "x")
@@ -742,24 +742,42 @@ def test_clicks_only_silences_popup_chimes_but_not_clicks(isolated, rb, monkeypa
     app.bg = lambda fn, done=None, err=None: None       # no network
     app.push(rb.HomeScreen(app))
     played = []
-    app.sfx.sounds = {k: type("S", (), {"set_volume": lambda self, v: None})() for k in rb.Sfx.SPEC}
-    app.sfx.channels = {k: type("C", (), {"play": lambda self, s, k=k: played.append(k)})() for k in rb.Sfx.SPEC}
-    for level, chimes in (("normal", True), ("clicks", False)):
-        app.cfg["sounds"] = level
-        app.sfx.set_level(level)
+    app.sfx.sounds = {k: type("S", (), {"set_volume": lambda self, v, k=k: played.append((k, v))})()
+                      for k in rb.Sfx.SPEC}
+    app.sfx.channels = {k: type("C", (), {"play": lambda self, s: None})() for k in rb.Sfx.SPEC}
+    for clicks, popups in (("normal", "normal"), ("quiet", "normal"), ("normal", "off"), ("off", "quiet")):
+        app.sfx.set_level(clicks)
+        app.sfx.set_popup_level(popups)
         played.clear()
         app.toast("Ready: Some game", rb.theme.GREEN)
         app.toast("Queued: Other game", rb.theme.GREEN)
         app.toast("Failed: A game — gone", rb.theme.RED)
-        assert played == (["done", "queued", "deny"] if chimes else [])
+        chime = rb.Sfx.LEVEL[popups]
+        assert played == ([("done", chime), ("queued", chime), ("deny", chime)] if chime else [])
+        played.clear()
         app.dispatch("back")
-        assert played[-1:] == ["back"]
+        click = rb.Sfx.LEVEL[clicks]
+        assert played == ([("back", click)] if click else [])
 
 
-def test_clicks_only_from_the_start(rb):
-    sfx = rb.Sfx("clicks")
-    assert sfx.level == 1.0 and not sfx.popups
-    assert rb.Sfx("normal").popups and rb.Sfx("quiet").popups
+def test_popup_sounds_from_the_start(rb):
+    sfx = rb.Sfx("quiet", "off")
+    assert sfx.level == 0.4 and sfx.popup_level == 0.0
+    assert rb.Sfx("off").popup_level == 1.0
+
+
+def test_v0_15_4_clicks_only_becomes_sounds_on_and_popup_sounds_off(isolated, rb):
+    import json
+    import os
+    os.makedirs(os.path.dirname(rb.rommlib.CONFIG_PATH), exist_ok=True)
+    with open(rb.rommlib.CONFIG_PATH, "w") as f:
+        json.dump({"sounds": "clicks"}, f)
+    cfg = rb.rommlib.load_config()
+    assert (cfg["sounds"], cfg["popup_sounds"]) == ("normal", "off")
+    with open(rb.rommlib.CONFIG_PATH, "w") as f:
+        json.dump({"sounds": "clicks", "popup_sounds": "quiet"}, f)    # a rollback and back: keeps the new key
+    cfg = rb.rommlib.load_config()
+    assert (cfg["sounds"], cfg["popup_sounds"]) == ("normal", "quiet")
 
 
 def test_the_es_popup_counts_a_big_run_with_separators():
