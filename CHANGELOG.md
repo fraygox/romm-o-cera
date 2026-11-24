@@ -3,6 +3,24 @@
 Every stable release. Nightly builds: the commits on main since the last one.
 Releases up to v0.8.0: [GitHub Releases](https://github.com/fraygox/romm-o-cera/releases).
 
+## v0.15.5 (2026-11-24)
+
+Popup sounds on their own, and RomM libraries named like Batocera's
+
+Thanks to @plasmadice for the follow-up on sounds (#14): the clicks and a popup's chime are now set apart.
+
+### Features
+- **feat:** Settings › This app has Popup sounds beside Sounds. Sounds sets the clicks as you browse, and Popup sounds the chime when a download is ready, queued or failed, each On, Quiet or Off on its own, so the clicks can be Quiet while popups still chime, or popups can be silent (#14). Clicks only from v0.15.4 carries over as Sounds On and Popup sounds Off.
+
+### Fixes
+- **fix:** A RomM library whose folders are named like Batocera's (psx, megadrive, fbneo...), by RomM's short names (ngc, tg16, acpc...) or bound in RomM's config.yml no longer has those platforms missing from the app.
+- **fix:** A game RomM still lists after its file left RomM's library says so when you download it, and downloading a platform or a disc set skips it instead of failing on it.
+- **fix:** Check games no longer calls a trimmed DS or 3DS image "damaged", nor offers to download every one of them again.
+- **fix:** A playlist linked to a drive that isn't mounted no longer stops Games ES can't see, and Check games says it couldn't look instead of "Looking…" for good.
+- **fix:** Game night's "Only what's on this box" counts games you copied over yourself, and from a platform rolls only that platform's games.
+- **fix:** Compare with RomM says a compressed copy that isn't whole may be damaged and not start, instead of that it "isn't the size of RomM's file".
+- **fix:** EmulationStation's popup after background downloads counts a big run as "1,243 games ready", as the app does, not "1243".
+
 ## v0.15.4 (2026-11-23)
 
 Clicks only for sounds, and smoother deleting and big runs
